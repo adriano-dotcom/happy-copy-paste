@@ -1,0 +1,148 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  const startTime = Date.now();
+  console.log('[test-elevenlabs-tts] Starting TTS generation...');
+
+  try {
+    const { text } = await req.json();
+
+    if (!text || typeof text !== 'string') {
+      return new Response(
+        JSON.stringify({ error: 'Texto é obrigatório' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (text.length > 1000) {
+      return new Response(
+        JSON.stringify({ error: 'Texto muito longo (máximo 1000 caracteres)' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Get Supabase client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Load ElevenLabs settings from nina_settings
+    const { data: settings, error: settingsError } = await supabase
+      .from('nina_settings')
+      .select('elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_model, elevenlabs_stability, elevenlabs_similarity_boost, elevenlabs_style, elevenlabs_speed, elevenlabs_speaker_boost')
+      .maybeSingle();
+
+    if (settingsError) {
+      console.error('[test-elevenlabs-tts] Error loading settings:', settingsError);
+      return new Response(
+        JSON.stringify({ error: 'Erro ao carregar configurações' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!settings?.elevenlabs_api_key) {
+      return new Response(
+        JSON.stringify({ error: 'API Key da ElevenLabs não configurada. Configure em Settings → APIs.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const voiceId = settings.elevenlabs_voice_id || '9BWtsMINqrJLrRacOk9x'; // Aria default
+    const model = settings.elevenlabs_model || 'eleven_turbo_v2_5';
+
+    console.log(`[test-elevenlabs-tts] Generating audio with voice: ${voiceId}, model: ${model}`);
+    console.log(`[test-elevenlabs-tts] Text length: ${text.length} chars`);
+
+    // Call ElevenLabs API
+    const elevenLabsResponse = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'audio/mpeg',
+          'Content-Type': 'application/json',
+          'xi-api-key': settings.elevenlabs_api_key,
+        },
+        body: JSON.stringify({
+          text,
+          model_id: model,
+          voice_settings: {
+            stability: settings.elevenlabs_stability ?? 0.75,
+            similarity_boost: settings.elevenlabs_similarity_boost ?? 0.80,
+            style: settings.elevenlabs_style ?? 0.30,
+            use_speaker_boost: settings.elevenlabs_speaker_boost ?? true,
+          },
+        }),
+      }
+    );
+
+    if (!elevenLabsResponse.ok) {
+      const errorText = await elevenLabsResponse.text();
+      console.error('[test-elevenlabs-tts] ElevenLabs API error:', elevenLabsResponse.status, errorText);
+      
+      if (elevenLabsResponse.status === 401) {
+        return new Response(
+          JSON.stringify({ error: 'API Key da ElevenLabs inválida' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      if (elevenLabsResponse.status === 429) {
+        return new Response(
+          JSON.stringify({ error: 'Limite de requisições excedido. Tente novamente em alguns segundos.' }),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ error: `Erro na API ElevenLabs: ${elevenLabsResponse.status}` }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Convert audio to base64
+    const arrayBuffer = await elevenLabsResponse.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    
+    // Convert to base64 using built-in btoa
+    let binary = '';
+    for (let i = 0; i < uint8Array.length; i++) {
+      binary += String.fromCharCode(uint8Array[i]);
+    }
+    const audioBase64 = btoa(binary);
+
+    const duration = Date.now() - startTime;
+    const sizeKB = (arrayBuffer.byteLength / 1024).toFixed(1);
+    
+    console.log(`[test-elevenlabs-tts] Audio generated successfully in ${duration}ms (${sizeKB}KB)`);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        audioBase64,
+        format: 'mp3',
+        duration_ms: duration,
+        size_kb: parseFloat(sizeKB),
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error('[test-elevenlabs-tts] Unexpected error:', error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Erro desconhecido' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+});

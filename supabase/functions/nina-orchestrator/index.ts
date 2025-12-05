@@ -1,0 +1,704 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1/text-to-speech";
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  try {
+    console.log('[Nina] Starting orchestration...');
+
+    // Claim batch of messages to process
+    const { data: queueItems, error: claimError } = await supabase
+      .rpc('claim_nina_processing_batch', { p_limit: 10 });
+
+    if (claimError) {
+      console.error('[Nina] Error claiming batch:', claimError);
+      throw claimError;
+    }
+
+    if (!queueItems || queueItems.length === 0) {
+      console.log('[Nina] No messages to process');
+      return new Response(JSON.stringify({ processed: 0 }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    console.log(`[Nina] Processing ${queueItems.length} messages`);
+
+    // Get Nina settings
+    const { data: settings } = await supabase
+      .from('nina_settings')
+      .select('*')
+      .maybeSingle();
+
+    if (!settings) {
+      console.log('[Nina] Sistema não configurado, marcando mensagens como não processadas');
+      for (const item of queueItems) {
+        await supabase
+          .from('nina_processing_queue')
+          .update({ 
+            status: 'failed', 
+            processed_at: new Date().toISOString(),
+            error_message: 'Sistema não configurado - acesse /settings para configurar'
+          })
+          .eq('id', item.id);
+      }
+      return new Response(JSON.stringify({ 
+        processed: 0, 
+        reason: 'system_not_configured',
+        message: 'Acesse /settings para configurar o sistema' 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Check if Nina is active
+    if (!settings.is_active) {
+      console.log('[Nina] Nina is disabled, skipping all messages');
+      for (const item of queueItems) {
+        await supabase
+          .from('nina_processing_queue')
+          .update({ 
+            status: 'completed', 
+            processed_at: new Date().toISOString(),
+            error_message: 'Nina disabled - message not processed'
+          })
+          .eq('id', item.id);
+      }
+      return new Response(JSON.stringify({ processed: 0, reason: 'nina_disabled' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const systemPrompt = settings?.system_prompt_override || getDefaultSystemPrompt();
+
+    let processed = 0;
+
+    for (const item of queueItems) {
+      try {
+        await processQueueItem(supabase, lovableApiKey, item, systemPrompt, settings);
+        
+        // Mark as completed
+        await supabase
+          .from('nina_processing_queue')
+          .update({ 
+            status: 'completed', 
+            processed_at: new Date().toISOString() 
+          })
+          .eq('id', item.id);
+        
+        processed++;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`[Nina] Error processing item ${item.id}:`, error);
+        
+        // Mark as failed with retry
+        const newRetryCount = (item.retry_count || 0) + 1;
+        const shouldRetry = newRetryCount < 3;
+        
+        await supabase
+          .from('nina_processing_queue')
+          .update({ 
+            status: shouldRetry ? 'pending' : 'failed',
+            retry_count: newRetryCount,
+            error_message: errorMessage,
+            scheduled_for: shouldRetry 
+              ? new Date(Date.now() + newRetryCount * 30000).toISOString() 
+              : null
+          })
+          .eq('id', item.id);
+      }
+    }
+
+    console.log(`[Nina] Processed ${processed}/${queueItems.length} messages`);
+
+    return new Response(JSON.stringify({ processed, total: queueItems.length }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('[Nina] Orchestrator error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(JSON.stringify({ error: errorMessage }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+});
+
+// Generate audio using ElevenLabs
+async function generateAudioElevenLabs(settings: any, text: string): Promise<ArrayBuffer | null> {
+  if (!settings.elevenlabs_api_key) {
+    console.log('[Nina] ElevenLabs API key not configured');
+    return null;
+  }
+
+  try {
+    const voiceId = settings.elevenlabs_voice_id || '9BWtsMINqrJLrRacOk9x'; // Aria default
+    const model = settings.elevenlabs_model || 'eleven_turbo_v2_5';
+
+    console.log('[Nina] Generating audio with ElevenLabs, voice:', voiceId);
+
+    const response = await fetch(`${ELEVENLABS_API_URL}/${voiceId}`, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': settings.elevenlabs_api_key,
+        'Content-Type': 'application/json',
+        'Accept': 'audio/mpeg'
+      },
+      body: JSON.stringify({
+        text,
+        model_id: model,
+        voice_settings: {
+          stability: settings.elevenlabs_stability || 0.75,
+          similarity_boost: settings.elevenlabs_similarity_boost || 0.80,
+          style: settings.elevenlabs_style || 0.30,
+          use_speaker_boost: settings.elevenlabs_speaker_boost !== false
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Nina] ElevenLabs error:', response.status, errorText);
+      return null;
+    }
+
+    return await response.arrayBuffer();
+  } catch (error) {
+    console.error('[Nina] Error generating audio:', error);
+    return null;
+  }
+}
+
+// Upload audio to Supabase Storage
+async function uploadAudioToStorage(
+  supabase: any, 
+  audioBuffer: ArrayBuffer, 
+  conversationId: string
+): Promise<string | null> {
+  try {
+    const fileName = `${conversationId}/${Date.now()}.mp3`;
+    
+    const { data, error } = await supabase.storage
+      .from('audio-messages')
+      .upload(fileName, audioBuffer, {
+        contentType: 'audio/mpeg',
+        cacheControl: '3600'
+      });
+
+    if (error) {
+      console.error('[Nina] Error uploading audio:', error);
+      return null;
+    }
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('audio-messages')
+      .getPublicUrl(fileName);
+
+    console.log('[Nina] Audio uploaded:', urlData.publicUrl);
+    return urlData.publicUrl;
+  } catch (error) {
+    console.error('[Nina] Error uploading audio to storage:', error);
+    return null;
+  }
+}
+
+async function processQueueItem(
+  supabase: any,
+  lovableApiKey: string,
+  item: any,
+  systemPrompt: string,
+  settings: any
+) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  
+  console.log(`[Nina] Processing queue item: ${item.id}`);
+
+  // Get the message
+  const { data: message } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('id', item.message_id)
+    .maybeSingle();
+
+  if (!message) {
+    throw new Error('Message not found');
+  }
+
+  // Get conversation with contact info
+  const { data: conversation } = await supabase
+    .from('conversations')
+    .select('*, contact:contacts(*)')
+    .eq('id', item.conversation_id)
+    .maybeSingle();
+
+  if (!conversation) {
+    throw new Error('Conversation not found');
+  }
+
+  // Check if conversation is still in Nina mode
+  if (conversation.status !== 'nina') {
+    console.log('[Nina] Conversation no longer in Nina mode, skipping');
+    return;
+  }
+
+  // Check if auto-response is enabled
+  if (!settings?.auto_response_enabled) {
+    console.log('[Nina] Auto-response disabled, marking as processed without responding');
+    await supabase
+      .from('messages')
+      .update({ processed_by_nina: true })
+      .eq('id', message.id);
+    return;
+  }
+
+  // Get recent messages for context (last 20)
+  const { data: recentMessages } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('conversation_id', conversation.id)
+    .order('sent_at', { ascending: false })
+    .limit(20);
+
+  // Build conversation history for AI
+  const conversationHistory = (recentMessages || [])
+    .reverse()
+    .map((msg: any) => ({
+      role: msg.from_type === 'user' ? 'user' : 'assistant',
+      content: msg.content || '[media]'
+    }));
+
+  // Get client memory
+  const clientMemory = conversation.contact?.client_memory || {};
+
+  // Build enhanced system prompt with context
+  const enhancedSystemPrompt = buildEnhancedPrompt(
+    systemPrompt, 
+    conversation.contact, 
+    clientMemory
+  );
+
+  // Process template variables ({{ data_hora }}, {{ dia_semana }}, etc.)
+  const processedPrompt = processPromptTemplate(enhancedSystemPrompt, conversation.contact);
+
+  console.log('[Nina] Calling Lovable AI...');
+
+  // Get AI model settings based on user configuration
+  const aiSettings = getModelSettings(settings, conversationHistory, message, conversation.contact, clientMemory);
+
+  console.log('[Nina] Using AI settings:', aiSettings);
+
+  // Call Lovable AI Gateway
+  const aiResponse = await fetch(LOVABLE_AI_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${lovableApiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: aiSettings.model,
+      messages: [
+        { role: 'system', content: processedPrompt },
+        ...conversationHistory
+      ],
+      temperature: aiSettings.temperature,
+      max_tokens: 1000
+    })
+  });
+
+  if (!aiResponse.ok) {
+    const errorText = await aiResponse.text();
+    console.error('[Nina] AI response error:', aiResponse.status, errorText);
+    
+    if (aiResponse.status === 429) {
+      throw new Error('Rate limit exceeded, will retry later');
+    }
+    if (aiResponse.status === 402) {
+      throw new Error('Payment required - please add credits');
+    }
+    throw new Error(`AI error: ${aiResponse.status}`);
+  }
+
+  const aiData = await aiResponse.json();
+  const aiContent = aiData.choices?.[0]?.message?.content;
+
+  if (!aiContent) {
+    throw new Error('Empty AI response');
+  }
+
+  console.log('[Nina] AI response received, length:', aiContent.length);
+
+  // Calculate response time
+  const responseTime = Date.now() - new Date(message.sent_at).getTime();
+
+  // Update original message as processed
+  await supabase
+    .from('messages')
+    .update({ 
+      processed_by_nina: true,
+      nina_response_time: responseTime
+    })
+    .eq('id', message.id);
+
+  // Add response delay if configured
+  const delayMin = settings?.response_delay_min || 1000;
+  const delayMax = settings?.response_delay_max || 3000;
+  const delay = Math.random() * (delayMax - delayMin) + delayMin;
+
+  // Check if audio response should be sent
+  // - If global setting is enabled, always respond with audio
+  // - If incoming message was audio, mirror user's communication style
+  const incomingWasAudio = message.type === 'audio';
+  const shouldSendAudio = (settings?.audio_response_enabled || incomingWasAudio) && settings?.elevenlabs_api_key;
+
+  if (shouldSendAudio) {
+    // Generate audio response
+    console.log(`[Nina] Audio response enabled (global: ${settings?.audio_response_enabled}, incoming was audio: ${incomingWasAudio})`);
+    
+    // For audio, we don't break into chunks - send as single audio
+    const audioBuffer = await generateAudioElevenLabs(settings, aiContent);
+    
+    if (audioBuffer) {
+      const audioUrl = await uploadAudioToStorage(supabase, audioBuffer, conversation.id);
+      
+      if (audioUrl) {
+        // Queue audio message
+        const { error: sendQueueError } = await supabase
+          .from('send_queue')
+          .insert({
+            conversation_id: conversation.id,
+            contact_id: conversation.contact_id,
+            content: aiContent, // Keep text content for reference
+            from_type: 'nina',
+            message_type: 'audio',
+            media_url: audioUrl,
+            priority: 1,
+            scheduled_at: new Date(Date.now() + delay).toISOString(),
+            metadata: {
+              response_to_message_id: message.id,
+              ai_model: aiSettings.model,
+              audio_generated: true,
+              text_content: aiContent
+            }
+          });
+
+        if (sendQueueError) {
+          console.error('[Nina] Error queuing audio response:', sendQueueError);
+          throw sendQueueError;
+        }
+
+        console.log('[Nina] Audio response queued for sending');
+      } else {
+        console.log('[Nina] Failed to upload audio, falling back to text');
+        await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay);
+      }
+    } else {
+      console.log('[Nina] Failed to generate audio, falling back to text');
+      await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay);
+    }
+  } else {
+    // Send text response (original behavior)
+    await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay);
+  }
+
+  // Trigger whatsapp-sender to process the queue (não espera pelo resultado)
+  try {
+    const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+    console.log('[Nina] Triggering whatsapp-sender at:', senderUrl);
+    
+    fetch(senderUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`
+      },
+      body: JSON.stringify({ triggered_by: 'nina-orchestrator' })
+    }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+  } catch (err) {
+    console.error('[Nina] Failed to trigger whatsapp-sender:', err);
+  }
+
+  // Trigger analyze-conversation to update client memory (fire-and-forget)
+  fetch(`${supabaseUrl}/functions/v1/analyze-conversation`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${supabaseServiceKey}`
+    },
+    body: JSON.stringify({
+      contact_id: conversation.contact_id,
+      conversation_id: conversation.id,
+      user_message: message.content,
+      ai_response: aiContent,
+      current_memory: clientMemory
+    })
+  }).catch(err => console.error('[Nina] Error triggering analyze-conversation:', err));
+}
+
+// Helper function to queue text response with chunking
+async function queueTextResponse(
+  supabase: any,
+  conversation: any,
+  message: any,
+  aiContent: string,
+  settings: any,
+  aiSettings: any,
+  delay: number
+) {
+  // Break message into chunks if enabled
+  const messageChunks = settings?.message_breaking_enabled 
+    ? breakMessageIntoChunks(aiContent)
+    : [aiContent];
+
+  console.log(`[Nina] Sending ${messageChunks.length} text message chunk(s)`);
+
+  // Queue each chunk for sending
+  for (let i = 0; i < messageChunks.length; i++) {
+    const chunkDelay = delay + (i * 1500); // 1.5s between chunks
+    
+    const { error: sendQueueError } = await supabase
+      .from('send_queue')
+      .insert({
+        conversation_id: conversation.id,
+        contact_id: conversation.contact_id,
+        content: messageChunks[i],
+        from_type: 'nina',
+        message_type: 'text',
+        priority: 1,
+        scheduled_at: new Date(Date.now() + chunkDelay).toISOString(),
+        metadata: {
+          response_to_message_id: message.id,
+          ai_model: aiSettings.model,
+          chunk_index: i,
+          total_chunks: messageChunks.length
+        }
+      });
+
+    if (sendQueueError) {
+      console.error('[Nina] Error queuing response chunk:', sendQueueError);
+      throw sendQueueError;
+    }
+  }
+
+  console.log('[Nina] Text response(s) queued for sending');
+}
+
+function getDefaultSystemPrompt(): string {
+  return `Você é Nina, assistente virtual inteligente da empresa. Seu papel é:
+
+1. ATENDIMENTO: Responder de forma profissional, amigável e eficiente
+2. QUALIFICAÇÃO: Entender as necessidades do cliente e qualificá-lo
+3. VENDAS: Apresentar soluções e benefícios dos produtos/serviços
+4. AGENDAMENTO: Quando necessário, sugerir agendar uma reunião ou demo
+
+REGRAS:
+- Use linguagem natural e amigável (estilo WhatsApp)
+- Seja conciso (mensagens de até 3 parágrafos)
+- Faça perguntas para entender melhor o cliente
+- Nunca invente informações sobre preços ou produtos
+- Se não souber algo, ofereça transferir para um atendente humano
+
+INFORMAÇÕES DA EMPRESA:
+- Oferecemos soluções de automação e IA para empresas
+- Horário de atendimento: Segunda a Sexta, 9h às 18h
+- Para casos urgentes, um humano pode assumir a conversa`;
+}
+
+function processPromptTemplate(prompt: string, contact: any): string {
+  // Get current time in Brazil timezone
+  const now = new Date();
+  const brOptions: Intl.DateTimeFormatOptions = { timeZone: 'America/Sao_Paulo' };
+  
+  // Date/time formatters for Brazil
+  const dateFormatter = new Intl.DateTimeFormat('pt-BR', { 
+    ...brOptions, 
+    day: '2-digit', 
+    month: '2-digit', 
+    year: 'numeric' 
+  });
+  const timeFormatter = new Intl.DateTimeFormat('pt-BR', { 
+    ...brOptions, 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    second: '2-digit',
+    hour12: false
+  });
+  const weekdayFormatter = new Intl.DateTimeFormat('pt-BR', { 
+    ...brOptions, 
+    weekday: 'long' 
+  });
+  
+  // Build variable map
+  const variables: Record<string, string> = {
+    'data_hora': `${dateFormatter.format(now)} ${timeFormatter.format(now)}`,
+    'data': dateFormatter.format(now),
+    'hora': timeFormatter.format(now),
+    'dia_semana': weekdayFormatter.format(now),
+    'cliente_nome': contact?.name || contact?.call_name || 'Cliente',
+    'cliente_telefone': contact?.phone_number || '',
+  };
+  
+  // Replace {{ variable }} with actual values
+  return prompt.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, varName) => {
+    return variables[varName] || match; // Keep original if variable not found
+  });
+}
+
+function buildEnhancedPrompt(basePrompt: string, contact: any, memory: any): string {
+  let contextInfo = '';
+
+  if (contact) {
+    contextInfo += `\n\nCONTEXTO DO CLIENTE:`;
+    if (contact.name) contextInfo += `\n- Nome: ${contact.name}`;
+    if (contact.call_name) contextInfo += ` (trate por: ${contact.call_name})`;
+    if (contact.tags?.length) contextInfo += `\n- Tags: ${contact.tags.join(', ')}`;
+  }
+
+  if (memory && Object.keys(memory).length > 0) {
+    contextInfo += `\n\nMEMÓRIA DO CLIENTE:`;
+    
+    if (memory.lead_profile) {
+      const lp = memory.lead_profile;
+      if (lp.interests?.length) contextInfo += `\n- Interesses: ${lp.interests.join(', ')}`;
+      if (lp.products_discussed?.length) contextInfo += `\n- Produtos discutidos: ${lp.products_discussed.join(', ')}`;
+      if (lp.lead_stage) contextInfo += `\n- Estágio: ${lp.lead_stage}`;
+    }
+    
+    if (memory.sales_intelligence) {
+      const si = memory.sales_intelligence;
+      if (si.pain_points?.length) contextInfo += `\n- Dores: ${si.pain_points.join(', ')}`;
+      if (si.next_best_action) contextInfo += `\n- Próxima ação sugerida: ${si.next_best_action}`;
+    }
+  }
+
+  return basePrompt + contextInfo;
+}
+
+function breakMessageIntoChunks(content: string): string[] {
+  const chunks = content
+    .split(/\n\n+/)           // Divide por quebras duplas
+    .map(chunk => chunk.trim()) // Remove espaços
+    .filter(chunk => chunk.length > 0); // Remove vazios
+  
+  return chunks.length > 0 ? chunks : [content];
+}
+
+function getModelSettings(
+  settings: any,
+  conversationHistory: any[],
+  message: any,
+  contact: any,
+  clientMemory: any
+): { model: string; temperature: number } {
+  const modelMode = settings?.ai_model_mode || 'flash';
+  
+  switch (modelMode) {
+    case 'flash':
+      return { model: 'google/gemini-2.5-flash', temperature: 0.7 };
+    case 'pro':
+      return { model: 'google/gemini-2.5-pro', temperature: 0.7 };
+    case 'pro3':
+      return { model: 'google/gemini-3-pro-preview', temperature: 0.7 };
+    case 'adaptive':
+      return getAdaptiveSettings(conversationHistory, message, contact, clientMemory);
+    default:
+      return { model: 'google/gemini-2.5-flash', temperature: 0.7 };
+  }
+}
+
+function getAdaptiveSettings(
+  conversationHistory: any[], 
+  message: any, 
+  contact: any,
+  clientMemory: any
+): { model: string; temperature: number } {
+  const defaultSettings = {
+    model: 'google/gemini-2.5-flash',
+    temperature: 0.7
+  };
+
+  // Context analysis
+  const messageCount = conversationHistory.length;
+  const userContent = message.content?.toLowerCase() || '';
+  
+  // Detect conversation type
+  const isComplaintKeywords = ['problema', 'erro', 'não funciona', 'reclamação', 'péssimo', 'horrível'];
+  const isSalesKeywords = ['preço', 'valor', 'desconto', 'comprar', 'contratar', 'plano'];
+  const isTechnicalKeywords = ['como funciona', 'integração', 'api', 'configurar', 'instalar'];
+  const isUrgentKeywords = ['urgente', 'agora', 'rápido', 'emergência'];
+
+  const isComplaint = isComplaintKeywords.some(k => userContent.includes(k));
+  const isSales = isSalesKeywords.some(k => userContent.includes(k));
+  const isTechnical = isTechnicalKeywords.some(k => userContent.includes(k));
+  const isUrgent = isUrgentKeywords.some(k => userContent.includes(k));
+  
+  // Check lead stage in memory
+  const leadStage = clientMemory?.lead_profile?.lead_stage;
+  const qualificationScore = clientMemory?.lead_profile?.qualification_score || 0;
+
+  // ADAPTATION RULES:
+  
+  // 1. Complaint/Urgent → More precise, less creative
+  if (isComplaint || isUrgent) {
+    return {
+      model: 'google/gemini-2.5-pro',
+      temperature: 0.3
+    };
+  }
+
+  // 2. Sales with qualified lead → Creative but precise
+  if (isSales && qualificationScore > 50) {
+    return {
+      model: 'google/gemini-2.5-flash',
+      temperature: 0.5
+    };
+  }
+
+  // 3. Technical → Pro model, low temperature
+  if (isTechnical) {
+    return {
+      model: 'google/gemini-2.5-pro',
+      temperature: 0.4
+    };
+  }
+
+  // 4. Initial conversation (few messages) → More friendly/creative
+  if (messageCount < 5) {
+    return {
+      model: 'google/gemini-2.5-flash',
+      temperature: 0.8
+    };
+  }
+
+  // 5. Long conversation → More consistent
+  if (messageCount > 15) {
+    return {
+      model: 'google/gemini-2.5-flash',
+      temperature: 0.5
+    };
+  }
+
+  return defaultSettings;
+}
+
+// Memory analysis is now handled by analyze-conversation edge function
+// This function has been removed and replaced with a fire-and-forget call
