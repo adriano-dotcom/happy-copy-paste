@@ -67,7 +67,7 @@ export const StepFinish: React.FC<StepFinishProps> = ({
     try {
       const { data, error } = await supabase.functions.invoke('test-whatsapp-message', {
         body: {
-          phone: testPhone.replace(/\D/g, ''),
+          phone_number: testPhone.replace(/\D/g, ''),
           message: testMessage,
         },
       });
