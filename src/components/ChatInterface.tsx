@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Input } from './ui/input';
 
 const ChatInterface: React.FC = () => {
-  const { conversations, loading, sendMessage, updateStatus, markAsRead, assignConversation } = useConversations();
+  const { conversations, loading, sendMessage, updateStatus, markAsRead, assignConversation, refetch } = useConversations();
   const { sdrName, companyName } = useCompanySettings();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
@@ -192,6 +192,8 @@ const ChatInterface: React.FC = () => {
           cnpj: cleanCnpj,
           company: companyName || null
         });
+        // Refresh conversations to update UI with saved data
+        await refetch();
         toast.success(`Empresa encontrada e salva: ${companyName}`);
       }
     } catch (error) {
@@ -214,6 +216,8 @@ const ChatInterface: React.FC = () => {
         company: editCompany.trim() || null
       });
       
+      // Refresh conversations to update UI with saved data
+      await refetch();
       toast.success('Dados do contato atualizados');
       setIsEditingContact(false);
     } catch (error) {
