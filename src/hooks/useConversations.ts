@@ -167,11 +167,46 @@ export function useConversations() {
       )
       .subscribe();
 
+    // Subscribe to contact changes (for auto-updated data from AI)
+    const contactsChannel = supabase
+      .channel('contacts-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'contacts'
+        },
+        (payload) => {
+          console.log('[Realtime] Contact updated:', payload.new);
+          const updated = payload.new as any;
+          
+          setConversations(prev => {
+            return prev.map(conv => {
+              if (conv.contactId === updated.id) {
+                return {
+                  ...conv,
+                  contactEmail: updated.email || null,
+                  contactCnpj: updated.cnpj || null,
+                  contactCompany: updated.company || null,
+                  contactName: updated.name || updated.call_name || conv.contactName,
+                  notes: updated.notes || null,
+                  clientMemory: updated.client_memory || conv.clientMemory
+                };
+              }
+              return conv;
+            });
+          });
+        }
+      )
+      .subscribe();
+
     // Cleanup
     return () => {
       console.log('[Realtime] Cleaning up subscriptions');
       supabase.removeChannel(messagesChannel);
       supabase.removeChannel(conversationsChannel);
+      supabase.removeChannel(contactsChannel);
     };
   }, [fetchConversations]);
 

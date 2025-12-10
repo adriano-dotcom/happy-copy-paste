@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Search, MoreVertical, Phone, Paperclip, Send, Check, CheckCheck, 
   Smile, Play, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
-  Tag, Bot, User, Pause, Brain, Plus
+  Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil
 } from 'lucide-react';
 import { MessageDirection, MessageType, UIConversation, UIMessage, ConversationStatus, TagDefinition } from '../types';
 import { Button } from './Button';
@@ -12,6 +12,7 @@ import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { api } from '@/services/api';
 import { TagSelector } from './TagSelector';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Input } from './ui/input';
 
 const ChatInterface: React.FC = () => {
   const { conversations, loading, sendMessage, updateStatus, markAsRead, assignConversation } = useConversations();
@@ -23,6 +24,14 @@ const ChatInterface: React.FC = () => {
   const [availableTags, setAvailableTags] = useState<TagDefinition[]>([]);
   const [isTagSelectorOpen, setIsTagSelectorOpen] = useState(false);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  
+  // Editable contact fields
+  const [isEditingContact, setIsEditingContact] = useState(false);
+  const [editEmail, setEditEmail] = useState('');
+  const [editCnpj, setEditCnpj] = useState('');
+  const [editCompany, setEditCompany] = useState('');
+  const [isSavingContact, setIsSavingContact] = useState(false);
+  const [isLookingUpCnpj, setIsLookingUpCnpj] = useState(false);
   
   // Audio player state
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
@@ -77,6 +86,16 @@ const ChatInterface: React.FC = () => {
       setSelectedChatId(conversations[0].id);
     }
   }, [conversations, selectedChatId]);
+
+  // Sync editable contact fields when chat changes
+  useEffect(() => {
+    if (activeChat) {
+      setEditEmail(activeChat.contactEmail || '');
+      setEditCnpj(activeChat.contactCnpj || '');
+      setEditCompany(activeChat.contactCompany || '');
+      setIsEditingContact(false);
+    }
+  }, [activeChat?.id, activeChat?.contactEmail, activeChat?.contactCnpj, activeChat?.contactCompany]);
 
   // Mark as read when selecting conversation
   useEffect(() => {
@@ -145,6 +164,63 @@ const ChatInterface: React.FC = () => {
   const handleStatusChange = async (status: ConversationStatus) => {
     if (!activeChat) return;
     await updateStatus(activeChat.id, status);
+  };
+
+  // CNPJ Lookup via BrasilAPI
+  const handleCnpjLookup = async () => {
+    const cleanCnpj = editCnpj.replace(/\D/g, '');
+    if (cleanCnpj.length !== 14) {
+      toast.error('CNPJ inválido. Digite 14 dígitos.');
+      return;
+    }
+
+    setIsLookingUpCnpj(true);
+    try {
+      const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCnpj}`);
+      if (!response.ok) {
+        throw new Error('CNPJ não encontrado');
+      }
+      const data = await response.json();
+      
+      // Auto-fill company name
+      const companyName = data.nome_fantasia || data.razao_social || '';
+      setEditCompany(companyName);
+      toast.success(`Empresa encontrada: ${companyName}`);
+    } catch (error) {
+      console.error('CNPJ lookup error:', error);
+      toast.error('CNPJ não encontrado na Receita Federal');
+    } finally {
+      setIsLookingUpCnpj(false);
+    }
+  };
+
+  // Save contact data
+  const handleSaveContactData = async () => {
+    if (!activeChat) return;
+    
+    setIsSavingContact(true);
+    try {
+      await api.updateContact(activeChat.contactId, {
+        email: editEmail.trim() || null,
+        cnpj: editCnpj.replace(/\D/g, '') || null,
+        company: editCompany.trim() || null
+      });
+      
+      toast.success('Dados do contato atualizados');
+      setIsEditingContact(false);
+    } catch (error) {
+      console.error('Error saving contact:', error);
+      toast.error('Erro ao salvar dados');
+    } finally {
+      setIsSavingContact(false);
+    }
+  };
+
+  // Format CNPJ for display
+  const formatCnpj = (cnpj: string) => {
+    const clean = cnpj.replace(/\D/g, '');
+    if (clean.length !== 14) return cnpj;
+    return clean.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   };
 
   const filteredConversations = conversations.filter(chat => {
@@ -573,28 +649,123 @@ const ChatInterface: React.FC = () => {
 
                 {/* Details List */}
                 <div className="space-y-4">
-                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Dados de Contato</h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Dados de Contato</h4>
+                    <button 
+                      onClick={() => setIsEditingContact(!isEditingContact)}
+                      className="text-cyan-500 hover:text-cyan-400 transition-colors p-1"
+                      title={isEditingContact ? "Cancelar edição" : "Editar dados"}
+                    >
+                      {isEditingContact ? <X className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
+                    </button>
+                  </div>
                   
+                  {/* Phone (always read-only) */}
                   <div className="flex items-center gap-3 text-sm">
                     <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 text-slate-400">
                       <Phone className="w-4 h-4" />
                     </div>
-                    <div className="flex flex-col">
+                    <div className="flex flex-col flex-1">
                       <span className="text-xs text-slate-500">Telefone</span>
                       <span className="text-slate-200 font-medium">{activeChat.contactPhone}</span>
                     </div>
                   </div>
 
-                  {activeChat.contactEmail && (
-                    <div className="flex items-center gap-3 text-sm">
-                      <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 text-slate-400">
-                        <Mail className="w-4 h-4" />
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-xs text-slate-500">Email</span>
-                        <span className="text-slate-200 font-medium">{activeChat.contactEmail}</span>
-                      </div>
+                  {/* Email */}
+                  <div className="flex items-center gap-3 text-sm">
+                    <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 text-slate-400">
+                      <Mail className="w-4 h-4" />
                     </div>
+                    <div className="flex flex-col flex-1">
+                      <span className="text-xs text-slate-500">Email</span>
+                      {isEditingContact ? (
+                        <Input
+                          type="email"
+                          value={editEmail}
+                          onChange={(e) => setEditEmail(e.target.value)}
+                          placeholder="email@empresa.com"
+                          className="h-8 text-sm bg-slate-950/50 border-slate-700"
+                        />
+                      ) : (
+                        <span className="text-slate-200 font-medium">
+                          {activeChat.contactEmail || <span className="text-slate-500 italic">Não informado</span>}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* CNPJ */}
+                  <div className="flex items-center gap-3 text-sm">
+                    <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 text-slate-400">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div className="flex flex-col flex-1">
+                      <span className="text-xs text-slate-500">CNPJ</span>
+                      {isEditingContact ? (
+                        <div className="flex gap-2">
+                          <Input
+                            type="text"
+                            value={editCnpj}
+                            onChange={(e) => setEditCnpj(e.target.value)}
+                            placeholder="00.000.000/0000-00"
+                            className="h-8 text-sm bg-slate-950/50 border-slate-700 flex-1"
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handleCnpjLookup}
+                            disabled={isLookingUpCnpj || editCnpj.replace(/\D/g, '').length < 14}
+                            className="h-8 px-2"
+                            title="Buscar empresa pelo CNPJ"
+                          >
+                            {isLookingUpCnpj ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-slate-200 font-medium">
+                          {activeChat.contactCnpj ? formatCnpj(activeChat.contactCnpj) : <span className="text-slate-500 italic">Não informado</span>}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Company */}
+                  <div className="flex items-center gap-3 text-sm">
+                    <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 text-slate-400">
+                      <Building2 className="w-4 h-4" />
+                    </div>
+                    <div className="flex flex-col flex-1">
+                      <span className="text-xs text-slate-500">Empresa</span>
+                      {isEditingContact ? (
+                        <Input
+                          type="text"
+                          value={editCompany}
+                          onChange={(e) => setEditCompany(e.target.value)}
+                          placeholder="Nome da empresa"
+                          className="h-8 text-sm bg-slate-950/50 border-slate-700"
+                        />
+                      ) : (
+                        <span className="text-slate-200 font-medium">
+                          {activeChat.contactCompany || <span className="text-slate-500 italic">Não informado</span>}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Save Button */}
+                  {isEditingContact && (
+                    <Button
+                      onClick={handleSaveContactData}
+                      disabled={isSavingContact}
+                      className="w-full bg-cyan-600 hover:bg-cyan-700"
+                    >
+                      {isSavingContact ? (
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      ) : (
+                        <Save className="w-4 h-4 mr-2" />
+                      )}
+                      Salvar Alterações
+                    </Button>
                   )}
                 </div>
 

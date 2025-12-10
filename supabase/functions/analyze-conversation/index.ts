@@ -112,7 +112,7 @@ ${stagesCriteria}
 ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
     `.trim();
 
-    // Build tools array - always include memory insights, conditionally include stage determination
+    // Build tools array - always include memory insights and contact data extraction, conditionally include stage determination
     const tools: any[] = [
       {
         type: "function",
@@ -155,6 +155,35 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
               }
             },
             required: ["interests", "pain_points", "qualification_score", "next_best_action", "budget_indication", "decision_timeline"],
+            additionalProperties: false
+          }
+        }
+      },
+      {
+        type: "function",
+        function: {
+          name: "extract_contact_data",
+          description: "Extrair dados de contato mencionados pelo cliente na conversa (CNPJ, email, nome da empresa). Use apenas se o cliente fornecer explicitamente esses dados.",
+          parameters: {
+            type: "object",
+            properties: {
+              cnpj: {
+                type: "string",
+                description: "CNPJ mencionado pelo cliente (qualquer formato, ex: 12.345.678/0001-90 ou 12345678000190)"
+              },
+              email: {
+                type: "string",
+                description: "Email mencionado pelo cliente"
+              },
+              name: {
+                type: "string",
+                description: "Nome completo do cliente se mencionado"
+              },
+              company: {
+                type: "string",
+                description: "Nome da empresa se mencionado"
+              }
+            },
             additionalProperties: false
           }
         }
@@ -233,17 +262,51 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
     // Extract insights from tool calls
     let insights = null;
     let stageResult = null;
+    let contactData = null;
 
     for (const toolCall of toolCalls) {
       if (toolCall.function?.name === 'update_memory_insights') {
         insights = JSON.parse(toolCall.function.arguments);
       } else if (toolCall.function?.name === 'determine_deal_stage') {
         stageResult = JSON.parse(toolCall.function.arguments);
+      } else if (toolCall.function?.name === 'extract_contact_data') {
+        contactData = JSON.parse(toolCall.function.arguments);
       }
     }
 
     console.log('[Analyze] Insights extracted:', insights);
     console.log('[Analyze] Stage suggestion:', stageResult);
+    console.log('[Analyze] Contact data extracted:', contactData);
+
+    // Auto-update contact data if extracted
+    if (contactData && (contactData.cnpj || contactData.email || contactData.name || contactData.company)) {
+      const updateData: Record<string, any> = { updated_at: new Date().toISOString() };
+      
+      if (contactData.cnpj) {
+        // Normalize CNPJ (remove formatting)
+        updateData.cnpj = contactData.cnpj.replace(/\D/g, '');
+      }
+      if (contactData.email) {
+        updateData.email = contactData.email.toLowerCase().trim();
+      }
+      if (contactData.name) {
+        updateData.name = contactData.name.trim();
+      }
+      if (contactData.company) {
+        updateData.company = contactData.company.trim();
+      }
+
+      const { error: contactUpdateError } = await supabase
+        .from('contacts')
+        .update(updateData)
+        .eq('id', contact_id);
+
+      if (contactUpdateError) {
+        console.error('[Analyze] Error updating contact data:', contactUpdateError);
+      } else {
+        console.log('[Analyze] ✅ Contact data auto-updated:', updateData);
+      }
+    }
 
     // Update client memory with insights
     if (insights) {
