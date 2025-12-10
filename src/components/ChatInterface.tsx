@@ -55,12 +55,24 @@ const ChatInterface: React.FC = () => {
 
   // Auto-select first conversation or from URL param
   useEffect(() => {
-    // Check for conversation param in URL
     const urlParams = new URLSearchParams(window.location.search);
     const conversationParam = urlParams.get('conversation');
+    const phoneParam = urlParams.get('phone');
     
     if (conversationParam && conversations.some(c => c.id === conversationParam)) {
       setSelectedChatId(conversationParam);
+    } else if (phoneParam) {
+      // Find conversation by phone number
+      const cleanPhone = phoneParam.replace(/\D/g, '');
+      const matchingConv = conversations.find(c => 
+        c.contactPhone.replace(/\D/g, '').includes(cleanPhone) ||
+        cleanPhone.includes(c.contactPhone.replace(/\D/g, ''))
+      );
+      if (matchingConv) {
+        setSelectedChatId(matchingConv.id);
+        // Clear URL param after selection
+        window.history.replaceState({}, '', window.location.pathname);
+      }
     } else if (conversations.length > 0 && !selectedChatId) {
       setSelectedChatId(conversations[0].id);
     }

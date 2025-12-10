@@ -27,6 +27,7 @@ interface ContactDetailsDrawerProps {
   onOpenChange: (open: boolean) => void;
   contact: ContactData | null;
   onEdit?: () => void;
+  onConverse?: () => void;
 }
 
 const formatCNPJ = (cnpj: string | undefined) => {
@@ -51,7 +52,7 @@ const formatPhone = (phone: string | undefined) => {
   return phone;
 };
 
-const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpenChange, contact, onEdit }) => {
+const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpenChange, contact, onEdit, onConverse }) => {
   if (!contact) return null;
 
   const getStatusBadge = (status: string | undefined) => {
@@ -88,7 +89,7 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
               <Edit className="w-4 h-4 mr-2" />
               Editar
             </Button>
-            <Button variant="outline" className="flex-1 border-slate-700 hover:bg-slate-800">
+            <Button onClick={onConverse} variant="outline" className="flex-1 border-slate-700 hover:bg-slate-800">
               <MessageSquare className="w-4 h-4 mr-2" />
               Conversar
             </Button>

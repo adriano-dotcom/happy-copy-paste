@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit } from 'lucide-react';
 import { Button } from './ui/button';
 import { api } from '../services/api';
@@ -22,6 +23,7 @@ interface ExtendedContact extends Contact {
 }
 
 const Contacts: React.FC = () => {
+  const navigate = useNavigate();
   const [contacts, setContacts] = useState<ExtendedContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -30,6 +32,11 @@ const Contacts: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDetailsDrawerOpen, setIsDetailsDrawerOpen] = useState(false);
   const [selectedContact, setSelectedContact] = useState<ExtendedContact | null>(null);
+
+  const handleConverse = (phone: string) => {
+    const cleanPhone = phone.replace(/\D/g, '');
+    navigate(`/chat?phone=${cleanPhone}`);
+  };
 
   const handleViewDetails = (contact: ExtendedContact) => {
     setSelectedContact(contact);
@@ -221,7 +228,13 @@ const Contacts: React.FC = () => {
                         >
                           <Edit className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="default" className="h-8 w-8 p-0 rounded-lg shadow-none bg-cyan-600 hover:bg-cyan-700" title="Iniciar Conversa">
+                        <Button 
+                          size="sm" 
+                          variant="default" 
+                          className="h-8 w-8 p-0 rounded-lg shadow-none bg-cyan-600 hover:bg-cyan-700" 
+                          title="Iniciar Conversa"
+                          onClick={() => handleConverse(contact.phone)}
+                        >
                           <MessageSquare className="w-4 h-4" />
                         </Button>
                       </div>
@@ -256,6 +269,7 @@ const Contacts: React.FC = () => {
         onOpenChange={setIsDetailsDrawerOpen}
         contact={selectedContact}
         onEdit={handleEditFromDrawer}
+        onConverse={() => selectedContact && handleConverse(selectedContact.phone)}
       />
     </div>
   );
