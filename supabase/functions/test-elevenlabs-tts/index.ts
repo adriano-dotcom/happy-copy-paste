@@ -92,6 +92,17 @@ serve(async (req) => {
       console.error('[test-elevenlabs-tts] ElevenLabs API error:', elevenLabsResponse.status, errorText);
       
       if (elevenLabsResponse.status === 401) {
+        // Parse the error to get more details
+        try {
+          const errorJson = JSON.parse(errorText);
+          if (errorJson?.detail?.status === 'detected_unusual_activity') {
+            return new Response(
+              JSON.stringify({ error: 'ElevenLabs bloqueou o Free Tier para esta conta. É necessário um plano pago para continuar.' }),
+              { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+        } catch {}
+        
         return new Response(
           JSON.stringify({ error: 'API Key da ElevenLabs inválida' }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
