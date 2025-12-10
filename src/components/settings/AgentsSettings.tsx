@@ -3,9 +3,17 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { 
   Bot, Plus, Trash2, Edit2, Check, X, Loader2, 
-  MessageSquare, Sparkles, Star, Users
+  MessageSquare, Sparkles, Star, Users, FlaskConical, ArrowRight
 } from 'lucide-react';
 import { Button } from '../Button';
+
+interface TestResult {
+  success: boolean;
+  detectedAgent: string | null;
+  previousAgent: string | null;
+  handoffOccurred: boolean;
+  message: string;
+}
 
 interface Agent {
   id: string;
@@ -38,6 +46,8 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
   const [isCreating, setIsCreating] = useState(false);
   const [newKeyword, setNewKeyword] = useState('');
   const [newQuestion, setNewQuestion] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   useImperativeHandle(ref, () => ({
     save: handleSave,
@@ -251,6 +261,61 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
     });
   };
 
+  const testHandoff = async () => {
+    setTesting(true);
+    setTestResult(null);
+    
+    try {
+      // Buscar agentes ativos para simular detecção
+      const activeAgents = agents.filter(a => a.is_active);
+      const testMessage = 'Olá, quero saber sobre plano de saúde';
+      const messageLower = testMessage.toLowerCase();
+      
+      // Encontrar agente padrão
+      const defaultAgent = activeAgents.find(a => a.is_default);
+      
+      // Simular detecção de agente por keywords
+      let detectedAgent = null;
+      for (const agent of activeAgents) {
+        if (!agent.is_default && agent.detection_keywords?.length > 0) {
+          const matchedKeyword = agent.detection_keywords.find(kw => 
+            messageLower.includes(kw.toLowerCase())
+          );
+          if (matchedKeyword) {
+            detectedAgent = agent;
+            break;
+          }
+        }
+      }
+      
+      const handoffOccurred = detectedAgent !== null && detectedAgent.id !== defaultAgent?.id;
+      
+      setTestResult({
+        success: true,
+        detectedAgent: detectedAgent?.name || defaultAgent?.name || 'Nenhum',
+        previousAgent: defaultAgent?.name || 'Nenhum',
+        handoffOccurred,
+        message: handoffOccurred 
+          ? `Handoff detectado! Mensagem "${testMessage}" acionou transferência de ${defaultAgent?.name || 'padrão'} → ${detectedAgent?.name}`
+          : `Sem handoff. Mensagem seria tratada pelo agente padrão: ${defaultAgent?.name || 'Nenhum configurado'}`
+      });
+      
+      toast.success(handoffOccurred ? 'Handoff detectado com sucesso!' : 'Teste concluído - sem handoff');
+    } catch (error) {
+      console.error('Erro no teste de handoff:', error);
+      setTestResult({
+        success: false,
+        detectedAgent: null,
+        previousAgent: null,
+        handoffOccurred: false,
+        message: `Erro ao testar: ${error instanceof Error ? error.message : 'Erro desconhecido'}`
+      });
+      toast.error('Erro ao testar handoff');
+    } finally {
+      setTesting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -447,10 +512,58 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
             Configure agentes especializados para diferentes tipos de atendimento.
           </p>
         </div>
-        <Button variant="primary" size="sm" onClick={startCreating}>
-          <Plus className="w-4 h-4 mr-1" /> Novo Agente
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={testHandoff}
+            disabled={testing || agents.length === 0}
+            className="gap-1"
+          >
+            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FlaskConical className="w-4 h-4" />}
+            Testar Handoff
+          </Button>
+          <Button variant="primary" size="sm" onClick={startCreating}>
+            <Plus className="w-4 h-4 mr-1" /> Novo Agente
+          </Button>
+        </div>
       </div>
+
+      {/* Test Result */}
+      {testResult && (
+        <div className={`p-4 rounded-lg border ${
+          testResult.success 
+            ? testResult.handoffOccurred 
+              ? 'bg-green-500/10 border-green-500/30' 
+              : 'bg-slate-800/50 border-slate-700/50'
+            : 'bg-red-500/10 border-red-500/30'
+        }`}>
+          <div className="flex items-center gap-2 mb-2">
+            <FlaskConical className={`w-4 h-4 ${
+              testResult.success 
+                ? testResult.handoffOccurred ? 'text-green-400' : 'text-slate-400'
+                : 'text-red-400'
+            }`} />
+            <span className="text-sm font-medium text-white">Resultado do Teste</span>
+          </div>
+          <p className="text-sm text-slate-300 mb-3">{testResult.message}</p>
+          {testResult.success && (
+            <div className="flex items-center gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500">Mensagem:</span>
+                <code className="px-2 py-1 bg-slate-800 rounded text-cyan-400">"plano de saúde"</code>
+              </div>
+              {testResult.handoffOccurred && (
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-1 bg-amber-500/20 text-amber-400 rounded">{testResult.previousAgent}</span>
+                  <ArrowRight className="w-4 h-4 text-slate-500" />
+                  <span className="px-2 py-1 bg-green-500/20 text-green-400 rounded">{testResult.detectedAgent}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-4">
         {agents.map((agent) => (
