@@ -174,16 +174,7 @@ function detectAgent(
 ): { agent: Agent | null; isHandoff: boolean } {
   const content = messageContent.toLowerCase();
   
-  // If conversation already has an assigned agent, continue with it
-  if (conversation.current_agent_id) {
-    const currentAgent = agents.find(a => a.id === conversation.current_agent_id);
-    if (currentAgent) {
-      console.log(`[Nina] Continuing with assigned agent: ${currentAgent.name}`);
-      return { agent: currentAgent, isHandoff: false };
-    }
-  }
-  
-  // Check keywords for each non-default agent
+  // SEMPRE verificar keywords primeiro para permitir handoffs pós-triagem
   for (const agent of agents) {
     if (agent.is_default) continue;
     
@@ -195,6 +186,15 @@ function detectAgent(
       console.log(`[Nina] Detected keyword match for agent: ${agent.name}`);
       const isNewHandoff = conversation.current_agent_id !== agent.id;
       return { agent, isHandoff: isNewHandoff };
+    }
+  }
+  
+  // Se não houver match de keyword, continuar com agente atual
+  if (conversation.current_agent_id) {
+    const currentAgent = agents.find(a => a.id === conversation.current_agent_id);
+    if (currentAgent) {
+      console.log(`[Nina] Continuing with assigned agent: ${currentAgent.name}`);
+      return { agent: currentAgent, isHandoff: false };
     }
   }
   
