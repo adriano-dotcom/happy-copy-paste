@@ -184,7 +184,53 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
 
   const recipient = contact.whatsapp_id || contact.phone_number;
 
-  // Build WhatsApp API payload
+  // ========================================
+  // STEP 1: CREATE MESSAGE RECORD FIRST (before sending)
+  // This ensures messages appear in UI even if WhatsApp fails
+  // ========================================
+  let messageId = queueItem.message_id;
+
+  if (!messageId) {
+    // Create message with 'processing' status BEFORE sending
+    console.log('[Sender] Creating message record BEFORE sending...');
+    const { data: newMsg, error: createError } = await supabase
+      .from('messages')
+      .insert({
+        conversation_id: queueItem.conversation_id,
+        content: queueItem.content,
+        type: queueItem.message_type,
+        from_type: queueItem.from_type,
+        status: 'processing', // Initial status - will update after send
+        media_url: queueItem.media_url || null,
+        metadata: queueItem.metadata || {}
+      })
+      .select('id')
+      .single();
+
+    if (createError) {
+      console.error('[Sender] Error creating message record:', createError);
+      // Continue anyway - we still want to try sending
+    } else if (newMsg) {
+      messageId = newMsg.id;
+      console.log('[Sender] Created message record:', messageId);
+      
+      // Update send_queue with the message_id for tracking
+      await supabase
+        .from('send_queue')
+        .update({ message_id: messageId })
+        .eq('id', queueItem.id);
+    }
+  }
+
+  // Update conversation last_message_at immediately
+  await supabase
+    .from('conversations')
+    .update({ last_message_at: new Date().toISOString() })
+    .eq('id', queueItem.conversation_id);
+
+  // ========================================
+  // STEP 2: BUILD WHATSAPP PAYLOAD
+  // ========================================
   let payload: any = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -225,72 +271,87 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
 
   console.log('[Sender] WhatsApp API payload:', JSON.stringify(payload, null, 2));
 
-  // Send via WhatsApp Cloud API
-  const response = await fetch(
-    `${WHATSAPP_API_URL}/${settings.whatsapp_phone_number_id}/messages`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${settings.whatsapp_access_token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
+  // ========================================
+  // STEP 3: SEND VIA WHATSAPP API
+  // ========================================
+  try {
+    const response = await fetch(
+      `${WHATSAPP_API_URL}/${settings.whatsapp_phone_number_id}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${settings.whatsapp_access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    const responseData = await response.json();
+
+    if (!response.ok) {
+      console.error('[Sender] WhatsApp API error:', responseData);
+      
+      // Update message status to 'failed' if we have a messageId
+      if (messageId) {
+        await supabase
+          .from('messages')
+          .update({
+            status: 'failed',
+            metadata: {
+              ...(queueItem.metadata || {}),
+              whatsapp_error: responseData.error?.message || 'WhatsApp API error'
+            }
+          })
+          .eq('id', messageId);
+        console.log('[Sender] Updated message status to failed:', messageId);
+      }
+      
+      throw new Error(responseData.error?.message || 'WhatsApp API error');
     }
-  );
 
-  const responseData = await response.json();
+    const whatsappMessageId = responseData.messages?.[0]?.id;
+    console.log('[Sender] Message sent successfully, WA ID:', whatsappMessageId);
 
-  if (!response.ok) {
-    console.error('[Sender] WhatsApp API error:', responseData);
-    throw new Error(responseData.error?.message || 'WhatsApp API error');
+    // ========================================
+    // STEP 4: UPDATE MESSAGE TO 'SENT' STATUS
+    // ========================================
+    if (messageId) {
+      const { error: updateError } = await supabase
+        .from('messages')
+        .update({
+          whatsapp_message_id: whatsappMessageId,
+          status: 'sent',
+          sent_at: new Date().toISOString()
+        })
+        .eq('id', messageId);
+
+      if (updateError) {
+        console.error('[Sender] Error updating message to sent:', updateError);
+      } else {
+        console.log('[Sender] Updated message status to sent:', messageId);
+      }
+    }
+
+  } catch (error) {
+    // If WhatsApp send failed but we already created the message,
+    // ensure it's marked as failed
+    if (messageId) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      await supabase
+        .from('messages')
+        .update({
+          status: 'failed',
+          metadata: {
+            ...(queueItem.metadata || {}),
+            whatsapp_error: errorMessage
+          }
+        })
+        .eq('id', messageId);
+      console.log('[Sender] Marked message as failed due to error:', messageId);
+    }
+    
+    // Re-throw to trigger retry logic in main loop
+    throw error;
   }
-
-  const whatsappMessageId = responseData.messages?.[0]?.id;
-  console.log('[Sender] Message sent, WA ID:', whatsappMessageId);
-
-  // Update or create message record in database
-  if (queueItem.message_id) {
-    // UPDATE existing message (for human messages)
-    console.log('[Sender] Updating existing message:', queueItem.message_id);
-    const { error: msgError } = await supabase
-      .from('messages')
-      .update({
-        whatsapp_message_id: whatsappMessageId,
-        status: 'sent',
-        sent_at: new Date().toISOString()
-      })
-      .eq('id', queueItem.message_id);
-
-    if (msgError) {
-      console.error('[Sender] Error updating message record:', msgError);
-      // Don't throw - message was sent successfully
-    }
-  } else {
-    // INSERT new message (for Nina messages)
-    console.log('[Sender] Creating new message record');
-    const { error: msgError } = await supabase
-      .from('messages')
-      .insert({
-        conversation_id: queueItem.conversation_id,
-        whatsapp_message_id: whatsappMessageId,
-        content: queueItem.content,
-        type: queueItem.message_type,
-        from_type: queueItem.from_type,
-        status: 'sent',
-        media_url: queueItem.media_url || null,
-        sent_at: new Date().toISOString(),
-        metadata: queueItem.metadata || {}
-      });
-
-    if (msgError) {
-      console.error('[Sender] Error creating message record:', msgError);
-      // Don't throw - message was sent successfully
-    }
-  }
-
-  // Update conversation last_message_at
-  await supabase
-    .from('conversations')
-    .update({ last_message_at: new Date().toISOString() })
-    .eq('id', queueItem.conversation_id);
 }
