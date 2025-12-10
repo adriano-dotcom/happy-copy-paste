@@ -1,5 +1,5 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
-import { Save, MessageSquare, Mic, Eye, EyeOff, Copy, Check, Loader2, Send, ChevronDown, Volume2, Download, Upload, FileAudio } from 'lucide-react';
+import { Save, MessageSquare, Mic, Eye, EyeOff, Copy, Check, Loader2, Send, ChevronDown, Volume2, Download, Upload, FileAudio, Mail } from 'lucide-react';
 import { Button } from '../Button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -93,6 +93,11 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
     queued_for_nina: boolean;
   } | null>(null);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Email test states
+  const [emailTestOpen, setEmailTestOpen] = useState(false);
+  const [emailTestTo, setEmailTestTo] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
   
   const [settings, setSettings] = useState<NinaSettings>({
     whatsapp_access_token: null,
@@ -423,6 +428,64 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
       
       setAudioFile(file);
       setAudioSimulateResult(null);
+    }
+  };
+
+  const handleTestEmail = async () => {
+    if (!emailTestTo.trim()) {
+      toast.error('Insira um email de destino');
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailTestTo)) {
+      toast.error('Formato de email inválido');
+      return;
+    }
+
+    setEmailSending(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('send-email', {
+        body: {
+          to: emailTestTo,
+          subject: `🧪 Teste de Email - ${companyName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <h1 style="color: #0891b2; margin-bottom: 20px;">✅ Email de Teste</h1>
+              <p style="color: #374151; font-size: 16px; line-height: 1.6;">
+                Este é um email de teste enviado pelo sistema <strong>${companyName}</strong>.
+              </p>
+              <p style="color: #374151; font-size: 16px; line-height: 1.6;">
+                Se você recebeu esta mensagem, a integração de email está funcionando corretamente! 🎉
+              </p>
+              <div style="margin-top: 30px; padding: 15px; background-color: #f3f4f6; border-radius: 8px;">
+                <p style="color: #6b7280; font-size: 14px; margin: 0;">
+                  Enviado em: ${new Date().toLocaleString('pt-BR')}
+                </p>
+              </div>
+            </div>
+          `
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        toast.success('Email de teste enviado com sucesso! ✅', {
+          description: `Verifique a caixa de entrada de ${emailTestTo}`
+        });
+      } else {
+        throw new Error(data?.error || 'Erro desconhecido');
+      }
+    } catch (error) {
+      console.error('Error sending test email:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao enviar email de teste';
+      toast.error('Falha ao enviar email', {
+        description: errorMessage
+      });
+    } finally {
+      setEmailSending(false);
     }
   };
 
@@ -1010,6 +1073,67 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
                 </div>
               </div>
             )}
+          </Collapsible.Content>
+        </div>
+      </Collapsible.Root>
+
+      {/* Email Test Section */}
+      <Collapsible.Root open={emailTestOpen} onOpenChange={setEmailTestOpen}>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+          <Collapsible.Trigger asChild>
+            <button className="flex items-center justify-between w-full p-4 hover:bg-slate-800/50 transition-colors">
+              <div className="flex items-center gap-3">
+                <Mail className="w-5 h-5 text-rose-400" />
+                <div className="text-left">
+                  <h3 className="font-semibold text-white">Testar Envio de Email</h3>
+                  <p className="text-xs text-slate-400">Verificar integração com Resend</p>
+                </div>
+              </div>
+              <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${emailTestOpen ? 'rotate-180' : ''}`} />
+            </button>
+          </Collapsible.Trigger>
+
+          <Collapsible.Content className="border-t border-slate-800">
+            <div className="p-4 space-y-4">
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg">
+                <p className="text-sm text-rose-300">
+                  <strong>Nota:</strong> Usando o domínio de teste do Resend (onboarding@resend.dev), 
+                  emails só podem ser enviados para o email cadastrado na conta Resend. 
+                  Para enviar para qualquer email, configure um domínio verificado.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-slate-400 mb-1.5 block">Email de Destino *</label>
+                <input
+                  type="email"
+                  value={emailTestTo}
+                  onChange={(e) => setEmailTestTo(e.target.value)}
+                  placeholder="seu@email.com"
+                  className="h-10 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-rose-500/50"
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleTestEmail}
+                  disabled={emailSending || !emailTestTo.trim()}
+                  className="bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-500/20"
+                >
+                  {emailSending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Enviando...
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-4 h-4 mr-2" />
+                      Enviar Email de Teste
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </Collapsible.Content>
         </div>
       </Collapsible.Root>
