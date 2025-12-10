@@ -13,6 +13,8 @@ interface TestResult {
   previousAgent: string | null;
   handoffOccurred: boolean;
   message: string;
+  matchedKeyword: string | null;
+  testedMessage: string;
 }
 
 interface Agent {
@@ -48,6 +50,7 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
   const [newQuestion, setNewQuestion] = useState('');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [testMessage, setTestMessage] = useState('Olá, quero saber sobre plano de saúde');
 
   useImperativeHandle(ref, () => ({
     save: handleSave,
@@ -266,23 +269,22 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
     setTestResult(null);
     
     try {
-      // Buscar agentes ativos para simular detecção
       const activeAgents = agents.filter(a => a.is_active);
-      const testMessage = 'Olá, quero saber sobre plano de saúde';
       const messageLower = testMessage.toLowerCase();
       
-      // Encontrar agente padrão
       const defaultAgent = activeAgents.find(a => a.is_default);
       
-      // Simular detecção de agente por keywords
-      let detectedAgent = null;
+      let detectedAgent: Agent | null = null;
+      let matchedKeyword: string | null = null;
+      
       for (const agent of activeAgents) {
         if (!agent.is_default && agent.detection_keywords?.length > 0) {
-          const matchedKeyword = agent.detection_keywords.find(kw => 
+          const foundKeyword = agent.detection_keywords.find(kw => 
             messageLower.includes(kw.toLowerCase())
           );
-          if (matchedKeyword) {
+          if (foundKeyword) {
             detectedAgent = agent;
+            matchedKeyword = foundKeyword;
             break;
           }
         }
@@ -295,12 +297,14 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
         detectedAgent: detectedAgent?.name || defaultAgent?.name || 'Nenhum',
         previousAgent: defaultAgent?.name || 'Nenhum',
         handoffOccurred,
+        matchedKeyword,
+        testedMessage: testMessage,
         message: handoffOccurred 
-          ? `Handoff detectado! Mensagem "${testMessage}" acionou transferência de ${defaultAgent?.name || 'padrão'} → ${detectedAgent?.name}`
+          ? `Handoff detectado! Transferência de ${defaultAgent?.name || 'padrão'} → ${detectedAgent?.name}`
           : `Sem handoff. Mensagem seria tratada pelo agente padrão: ${defaultAgent?.name || 'Nenhum configurado'}`
       });
       
-      toast.success(handoffOccurred ? 'Handoff detectado com sucesso!' : 'Teste concluído - sem handoff');
+      toast.success(handoffOccurred ? 'Handoff detectado!' : 'Teste concluído - sem handoff');
     } catch (error) {
       console.error('Erro no teste de handoff:', error);
       setTestResult({
@@ -308,6 +312,8 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
         detectedAgent: null,
         previousAgent: null,
         handoffOccurred: false,
+        matchedKeyword: null,
+        testedMessage: testMessage,
         message: `Erro ao testar: ${error instanceof Error ? error.message : 'Erro desconhecido'}`
       });
       toast.error('Erro ao testar handoff');
@@ -512,21 +518,41 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
             Configure agentes especializados para diferentes tipos de atendimento.
           </p>
         </div>
+        <Button variant="primary" size="sm" onClick={startCreating}>
+          <Plus className="w-4 h-4 mr-1" /> Novo Agente
+        </Button>
+      </div>
+
+      {/* Seção de Teste de Handoff */}
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <FlaskConical className="w-4 h-4 text-cyan-400" />
+          <span className="text-sm font-medium text-white">Testar Detecção de Agente</span>
+        </div>
+        
         <div className="flex gap-2">
+          <input
+            type="text"
+            value={testMessage}
+            onChange={(e) => setTestMessage(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !testing && testMessage.trim() && testHandoff()}
+            className="flex-1 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500"
+            placeholder="Digite uma mensagem para testar..."
+          />
           <Button 
-            variant="ghost" 
+            variant="primary" 
             size="sm" 
             onClick={testHandoff}
-            disabled={testing || agents.length === 0}
-            className="gap-1"
+            disabled={testing || agents.length === 0 || !testMessage.trim()}
           >
             {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FlaskConical className="w-4 h-4" />}
-            Testar Handoff
-          </Button>
-          <Button variant="primary" size="sm" onClick={startCreating}>
-            <Plus className="w-4 h-4 mr-1" /> Novo Agente
+            Testar
           </Button>
         </div>
+        
+        <p className="text-xs text-slate-500 mt-2">
+          Exemplos: "plano de saúde", "seguro de carga", "rctr-c", "convênio médico"
+        </p>
       </div>
 
       {/* Test Result */}
@@ -548,11 +574,17 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
           </div>
           <p className="text-sm text-slate-300 mb-3">{testResult.message}</p>
           {testResult.success && (
-            <div className="flex items-center gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-3 text-xs">
               <div className="flex items-center gap-2">
                 <span className="text-slate-500">Mensagem:</span>
-                <code className="px-2 py-1 bg-slate-800 rounded text-cyan-400">"plano de saúde"</code>
+                <code className="px-2 py-1 bg-slate-800 rounded text-cyan-400 max-w-xs truncate">"{testResult.testedMessage}"</code>
               </div>
+              {testResult.matchedKeyword && (
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500">Keyword:</span>
+                  <code className="px-2 py-1 bg-cyan-500/20 rounded text-cyan-400">{testResult.matchedKeyword}</code>
+                </div>
+              )}
               {testResult.handoffOccurred && (
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-1 bg-amber-500/20 text-amber-400 rounded">{testResult.previousAgent}</span>
