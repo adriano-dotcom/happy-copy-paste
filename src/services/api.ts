@@ -764,11 +764,12 @@ export const api = {
     }));
   },
 
-  createPipelineStage: async (stage: { title: string; color: string; isAiManaged?: boolean; aiTriggerCriteria?: string }): Promise<any> => {
-    // Get the highest position
+  createPipelineStage: async (stage: { title: string; color: string; pipelineId: string; isAiManaged?: boolean; aiTriggerCriteria?: string }): Promise<any> => {
+    // Get the highest position within this pipeline
     const { data: stages } = await supabase
       .from('pipeline_stages')
       .select('position')
+      .eq('pipeline_id', stage.pipelineId)
       .order('position', { ascending: false })
       .limit(1);
 
@@ -780,6 +781,7 @@ export const api = {
         title: stage.title,
         color: stage.color,
         position: nextPosition,
+        pipeline_id: stage.pipelineId,
         is_system: false,
         is_active: true,
         is_ai_managed: stage.isAiManaged || false,
