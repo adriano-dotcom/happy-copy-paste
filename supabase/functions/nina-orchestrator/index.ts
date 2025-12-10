@@ -352,6 +352,39 @@ async function processQueueItem(
       .update({ current_agent_id: agent.id })
       .eq('id', conversation.id);
     console.log(`[Nina] Updated conversation agent to: ${agent.name}`);
+
+    // Move deal to agent's pipeline if this is a handoff
+    if (isHandoff) {
+      const { data: agentPipeline } = await supabase
+        .from('pipelines')
+        .select('id, name')
+        .eq('agent_id', agent.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (agentPipeline) {
+        const { data: firstStage } = await supabase
+          .from('pipeline_stages')
+          .select('id')
+          .eq('pipeline_id', agentPipeline.id)
+          .eq('is_active', true)
+          .order('position', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (firstStage) {
+          await supabase
+            .from('deals')
+            .update({ 
+              pipeline_id: agentPipeline.id,
+              stage_id: firstStage.id 
+            })
+            .eq('contact_id', conversation.contact_id);
+          
+          console.log(`[Nina] Deal movido para pipeline: ${agentPipeline.name}`);
+        }
+      }
+    }
   }
 
   // Get recent messages for context (last 20)
