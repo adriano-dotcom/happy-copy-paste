@@ -20,7 +20,7 @@ const Kanban: React.FC = () => {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [stages, setStages] = useState<KanbanColumn[]>([]);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
-  const [selectedPipelineId, setSelectedPipelineId] = useState<string>('all');
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
@@ -45,26 +45,39 @@ const Kanban: React.FC = () => {
     setDeals(data);
   };
 
-  // Load pipelines on mount
+  // Load pipelines on mount and set Transporte as default
   useEffect(() => {
     const loadPipelines = async () => {
       try {
-        const data = await api.fetchPipelines();
-        setPipelines(data);
+        let data = await api.fetchPipelines();
         // Link agents to pipelines if needed
         if (data.length > 0 && !data[0].agentId) {
           await api.linkAgentsToPipelines();
-          const updatedData = await api.fetchPipelines();
-          setPipelines(updatedData);
+          data = await api.fetchPipelines();
+        }
+        setPipelines(data);
+        
+        // Definir "Transporte" como padrão
+        const transportePipeline = data.find(p => p.slug === 'transporte');
+        if (transportePipeline) {
+          setSelectedPipelineId(transportePipeline.id);
+        } else if (data.length > 0) {
+          setSelectedPipelineId(data[0].id);
+        } else {
+          setSelectedPipelineId('all');
         }
       } catch (error) {
         console.error("Erro ao carregar pipelines", error);
+        setSelectedPipelineId('all');
       }
     };
     loadPipelines();
   }, []);
 
   useEffect(() => {
+    // Aguardar seleção de pipeline
+    if (!selectedPipelineId) return;
+    
     const loadStages = async () => {
       try {
         const pipelineId = selectedPipelineId === 'all' ? undefined : selectedPipelineId;
