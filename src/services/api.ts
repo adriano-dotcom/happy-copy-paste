@@ -314,9 +314,49 @@ export const api = {
       email: c.email || '',
       company: (c as any).company || undefined,
       cnpj: formatCNPJDisplay((c as any).cnpj),
-      status: 'lead' as const, // Map from tags or client_memory in future
+      cep: (c as any).cep || undefined,
+      street: (c as any).street || undefined,
+      number: (c as any).number || undefined,
+      complement: (c as any).complement || undefined,
+      neighborhood: (c as any).neighborhood || undefined,
+      city: (c as any).city || undefined,
+      state: (c as any).state || undefined,
+      notes: c.notes || undefined,
+      status: 'lead' as const,
       lastContact: new Date(c.last_activity).toLocaleDateString('pt-BR')
     }));
+  },
+
+  /**
+   * Update contact in database
+   */
+  updateContact: async (id: string, data: {
+    name?: string;
+    phone_number?: string;
+    email?: string | null;
+    company?: string | null;
+    cnpj?: string | null;
+    cep?: string | null;
+    street?: string | null;
+    number?: string | null;
+    complement?: string | null;
+    neighborhood?: string | null;
+    city?: string | null;
+    state?: string | null;
+    notes?: string | null;
+  }): Promise<void> => {
+    const { error } = await supabase
+      .from('contacts')
+      .update({
+        ...data,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id);
+
+    if (error) {
+      console.error('[API] Error updating contact:', error);
+      throw error;
+    }
   },
 
   /**
