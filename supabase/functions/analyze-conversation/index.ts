@@ -284,7 +284,28 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
       
       if (contactData.cnpj) {
         // Normalize CNPJ (remove formatting)
-        updateData.cnpj = contactData.cnpj.replace(/\D/g, '');
+        const cleanCnpj = contactData.cnpj.replace(/\D/g, '');
+        updateData.cnpj = cleanCnpj;
+        
+        // Auto-fetch company name from BrasilAPI if not already provided
+        if (!contactData.company && cleanCnpj.length === 14) {
+          console.log('[Analyze] 🔍 Fetching company data from BrasilAPI for CNPJ:', cleanCnpj);
+          try {
+            const brasilApiResponse = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCnpj}`);
+            if (brasilApiResponse.ok) {
+              const cnpjData = await brasilApiResponse.json();
+              const companyName = cnpjData.nome_fantasia || cnpjData.razao_social;
+              if (companyName) {
+                updateData.company = companyName;
+                console.log('[Analyze] ✅ Company auto-filled from BrasilAPI:', companyName);
+              }
+            } else {
+              console.log('[Analyze] ⚠️ BrasilAPI returned status:', brasilApiResponse.status);
+            }
+          } catch (brasilApiError) {
+            console.log('[Analyze] ⚠️ BrasilAPI lookup failed:', brasilApiError);
+          }
+        }
       }
       if (contactData.email) {
         updateData.email = contactData.email.toLowerCase().trim();
