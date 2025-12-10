@@ -163,12 +163,14 @@ export function PipelineSettingsModal({ open, onClose, pipelineId, pipelineName,
         aiTriggerCriteria: newStageTriggerCriteria || undefined,
       });
       
-      toast.success('Etapa criada');
+      // Recarregar etapas imediatamente após criar
+      await loadStages();
+      
+      toast.success('Etapa criada com sucesso!');
       setNewStageTitle('');
       setNewStageColor('border-slate-500');
       setNewStageIsAiManaged(false);
       setNewStageTriggerCriteria('');
-      loadStages();
     } catch (error) {
       toast.error('Erro ao criar etapa');
     }
