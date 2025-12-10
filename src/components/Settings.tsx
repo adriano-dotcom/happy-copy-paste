@@ -1,8 +1,9 @@
 import React, { useRef, useState } from 'react';
-import { Shield, Bot, Plug, Loader2, Save, RotateCcw } from 'lucide-react';
+import { Shield, Bot, Plug, Loader2, Save, RotateCcw, Users } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import AgentSettings, { AgentSettingsRef } from './settings/AgentSettings';
 import ApiSettings, { ApiSettingsRef } from './settings/ApiSettings';
+import AgentsSettings, { AgentsSettingsRef } from './settings/AgentsSettings';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { Button } from './Button';
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
@@ -17,6 +18,7 @@ const Settings: React.FC = () => {
   const { companyName } = useCompanySettings();
   const agentRef = useRef<AgentSettingsRef>(null);
   const apiRef = useRef<ApiSettingsRef>(null);
+  const agentsRef = useRef<AgentsSettingsRef>(null);
   const [activeTab, setActiveTab] = useState('agent');
   const { resetWizard } = useOnboardingStatus();
   const { setShowOnboarding } = useOutletContext<OutletContext>();
@@ -31,6 +33,8 @@ const Settings: React.FC = () => {
       await agentRef.current?.save();
     } else if (activeTab === 'apis') {
       await apiRef.current?.save();
+    } else if (activeTab === 'agents') {
+      await agentsRef.current?.save();
     }
   };
 
@@ -39,12 +43,16 @@ const Settings: React.FC = () => {
       agentRef.current?.cancel();
     } else if (activeTab === 'apis') {
       apiRef.current?.cancel();
+    } else if (activeTab === 'agents') {
+      agentsRef.current?.cancel();
     }
   };
 
   const isSaving = activeTab === 'agent' 
     ? agentRef.current?.isSaving 
-    : apiRef.current?.isSaving;
+    : activeTab === 'apis'
+    ? apiRef.current?.isSaving
+    : agentsRef.current?.isSaving;
   
   return (
     <div className="p-8 max-w-5xl mx-auto h-full overflow-y-auto bg-slate-950 text-slate-50 custom-scrollbar">
@@ -75,6 +83,10 @@ const Settings: React.FC = () => {
             <TabsTrigger value="agent" className="gap-2">
               <Bot className="w-4 h-4" />
               Agente
+            </TabsTrigger>
+            <TabsTrigger value="agents" className="gap-2">
+              <Users className="w-4 h-4" />
+              Agentes
             </TabsTrigger>
             <TabsTrigger value="apis" className="gap-2">
               <Plug className="w-4 h-4" />
@@ -113,6 +125,10 @@ const Settings: React.FC = () => {
 
         <TabsContent value="agent">
           <AgentSettings ref={agentRef} />
+        </TabsContent>
+
+        <TabsContent value="agents">
+          <AgentsSettings ref={agentsRef} />
         </TabsContent>
 
         <TabsContent value="apis">
