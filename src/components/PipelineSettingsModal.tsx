@@ -23,6 +23,9 @@ import {
 interface PipelineSettingsModalProps {
   open: boolean;
   onClose: () => void;
+  pipelineId: string;
+  pipelineName: string;
+  pipelineIcon?: string;
 }
 
 const STAGE_COLORS = [
@@ -38,7 +41,7 @@ const STAGE_COLORS = [
   { value: 'border-indigo-500', label: 'Índigo', preview: 'bg-indigo-500' },
 ];
 
-export function PipelineSettingsModal({ open, onClose }: PipelineSettingsModalProps) {
+export function PipelineSettingsModal({ open, onClose, pipelineId, pipelineName, pipelineIcon }: PipelineSettingsModalProps) {
   const [stages, setStages] = useState<KanbanColumn[]>([]);
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -56,15 +59,15 @@ export function PipelineSettingsModal({ open, onClose }: PipelineSettingsModalPr
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    if (open) {
+    if (open && pipelineId) {
       loadStages();
     }
-  }, [open]);
+  }, [open, pipelineId]);
 
   const loadStages = async () => {
     setLoading(true);
     try {
-      const data = await api.fetchPipelineStages();
+      const data = await api.fetchPipelineStages(pipelineId);
       setStages(data);
     } catch (error) {
       toast.error('Erro ao carregar etapas');
@@ -155,6 +158,7 @@ export function PipelineSettingsModal({ open, onClose }: PipelineSettingsModalPr
       await api.createPipelineStage({
         title: newStageTitle,
         color: newStageColor,
+        pipelineId: pipelineId,
         isAiManaged: newStageIsAiManaged,
         aiTriggerCriteria: newStageTriggerCriteria || undefined,
       });
@@ -207,7 +211,10 @@ export function PipelineSettingsModal({ open, onClose }: PipelineSettingsModalPr
       <Dialog open={open} onOpenChange={onClose}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>⚙️ Configurar Pipeline</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <span>{pipelineIcon || '⚙️'}</span>
+              <span>Configurar Pipeline: {pipelineName}</span>
+            </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">

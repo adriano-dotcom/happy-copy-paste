@@ -391,6 +391,8 @@ const Kanban: React.FC = () => {
             variant="outline" 
             className="border-slate-700 text-slate-300 hover:bg-slate-800"
             onClick={() => setIsSettingsModalOpen(true)}
+            disabled={selectedPipelineId === 'all'}
+            title={selectedPipelineId === 'all' ? 'Selecione um pipeline específico' : 'Configurar etapas do pipeline'}
           >
             <Settings className="w-4 h-4 mr-2" />
             Configurar
@@ -889,6 +891,9 @@ const Kanban: React.FC = () => {
       <PipelineSettingsModal
         open={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
+        pipelineId={selectedPipelineId}
+        pipelineName={pipelines.find(p => p.id === selectedPipelineId)?.name || 'Pipeline'}
+        pipelineIcon={pipelines.find(p => p.id === selectedPipelineId)?.icon}
       />
     </div>
   );
