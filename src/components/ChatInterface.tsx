@@ -185,7 +185,15 @@ const ChatInterface: React.FC = () => {
       // Auto-fill company name
       const companyName = data.nome_fantasia || data.razao_social || '';
       setEditCompany(companyName);
-      toast.success(`Empresa encontrada: ${companyName}`);
+      
+      // Auto-save CNPJ and company after lookup
+      if (activeChat) {
+        await api.updateContact(activeChat.contactId, {
+          cnpj: cleanCnpj,
+          company: companyName || null
+        });
+        toast.success(`Empresa encontrada e salva: ${companyName}`);
+      }
     } catch (error) {
       console.error('CNPJ lookup error:', error);
       toast.error('CNPJ não encontrado na Receita Federal');
