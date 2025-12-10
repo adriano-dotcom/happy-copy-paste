@@ -1627,4 +1627,51 @@ export const api = {
       }
     }
   },
+
+  /**
+   * Get existing conversation for a contact or create a new one
+   * @param contactId - The contact ID to find or create conversation for
+   * @returns The conversation ID (existing or newly created)
+   */
+  getOrCreateConversation: async (contactId: string): Promise<string> => {
+    // First, try to find an existing active conversation
+    const { data: existingConv, error: findError } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('contact_id', contactId)
+      .eq('is_active', true)
+      .order('last_message_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (findError) {
+      console.error('[API] Error finding conversation:', findError);
+      throw findError;
+    }
+
+    // If conversation exists, return its ID
+    if (existingConv) {
+      console.log('[API] Found existing conversation:', existingConv.id);
+      return existingConv.id;
+    }
+
+    // Create a new conversation
+    const { data: newConv, error: createError } = await supabase
+      .from('conversations')
+      .insert({
+        contact_id: contactId,
+        status: 'human', // Started by human agent
+        is_active: true
+      })
+      .select('id')
+      .single();
+
+    if (createError) {
+      console.error('[API] Error creating conversation:', createError);
+      throw createError;
+    }
+
+    console.log('[API] Created new conversation:', newConv.id);
+    return newConv.id;
+  },
 };

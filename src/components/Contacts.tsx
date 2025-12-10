@@ -33,9 +33,18 @@ const Contacts: React.FC = () => {
   const [isDetailsDrawerOpen, setIsDetailsDrawerOpen] = useState(false);
   const [selectedContact, setSelectedContact] = useState<ExtendedContact | null>(null);
 
-  const handleConverse = (phone: string) => {
-    const cleanPhone = phone.replace(/\D/g, '');
-    navigate(`/chat?phone=${cleanPhone}`);
+  const [isLoadingConversation, setIsLoadingConversation] = useState(false);
+
+  const handleConverse = async (contactId: string) => {
+    try {
+      setIsLoadingConversation(true);
+      const conversationId = await api.getOrCreateConversation(contactId);
+      navigate(`/chat?conversation=${conversationId}`);
+    } catch (error) {
+      console.error('Erro ao abrir conversa:', error);
+    } finally {
+      setIsLoadingConversation(false);
+    }
   };
 
   const handleViewDetails = (contact: ExtendedContact) => {
@@ -233,7 +242,7 @@ const Contacts: React.FC = () => {
                           variant="default" 
                           className="h-8 w-8 p-0 rounded-lg shadow-none bg-cyan-600 hover:bg-cyan-700" 
                           title="Iniciar Conversa"
-                          onClick={() => handleConverse(contact.phone)}
+                          onClick={() => handleConverse(contact.id)}
                         >
                           <MessageSquare className="w-4 h-4" />
                         </Button>
@@ -269,7 +278,7 @@ const Contacts: React.FC = () => {
         onOpenChange={setIsDetailsDrawerOpen}
         contact={selectedContact}
         onEdit={handleEditFromDrawer}
-        onConverse={() => selectedContact && handleConverse(selectedContact.phone)}
+        onConverse={() => selectedContact && handleConverse(selectedContact.id)}
       />
     </div>
   );
