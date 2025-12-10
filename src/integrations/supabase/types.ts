@@ -134,6 +134,8 @@ export type Database = {
           blocked_reason: string | null
           call_name: string | null
           client_memory: Json | null
+          cnpj: string | null
+          company: string | null
           created_at: string
           email: string | null
           first_contact_date: string
@@ -154,6 +156,8 @@ export type Database = {
           blocked_reason?: string | null
           call_name?: string | null
           client_memory?: Json | null
+          cnpj?: string | null
+          company?: string | null
           created_at?: string
           email?: string | null
           first_contact_date?: string
@@ -174,6 +178,8 @@ export type Database = {
           blocked_reason?: string | null
           call_name?: string | null
           client_memory?: Json | null
+          cnpj?: string | null
+          company?: string | null
           created_at?: string
           email?: string | null
           first_contact_date?: string

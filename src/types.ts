@@ -78,6 +78,8 @@ export interface Contact {
   name: string;
   phone: string;
   email: string;
+  company?: string;
+  cnpj?: string;
   status: 'lead' | 'customer' | 'churned';
   lastContact: string;
 }

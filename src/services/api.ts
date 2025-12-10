@@ -299,11 +299,21 @@ export const api = {
       return MOCK_CONTACTS; // Return mock if no data
     }
 
+    // Format CNPJ for display
+    const formatCNPJDisplay = (cnpj: string | null) => {
+      if (!cnpj) return undefined;
+      const digits = cnpj.replace(/\D/g, '');
+      if (digits.length !== 14) return cnpj;
+      return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`;
+    };
+
     return data.map(c => ({
       id: c.id,
       name: c.name || c.call_name || c.phone_number,
       phone: c.phone_number,
       email: c.email || '',
+      company: (c as any).company || undefined,
+      cnpj: formatCNPJDisplay((c as any).cnpj),
       status: 'lead' as const, // Map from tags or client_memory in future
       lastContact: new Date(c.last_activity).toLocaleDateString('pt-BR')
     }));
