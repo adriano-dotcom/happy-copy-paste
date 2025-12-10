@@ -1,14 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import { Search, Filter, MoreHorizontal, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2 } from 'lucide-react';
+import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit } from 'lucide-react';
 import { Button } from './ui/button';
 import { api } from '../services/api';
 import { Contact } from '../types';
 import CreateContactModal from './CreateContactModal';
 import ImportContactsModal from './ImportContactsModal';
+import EditContactModal from './EditContactModal';
+import ContactDetailsDrawer from './ContactDetailsDrawer';
 
 interface ExtendedContact extends Contact {
   company?: string;
   cnpj?: string;
+  cep?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+  notes?: string;
 }
 
 const Contacts: React.FC = () => {
@@ -17,6 +27,24 @@ const Contacts: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDetailsDrawerOpen, setIsDetailsDrawerOpen] = useState(false);
+  const [selectedContact, setSelectedContact] = useState<ExtendedContact | null>(null);
+
+  const handleViewDetails = (contact: ExtendedContact) => {
+    setSelectedContact(contact);
+    setIsDetailsDrawerOpen(true);
+  };
+
+  const handleEditContact = (contact: ExtendedContact) => {
+    setSelectedContact(contact);
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditFromDrawer = () => {
+    setIsDetailsDrawerOpen(false);
+    setIsEditModalOpen(true);
+  };
 
   const loadContacts = async () => {
     try {
@@ -175,11 +203,26 @@ const Contacts: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-8 w-8 p-0 rounded-lg hover:bg-slate-800 hover:text-cyan-400" 
+                          title="Ver Detalhes"
+                          onClick={() => handleViewDetails(contact)}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-8 w-8 p-0 rounded-lg hover:bg-slate-800 hover:text-cyan-400" 
+                          title="Editar"
+                          onClick={() => handleEditContact(contact)}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
                         <Button size="sm" variant="default" className="h-8 w-8 p-0 rounded-lg shadow-none bg-cyan-600 hover:bg-cyan-700" title="Iniciar Conversa">
                           <MessageSquare className="w-4 h-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 rounded-lg hover:bg-slate-800 hover:text-white">
-                          <MoreHorizontal className="w-4 h-4" />
                         </Button>
                       </div>
                     </td>
@@ -201,6 +244,18 @@ const Contacts: React.FC = () => {
         open={isImportModalOpen}
         onOpenChange={setIsImportModalOpen}
         onSuccess={loadContacts}
+      />
+      <EditContactModal
+        open={isEditModalOpen}
+        onOpenChange={setIsEditModalOpen}
+        contact={selectedContact}
+        onSuccess={loadContacts}
+      />
+      <ContactDetailsDrawer
+        open={isDetailsDrawerOpen}
+        onOpenChange={setIsDetailsDrawerOpen}
+        contact={selectedContact}
+        onEdit={handleEditFromDrawer}
       />
     </div>
   );
