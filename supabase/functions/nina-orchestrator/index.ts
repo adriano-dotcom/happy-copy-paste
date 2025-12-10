@@ -9,6 +9,20 @@ const corsHeaders = {
 const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1/text-to-speech";
 
+interface Agent {
+  id: string;
+  name: string;
+  slug: string;
+  specialty: string | null;
+  system_prompt: string;
+  is_default: boolean;
+  is_active: boolean;
+  detection_keywords: string[];
+  greeting_message: string | null;
+  handoff_message: string | null;
+  qualification_questions: Array<{ order: number; question: string }>;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -86,13 +100,22 @@ serve(async (req) => {
       });
     }
 
-    const systemPrompt = settings?.system_prompt_override || getDefaultSystemPrompt();
+    // Load all active agents
+    const { data: agents } = await supabase
+      .from('agents')
+      .select('*')
+      .eq('is_active', true);
+
+    const activeAgents = (agents || []) as Agent[];
+    const defaultAgent = activeAgents.find(a => a.is_default);
+    
+    console.log(`[Nina] Loaded ${activeAgents.length} active agents`);
 
     let processed = 0;
 
     for (const item of queueItems) {
       try {
-        await processQueueItem(supabase, lovableApiKey, item, systemPrompt, settings);
+        await processQueueItem(supabase, lovableApiKey, item, settings, activeAgents, defaultAgent);
         
         // Mark as completed
         await supabase
@@ -142,6 +165,43 @@ serve(async (req) => {
   }
 });
 
+// Determine which agent should handle the conversation
+function detectAgent(
+  messageContent: string, 
+  conversation: any, 
+  agents: Agent[], 
+  defaultAgent: Agent | undefined
+): { agent: Agent | null; isHandoff: boolean } {
+  const content = messageContent.toLowerCase();
+  
+  // If conversation already has an assigned agent, continue with it
+  if (conversation.current_agent_id) {
+    const currentAgent = agents.find(a => a.id === conversation.current_agent_id);
+    if (currentAgent) {
+      console.log(`[Nina] Continuing with assigned agent: ${currentAgent.name}`);
+      return { agent: currentAgent, isHandoff: false };
+    }
+  }
+  
+  // Check keywords for each non-default agent
+  for (const agent of agents) {
+    if (agent.is_default) continue;
+    
+    const hasKeywordMatch = agent.detection_keywords.some(keyword => 
+      content.includes(keyword.toLowerCase())
+    );
+    
+    if (hasKeywordMatch) {
+      console.log(`[Nina] Detected keyword match for agent: ${agent.name}`);
+      const isNewHandoff = conversation.current_agent_id !== agent.id;
+      return { agent, isHandoff: isNewHandoff };
+    }
+  }
+  
+  // Return default agent
+  return { agent: defaultAgent || null, isHandoff: false };
+}
+
 // Generate audio using ElevenLabs
 async function generateAudioElevenLabs(settings: any, text: string): Promise<ArrayBuffer | null> {
   if (!settings.elevenlabs_api_key) {
@@ -150,7 +210,7 @@ async function generateAudioElevenLabs(settings: any, text: string): Promise<Arr
   }
 
   try {
-    const voiceId = settings.elevenlabs_voice_id || '9BWtsMINqrJLrRacOk9x'; // Aria default
+    const voiceId = settings.elevenlabs_voice_id || '9BWtsMINqrJLrRacOk9x';
     const model = settings.elevenlabs_model || 'eleven_turbo_v2_5';
 
     console.log('[Nina] Generating audio with ElevenLabs, voice:', voiceId);
@@ -208,7 +268,6 @@ async function uploadAudioToStorage(
       return null;
     }
 
-    // Get public URL
     const { data: urlData } = supabase.storage
       .from('audio-messages')
       .getPublicUrl(fileName);
@@ -225,8 +284,9 @@ async function processQueueItem(
   supabase: any,
   lovableApiKey: string,
   item: any,
-  systemPrompt: string,
-  settings: any
+  settings: any,
+  agents: Agent[],
+  defaultAgent: Agent | undefined
 ) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -271,6 +331,29 @@ async function processQueueItem(
     return;
   }
 
+  // Detect which agent should handle this conversation
+  const { agent, isHandoff } = detectAgent(
+    message.content || '', 
+    conversation, 
+    agents, 
+    defaultAgent
+  );
+
+  if (!agent) {
+    console.log('[Nina] No agent available, using default system prompt');
+  } else {
+    console.log(`[Nina] Using agent: ${agent.name} (handoff: ${isHandoff})`);
+  }
+
+  // Update conversation with current agent if changed
+  if (agent && conversation.current_agent_id !== agent.id) {
+    await supabase
+      .from('conversations')
+      .update({ current_agent_id: agent.id })
+      .eq('id', conversation.id);
+    console.log(`[Nina] Updated conversation agent to: ${agent.name}`);
+  }
+
   // Get recent messages for context (last 20)
   const { data: recentMessages } = await supabase
     .from('messages')
@@ -290,141 +373,215 @@ async function processQueueItem(
   // Get client memory
   const clientMemory = conversation.contact?.client_memory || {};
 
+  // Build system prompt - use agent prompt or fallback to settings/default
+  let systemPrompt: string;
+  if (agent) {
+    systemPrompt = agent.system_prompt;
+  } else {
+    systemPrompt = settings?.system_prompt_override || getDefaultSystemPrompt();
+  }
+
   // Build enhanced system prompt with context
   const enhancedSystemPrompt = buildEnhancedPrompt(
     systemPrompt, 
     conversation.contact, 
-    clientMemory
+    clientMemory,
+    agent
   );
 
-  // Process template variables ({{ data_hora }}, {{ dia_semana }}, etc.)
+  // Process template variables
   const processedPrompt = processPromptTemplate(enhancedSystemPrompt, conversation.contact);
 
   console.log('[Nina] Calling Lovable AI...');
 
-  // Get AI model settings based on user configuration
+  // Get AI model settings
   const aiSettings = getModelSettings(settings, conversationHistory, message, conversation.contact, clientMemory);
 
   console.log('[Nina] Using AI settings:', aiSettings);
 
-  // Call Lovable AI Gateway
-  const aiResponse = await fetch(LOVABLE_AI_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${lovableApiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: aiSettings.model,
-      messages: [
-        { role: 'system', content: processedPrompt },
-        ...conversationHistory
-      ],
-      temperature: aiSettings.temperature,
-      max_tokens: 1000
-    })
-  });
-
-  if (!aiResponse.ok) {
-    const errorText = await aiResponse.text();
-    console.error('[Nina] AI response error:', aiResponse.status, errorText);
+  // If this is a handoff, prepend the handoff message
+  let aiContent: string;
+  
+  if (isHandoff && agent?.handoff_message) {
+    // Send handoff message first, then process the actual question
+    console.log(`[Nina] Sending handoff message for ${agent.name}`);
     
-    if (aiResponse.status === 429) {
-      throw new Error('Rate limit exceeded, will retry later');
-    }
-    if (aiResponse.status === 402) {
-      throw new Error('Payment required - please add credits');
-    }
-    throw new Error(`AI error: ${aiResponse.status}`);
-  }
-
-  const aiData = await aiResponse.json();
-  const aiContent = aiData.choices?.[0]?.message?.content;
-
-  if (!aiContent) {
-    throw new Error('Empty AI response');
-  }
-
-  console.log('[Nina] AI response received, length:', aiContent.length);
-
-  // Calculate response time
-  const responseTime = Date.now() - new Date(message.sent_at).getTime();
-
-  // Update original message as processed
-  await supabase
-    .from('messages')
-    .update({ 
-      processed_by_nina: true,
-      nina_response_time: responseTime
-    })
-    .eq('id', message.id);
-
-  // Add response delay if configured
-  const delayMin = settings?.response_delay_min || 1000;
-  const delayMax = settings?.response_delay_max || 3000;
-  const delay = Math.random() * (delayMax - delayMin) + delayMin;
-
-  // Check if audio response should be sent
-  // - If global setting is enabled, always respond with audio
-  // - If incoming message was audio, mirror user's communication style
-  const incomingWasAudio = message.type === 'audio';
-  const shouldSendAudio = (settings?.audio_response_enabled || incomingWasAudio) && settings?.elevenlabs_api_key;
-
-  if (shouldSendAudio) {
-    // Generate audio response
-    console.log(`[Nina] Audio response enabled (global: ${settings?.audio_response_enabled}, incoming was audio: ${incomingWasAudio})`);
+    const handoffContent = processPromptTemplate(agent.handoff_message, conversation.contact);
     
-    // For audio, we don't break into chunks - send as single audio
-    const audioBuffer = await generateAudioElevenLabs(settings, aiContent);
+    // Queue handoff message
+    await queueTextResponse(
+      supabase, 
+      conversation, 
+      message, 
+      handoffContent, 
+      settings, 
+      aiSettings, 
+      500 // Short delay for handoff
+    );
     
-    if (audioBuffer) {
-      const audioUrl = await uploadAudioToStorage(supabase, audioBuffer, conversation.id);
+    // Wait a bit before generating AI response
+    const aiResponse = await fetch(LOVABLE_AI_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: aiSettings.model,
+        messages: [
+          { role: 'system', content: processedPrompt },
+          ...conversationHistory
+        ],
+        temperature: aiSettings.temperature,
+        max_tokens: 1000
+      })
+    });
+
+    if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
+      console.error('[Nina] AI response error:', aiResponse.status, errorText);
       
-      if (audioUrl) {
-        // Queue audio message
-        const { error: sendQueueError } = await supabase
-          .from('send_queue')
-          .insert({
-            conversation_id: conversation.id,
-            contact_id: conversation.contact_id,
-            content: aiContent, // Keep text content for reference
-            from_type: 'nina',
-            message_type: 'audio',
-            media_url: audioUrl,
-            priority: 1,
-            scheduled_at: new Date(Date.now() + delay).toISOString(),
-            metadata: {
-              response_to_message_id: message.id,
-              ai_model: aiSettings.model,
-              audio_generated: true,
-              text_content: aiContent
-            }
-          });
-
-        if (sendQueueError) {
-          console.error('[Nina] Error queuing audio response:', sendQueueError);
-          throw sendQueueError;
-        }
-
-        console.log('[Nina] Audio response queued for sending');
-      } else {
-        console.log('[Nina] Failed to upload audio, falling back to text');
-        await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay);
+      if (aiResponse.status === 429) {
+        throw new Error('Rate limit exceeded, will retry later');
       }
-    } else {
-      console.log('[Nina] Failed to generate audio, falling back to text');
+      if (aiResponse.status === 402) {
+        throw new Error('Payment required - please add credits');
+      }
+      throw new Error(`AI error: ${aiResponse.status}`);
+    }
+
+    const aiData = await aiResponse.json();
+    aiContent = aiData.choices?.[0]?.message?.content;
+    
+    // Queue AI response with additional delay after handoff
+    if (aiContent) {
+      const responseTime = Date.now() - new Date(message.sent_at).getTime();
+      await supabase
+        .from('messages')
+        .update({ 
+          processed_by_nina: true,
+          nina_response_time: responseTime
+        })
+        .eq('id', message.id);
+
+      const delayMin = settings?.response_delay_min || 1000;
+      const delayMax = settings?.response_delay_max || 3000;
+      const delay = Math.random() * (delayMax - delayMin) + delayMin + 2000; // Extra 2s after handoff
+
       await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay);
     }
   } else {
-    // Send text response (original behavior)
-    await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay);
+    // Normal flow - no handoff
+    const aiResponse = await fetch(LOVABLE_AI_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: aiSettings.model,
+        messages: [
+          { role: 'system', content: processedPrompt },
+          ...conversationHistory
+        ],
+        temperature: aiSettings.temperature,
+        max_tokens: 1000
+      })
+    });
+
+    if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
+      console.error('[Nina] AI response error:', aiResponse.status, errorText);
+      
+      if (aiResponse.status === 429) {
+        throw new Error('Rate limit exceeded, will retry later');
+      }
+      if (aiResponse.status === 402) {
+        throw new Error('Payment required - please add credits');
+      }
+      throw new Error(`AI error: ${aiResponse.status}`);
+    }
+
+    const aiData = await aiResponse.json();
+    aiContent = aiData.choices?.[0]?.message?.content;
+
+    if (!aiContent) {
+      throw new Error('Empty AI response');
+    }
+
+    console.log('[Nina] AI response received, length:', aiContent.length);
+
+    // Calculate response time
+    const responseTime = Date.now() - new Date(message.sent_at).getTime();
+
+    // Update original message as processed
+    await supabase
+      .from('messages')
+      .update({ 
+        processed_by_nina: true,
+        nina_response_time: responseTime
+      })
+      .eq('id', message.id);
+
+    // Add response delay if configured
+    const delayMin = settings?.response_delay_min || 1000;
+    const delayMax = settings?.response_delay_max || 3000;
+    const delay = Math.random() * (delayMax - delayMin) + delayMin;
+
+    // Check if audio response should be sent
+    const incomingWasAudio = message.type === 'audio';
+    const shouldSendAudio = (settings?.audio_response_enabled || incomingWasAudio) && settings?.elevenlabs_api_key;
+
+    if (shouldSendAudio) {
+      console.log(`[Nina] Audio response enabled (global: ${settings?.audio_response_enabled}, incoming was audio: ${incomingWasAudio})`);
+      
+      const audioBuffer = await generateAudioElevenLabs(settings, aiContent);
+      
+      if (audioBuffer) {
+        const audioUrl = await uploadAudioToStorage(supabase, audioBuffer, conversation.id);
+        
+        if (audioUrl) {
+          const { error: sendQueueError } = await supabase
+            .from('send_queue')
+            .insert({
+              conversation_id: conversation.id,
+              contact_id: conversation.contact_id,
+              content: aiContent,
+              from_type: 'nina',
+              message_type: 'audio',
+              media_url: audioUrl,
+              priority: 1,
+              scheduled_at: new Date(Date.now() + delay).toISOString(),
+              metadata: {
+                response_to_message_id: message.id,
+                ai_model: aiSettings.model,
+                audio_generated: true,
+                text_content: aiContent,
+                agent_id: agent?.id,
+                agent_name: agent?.name
+              }
+            });
+
+          if (sendQueueError) {
+            console.error('[Nina] Error queuing audio response:', sendQueueError);
+            throw sendQueueError;
+          }
+
+          console.log('[Nina] Audio response queued for sending');
+        } else {
+          await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay, agent);
+        }
+      } else {
+        await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay, agent);
+      }
+    } else {
+      await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay, agent);
+    }
   }
 
-  // Trigger whatsapp-sender to process the queue (não espera pelo resultado)
+  // Trigger whatsapp-sender
   try {
     const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
-    console.log('[Nina] Triggering whatsapp-sender at:', senderUrl);
-    
     fetch(senderUrl, {
       method: 'POST',
       headers: {
@@ -437,7 +594,7 @@ async function processQueueItem(
     console.error('[Nina] Failed to trigger whatsapp-sender:', err);
   }
 
-  // Trigger analyze-conversation to update client memory (fire-and-forget)
+  // Trigger analyze-conversation
   fetch(`${supabaseUrl}/functions/v1/analyze-conversation`, {
     method: 'POST',
     headers: {
@@ -462,18 +619,17 @@ async function queueTextResponse(
   aiContent: string,
   settings: any,
   aiSettings: any,
-  delay: number
+  delay: number,
+  agent?: Agent | null
 ) {
-  // Break message into chunks if enabled
   const messageChunks = settings?.message_breaking_enabled 
     ? breakMessageIntoChunks(aiContent)
     : [aiContent];
 
   console.log(`[Nina] Sending ${messageChunks.length} text message chunk(s)`);
 
-  // Queue each chunk for sending
   for (let i = 0; i < messageChunks.length; i++) {
-    const chunkDelay = delay + (i * 1500); // 1.5s between chunks
+    const chunkDelay = delay + (i * 1500);
     
     const { error: sendQueueError } = await supabase
       .from('send_queue')
@@ -489,7 +645,9 @@ async function queueTextResponse(
           response_to_message_id: message.id,
           ai_model: aiSettings.model,
           chunk_index: i,
-          total_chunks: messageChunks.length
+          total_chunks: messageChunks.length,
+          agent_id: agent?.id,
+          agent_name: agent?.name
         }
       });
 
@@ -524,11 +682,9 @@ INFORMAÇÕES DA EMPRESA:
 }
 
 function processPromptTemplate(prompt: string, contact: any): string {
-  // Get current time in Brazil timezone
   const now = new Date();
   const brOptions: Intl.DateTimeFormatOptions = { timeZone: 'America/Sao_Paulo' };
   
-  // Date/time formatters for Brazil
   const dateFormatter = new Intl.DateTimeFormat('pt-BR', { 
     ...brOptions, 
     day: '2-digit', 
@@ -547,7 +703,6 @@ function processPromptTemplate(prompt: string, contact: any): string {
     weekday: 'long' 
   });
   
-  // Build variable map
   const variables: Record<string, string> = {
     'data_hora': `${dateFormatter.format(now)} ${timeFormatter.format(now)}`,
     'data': dateFormatter.format(now),
@@ -557,14 +712,24 @@ function processPromptTemplate(prompt: string, contact: any): string {
     'cliente_telefone': contact?.phone_number || '',
   };
   
-  // Replace {{ variable }} with actual values
   return prompt.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, varName) => {
-    return variables[varName] || match; // Keep original if variable not found
+    return variables[varName] || match;
   });
 }
 
-function buildEnhancedPrompt(basePrompt: string, contact: any, memory: any): string {
+function buildEnhancedPrompt(
+  basePrompt: string, 
+  contact: any, 
+  memory: any,
+  agent?: Agent | null
+): string {
   let contextInfo = '';
+
+  // Add agent info
+  if (agent) {
+    contextInfo += `\n\nAGENTE: ${agent.name}`;
+    if (agent.specialty) contextInfo += ` (${agent.specialty})`;
+  }
 
   if (contact) {
     contextInfo += `\n\nCONTEXTO DO CLIENTE:`;
@@ -595,9 +760,9 @@ function buildEnhancedPrompt(basePrompt: string, contact: any, memory: any): str
 
 function breakMessageIntoChunks(content: string): string[] {
   const chunks = content
-    .split(/\n\n+/)           // Divide por quebras duplas
-    .map(chunk => chunk.trim()) // Remove espaços
-    .filter(chunk => chunk.length > 0); // Remove vazios
+    .split(/\n\n+/)
+    .map(chunk => chunk.trim())
+    .filter(chunk => chunk.length > 0);
   
   return chunks.length > 0 ? chunks : [content];
 }
@@ -636,11 +801,9 @@ function getAdaptiveSettings(
     temperature: 0.7
   };
 
-  // Context analysis
   const messageCount = conversationHistory.length;
   const userContent = message.content?.toLowerCase() || '';
   
-  // Detect conversation type
   const isComplaintKeywords = ['problema', 'erro', 'não funciona', 'reclamação', 'péssimo', 'horrível'];
   const isSalesKeywords = ['preço', 'valor', 'desconto', 'comprar', 'contratar', 'plano'];
   const isTechnicalKeywords = ['como funciona', 'integração', 'api', 'configurar', 'instalar'];
@@ -651,54 +814,28 @@ function getAdaptiveSettings(
   const isTechnical = isTechnicalKeywords.some(k => userContent.includes(k));
   const isUrgent = isUrgentKeywords.some(k => userContent.includes(k));
   
-  // Check lead stage in memory
   const leadStage = clientMemory?.lead_profile?.lead_stage;
   const qualificationScore = clientMemory?.lead_profile?.qualification_score || 0;
 
-  // ADAPTATION RULES:
-  
-  // 1. Complaint/Urgent → More precise, less creative
   if (isComplaint || isUrgent) {
-    return {
-      model: 'google/gemini-2.5-pro',
-      temperature: 0.3
-    };
+    return { model: 'google/gemini-2.5-pro', temperature: 0.3 };
   }
 
-  // 2. Sales with qualified lead → Creative but precise
   if (isSales && qualificationScore > 50) {
-    return {
-      model: 'google/gemini-2.5-flash',
-      temperature: 0.5
-    };
+    return { model: 'google/gemini-2.5-flash', temperature: 0.5 };
   }
 
-  // 3. Technical → Pro model, low temperature
   if (isTechnical) {
-    return {
-      model: 'google/gemini-2.5-pro',
-      temperature: 0.4
-    };
+    return { model: 'google/gemini-2.5-pro', temperature: 0.4 };
   }
 
-  // 4. Initial conversation (few messages) → More friendly/creative
   if (messageCount < 5) {
-    return {
-      model: 'google/gemini-2.5-flash',
-      temperature: 0.8
-    };
+    return { model: 'google/gemini-2.5-flash', temperature: 0.8 };
   }
 
-  // 5. Long conversation → More consistent
   if (messageCount > 15) {
-    return {
-      model: 'google/gemini-2.5-flash',
-      temperature: 0.5
-    };
+    return { model: 'google/gemini-2.5-flash', temperature: 0.5 };
   }
 
   return defaultSettings;
 }
-
-// Memory analysis is now handled by analyze-conversation edge function
-// This function has been removed and replaced with a fire-and-forget call

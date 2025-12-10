@@ -14,6 +14,57 @@ export type Database = {
   }
   public: {
     Tables: {
+      agents: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          detection_keywords: string[] | null
+          greeting_message: string | null
+          handoff_message: string | null
+          id: string
+          is_active: boolean | null
+          is_default: boolean | null
+          name: string
+          qualification_questions: Json | null
+          slug: string
+          specialty: string | null
+          system_prompt: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          detection_keywords?: string[] | null
+          greeting_message?: string | null
+          handoff_message?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_default?: boolean | null
+          name: string
+          qualification_questions?: Json | null
+          slug: string
+          specialty?: string | null
+          system_prompt: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          detection_keywords?: string[] | null
+          greeting_message?: string | null
+          handoff_message?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_default?: boolean | null
+          name?: string
+          qualification_questions?: Json | null
+          slug?: string
+          specialty?: string | null
+          system_prompt?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       appointments: {
         Row: {
           attendees: string[] | null
@@ -187,6 +238,7 @@ export type Database = {
           assigned_user_id: string | null
           contact_id: string
           created_at: string
+          current_agent_id: string | null
           id: string
           is_active: boolean
           last_message_at: string
@@ -202,6 +254,7 @@ export type Database = {
           assigned_user_id?: string | null
           contact_id: string
           created_at?: string
+          current_agent_id?: string | null
           id?: string
           is_active?: boolean
           last_message_at?: string
@@ -217,6 +270,7 @@ export type Database = {
           assigned_user_id?: string | null
           contact_id?: string
           created_at?: string
+          current_agent_id?: string | null
           id?: string
           is_active?: boolean
           last_message_at?: string
@@ -240,6 +294,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_current_agent_id_fkey"
+            columns: ["current_agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
             referencedColumns: ["id"]
           },
         ]
