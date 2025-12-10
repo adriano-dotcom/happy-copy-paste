@@ -11,6 +11,7 @@ import { supabase } from '../integrations/supabase/client';
 import { CreateDealModal } from './CreateDealModal';
 import { LostReasonModal } from './LostReasonModal';
 import { PipelineSettingsModal } from './PipelineSettingsModal';
+import { EmailComposeModal } from './EmailComposeModal';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { toast } from 'sonner';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
@@ -28,6 +29,7 @@ const Kanban: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isLostModalOpen, setIsLostModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [activities, setActivities] = useState<DealActivity[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(false);
@@ -621,7 +623,22 @@ const Kanban: React.FC = () => {
                             </button>
                         </div>
 
-                        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden focus-within:ring-1 focus-within:ring-cyan-500/50 transition-all shadow-inner">
+                        {activeTab === 'email' ? (
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
+                            <Mail className="w-8 h-8 text-violet-500 mx-auto mb-3" />
+                            <p className="text-sm text-slate-400 mb-4">
+                              Envie emails profissionais usando templates personalizados
+                            </p>
+                            <Button 
+                              onClick={() => setIsEmailModalOpen(true)}
+                              className="bg-violet-600 hover:bg-violet-700"
+                            >
+                              <Send className="w-4 h-4 mr-2" />
+                              Compor Email
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden focus-within:ring-1 focus-within:ring-cyan-500/50 transition-all shadow-inner">
                             <input 
                                 type="text"
                                 className="w-full bg-transparent p-3 text-sm text-slate-200 placeholder:text-slate-600 outline-none border-b border-slate-800"
@@ -633,8 +650,7 @@ const Kanban: React.FC = () => {
                                 className="w-full bg-transparent p-4 text-sm text-slate-200 placeholder:text-slate-600 outline-none resize-none min-h-[80px]"
                                 placeholder={
                                     activeTab === 'note' ? "Escreva uma nota..." :
-                                    activeTab === 'activity' ? "Descreva a atividade..." :
-                                    "Escreva o corpo do email..."
+                                    "Descreva a atividade..."
                                 }
                                 value={newActivityDescription}
                                 onChange={(e) => setNewActivityDescription(e.target.value)}
@@ -647,7 +663,8 @@ const Kanban: React.FC = () => {
                                     Salvar
                                 </Button>
                             </div>
-                        </div>
+                          </div>
+                        )}
                     </div>
 
                     {/* Activities Timeline */}
@@ -895,6 +912,20 @@ const Kanban: React.FC = () => {
         pipelineName={pipelines.find(p => p.id === selectedPipelineId)?.name || 'Pipeline'}
         pipelineIcon={pipelines.find(p => p.id === selectedPipelineId)?.icon}
       />
+
+      {/* Modal de composição de email */}
+      {selectedDeal && (
+        <EmailComposeModal
+          isOpen={isEmailModalOpen}
+          onClose={() => setIsEmailModalOpen(false)}
+          dealId={selectedDeal.id}
+          contactEmail={selectedDeal.contactEmail}
+          contactName={selectedDeal.contactName || selectedDeal.title}
+          company={selectedDeal.company}
+          value={selectedDeal.value}
+          onEmailSent={loadActivities}
+        />
+      )}
     </div>
   );
 };
