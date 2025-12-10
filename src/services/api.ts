@@ -673,9 +673,10 @@ export const api = {
   
   /**
    * Fetch pipeline/deals with real data
+   * @param pipelineId - Optional pipeline ID to filter by
    */
-  fetchPipeline: async (): Promise<Deal[]> => {
-    const { data, error } = await supabase
+  fetchPipeline: async (pipelineId?: string): Promise<Deal[]> => {
+    let query = supabase
       .from('deals')
       .select(`
         *,
@@ -683,6 +684,12 @@ export const api = {
         owner:team_members(name, avatar)
       `)
       .order('created_at', { ascending: false });
+
+    if (pipelineId) {
+      query = query.eq('pipeline_id', pipelineId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('[API] Error fetching pipeline:', error);
@@ -706,6 +713,7 @@ export const api = {
       value: Number(d.value) || 0,
       stage: d.stage,
       stageId: d.stage_id,
+      pipelineId: d.pipeline_id,
       ownerAvatar: d.owner?.avatar || 'https://ui-avatars.com/api/?name=NA&background=334155&color=fff',
       ownerId: d.owner_id,
       ownerName: d.owner?.name,
@@ -725,12 +733,18 @@ export const api = {
   },
 
   // Pipeline Stages CRUD
-  fetchPipelineStages: async (): Promise<any[]> => {
-    const { data, error } = await supabase
+  fetchPipelineStages: async (pipelineId?: string): Promise<any[]> => {
+    let query = supabase
       .from('pipeline_stages')
       .select('*')
       .eq('is_active', true)
       .order('position', { ascending: true });
+
+    if (pipelineId) {
+      query = query.eq('pipeline_id', pipelineId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error fetching pipeline stages:', error);
@@ -745,7 +759,8 @@ export const api = {
       isSystem: stage.is_system,
       isActive: stage.is_active,
       isAiManaged: stage.is_ai_managed || false,
-      aiTriggerCriteria: stage.ai_trigger_criteria
+      aiTriggerCriteria: stage.ai_trigger_criteria,
+      pipelineId: stage.pipeline_id
     }));
   },
 
@@ -1416,5 +1431,148 @@ export const api = {
     }
 
     return (data || []).reverse(); // Reverter para ordem cronológica
+  },
+
+  // ============= PIPELINES =============
+  
+  /**
+   * Fetch all pipelines
+   */
+  fetchPipelines: async (): Promise<any[]> => {
+    const { data, error } = await supabase
+      .from('pipelines')
+      .select(`
+        *,
+        agent:agents(name)
+      `)
+      .eq('is_active', true)
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('[API] Error fetching pipelines:', error);
+      throw error;
+    }
+
+    return (data || []).map(p => ({
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      agentId: p.agent_id,
+      agentName: p.agent?.name || null,
+      color: p.color,
+      icon: p.icon,
+      isActive: p.is_active,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at
+    }));
+  },
+
+  /**
+   * Create a new pipeline
+   */
+  createPipeline: async (pipeline: { name: string; slug: string; agentId?: string; color?: string; icon?: string }): Promise<any> => {
+    const { data, error } = await supabase
+      .from('pipelines')
+      .insert({
+        name: pipeline.name,
+        slug: pipeline.slug,
+        agent_id: pipeline.agentId || null,
+        color: pipeline.color || '#3b82f6',
+        icon: pipeline.icon || '📋',
+        is_active: true
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[API] Error creating pipeline:', error);
+      throw error;
+    }
+
+    return {
+      id: data.id,
+      name: data.name,
+      slug: data.slug,
+      agentId: data.agent_id,
+      color: data.color,
+      icon: data.icon,
+      isActive: data.is_active,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at
+    };
+  },
+
+  /**
+   * Update a pipeline
+   */
+  updatePipeline: async (id: string, updates: Partial<{ name: string; agentId: string | null; color: string; icon: string }>): Promise<void> => {
+    const dbUpdates: any = {};
+    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.agentId !== undefined) dbUpdates.agent_id = updates.agentId;
+    if (updates.color !== undefined) dbUpdates.color = updates.color;
+    if (updates.icon !== undefined) dbUpdates.icon = updates.icon;
+
+    const { error } = await supabase
+      .from('pipelines')
+      .update(dbUpdates)
+      .eq('id', id);
+
+    if (error) {
+      console.error('[API] Error updating pipeline:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Delete a pipeline (soft delete)
+   */
+  deletePipeline: async (id: string): Promise<void> => {
+    const { error } = await supabase
+      .from('pipelines')
+      .update({ is_active: false })
+      .eq('id', id);
+
+    if (error) {
+      console.error('[API] Error deleting pipeline:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Link agents to pipelines after migration
+   */
+  linkAgentsToPipelines: async (): Promise<void> => {
+    // Get all agents
+    const { data: agents } = await supabase
+      .from('agents')
+      .select('id, slug')
+      .eq('is_active', true);
+
+    // Get all pipelines
+    const { data: pipelines } = await supabase
+      .from('pipelines')
+      .select('id, slug')
+      .eq('is_active', true);
+
+    if (!agents || !pipelines) return;
+
+    // Map agents to pipelines by slug (adri -> transporte, barbara -> saude)
+    const agentPipelineMap: Record<string, string> = {
+      'adri': 'transporte',
+      'barbara': 'saude'
+    };
+
+    for (const agent of agents) {
+      const pipelineSlug = agentPipelineMap[agent.slug];
+      if (pipelineSlug) {
+        const pipeline = pipelines.find(p => p.slug === pipelineSlug);
+        if (pipeline) {
+          await supabase
+            .from('pipelines')
+            .update({ agent_id: agent.id })
+            .eq('id', pipeline.id);
+        }
+      }
+    }
   },
 };

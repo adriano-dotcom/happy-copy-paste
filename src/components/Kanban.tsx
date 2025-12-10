@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { Button } from './Button';
 import { api } from '../services/api';
-import { Deal, DealActivity, TeamMember, KanbanColumn } from '../types';
+import { Deal, DealActivity, TeamMember, KanbanColumn, Pipeline } from '../types';
 import { supabase } from '../integrations/supabase/client';
 import { CreateDealModal } from './CreateDealModal';
 import { LostReasonModal } from './LostReasonModal';
@@ -19,6 +19,8 @@ const Kanban: React.FC = () => {
   const { sdrName } = useCompanySettings();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [stages, setStages] = useState<KanbanColumn[]>([]);
+  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
@@ -38,14 +40,35 @@ const Kanban: React.FC = () => {
   
   const handleDealCreated = async () => {
     // Reload deals after creation
-    const data = await api.fetchPipeline();
+    const pipelineId = selectedPipelineId === 'all' ? undefined : selectedPipelineId;
+    const data = await api.fetchPipeline(pipelineId);
     setDeals(data);
   };
+
+  // Load pipelines on mount
+  useEffect(() => {
+    const loadPipelines = async () => {
+      try {
+        const data = await api.fetchPipelines();
+        setPipelines(data);
+        // Link agents to pipelines if needed
+        if (data.length > 0 && !data[0].agentId) {
+          await api.linkAgentsToPipelines();
+          const updatedData = await api.fetchPipelines();
+          setPipelines(updatedData);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar pipelines", error);
+      }
+    };
+    loadPipelines();
+  }, []);
 
   useEffect(() => {
     const loadStages = async () => {
       try {
-        const data = await api.fetchPipelineStages();
+        const pipelineId = selectedPipelineId === 'all' ? undefined : selectedPipelineId;
+        const data = await api.fetchPipelineStages(pipelineId);
         setStages(data);
       } catch (error) {
         console.error("Erro ao carregar etapas", error);
@@ -55,7 +78,8 @@ const Kanban: React.FC = () => {
 
     const loadPipeline = async () => {
       try {
-        const data = await api.fetchPipeline();
+        const pipelineId = selectedPipelineId === 'all' ? undefined : selectedPipelineId;
+        const data = await api.fetchPipeline(pipelineId);
         setDeals(data);
       } catch (error) {
         console.error("Erro ao carregar pipeline", error);
@@ -87,7 +111,8 @@ const Kanban: React.FC = () => {
           table: 'deals'
         },
         async () => {
-          const data = await api.fetchPipeline();
+          const pipelineId = selectedPipelineId === 'all' ? undefined : selectedPipelineId;
+          const data = await api.fetchPipeline(pipelineId);
           setDeals(data);
         }
       )
@@ -103,7 +128,8 @@ const Kanban: React.FC = () => {
           table: 'pipeline_stages'
         },
         async () => {
-          const data = await api.fetchPipelineStages();
+          const pipelineId = selectedPipelineId === 'all' ? undefined : selectedPipelineId;
+          const data = await api.fetchPipelineStages(pipelineId);
           setStages(data);
         }
       )
@@ -113,7 +139,7 @@ const Kanban: React.FC = () => {
       supabase.removeChannel(dealsChannel);
       supabase.removeChannel(stagesChannel);
     };
-  }, []);
+  }, [selectedPipelineId]);
 
   // Load activities when deal is selected
   useEffect(() => {
@@ -271,7 +297,8 @@ const Kanban: React.FC = () => {
     } catch (error) {
       console.error('Error moving deal:', error);
       // Revert on error
-      const data = await api.fetchPipeline();
+      const pipelineId = selectedPipelineId === 'all' ? undefined : selectedPipelineId;
+      const data = await api.fetchPipeline(pipelineId);
       setDeals(data);
     }
   };
@@ -301,9 +328,40 @@ const Kanban: React.FC = () => {
     <div className="h-full flex flex-col bg-slate-950 text-slate-50 p-6 overflow-hidden relative">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4 flex-shrink-0">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight text-white">Pipeline de Vendas</h2>
-          <p className="text-sm text-slate-400 mt-1">Gerencie oportunidades e acompanhe o fluxo de receita.</p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight text-white">Pipeline de Vendas</h2>
+            <p className="text-sm text-slate-400 mt-1">Gerencie oportunidades e acompanhe o fluxo de receita.</p>
+          </div>
+          {/* Pipeline Selector */}
+          <Select value={selectedPipelineId} onValueChange={setSelectedPipelineId}>
+            <SelectTrigger className="w-[200px] h-9 bg-slate-900 border-slate-700">
+              <SelectValue placeholder="Selecione pipeline">
+                {selectedPipelineId === 'all' ? (
+                  <span className="flex items-center gap-2">📊 Todos</span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    {pipelines.find(p => p.id === selectedPipelineId)?.icon} {pipelines.find(p => p.id === selectedPipelineId)?.name}
+                  </span>
+                )}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                <span className="flex items-center gap-2">📊 Todos os Pipelines</span>
+              </SelectItem>
+              {pipelines.map((pipeline) => (
+                <SelectItem key={pipeline.id} value={pipeline.id}>
+                  <span className="flex items-center gap-2">
+                    {pipeline.icon} {pipeline.name}
+                    {pipeline.agentName && (
+                      <span className="text-xs text-slate-500">({pipeline.agentName})</span>
+                    )}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex gap-3 w-full sm:w-auto">
           <div className="relative flex-1 sm:w-64">
