@@ -232,6 +232,8 @@ export interface DBContact {
   name: string | null;
   call_name: string | null;
   email: string | null;
+  cnpj: string | null;
+  company: string | null;
   profile_picture_url: string | null;
   tags: string[];
   notes: string | null;
@@ -293,6 +295,8 @@ export interface UIConversation {
   contactPhone: string;
   contactAvatar: string;
   contactEmail: string | null;
+  contactCnpj: string | null;
+  contactCompany: string | null;
   status: ConversationStatus;
   isActive: boolean;
   assignedTeam: string | null;
@@ -350,7 +354,9 @@ export function transformDBToUIConversation(
     tags: [...(conv.tags || []), ...(conv.contact?.tags || [])],
     messages: sortedMessages.map(transformDBToUIMessage),
     clientMemory: conv.contact?.client_memory || getDefaultClientMemory(),
-    notes: conv.contact?.notes || null
+    notes: conv.contact?.notes || null,
+    contactCnpj: conv.contact?.cnpj || null,
+    contactCompany: conv.contact?.company || null
   };
 }
 
