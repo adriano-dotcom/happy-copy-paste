@@ -133,9 +133,12 @@ export type Database = {
           blocked_at: string | null
           blocked_reason: string | null
           call_name: string | null
+          cep: string | null
+          city: string | null
           client_memory: Json | null
           cnpj: string | null
           company: string | null
+          complement: string | null
           created_at: string
           email: string | null
           first_contact_date: string
@@ -144,9 +147,13 @@ export type Database = {
           is_business: boolean | null
           last_activity: string
           name: string | null
+          neighborhood: string | null
           notes: string | null
+          number: string | null
           phone_number: string
           profile_picture_url: string | null
+          state: string | null
+          street: string | null
           tags: string[] | null
           updated_at: string
           whatsapp_id: string | null
@@ -155,9 +162,12 @@ export type Database = {
           blocked_at?: string | null
           blocked_reason?: string | null
           call_name?: string | null
+          cep?: string | null
+          city?: string | null
           client_memory?: Json | null
           cnpj?: string | null
           company?: string | null
+          complement?: string | null
           created_at?: string
           email?: string | null
           first_contact_date?: string
@@ -166,9 +176,13 @@ export type Database = {
           is_business?: boolean | null
           last_activity?: string
           name?: string | null
+          neighborhood?: string | null
           notes?: string | null
+          number?: string | null
           phone_number: string
           profile_picture_url?: string | null
+          state?: string | null
+          street?: string | null
           tags?: string[] | null
           updated_at?: string
           whatsapp_id?: string | null
@@ -177,9 +191,12 @@ export type Database = {
           blocked_at?: string | null
           blocked_reason?: string | null
           call_name?: string | null
+          cep?: string | null
+          city?: string | null
           client_memory?: Json | null
           cnpj?: string | null
           company?: string | null
+          complement?: string | null
           created_at?: string
           email?: string | null
           first_contact_date?: string
@@ -188,9 +205,13 @@ export type Database = {
           is_business?: boolean | null
           last_activity?: string
           name?: string | null
+          neighborhood?: string | null
           notes?: string | null
+          number?: string | null
           phone_number?: string
           profile_picture_url?: string | null
+          state?: string | null
+          street?: string | null
           tags?: string[] | null
           updated_at?: string
           whatsapp_id?: string | null
