@@ -1,9 +1,10 @@
 import React, { useRef, useState } from 'react';
-import { Shield, Bot, Plug, Loader2, Save, RotateCcw, Users } from 'lucide-react';
+import { Shield, Bot, Plug, Loader2, Save, RotateCcw, Users, Mail } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import AgentSettings, { AgentSettingsRef } from './settings/AgentSettings';
 import ApiSettings, { ApiSettingsRef } from './settings/ApiSettings';
 import AgentsSettings, { AgentsSettingsRef } from './settings/AgentsSettings';
+import EmailTemplatesSettings from './settings/EmailTemplatesSettings';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { Button } from './Button';
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
@@ -53,6 +54,8 @@ const Settings: React.FC = () => {
     : activeTab === 'apis'
     ? apiRef.current?.isSaving
     : agentsRef.current?.isSaving;
+
+  const showSaveButtons = activeTab !== 'templates';
   
   return (
     <div className="p-8 max-w-5xl mx-auto h-full overflow-y-auto bg-slate-950 text-slate-50 custom-scrollbar">
@@ -92,35 +95,41 @@ const Settings: React.FC = () => {
               <Plug className="w-4 h-4" />
               APIs
             </TabsTrigger>
+            <TabsTrigger value="templates" className="gap-2">
+              <Mail className="w-4 h-4" />
+              Templates
+            </TabsTrigger>
           </TabsList>
 
-          <div className="flex gap-3">
-            <Button
-              variant="ghost"
-              onClick={handleCancel}
-              disabled={isSaving}
-            >
-              Cancelar
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleSave}
-              disabled={isSaving}
-              className="gap-2"
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  Salvar Alterações
-                </>
-              )}
-            </Button>
-          </div>
+          {showSaveButtons && (
+            <div className="flex gap-3">
+              <Button
+                variant="ghost"
+                onClick={handleCancel}
+                disabled={isSaving}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleSave}
+                disabled={isSaving}
+                className="gap-2"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    Salvar Alterações
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </div>
 
         <TabsContent value="agent">
@@ -133,6 +142,10 @@ const Settings: React.FC = () => {
 
         <TabsContent value="apis">
           <ApiSettings ref={apiRef} />
+        </TabsContent>
+
+        <TabsContent value="templates">
+          <EmailTemplatesSettings />
         </TabsContent>
       </Tabs>
     </div>
