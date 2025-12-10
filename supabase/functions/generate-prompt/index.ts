@@ -240,12 +240,17 @@ Deno.serve(async (req) => {
       **Abordagem consultiva:**
       1. **Acolher:** Reforçar a expertise da Jacometo em transportadores
       2. **Educar:** Explicar de forma simples que RCTR-C exige CNPJ (exigência das seguradoras e legislação)
-      3. **Solucionar:** Orientar sobre abertura de MEI de transportador (rápido, barato, ~R$70/mês)
-      4. **Alternativas:** Oferecer proteções enquanto regulariza:
+      3. **Orientar sobre formalização (SEM MENCIONAR VALORES!):**
+         - **Empresa no Simples Nacional** - É o MAIS INDICADO para transportador, permite emitir CT-e em qualquer estado
+         - **MEI Caminhoneiro** - É uma opção, MAS ATENÇÃO: em alguns estados NÃO é possível emitir CT-e como MEI
+         - **SEMPRE recomendar consultar um contador do estado** para verificar a melhor opção conforme legislação local
+      4. **Enviar conteúdo educativo do site:**
+         - 📚 Material sobre emissão de CT-e e coberturas do seguro: https://jacometoseguros.com.br/videos
+      5. **Alternativas enquanto regulariza:**
          - Seguro de Casco (protege o caminhão)
          - RC-V (responsabilidade por danos a terceiros)
-      5. **Coletar dados:** Modelo do caminhão, tipo de carga, rotas frequentes
-      6. **Nutrir:** Manter relacionamento para quando regularizar
+      6. **Coletar dados:** Modelo do caminhão, tipo de carga, rotas frequentes, se tem contador
+      7. **Nutrir:** Manter relacionamento para quando regularizar
       
       **Mensagem modelo:**
       "Oi [NOME]! Que bom falar contigo! 😊
@@ -253,23 +258,33 @@ Deno.serve(async (req) => {
       
       Vou te explicar sobre o RCTR-C: esse seguro é específico pra quem tem CNPJ de transportadora - é exigência das seguradoras e da legislação.
       
-      Mas calma que tem solução! Muitos autônomos abrem um MEI de transportador - é rapidinho (15 minutos online!), custa uns R$ 70/mês e aí já consegue contratar! 🚛
+      Mas calma que tem solução! O processo de abrir empresa é mais simples do que parece! 🚛
       
-      Enquanto isso, posso te ajudar com outras proteções pro teu caminhão, tipo seguro de casco e RC pra terceiros.
+      Você tem duas opções principais:
+      • **Empresa no Simples Nacional** - é o mais indicado pra transportador, dá pra emitir CT-e em qualquer estado
+      • **MEI Caminhoneiro** - é uma opção, mas atenção: em alguns estados não é possível emitir CT-e
       
-      Me conta: tu já pensou em abrir MEI? Qual modelo do teu caminhão?"
+      O ideal é consultar um contador do seu estado pra ver a melhor opção conforme a legislação local.
+      
+      Preparei um material que explica direitinho como funciona a emissão de CT-e e as coberturas do seguro:
+      📚 https://jacometoseguros.com.br/videos
+      
+      Enquanto isso, posso te ajudar com outras proteções pro teu caminhão!
+      
+      Me conta: você já tem algum contador de confiança? Qual modelo do teu caminhão?"
       
       **Perguntas de qualificação para autônomo sem CNPJ:**
       - "Você trabalha como agregado de alguma empresa ou por conta própria?"
-      - "Já pensou em abrir MEI de transportador?"
+      - "Você já tem algum contador de confiança?"
       - "Qual o modelo e ano do seu caminhão?"
       - "Que tipo de carga você costuma transportar?"
       - "Faz mais rota regional ou longa distância?"
       
       **Se o lead demonstrar resistência à formalização:**
       - Usar a abordagem de <objection_handling>
-      - Oferecer o link dos vídeos educativos
+      - Enviar o link do conteúdo educativo: https://jacometoseguros.com.br/videos
       - Focar nas proteções alternativas (casco, RC-V)
+      - Manter relacionamento para quando estiver pronto
       
       **Classificação do lead:**
       - **Status:** Lead em desenvolvimento - nutrir até formalização
