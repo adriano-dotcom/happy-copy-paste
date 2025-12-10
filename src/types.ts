@@ -40,6 +40,7 @@ export interface Team {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  pipeline_id?: string | null;
 }
 
 export interface TeamFunction {
@@ -99,13 +100,28 @@ export interface Appointment {
   attendees?: string[];
 }
 
+// Pipeline type
+export interface Pipeline {
+  id: string;
+  name: string;
+  slug: string;
+  agentId: string | null;
+  agentName?: string;
+  color: string;
+  icon: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Deal {
   id: string;
   title: string;
   company: string;
   value: number;
   stage: string;
-  stageId?: string; // New: reference to pipeline_stages
+  stageId?: string;
+  pipelineId?: string;
   ownerAvatar: string;
   ownerId?: string;
   ownerName?: string;
@@ -147,6 +163,7 @@ export interface KanbanColumn {
   isActive: boolean;
   isAiManaged: boolean;
   aiTriggerCriteria: string | null;
+  pipelineId?: string;
 }
 
 export interface BackendFunction {

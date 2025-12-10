@@ -373,6 +373,7 @@ export type Database = {
           lost_reason: string | null
           notes: string | null
           owner_id: string | null
+          pipeline_id: string | null
           priority: string | null
           stage: string | null
           stage_id: string
@@ -392,6 +393,7 @@ export type Database = {
           lost_reason?: string | null
           notes?: string | null
           owner_id?: string | null
+          pipeline_id?: string | null
           priority?: string | null
           stage?: string | null
           stage_id: string
@@ -411,6 +413,7 @@ export type Database = {
           lost_reason?: string | null
           notes?: string | null
           owner_id?: string | null
+          pipeline_id?: string | null
           priority?: string | null
           stage?: string | null
           stage_id?: string
@@ -440,6 +443,13 @@ export type Database = {
             columns: ["owner_id"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
             referencedColumns: ["id"]
           },
           {
@@ -778,6 +788,7 @@ export type Database = {
           is_active: boolean | null
           is_ai_managed: boolean | null
           is_system: boolean | null
+          pipeline_id: string | null
           position: number
           title: string
           updated_at: string | null
@@ -790,6 +801,7 @@ export type Database = {
           is_active?: boolean | null
           is_ai_managed?: boolean | null
           is_system?: boolean | null
+          pipeline_id?: string | null
           position?: number
           title: string
           updated_at?: string | null
@@ -802,11 +814,64 @@ export type Database = {
           is_active?: boolean | null
           is_ai_managed?: boolean | null
           is_system?: boolean | null
+          pipeline_id?: string | null
           position?: number
           title?: string
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_stages_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pipelines: {
+        Row: {
+          agent_id: string | null
+          color: string | null
+          created_at: string | null
+          icon: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          slug: string
+          updated_at: string | null
+        }
+        Insert: {
+          agent_id?: string | null
+          color?: string | null
+          created_at?: string | null
+          icon?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          slug: string
+          updated_at?: string | null
+        }
+        Update: {
+          agent_id?: string | null
+          color?: string | null
+          created_at?: string | null
+          icon?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          slug?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipelines_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       send_queue: {
         Row: {
@@ -1004,6 +1069,7 @@ export type Database = {
           id: string
           is_active: boolean | null
           name: string
+          pipeline_id: string | null
           updated_at: string
         }
         Insert: {
@@ -1013,6 +1079,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name: string
+          pipeline_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -1022,9 +1089,18 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name?: string
+          pipeline_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "teams_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
