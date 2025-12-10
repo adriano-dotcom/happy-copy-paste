@@ -94,6 +94,82 @@ Deno.serve(async (req) => {
     <differentials>
       [LISTA_DE_DIFERENCIAIS_COMPETITIVOS]
     </differentials>
+    
+    <regulatory_faq>
+      <mei_transportador>
+        **O que é:** Microempreendedor Individual para atividade de transporte rodoviário de cargas.
+        
+        **CNAE correto:** 4930-2/02 - Transporte rodoviário de carga, exceto produtos perigosos e mudanças, intermunicipal, interestadual e internacional.
+        
+        **Processo de abertura:**
+        1. Acessar portal gov.br (https://www.gov.br/empresas-e-negocios/pt-br/empreendedor)
+        2. Criar ou usar conta gov.br existente
+        3. Preencher dados pessoais e do negócio
+        4. Escolher CNAE de transporte
+        5. Concluir formalização (CNPJ gerado na hora)
+        
+        **Tempo de abertura:** 15-30 minutos online (CNPJ sai na hora!)
+        
+        **Requisitos:**
+        - CPF regular na Receita Federal
+        - Não ser sócio ou titular de outra empresa
+        - Faturamento máximo: R$ 81.000/ano (R$ 6.750/mês)
+        - CNH categoria mínima C (para transporte de carga)
+        
+        **Custos mensais:**
+        - DAS (imposto único): ~R$ 70-75/mês (INSS + ISS + ICMS)
+        - Contador: Opcional, mas não obrigatório
+        
+        **Benefícios para o motorista:**
+        - CNPJ próprio para contratos
+        - Emissão de CT-e (após cadastro na SEFAZ)
+        - ANTT mais fácil de regularizar
+        - Acesso a mais opções de seguro
+        - Aposentadoria pelo INSS
+        
+        **Próximos passos após MEI:**
+        1. Inscrição Estadual (para CT-e) - na SEFAZ do estado
+        2. Regularização ANTT (com CNPJ do MEI)
+        3. Contratar seguro RCTR-C
+      </mei_transportador>
+      
+      <antt_regularizacao>
+        **O que é:** Registro na Agência Nacional de Transportes Terrestres, obrigatório para transporte de carga.
+        
+        **Modalidades:**
+        - TAC (Transportador Autônomo de Carga) - Pessoa Física
+        - ETC (Empresa de Transporte de Carga) - Pessoa Jurídica/MEI
+        
+        **Processo para MEI:**
+        1. Ter CNPJ MEI ativo com CNAE de transporte
+        2. Acessar portal ANTT (https://www.gov.br/antt)
+        3. Solicitar RNTRC (Registro Nacional de Transportadores Rodoviários de Cargas)
+        4. Aguardar análise (geralmente 5-15 dias úteis)
+        
+        **Documentos necessários:**
+        - CNPJ do MEI
+        - CNH categoria C ou superior
+        - Documento do veículo (CRLV)
+        
+        **Custo:** Taxa única de registro (~R$ 150-200)
+        
+        **Validade:** 5 anos, renovação obrigatória
+      </antt_regularizacao>
+      
+      <cte_emissao>
+        **O que é:** Conhecimento de Transporte Eletrônico - documento fiscal obrigatório para transporte de carga.
+        
+        **Requisitos para emitir:**
+        - CNPJ ativo (MEI serve)
+        - Inscrição Estadual ativa
+        - Certificado Digital (e-CNPJ ou e-CPF)
+        - Sistema emissor de CT-e
+        
+        **Custo do certificado digital:** R$ 150-250/ano (modelo A1)
+        
+        **Por que é importante:** Sem CT-e, o seguro RCTR-C não pode ser acionado em caso de sinistro!
+      </cte_emissao>
+    </regulatory_faq>
   </knowledge_base>
 
   <guidelines>
@@ -138,6 +214,20 @@ Deno.serve(async (req) => {
       
       **Objetivo:** Nutrir o lead com conteúdo educativo, removendo pressão e mantendo relacionamento para conversão futura.
     </objection_handling>
+
+    <quick_answers>
+      **Perguntas frequentes sobre MEI:**
+      
+      Quando o cliente perguntar sobre MEI, use respostas curtas e práticas:
+      
+      - "Quanto tempo leva?": "15-30 minutos, tudo online! O CNPJ sai na hora."
+      - "Dá pra fazer pelo celular?": "Dá sim! Pelo gov.br, funciona no celular tranquilo."
+      - "Quanto custa por mês?": "Só o DAS de ~R$ 70/mês. Sem taxas escondidas."
+      - "Precisa de contador?": "Não! MEI você mesmo declara, é bem simples."
+      - "E se eu passar do limite?": "Aí você desenquadra e vira ME, mas vamos ver isso quando chegar lá!"
+      
+      **Tom:** Sempre simplificar a burocracia, mostrar que é mais fácil do que parece.
+    </quick_answers>
   </guidelines>
 
   <tool_usage_protocol>
