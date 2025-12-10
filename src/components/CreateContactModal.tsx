@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, User, Phone, Mail, Building2, FileText, Loader2 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { X, User, Phone, Mail, Building2, FileText, Loader2, MapPin, Search } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -10,6 +10,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -18,6 +25,36 @@ interface CreateContactModalProps {
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
 }
+
+const ESTADOS_BR = [
+  { uf: 'AC', nome: 'Acre' },
+  { uf: 'AL', nome: 'Alagoas' },
+  { uf: 'AP', nome: 'Amapá' },
+  { uf: 'AM', nome: 'Amazonas' },
+  { uf: 'BA', nome: 'Bahia' },
+  { uf: 'CE', nome: 'Ceará' },
+  { uf: 'DF', nome: 'Distrito Federal' },
+  { uf: 'ES', nome: 'Espírito Santo' },
+  { uf: 'GO', nome: 'Goiás' },
+  { uf: 'MA', nome: 'Maranhão' },
+  { uf: 'MT', nome: 'Mato Grosso' },
+  { uf: 'MS', nome: 'Mato Grosso do Sul' },
+  { uf: 'MG', nome: 'Minas Gerais' },
+  { uf: 'PA', nome: 'Pará' },
+  { uf: 'PB', nome: 'Paraíba' },
+  { uf: 'PR', nome: 'Paraná' },
+  { uf: 'PE', nome: 'Pernambuco' },
+  { uf: 'PI', nome: 'Piauí' },
+  { uf: 'RJ', nome: 'Rio de Janeiro' },
+  { uf: 'RN', nome: 'Rio Grande do Norte' },
+  { uf: 'RS', nome: 'Rio Grande do Sul' },
+  { uf: 'RO', nome: 'Rondônia' },
+  { uf: 'RR', nome: 'Roraima' },
+  { uf: 'SC', nome: 'Santa Catarina' },
+  { uf: 'SP', nome: 'São Paulo' },
+  { uf: 'SE', nome: 'Sergipe' },
+  { uf: 'TO', nome: 'Tocantins' },
+];
 
 // Format phone: 11999998888 → (11) 99999-8888
 const formatPhone = (value: string) => {
@@ -36,6 +73,13 @@ const formatCNPJ = (value: string) => {
   if (digits.length <= 8) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`;
   if (digits.length <= 12) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
   return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`;
+};
+
+// Format CEP: 12345678 → 12345-678
+const formatCEP = (value: string) => {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length <= 5) return digits;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 8)}`;
 };
 
 // Validate CNPJ with verifier digits
@@ -69,19 +113,105 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
   onSuccess
 }) => {
   const [loading, setLoading] = useState(false);
+  const [loadingCEP, setLoadingCEP] = useState(false);
+  const [loadingCNPJ, setLoadingCNPJ] = useState(false);
+  const numberInputRef = useRef<HTMLInputElement>(null);
+  
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     email: '',
     company: '',
     cnpj: '',
-    notes: ''
+    notes: '',
+    cep: '',
+    street: '',
+    number: '',
+    complement: '',
+    neighborhood: '',
+    city: '',
+    state: ''
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const resetForm = () => {
-    setFormData({ name: '', phone: '', email: '', company: '', cnpj: '', notes: '' });
+    setFormData({ 
+      name: '', phone: '', email: '', company: '', cnpj: '', notes: '',
+      cep: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: ''
+    });
     setErrors({});
+  };
+
+  // Busca CEP via ViaCEP API
+  const fetchCEP = async (cep: string) => {
+    const digits = cep.replace(/\D/g, '');
+    if (digits.length !== 8) return;
+    
+    setLoadingCEP(true);
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const data = await response.json();
+      
+      if (data.erro) {
+        toast.error('CEP não encontrado');
+        return;
+      }
+      
+      setFormData(prev => ({
+        ...prev,
+        street: data.logradouro || prev.street,
+        neighborhood: data.bairro || prev.neighborhood,
+        city: data.localidade || prev.city,
+        state: data.uf || prev.state
+      }));
+      
+      toast.success('Endereço carregado!');
+      numberInputRef.current?.focus();
+    } catch (error) {
+      console.error('Erro ao buscar CEP:', error);
+      toast.error('Erro ao buscar CEP');
+    } finally {
+      setLoadingCEP(false);
+    }
+  };
+
+  // Busca CNPJ via BrasilAPI
+  const fetchCNPJ = async (cnpj: string) => {
+    const digits = cnpj.replace(/\D/g, '');
+    if (digits.length !== 14) return;
+    
+    setLoadingCNPJ(true);
+    try {
+      const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`);
+      
+      if (!response.ok) {
+        toast.error('CNPJ não encontrado');
+        return;
+      }
+      
+      const data = await response.json();
+      
+      setFormData(prev => ({
+        ...prev,
+        company: data.razao_social || data.nome_fantasia || prev.company,
+        email: data.email && data.email !== 'null' ? data.email : prev.email,
+        phone: data.ddd_telefone_1 ? formatPhone(data.ddd_telefone_1.replace(/\D/g, '')) : prev.phone,
+        cep: data.cep ? formatCEP(data.cep) : prev.cep,
+        street: data.logradouro || prev.street,
+        number: data.numero || prev.number,
+        complement: data.complemento || prev.complement,
+        neighborhood: data.bairro || prev.neighborhood,
+        city: data.municipio || prev.city,
+        state: data.uf || prev.state
+      }));
+      
+      toast.success('Dados da empresa carregados!');
+    } catch (error) {
+      console.error('Erro ao buscar CNPJ:', error);
+      toast.error('Erro ao buscar dados do CNPJ');
+    } finally {
+      setLoadingCNPJ(false);
+    }
   };
 
   const validate = (): boolean => {
@@ -108,6 +238,11 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
         newErrors.cnpj = 'CNPJ inválido';
       }
     }
+
+    const cepDigits = formData.cep.replace(/\D/g, '');
+    if (cepDigits && cepDigits.length > 0 && cepDigits.length !== 8) {
+      newErrors.cep = 'CEP deve ter 8 dígitos';
+    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -122,6 +257,7 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
     try {
       const phoneDigits = formData.phone.replace(/\D/g, '');
       const cnpjDigits = formData.cnpj.replace(/\D/g, '') || null;
+      const cepDigits = formData.cep.replace(/\D/g, '') || null;
       
       const { error } = await supabase.from('contacts').insert({
         name: formData.name.trim(),
@@ -129,7 +265,14 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
         email: formData.email.trim() || null,
         company: formData.company.trim() || null,
         cnpj: cnpjDigits,
-        notes: formData.notes.trim() || null
+        notes: formData.notes.trim() || null,
+        cep: cepDigits,
+        street: formData.street.trim() || null,
+        number: formData.number.trim() || null,
+        complement: formData.complement.trim() || null,
+        neighborhood: formData.neighborhood.trim() || null,
+        city: formData.city.trim() || null,
+        state: formData.state || null
       });
 
       if (error) throw error;
@@ -155,7 +298,25 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
   };
 
   const handleCNPJChange = (value: string) => {
-    setFormData(prev => ({ ...prev, cnpj: formatCNPJ(value) }));
+    const formatted = formatCNPJ(value);
+    setFormData(prev => ({ ...prev, cnpj: formatted }));
+    
+    // Auto-fetch when CNPJ is complete
+    const digits = value.replace(/\D/g, '');
+    if (digits.length === 14) {
+      fetchCNPJ(digits);
+    }
+  };
+
+  const handleCEPChange = (value: string) => {
+    const formatted = formatCEP(value);
+    setFormData(prev => ({ ...prev, cep: formatted }));
+    
+    // Auto-fetch when CEP is complete
+    const digits = value.replace(/\D/g, '');
+    if (digits.length === 8) {
+      fetchCEP(digits);
+    }
   };
 
   return (
@@ -163,7 +324,7 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
       if (!isOpen) resetForm();
       onOpenChange(isOpen);
     }}>
-      <DialogContent className="sm:max-w-[500px] bg-slate-900 border-slate-800 text-slate-50">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto bg-slate-900 border-slate-800 text-slate-50">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <User className="w-5 h-5 text-cyan-400" />
@@ -238,6 +399,27 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
             </h3>
 
             <div className="space-y-2">
+              <Label htmlFor="cnpj" className="text-slate-300">
+                CNPJ
+                <span className="text-xs text-slate-500 ml-2">(preencha para buscar dados automaticamente)</span>
+              </Label>
+              <div className="relative">
+                <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Input
+                  id="cnpj"
+                  value={formData.cnpj}
+                  onChange={(e) => handleCNPJChange(e.target.value)}
+                  placeholder="12.345.678/0001-90"
+                  className="pl-10 bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-600"
+                />
+                {loadingCNPJ && (
+                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-cyan-400 animate-spin" />
+                )}
+              </div>
+              {errors.cnpj && <p className="text-xs text-red-400">{errors.cnpj}</p>}
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="company" className="text-slate-300">Empresa</Label>
               <div className="relative">
                 <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -250,20 +432,118 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
                 />
               </div>
             </div>
+          </div>
+
+          {/* Endereço */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-medium text-slate-400 border-b border-slate-800 pb-2 flex items-center gap-2">
+              <MapPin className="w-4 h-4" />
+              Endereço
+            </h3>
 
             <div className="space-y-2">
-              <Label htmlFor="cnpj" className="text-slate-300">CNPJ</Label>
+              <Label htmlFor="cep" className="text-slate-300">
+                CEP
+                <span className="text-xs text-slate-500 ml-2">(preencha para buscar endereço)</span>
+              </Label>
               <div className="relative">
-                <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <Input
-                  id="cnpj"
-                  value={formData.cnpj}
-                  onChange={(e) => handleCNPJChange(e.target.value)}
-                  placeholder="12.345.678/0001-90"
+                  id="cep"
+                  value={formData.cep}
+                  onChange={(e) => handleCEPChange(e.target.value)}
+                  placeholder="12345-678"
+                  maxLength={9}
                   className="pl-10 bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-600"
                 />
+                {loadingCEP && (
+                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-cyan-400 animate-spin" />
+                )}
               </div>
-              {errors.cnpj && <p className="text-xs text-red-400">{errors.cnpj}</p>}
+              {errors.cep && <p className="text-xs text-red-400">{errors.cep}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="street" className="text-slate-300">Logradouro</Label>
+              <Input
+                id="street"
+                value={formData.street}
+                onChange={(e) => setFormData(prev => ({ ...prev, street: e.target.value }))}
+                placeholder="Rua, Avenida, etc."
+                className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-600"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="number" className="text-slate-300">Número</Label>
+                <Input
+                  ref={numberInputRef}
+                  id="number"
+                  value={formData.number}
+                  onChange={(e) => setFormData(prev => ({ ...prev, number: e.target.value }))}
+                  placeholder="123"
+                  className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-600"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="complement" className="text-slate-300">Complemento</Label>
+                <Input
+                  id="complement"
+                  value={formData.complement}
+                  onChange={(e) => setFormData(prev => ({ ...prev, complement: e.target.value }))}
+                  placeholder="Sala 1, Apto 101"
+                  className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-600"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="neighborhood" className="text-slate-300">Bairro</Label>
+              <Input
+                id="neighborhood"
+                value={formData.neighborhood}
+                onChange={(e) => setFormData(prev => ({ ...prev, neighborhood: e.target.value }))}
+                placeholder="Centro"
+                className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-600"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="city" className="text-slate-300">Cidade</Label>
+                <Input
+                  id="city"
+                  value={formData.city}
+                  onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                  placeholder="São Paulo"
+                  className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-600"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="state" className="text-slate-300">Estado</Label>
+                <Select
+                  value={formData.state}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, state: value }))}
+                >
+                  <SelectTrigger className="bg-slate-950 border-slate-800 text-slate-200">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-800">
+                    {ESTADOS_BR.map((estado) => (
+                      <SelectItem 
+                        key={estado.uf} 
+                        value={estado.uf}
+                        className="text-slate-200 focus:bg-slate-800 focus:text-slate-50"
+                      >
+                        {estado.uf} - {estado.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
