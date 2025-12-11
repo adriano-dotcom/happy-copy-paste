@@ -1012,8 +1012,17 @@ export const api = {
 
   /**
    * Move deal to a new stage
+   * If moving to a Pipedrive stage, automatically sync to Pipedrive
    */
-  moveDealStage: async (id: string, newStageId: string): Promise<void> => {
+  moveDealStage: async (id: string, newStageId: string): Promise<{ synced?: boolean; error?: string }> => {
+    // First, get the stage info to check if it's a Pipedrive sync stage
+    const { data: stage } = await supabase
+      .from('pipeline_stages')
+      .select('title')
+      .eq('id', newStageId)
+      .single();
+
+    // Move the deal
     const { error } = await supabase
       .from('deals')
       .update({ stage_id: newStageId })
@@ -1023,6 +1032,39 @@ export const api = {
       console.error('[API] Error moving deal stage:', error);
       throw error;
     }
+
+    // Check if this is a Pipedrive sync stage
+    const stageName = stage?.title?.toLowerCase() || '';
+    const isPipedriveStage = stageName.includes('pipedrive') || 
+                             stageName.includes('enviado') || 
+                             stageName.includes('enviar');
+
+    if (isPipedriveStage) {
+      console.log('[API] Pipedrive stage detected, triggering sync...');
+      try {
+        const { data, error: syncError } = await supabase.functions.invoke('sync-pipedrive', {
+          body: { dealId: id }
+        });
+
+        if (syncError) {
+          console.error('[API] Error syncing to Pipedrive:', syncError);
+          return { synced: false, error: syncError.message };
+        }
+
+        if (data?.success) {
+          console.log('[API] Successfully synced to Pipedrive:', data);
+          return { synced: true };
+        } else {
+          console.log('[API] Pipedrive sync skipped:', data?.message);
+          return { synced: false, error: data?.message || data?.error };
+        }
+      } catch (syncErr: any) {
+        console.error('[API] Exception syncing to Pipedrive:', syncErr);
+        return { synced: false, error: syncErr.message };
+      }
+    }
+
+    return {};
   },
 
   /**

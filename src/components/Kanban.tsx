@@ -308,7 +308,14 @@ const Kanban: React.FC = () => {
 
     // Persist to database
     try {
-      await api.moveDealStage(dealId, targetStageId);
+      const result = await api.moveDealStage(dealId, targetStageId);
+      
+      // Show Pipedrive sync feedback
+      if (result?.synced) {
+        toast.success('✅ Lead sincronizado com Pipedrive!');
+      } else if (result?.error && result.error !== 'Pipedrive integration is disabled') {
+        toast.error(`❌ Erro ao sincronizar: ${result.error}`);
+      }
     } catch (error) {
       console.error('Error moving deal:', error);
       // Revert on error
@@ -570,7 +577,14 @@ const Kanban: React.FC = () => {
                                             
                                             // Persist to database
                                             try {
-                                              await api.moveDealStage(selectedDeal.id, col.id);
+                                              const result = await api.moveDealStage(selectedDeal.id, col.id);
+                                              
+                                              // Show Pipedrive sync feedback
+                                              if (result?.synced) {
+                                                toast.success('✅ Lead sincronizado com Pipedrive!');
+                                              } else if (result?.error && result.error !== 'Pipedrive integration is disabled') {
+                                                toast.error(`❌ Erro ao sincronizar: ${result.error}`);
+                                              }
                                             } catch (error) {
                                               console.error('Error moving deal:', error);
                                             }
