@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit } from 'lucide-react';
+import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { api } from '../services/api';
 import { Contact } from '../types';
@@ -9,7 +9,8 @@ import ImportContactsModal from './ImportContactsModal';
 import EditContactModal from './EditContactModal';
 import ContactDetailsDrawer from './ContactDetailsDrawer';
 import { displayPhoneInternational } from '@/utils/phoneFormatter';
-
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
+import { toast } from 'sonner';
 interface ExtendedContact extends Contact {
   company?: string;
   cnpj?: string;
@@ -33,7 +34,9 @@ const Contacts: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDetailsDrawerOpen, setIsDetailsDrawerOpen] = useState(false);
   const [selectedContact, setSelectedContact] = useState<ExtendedContact | null>(null);
-
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [contactToDelete, setContactToDelete] = useState<ExtendedContact | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
 
   const handleConverse = async (contactId: string) => {
@@ -63,6 +66,28 @@ const Contacts: React.FC = () => {
     setIsEditModalOpen(true);
   };
 
+  const handleDeleteClick = (contact: ExtendedContact) => {
+    setContactToDelete(contact);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!contactToDelete) return;
+    
+    try {
+      setIsDeleting(true);
+      await api.deleteContact(contactToDelete.id);
+      toast.success('Contato excluído com sucesso');
+      setIsDeleteDialogOpen(false);
+      setContactToDelete(null);
+      loadContacts();
+    } catch (error) {
+      console.error('Erro ao excluir contato:', error);
+      toast.error('Erro ao excluir contato');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
   const loadContacts = async () => {
     try {
       setLoading(true);
@@ -247,6 +272,15 @@ const Contacts: React.FC = () => {
                         >
                           <MessageSquare className="w-4 h-4" />
                         </Button>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-8 w-8 p-0 rounded-lg hover:bg-red-500/20 hover:text-red-400" 
+                          title="Excluir"
+                          onClick={() => handleDeleteClick(contact)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -281,6 +315,32 @@ const Contacts: React.FC = () => {
         onEdit={handleEditFromDrawer}
         onConverse={() => selectedContact && handleConverse(selectedContact.id)}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent className="bg-slate-900 border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white">Excluir Contato</AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400">
+              Tem certeza que deseja excluir <span className="font-semibold text-white">{contactToDelete?.name}</span>?
+              <br />
+              Esta ação não pode ser desfeita. O contato, suas conversas e mensagens serão removidos permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isDeleting ? 'Excluindo...' : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
