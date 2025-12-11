@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Phone, Loader2, X } from 'lucide-react';
+import { Phone, Loader2, PhoneOff } from 'lucide-react';
 import { CallLog } from '@/hooks/useActiveCall';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -37,25 +37,24 @@ export const ActiveCallIndicator: React.FC<ActiveCallIndicatorProps> = ({ call, 
     return () => clearInterval(interval);
   }, [call.status, call.answered_at, call.started_at]);
 
-  const handleCancel = async () => {
+  const handleHangup = async () => {
     setIsCancelling(true);
     try {
-      const { error } = await supabase
-        .from('call_logs')
-        .update({ 
-          status: 'cancelled',
-          ended_at: new Date().toISOString(),
-          hangup_cause: 'user_cancelled'
-        })
-        .eq('id', call.id);
+      // Call the hangup edge function to actually terminate the call
+      const { data, error } = await supabase.functions.invoke('api4com-hangup', {
+        body: { 
+          call_log_id: call.id,
+          api4com_call_id: call.api4com_call_id 
+        }
+      });
 
       if (error) throw error;
       
-      toast.info('Chamada cancelada');
+      toast.info('Chamada encerrada');
       onDismiss?.();
     } catch (error) {
-      console.error('Error cancelling call:', error);
-      toast.error('Erro ao cancelar chamada');
+      console.error('Error hanging up call:', error);
+      toast.error('Erro ao encerrar chamada');
     } finally {
       setIsCancelling(false);
     }
@@ -106,15 +105,15 @@ export const ActiveCallIndicator: React.FC<ActiveCallIndicatorProps> = ({ call, 
       </div>
 
       <button
-        onClick={handleCancel}
+        onClick={handleHangup}
         disabled={isCancelling}
-        className="flex items-center justify-center w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 transition-colors disabled:opacity-50"
-        title="Cancelar/Fechar"
+        className="flex items-center justify-center w-8 h-8 rounded-full bg-red-500/80 hover:bg-red-500 transition-colors disabled:opacity-50"
+        title="Encerrar chamada"
       >
         {isCancelling ? (
           <Loader2 className="w-4 h-4 text-white animate-spin" />
         ) : (
-          <X className="w-4 h-4 text-white" />
+          <PhoneOff className="w-4 h-4 text-white" />
         )}
       </button>
     </div>
