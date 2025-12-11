@@ -1,0 +1,199 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+interface SendTemplateRequest {
+  contact_id: string;
+  conversation_id: string;
+  template_name: string;
+  language?: string;
+  variables?: string[]; // Variables for body component
+  header_variables?: string[]; // Variables for header (if any)
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const body: SendTemplateRequest = await req.json();
+    const { contact_id, conversation_id, template_name, language = 'pt_BR', variables = [], header_variables = [] } = body;
+
+    console.log(`Sending template ${template_name} to contact ${contact_id}`);
+
+    // Get WhatsApp settings
+    const { data: settings, error: settingsError } = await supabase
+      .from('nina_settings')
+      .select('whatsapp_access_token, whatsapp_phone_number_id')
+      .single();
+
+    if (settingsError || !settings) {
+      throw new Error('Failed to load WhatsApp settings');
+    }
+
+    if (!settings.whatsapp_access_token || !settings.whatsapp_phone_number_id) {
+      throw new Error('WhatsApp não configurado');
+    }
+
+    // Get contact phone number
+    const { data: contact, error: contactError } = await supabase
+      .from('contacts')
+      .select('phone_number, name')
+      .eq('id', contact_id)
+      .single();
+
+    if (contactError || !contact) {
+      throw new Error('Contact not found');
+    }
+
+    // Get template details from local DB
+    const { data: template, error: templateError } = await supabase
+      .from('whatsapp_templates')
+      .select('*')
+      .eq('name', template_name)
+      .eq('language', language)
+      .eq('status', 'APPROVED')
+      .single();
+
+    if (templateError || !template) {
+      throw new Error(`Template ${template_name} não encontrado ou não aprovado`);
+    }
+
+    // Clean phone number (remove non-digits)
+    const phoneNumber = contact.phone_number.replace(/\D/g, '');
+
+    // Build components array for the API
+    const components: any[] = [];
+
+    // Add header parameters if there are header variables
+    if (header_variables.length > 0) {
+      components.push({
+        type: 'header',
+        parameters: header_variables.map(v => ({
+          type: 'text',
+          text: v
+        }))
+      });
+    }
+
+    // Add body parameters
+    if (variables.length > 0) {
+      components.push({
+        type: 'body',
+        parameters: variables.map(v => ({
+          type: 'text',
+          text: v
+        }))
+      });
+    }
+
+    // Build the WhatsApp API payload
+    const payload: any = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phoneNumber,
+      type: 'template',
+      template: {
+        name: template_name,
+        language: {
+          code: language
+        }
+      }
+    };
+
+    // Only add components if we have any
+    if (components.length > 0) {
+      payload.template.components = components;
+    }
+
+    console.log('Sending WhatsApp template:', JSON.stringify(payload, null, 2));
+
+    // Send via WhatsApp Cloud API
+    const waResponse = await fetch(
+      `https://graph.facebook.com/v21.0/${settings.whatsapp_phone_number_id}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${settings.whatsapp_access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    const waData = await waResponse.json();
+
+    if (!waResponse.ok) {
+      console.error('WhatsApp API error:', waData);
+      throw new Error(waData.error?.message || 'Failed to send template');
+    }
+
+    console.log('WhatsApp API response:', waData);
+
+    // Get template body text for message content
+    const bodyComponent = template.components?.find((c: any) => c.type === 'BODY');
+    let messageContent = bodyComponent?.text || `[Template: ${template_name}]`;
+    
+    // Replace variables in content for display
+    variables.forEach((v, i) => {
+      messageContent = messageContent.replace(`{{${i + 1}}}`, v);
+    });
+
+    // Record the message in the database
+    const { data: message, error: messageError } = await supabase
+      .from('messages')
+      .insert({
+        conversation_id,
+        content: messageContent,
+        from_type: 'nina',
+        type: 'text',
+        status: 'sent',
+        whatsapp_message_id: waData.messages?.[0]?.id,
+        metadata: {
+          is_template: true,
+          template_name,
+          template_language: language,
+          variables
+        }
+      })
+      .select()
+      .single();
+
+    if (messageError) {
+      console.error('Error recording message:', messageError);
+      // Don't fail the request, message was sent
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        whatsapp_message_id: waData.messages?.[0]?.id,
+        message_id: message?.id,
+        content: messageContent
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error('Error in send-whatsapp-template:', error);
+    return new Response(
+      JSON.stringify({ 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        success: false 
+      }),
+      { 
+        status: 500, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
+  }
+});

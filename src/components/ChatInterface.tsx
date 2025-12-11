@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Search, MoreVertical, Phone, Paperclip, Send, Check, CheckCheck, 
   Smile, Play, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
-  Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil,
+  Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
   Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall
 } from 'lucide-react';
 import {
@@ -27,6 +27,7 @@ import { CallConfirmationModal } from './CallConfirmationModal';
 import { useActiveCall } from '@/hooks/useActiveCall';
 import { ActiveCallIndicator } from './ActiveCallIndicator';
 import { CallHistoryPanel } from './CallHistoryPanel';
+import { SendWhatsAppTemplateModal } from './SendWhatsAppTemplateModal';
 
 const ChatInterface: React.FC = () => {
   const navigate = useNavigate();
@@ -62,6 +63,9 @@ const ChatInterface: React.FC = () => {
   // Call modal state
   const [showCallModal, setShowCallModal] = useState(false);
   const [defaultExtension, setDefaultExtension] = useState('1000');
+  
+  // WhatsApp template modal state
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
   
   // Audio player state
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
@@ -927,6 +931,16 @@ const ChatInterface: React.FC = () => {
                   <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors">
                     <Paperclip className="w-5 h-5" />
                   </Button>
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="icon" 
+                    className="text-slate-400 hover:text-green-400 hover:bg-green-500/10 rounded-full transition-colors"
+                    onClick={() => setShowTemplateModal(true)}
+                    title="Enviar template WhatsApp"
+                  >
+                    <FileType className="w-5 h-5" />
+                  </Button>
                 </div>
                 
                 <div className="flex-1 bg-slate-950 rounded-2xl border border-slate-800 focus-within:ring-2 focus-within:ring-cyan-500/30 focus-within:border-cyan-500/50 transition-all shadow-inner">
@@ -1329,6 +1343,19 @@ const ChatInterface: React.FC = () => {
           conversationId={activeChat.id}
           defaultExtension={defaultExtension}
           onCallInitiated={() => setShowCallModal(false)}
+        />
+      )}
+
+      {/* WhatsApp Template Modal */}
+      {activeChat && (
+        <SendWhatsAppTemplateModal
+          isOpen={showTemplateModal}
+          onClose={() => setShowTemplateModal(false)}
+          contactId={activeChat.contactId}
+          conversationId={activeChat.id}
+          contactName={activeChat.contactName}
+          contactCompany={activeChat.contactCompany}
+          onSent={() => setShowTemplateModal(false)}
         />
       )}
     </div>

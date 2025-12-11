@@ -1280,6 +1280,51 @@ export type Database = {
           },
         ]
       }
+      whatsapp_templates: {
+        Row: {
+          category: string | null
+          components: Json | null
+          created_at: string | null
+          example_values: Json | null
+          id: string
+          language: string | null
+          last_synced_at: string | null
+          meta_template_id: string
+          name: string
+          status: string | null
+          updated_at: string | null
+          variables_count: number | null
+        }
+        Insert: {
+          category?: string | null
+          components?: Json | null
+          created_at?: string | null
+          example_values?: Json | null
+          id?: string
+          language?: string | null
+          last_synced_at?: string | null
+          meta_template_id: string
+          name: string
+          status?: string | null
+          updated_at?: string | null
+          variables_count?: number | null
+        }
+        Update: {
+          category?: string | null
+          components?: Json | null
+          created_at?: string | null
+          example_values?: Json | null
+          id?: string
+          language?: string | null
+          last_synced_at?: string | null
+          meta_template_id?: string
+          name?: string
+          status?: string | null
+          updated_at?: string | null
+          variables_count?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       contacts_with_stats: {
