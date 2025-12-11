@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.api4com-webhook]
 verify_jwt = false
+
+[functions.transcribe-call-recording]
+verify_jwt = false

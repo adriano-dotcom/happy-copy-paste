@@ -145,6 +145,8 @@ export type Database = {
           record_url: string | null
           started_at: string
           status: string
+          transcription: string | null
+          transcription_status: string | null
           updated_at: string
         }
         Insert: {
@@ -163,6 +165,8 @@ export type Database = {
           record_url?: string | null
           started_at?: string
           status?: string
+          transcription?: string | null
+          transcription_status?: string | null
           updated_at?: string
         }
         Update: {
@@ -181,6 +185,8 @@ export type Database = {
           record_url?: string | null
           started_at?: string
           status?: string
+          transcription?: string | null
+          transcription_status?: string | null
           updated_at?: string
         }
         Relationships: [

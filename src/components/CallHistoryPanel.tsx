@@ -1,11 +1,23 @@
 import React, { useState, useRef } from 'react';
-import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, Play, Pause, Volume2, Loader2 } from 'lucide-react';
-import { CallLog } from '@/hooks/useActiveCall';
+import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, Play, Pause, Volume2, Loader2, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+
+interface CallLog {
+  id: string;
+  status: string;
+  started_at: string;
+  duration_seconds: number | null;
+  record_url: string | null;
+  transcription?: string | null;
+  transcription_status?: string | null;
+}
 
 interface CallHistoryPanelProps {
   calls: CallLog[];
   loading?: boolean;
   compact?: boolean;
+  onTranscriptionUpdate?: (callId: string, transcription: string) => void;
 }
 
 const formatDuration = (seconds: number | null): string => {
@@ -118,7 +130,7 @@ const AudioPlayer: React.FC<{ url: string }> = ({ url }) => {
   };
 
   return (
-    <div className="mt-2 p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
+    <div className="p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
       <audio
         ref={audioRef}
         src={url}
@@ -163,7 +175,99 @@ const AudioPlayer: React.FC<{ url: string }> = ({ url }) => {
   );
 };
 
-export const CallHistoryPanel: React.FC<CallHistoryPanelProps> = ({ calls, loading, compact = false }) => {
+// Transcription Section Component
+const TranscriptionSection: React.FC<{
+  callId: string;
+  transcription?: string | null;
+  transcriptionStatus?: string | null;
+  hasRecording: boolean;
+  onTranscriptionUpdate?: (callId: string, transcription: string) => void;
+}> = ({ callId, transcription, transcriptionStatus, hasRecording, onTranscriptionUpdate }) => {
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [localTranscription, setLocalTranscription] = useState(transcription);
+
+  const handleTranscribe = async () => {
+    setIsTranscribing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('transcribe-call-recording', {
+        body: { call_log_id: callId }
+      });
+
+      if (error) throw error;
+
+      if (data?.transcription) {
+        setLocalTranscription(data.transcription);
+        onTranscriptionUpdate?.(callId, data.transcription);
+        toast.success('Transcrição concluída!');
+      }
+    } catch (error) {
+      console.error('Erro na transcrição:', error);
+      toast.error('Erro ao transcrever gravação');
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  const displayTranscription = localTranscription || transcription;
+  const isProcessing = isTranscribing || transcriptionStatus === 'processing';
+
+  if (!hasRecording) return null;
+
+  // Se tem transcrição, mostrar
+  if (displayTranscription) {
+    return (
+      <div className="mt-2">
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="flex items-center gap-2 text-xs text-cyan-400 hover:text-cyan-300 transition-colors w-full"
+        >
+          <FileText className="w-3.5 h-3.5" />
+          <span>Transcrição</span>
+          {isExpanded ? <ChevronUp className="w-3 h-3 ml-auto" /> : <ChevronDown className="w-3 h-3 ml-auto" />}
+        </button>
+        
+        {isExpanded && (
+          <div className="mt-2 p-3 bg-slate-900/70 rounded-lg border border-slate-700/50 max-h-40 overflow-y-auto">
+            <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">
+              {displayTranscription}
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Se não tem transcrição, mostrar botão
+  return (
+    <div className="mt-2">
+      <button
+        onClick={handleTranscribe}
+        disabled={isProcessing}
+        className="flex items-center gap-2 text-xs text-slate-400 hover:text-cyan-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {isProcessing ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>Transcrevendo...</span>
+          </>
+        ) : (
+          <>
+            <FileText className="w-3.5 h-3.5" />
+            <span>Transcrever gravação</span>
+          </>
+        )}
+      </button>
+    </div>
+  );
+};
+
+export const CallHistoryPanel: React.FC<CallHistoryPanelProps> = ({ 
+  calls, 
+  loading, 
+  compact = false,
+  onTranscriptionUpdate 
+}) => {
   const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
 
   if (loading) {
@@ -227,6 +331,11 @@ export const CallHistoryPanel: React.FC<CallHistoryPanelProps> = ({ calls, loadi
                       Gravação
                     </span>
                   )}
+                  {call.transcription && (
+                    <span className="flex items-center gap-1 text-[10px] text-cyan-500">
+                      <FileText className="w-3 h-3" />
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                   <span>{formatDate(call.started_at)}</span>
@@ -245,10 +354,17 @@ export const CallHistoryPanel: React.FC<CallHistoryPanelProps> = ({ calls, loadi
               </div>
             </div>
 
-            {/* Expanded Audio Player */}
-            {isExpanded && call.record_url && (
-              <div className="px-3 pb-3">
-                <AudioPlayer url={call.record_url} />
+            {/* Expanded Content: Audio Player + Transcription */}
+            {isExpanded && hasRecording && (
+              <div className="px-3 pb-3 space-y-2">
+                <AudioPlayer url={call.record_url!} />
+                <TranscriptionSection
+                  callId={call.id}
+                  transcription={call.transcription}
+                  transcriptionStatus={call.transcription_status}
+                  hasRecording={hasRecording}
+                  onTranscriptionUpdate={onTranscriptionUpdate}
+                />
               </div>
             )}
           </div>
