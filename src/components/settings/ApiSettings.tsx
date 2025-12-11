@@ -1,5 +1,5 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
-import { Save, MessageSquare, Mic, Eye, EyeOff, Copy, Check, Loader2, Send, ChevronDown, Volume2, Download, Upload, FileAudio, Mail } from 'lucide-react';
+import { Save, MessageSquare, Mic, Eye, EyeOff, Copy, Check, Loader2, Send, ChevronDown, Volume2, Download, Upload, FileAudio, Mail, Phone } from 'lucide-react';
 import { Button } from '../Button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -20,6 +20,9 @@ interface NinaSettings {
   elevenlabs_speed: number | null;
   elevenlabs_speaker_boost: boolean;
   audio_response_enabled: boolean;
+  api4com_api_token: string | null;
+  api4com_default_extension: string | null;
+  api4com_enabled: boolean;
 }
 
 const VOICE_OPTIONS = [
@@ -112,7 +115,16 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
     elevenlabs_speed: 1.0,
     elevenlabs_speaker_boost: true,
     audio_response_enabled: false,
+    api4com_api_token: null,
+    api4com_default_extension: '1000',
+    api4com_enabled: false,
   });
+  
+  // API4Com states
+  const [showApi4comToken, setShowApi4comToken] = useState(false);
+  const [api4comSectionOpen, setApi4comSectionOpen] = useState(false);
+  const [copiedApi4comWebhook, setCopiedApi4comWebhook] = useState(false);
+  const [testingApi4com, setTestingApi4com] = useState(false);
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-webhook`;
 
@@ -166,6 +178,9 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
             elevenlabs_speed: newData.elevenlabs_speed,
             elevenlabs_speaker_boost: newData.elevenlabs_speaker_boost,
             audio_response_enabled: newData.audio_response_enabled || false,
+            api4com_api_token: (newData as any).api4com_api_token || null,
+            api4com_default_extension: (newData as any).api4com_default_extension || '1000',
+            api4com_enabled: (newData as any).api4com_enabled || false,
           });
         }
       } else {
@@ -183,6 +198,9 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
           elevenlabs_speed: data.elevenlabs_speed,
           elevenlabs_speaker_boost: data.elevenlabs_speaker_boost,
           audio_response_enabled: data.audio_response_enabled || false,
+          api4com_api_token: (data as any).api4com_api_token || null,
+          api4com_default_extension: (data as any).api4com_default_extension || '1000',
+          api4com_enabled: (data as any).api4com_enabled || false,
         });
       }
     } catch (error) {
@@ -216,6 +234,9 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
           elevenlabs_speed: settings.elevenlabs_speed,
           elevenlabs_speaker_boost: settings.elevenlabs_speaker_boost,
           audio_response_enabled: settings.audio_response_enabled,
+          api4com_api_token: settings.api4com_api_token,
+          api4com_default_extension: settings.api4com_default_extension,
+          api4com_enabled: settings.api4com_enabled,
           updated_at: new Date().toISOString(),
         })
         .eq('id', settings.id);
@@ -491,6 +512,31 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
 
   const whatsappConfigured = settings.whatsapp_access_token && settings.whatsapp_phone_number_id;
   const elevenlabsConfigured = settings.elevenlabs_api_key;
+  const api4comConfigured = settings.api4com_api_token && settings.api4com_enabled;
+  
+  const api4comWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api4com-webhook`;
+  
+  const copyApi4comWebhookUrl = () => {
+    navigator.clipboard.writeText(api4comWebhookUrl);
+    setCopiedApi4comWebhook(true);
+    toast.success('URL do webhook copiada!');
+    setTimeout(() => setCopiedApi4comWebhook(false), 2000);
+  };
+  
+  const handleTestApi4com = async () => {
+    if (!settings.api4com_api_token) {
+      toast.error('Configure o Token da API4Com primeiro');
+      return;
+    }
+    
+    setTestingApi4com(true);
+    try {
+      // Just validate the token by checking if it's set
+      toast.success('Token configurado! Para testar, faça uma ligação de teste no Chat.');
+    } finally {
+      setTestingApi4com(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -1137,6 +1183,109 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
           </Collapsible.Content>
         </div>
       </Collapsible.Root>
+
+      {/* API4Com - Telefonia */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Phone className="w-5 h-5 text-green-400" />
+            <h3 className="font-semibold text-white">API4Com - Telefonia</h3>
+          </div>
+          <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium ${
+            api4comConfigured 
+              ? 'bg-emerald-500/10 text-emerald-400' 
+              : 'bg-amber-500/10 text-amber-400'
+          }`}>
+            <span className={`h-2 w-2 rounded-full ${api4comConfigured ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+            {api4comConfigured ? 'Ativo' : 'Inativo'}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-medium text-slate-400 mb-1.5 block">Token de API</label>
+            <div className="relative">
+              <input
+                type={showApi4comToken ? "text" : "password"}
+                value={settings.api4com_api_token || ''}
+                onChange={(e) => setSettings({ ...settings, api4com_api_token: e.target.value })}
+                placeholder="Seu token da API4Com..."
+                className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 pr-10 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-green-500/50"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApi4comToken(!showApi4comToken)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+              >
+                {showApi4comToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-slate-400 mb-1.5 block">Ramal Padrão</label>
+            <input
+              type="text"
+              value={settings.api4com_default_extension || ''}
+              onChange={(e) => setSettings({ ...settings, api4com_default_extension: e.target.value })}
+              placeholder="1000"
+              className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-green-500/50"
+            />
+          </div>
+
+          <div className="p-4 bg-green-500/5 border border-green-500/20 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <Phone className="w-4 h-4 text-green-400" />
+                  <span className="text-sm font-medium text-white">Ativar Ligações</span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Habilita o botão de ligação no chat
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.api4com_enabled}
+                  onChange={(e) => setSettings({ ...settings, api4com_enabled: e.target.checked })}
+                  disabled={!settings.api4com_api_token}
+                  className="sr-only peer"
+                />
+                <div className={`w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-green-500/50 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500 ${!settings.api4com_api_token ? 'opacity-50 cursor-not-allowed' : ''}`}></div>
+              </label>
+            </div>
+          </div>
+
+          <Collapsible.Root open={api4comSectionOpen} onOpenChange={setApi4comSectionOpen}>
+            <Collapsible.Trigger className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-300 transition-colors">
+              <ChevronDown className={`w-4 h-4 transition-transform ${api4comSectionOpen ? 'rotate-180' : ''}`} />
+              Configuração de Webhook
+            </Collapsible.Trigger>
+            <Collapsible.Content className="mt-3 space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-400 mb-1.5 block">Webhook URL (configure no painel API4Com)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={api4comWebhookUrl}
+                    readOnly
+                    className="h-9 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-400 font-mono"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={copyApi4comWebhookUrl}
+                    className="px-3"
+                  >
+                    {copiedApi4comWebhook ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </Button>
+                </div>
+              </div>
+            </Collapsible.Content>
+          </Collapsible.Root>
+        </div>
+      </div>
     </div>
   );
 });
