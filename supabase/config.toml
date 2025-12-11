@@ -53,3 +53,6 @@ verify_jwt = false
 
 [functions.register-whatsapp-number]
 verify_jwt = false
+
+[functions.test-whatsapp-message]
+verify_jwt = false
