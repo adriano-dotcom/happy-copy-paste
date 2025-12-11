@@ -19,7 +19,7 @@ serve(async (req) => {
     // Get WhatsApp settings
     const { data: settings, error: settingsError } = await supabase
       .from('nina_settings')
-      .select('whatsapp_access_token, whatsapp_phone_number_id')
+      .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id')
       .single();
 
     if (settingsError || !settings) {
@@ -30,28 +30,11 @@ serve(async (req) => {
       throw new Error('WhatsApp Access Token não configurado');
     }
 
-    // Get WABA ID from phone number ID
-    // First, get the phone number details to find the WABA ID
-    const phoneResponse = await fetch(
-      `https://graph.facebook.com/v21.0/${settings.whatsapp_phone_number_id}?fields=waba_id`,
-      {
-        headers: {
-          'Authorization': `Bearer ${settings.whatsapp_access_token}`,
-        },
-      }
-    );
-
-    if (!phoneResponse.ok) {
-      const errorText = await phoneResponse.text();
-      console.error('Error fetching phone details:', errorText);
-      throw new Error(`Failed to fetch phone details: ${phoneResponse.status}`);
-    }
-
-    const phoneData = await phoneResponse.json();
-    const wabaId = phoneData.waba_id;
+    // Use WABA ID from settings
+    const wabaId = settings.whatsapp_waba_id;
 
     if (!wabaId) {
-      throw new Error('WABA ID not found for this phone number');
+      throw new Error('WABA ID não configurado. Vá em Configurações → APIs → WhatsApp e preencha o WABA ID. Encontre-o no Meta Business Manager → Contas → WhatsApp Business.');
     }
 
     console.log(`Syncing templates for WABA ID: ${wabaId}`);
