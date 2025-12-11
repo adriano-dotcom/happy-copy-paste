@@ -128,6 +128,85 @@ export type Database = {
           },
         ]
       }
+      call_logs: {
+        Row: {
+          answered_at: string | null
+          api4com_call_id: string | null
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string
+          duration_seconds: number | null
+          ended_at: string | null
+          extension: string
+          hangup_cause: string | null
+          id: string
+          metadata: Json | null
+          phone_number: string
+          record_url: string | null
+          started_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          answered_at?: string | null
+          api4com_call_id?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          ended_at?: string | null
+          extension: string
+          hangup_cause?: string | null
+          id?: string
+          metadata?: Json | null
+          phone_number: string
+          record_url?: string | null
+          started_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          answered_at?: string | null
+          api4com_call_id?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          ended_at?: string | null
+          extension?: string
+          hangup_cause?: string | null
+          id?: string
+          metadata?: Json | null
+          phone_number?: string
+          record_url?: string | null
+          started_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_logs_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_logs_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_logs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           blocked_at: string | null
@@ -729,6 +808,9 @@ export type Database = {
         Row: {
           adaptive_response_enabled: boolean
           ai_model_mode: string | null
+          api4com_api_token: string | null
+          api4com_default_extension: string | null
+          api4com_enabled: boolean | null
           async_booking_enabled: boolean | null
           audio_response_enabled: boolean | null
           auto_response_enabled: boolean
@@ -774,6 +856,9 @@ export type Database = {
         Insert: {
           adaptive_response_enabled?: boolean
           ai_model_mode?: string | null
+          api4com_api_token?: string | null
+          api4com_default_extension?: string | null
+          api4com_enabled?: boolean | null
           async_booking_enabled?: boolean | null
           audio_response_enabled?: boolean | null
           auto_response_enabled?: boolean
@@ -819,6 +904,9 @@ export type Database = {
         Update: {
           adaptive_response_enabled?: boolean
           ai_model_mode?: string | null
+          api4com_api_token?: string | null
+          api4com_default_extension?: string | null
+          api4com_enabled?: boolean | null
           async_booking_enabled?: boolean | null
           audio_response_enabled?: boolean | null
           auto_response_enabled?: boolean

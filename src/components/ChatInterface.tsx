@@ -757,6 +757,40 @@ const ChatInterface: React.FC = () => {
                 >
                   <Pause className="w-5 h-5" />
                 </Button>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="text-slate-400 hover:text-green-400 hover:bg-green-500/10"
+                  onClick={async () => {
+                    if (!activeChat.contactPhone) {
+                      toast.error('Contato sem número de telefone');
+                      return;
+                    }
+                    const confirmed = window.confirm(`Ligar para ${activeChat.contactName}?\n${activeChat.contactPhone}`);
+                    if (!confirmed) return;
+                    
+                    try {
+                      const { data, error } = await supabase.functions.invoke('api4com-dial', {
+                        body: {
+                          contactId: activeChat.contactId,
+                          conversationId: activeChat.id,
+                          phoneNumber: activeChat.contactPhone
+                        }
+                      });
+                      if (error) throw error;
+                      if (data?.success) {
+                        toast.success('Ligação iniciada!', { description: 'Aguarde o ramal tocar...' });
+                      } else {
+                        throw new Error(data?.error || 'Erro ao iniciar ligação');
+                      }
+                    } catch (err: any) {
+                      toast.error('Erro ao ligar', { description: err.message });
+                    }
+                  }}
+                  title="Fazer ligação"
+                >
+                  <Phone className="w-5 h-5" />
+                </Button>
                 <div className="h-6 w-px bg-slate-800 mx-1"></div>
                 <Button 
                   variant="ghost" 
