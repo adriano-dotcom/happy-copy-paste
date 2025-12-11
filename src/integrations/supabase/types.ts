@@ -612,6 +612,121 @@ export type Database = {
         }
         Relationships: []
       }
+      followup_automations: {
+        Row: {
+          active_days: number[] | null
+          active_hours_end: string | null
+          active_hours_start: string | null
+          conversation_statuses: string[] | null
+          cooldown_hours: number | null
+          created_at: string | null
+          description: string | null
+          hours_without_response: number
+          id: string
+          is_active: boolean | null
+          max_attempts: number | null
+          name: string
+          pipeline_ids: string[] | null
+          tags: string[] | null
+          template_id: string | null
+          template_variables: Json | null
+          updated_at: string | null
+        }
+        Insert: {
+          active_days?: number[] | null
+          active_hours_end?: string | null
+          active_hours_start?: string | null
+          conversation_statuses?: string[] | null
+          cooldown_hours?: number | null
+          created_at?: string | null
+          description?: string | null
+          hours_without_response?: number
+          id?: string
+          is_active?: boolean | null
+          max_attempts?: number | null
+          name: string
+          pipeline_ids?: string[] | null
+          tags?: string[] | null
+          template_id?: string | null
+          template_variables?: Json | null
+          updated_at?: string | null
+        }
+        Update: {
+          active_days?: number[] | null
+          active_hours_end?: string | null
+          active_hours_start?: string | null
+          conversation_statuses?: string[] | null
+          cooldown_hours?: number | null
+          created_at?: string | null
+          description?: string | null
+          hours_without_response?: number
+          id?: string
+          is_active?: boolean | null
+          max_attempts?: number | null
+          name?: string
+          pipeline_ids?: string[] | null
+          tags?: string[] | null
+          template_id?: string | null
+          template_variables?: Json | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "followup_automations_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      followup_logs: {
+        Row: {
+          automation_id: string | null
+          contact_id: string
+          conversation_id: string
+          created_at: string | null
+          error_message: string | null
+          hours_waited: number | null
+          id: string
+          message_id: string | null
+          status: string | null
+          template_name: string | null
+        }
+        Insert: {
+          automation_id?: string | null
+          contact_id: string
+          conversation_id: string
+          created_at?: string | null
+          error_message?: string | null
+          hours_waited?: number | null
+          id?: string
+          message_id?: string | null
+          status?: string | null
+          template_name?: string | null
+        }
+        Update: {
+          automation_id?: string | null
+          contact_id?: string
+          conversation_id?: string
+          created_at?: string | null
+          error_message?: string | null
+          hours_waited?: number | null
+          id?: string
+          message_id?: string | null
+          status?: string | null
+          template_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "followup_logs_automation_id_fkey"
+            columns: ["automation_id"]
+            isOneToOne: false
+            referencedRelation: "followup_automations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_grouping_queue: {
         Row: {
           contacts_data: Json | null

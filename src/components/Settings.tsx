@@ -1,11 +1,12 @@
 import React, { useRef, useState } from 'react';
-import { Shield, Bot, Plug, Loader2, Save, RotateCcw, Users, Mail, Link, Settings2, MessageSquare } from 'lucide-react';
+import { Shield, Bot, Plug, Loader2, Save, RotateCcw, Users, Mail, Link, Settings2, MessageSquare, Zap } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import AgentSettings, { AgentSettingsRef } from './settings/AgentSettings';
 import ApiSettings, { ApiSettingsRef } from './settings/ApiSettings';
 import AgentsSettings, { AgentsSettingsRef } from './settings/AgentsSettings';
 import EmailTemplatesSettings from './settings/EmailTemplatesSettings';
 import WhatsAppTemplatesSettings from './settings/WhatsAppTemplatesSettings';
+import FollowupAutomationsSettings from './settings/FollowupAutomationsSettings';
 import PipedriveSettings, { PipedriveSettingsRef } from './settings/PipedriveSettings';
 import GeneralSettings from './settings/GeneralSettings';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
@@ -67,7 +68,7 @@ const Settings: React.FC = () => {
     ? pipedriveRef.current?.isSaving
     : false;
 
-  const showSaveButtons = activeTab !== 'templates' && activeTab !== 'whatsapp-templates' && activeTab !== 'general';
+  const showSaveButtons = activeTab !== 'templates' && activeTab !== 'whatsapp-templates' && activeTab !== 'automations' && activeTab !== 'general';
   
   return (
     <div className="p-8 max-w-5xl mx-auto h-full overflow-y-auto bg-slate-950 text-slate-50 custom-scrollbar">
@@ -118,6 +119,10 @@ const Settings: React.FC = () => {
             <TabsTrigger value="whatsapp-templates" className="gap-2">
               <MessageSquare className="w-4 h-4" />
               WhatsApp
+            </TabsTrigger>
+            <TabsTrigger value="automations" className="gap-2">
+              <Zap className="w-4 h-4" />
+              Automações
             </TabsTrigger>
             <TabsTrigger value="pipedrive" className="gap-2">
               <Link className="w-4 h-4" />
@@ -178,6 +183,10 @@ const Settings: React.FC = () => {
 
         <TabsContent value="whatsapp-templates">
           <WhatsAppTemplatesSettings />
+        </TabsContent>
+
+        <TabsContent value="automations">
+          <FollowupAutomationsSettings />
         </TabsContent>
 
         <TabsContent value="pipedrive">
