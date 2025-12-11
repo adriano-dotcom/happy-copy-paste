@@ -8,6 +8,7 @@ import CreateContactModal from './CreateContactModal';
 import ImportContactsModal from './ImportContactsModal';
 import EditContactModal from './EditContactModal';
 import ContactDetailsDrawer from './ContactDetailsDrawer';
+import { displayPhoneInternational } from '@/utils/phoneFormatter';
 
 interface ExtendedContact extends Contact {
   company?: string;
@@ -202,7 +203,7 @@ const Contacts: React.FC = () => {
                         )}
                         <div className="flex items-center gap-2 text-slate-400 text-xs">
                             <Phone className="w-3.5 h-3.5" />
-                            {contact.phone}
+                            {displayPhoneInternational(contact.phone)}
                         </div>
                       </div>
                     </td>

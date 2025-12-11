@@ -19,6 +19,7 @@ import {
 } from './ui/select';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { formatPhoneInternational } from '@/utils/phoneFormatter';
 
 interface CreateContactModalProps {
   open: boolean;
@@ -56,14 +57,7 @@ const ESTADOS_BR = [
   { uf: 'TO', nome: 'Tocantins' },
 ];
 
-// Format phone: 11999998888 → (11) 99999-8888
-const formatPhone = (value: string) => {
-  const digits = value.replace(/\D/g, '');
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-  if (digits.length <= 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
-  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
-};
+// Use international phone format from utility
 
 // Format CNPJ: 12345678000190 → 12.345.678/0001-90
 const formatCNPJ = (value: string) => {
@@ -195,7 +189,7 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
         ...prev,
         company: data.razao_social || data.nome_fantasia || prev.company,
         email: data.email && data.email !== 'null' ? data.email : prev.email,
-        phone: data.ddd_telefone_1 ? formatPhone(data.ddd_telefone_1.replace(/\D/g, '')) : prev.phone,
+        phone: data.ddd_telefone_1 ? formatPhoneInternational(data.ddd_telefone_1.replace(/\D/g, '')) : prev.phone,
         cep: data.cep ? formatCEP(data.cep) : prev.cep,
         street: data.logradouro || prev.street,
         number: data.numero || prev.number,
@@ -294,7 +288,7 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
   };
 
   const handlePhoneChange = (value: string) => {
-    setFormData(prev => ({ ...prev, phone: formatPhone(value) }));
+    setFormData(prev => ({ ...prev, phone: formatPhoneInternational(value) }));
   };
 
   const handleCNPJChange = (value: string) => {
@@ -367,7 +361,7 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
                     id="phone"
                     value={formData.phone}
                     onChange={(e) => handlePhoneChange(e.target.value)}
-                    placeholder="(11) 99999-9999"
+                    placeholder="+55 43 99999-9999"
                     className="pl-10 bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-600"
                   />
                 </div>
