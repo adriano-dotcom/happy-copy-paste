@@ -1,0 +1,142 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const { call_log_id } = await req.json();
+    
+    if (!call_log_id) {
+      return new Response(
+        JSON.stringify({ error: 'call_log_id é obrigatório' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`[transcribe-call-recording] Iniciando transcrição para call_log: ${call_log_id}`);
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Buscar o call_log
+    const { data: callLog, error: fetchError } = await supabase
+      .from('call_logs')
+      .select('*')
+      .eq('id', call_log_id)
+      .single();
+
+    if (fetchError || !callLog) {
+      console.error('[transcribe-call-recording] Call log não encontrado:', fetchError);
+      return new Response(
+        JSON.stringify({ error: 'Call log não encontrado' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!callLog.record_url) {
+      return new Response(
+        JSON.stringify({ error: 'Call log não possui gravação' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Atualizar status para processing
+    await supabase
+      .from('call_logs')
+      .update({ transcription_status: 'processing' })
+      .eq('id', call_log_id);
+
+    console.log(`[transcribe-call-recording] Baixando áudio de: ${callLog.record_url}`);
+
+    // Baixar o áudio da gravação
+    const audioResponse = await fetch(callLog.record_url);
+    if (!audioResponse.ok) {
+      throw new Error(`Erro ao baixar áudio: ${audioResponse.status}`);
+    }
+
+    const audioBlob = await audioResponse.blob();
+    console.log(`[transcribe-call-recording] Áudio baixado: ${audioBlob.size} bytes, tipo: ${audioBlob.type}`);
+
+    // Enviar para Lovable AI Gateway (Whisper)
+    if (!lovableApiKey) {
+      throw new Error('LOVABLE_API_KEY não configurada');
+    }
+
+    // Criar FormData para o Whisper
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.mp3');
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'pt');
+    formData.append('response_format', 'text');
+
+    console.log('[transcribe-call-recording] Enviando para Whisper...');
+
+    const whisperResponse = await fetch('https://ai.gateway.lovable.dev/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+      },
+      body: formData,
+    });
+
+    if (!whisperResponse.ok) {
+      const errorText = await whisperResponse.text();
+      console.error('[transcribe-call-recording] Erro Whisper:', whisperResponse.status, errorText);
+      
+      // Atualizar status para failed
+      await supabase
+        .from('call_logs')
+        .update({ transcription_status: 'failed' })
+        .eq('id', call_log_id);
+
+      throw new Error(`Erro na transcrição: ${whisperResponse.status}`);
+    }
+
+    const transcription = await whisperResponse.text();
+    console.log(`[transcribe-call-recording] Transcrição concluída: ${transcription.substring(0, 100)}...`);
+
+    // Salvar transcrição no banco
+    const { error: updateError } = await supabase
+      .from('call_logs')
+      .update({
+        transcription: transcription.trim(),
+        transcription_status: 'completed',
+      })
+      .eq('id', call_log_id);
+
+    if (updateError) {
+      console.error('[transcribe-call-recording] Erro ao salvar transcrição:', updateError);
+      throw updateError;
+    }
+
+    console.log(`[transcribe-call-recording] Transcrição salva com sucesso para call_log: ${call_log_id}`);
+
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        transcription: transcription.trim(),
+        call_log_id 
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error('[transcribe-call-recording] Erro:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Erro interno';
+    return new Response(
+      JSON.stringify({ error: errorMessage }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+});
