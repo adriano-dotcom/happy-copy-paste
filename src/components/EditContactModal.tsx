@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { PhoneInput } from './ui/phone-input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -249,9 +250,9 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-slate-300">Telefone</Label>
-                  <Input
+                  <PhoneInput
                     value={formData.phone}
-                    onChange={(e) => handleChange('phone', e.target.value)}
+                    onChange={(value) => setFormData(prev => ({ ...prev, phone: value }))}
                     placeholder="+55 43 99999-9999"
                     className="bg-slate-950 border-slate-700 text-slate-100"
                   />

@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { X, User, Phone, Mail, Building2, FileText, Loader2, MapPin, Search } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { PhoneInput } from './ui/phone-input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import {
@@ -356,11 +357,11 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
                   Telefone <span className="text-red-400">*</span>
                 </Label>
                 <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <Input
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 z-10" />
+                  <PhoneInput
                     id="phone"
                     value={formData.phone}
-                    onChange={(e) => handlePhoneChange(e.target.value)}
+                    onChange={(value) => setFormData(prev => ({ ...prev, phone: value }))}
                     placeholder="+55 43 99999-9999"
                     className="pl-10 bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-600"
                   />
