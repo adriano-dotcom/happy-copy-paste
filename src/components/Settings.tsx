@@ -1,11 +1,12 @@
 import React, { useRef, useState } from 'react';
-import { Shield, Bot, Plug, Loader2, Save, RotateCcw, Users, Mail, Link } from 'lucide-react';
+import { Shield, Bot, Plug, Loader2, Save, RotateCcw, Users, Mail, Link, Settings2 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import AgentSettings, { AgentSettingsRef } from './settings/AgentSettings';
 import ApiSettings, { ApiSettingsRef } from './settings/ApiSettings';
 import AgentsSettings, { AgentsSettingsRef } from './settings/AgentsSettings';
 import EmailTemplatesSettings from './settings/EmailTemplatesSettings';
 import PipedriveSettings, { PipedriveSettingsRef } from './settings/PipedriveSettings';
+import GeneralSettings from './settings/GeneralSettings';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { Button } from './Button';
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
@@ -22,7 +23,7 @@ const Settings: React.FC = () => {
   const apiRef = useRef<ApiSettingsRef>(null);
   const agentsRef = useRef<AgentsSettingsRef>(null);
   const pipedriveRef = useRef<PipedriveSettingsRef>(null);
-  const [activeTab, setActiveTab] = useState('agent');
+  const [activeTab, setActiveTab] = useState('general');
   const { resetWizard } = useOnboardingStatus();
   const { setShowOnboarding } = useOutletContext<OutletContext>();
 
@@ -65,7 +66,7 @@ const Settings: React.FC = () => {
     ? pipedriveRef.current?.isSaving
     : false;
 
-  const showSaveButtons = activeTab !== 'templates';
+  const showSaveButtons = activeTab !== 'templates' && activeTab !== 'general';
   
   return (
     <div className="p-8 max-w-5xl mx-auto h-full overflow-y-auto bg-slate-950 text-slate-50 custom-scrollbar">
@@ -93,6 +94,10 @@ const Settings: React.FC = () => {
       <Tabs defaultValue="agent" className="w-full" onValueChange={setActiveTab}>
         <div className="flex items-center justify-between mb-8">
           <TabsList>
+            <TabsTrigger value="general" className="gap-2">
+              <Settings2 className="w-4 h-4" />
+              Geral
+            </TabsTrigger>
             <TabsTrigger value="agent" className="gap-2">
               <Bot className="w-4 h-4" />
               Agente
@@ -145,6 +150,10 @@ const Settings: React.FC = () => {
             </div>
           )}
         </div>
+
+        <TabsContent value="general">
+          <GeneralSettings />
+        </TabsContent>
 
         <TabsContent value="agent">
           <AgentSettings ref={agentRef} />
