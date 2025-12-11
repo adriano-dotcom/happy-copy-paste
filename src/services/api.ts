@@ -1279,6 +1279,26 @@ export const api = {
 
     console.log(`[API] Found ${conversations.length} conversations`);
 
+    // Fetch deals with pipeline data for all contacts
+    const contactIds = conversations.map(c => c.contact_id).filter(Boolean);
+    const { data: deals } = await supabase
+      .from('deals')
+      .select(`
+        contact_id,
+        pipeline:pipelines(id, name, icon, color)
+      `)
+      .in('contact_id', contactIds);
+
+    // Create a map of contact_id to pipeline data
+    const pipelineByContact = new Map<string, { id: string; name: string; icon: string; color: string } | null>();
+    if (deals) {
+      for (const deal of deals) {
+        if (deal.contact_id && deal.pipeline) {
+          pipelineByContact.set(deal.contact_id, deal.pipeline as any);
+        }
+      }
+    }
+
     // Fetch messages for each conversation
     const conversationsWithMessages: UIConversation[] = await Promise.all(
       conversations.map(async (conv) => {
@@ -1293,8 +1313,18 @@ export const api = {
           console.error(`[API] Error fetching messages for ${conv.id}:`, msgError);
         }
 
+        // Enrich conversation with pipeline data
+        const pipeline = pipelineByContact.get(conv.contact_id);
+        const enrichedConv = {
+          ...conv,
+          pipelineId: pipeline?.id || null,
+          pipelineName: pipeline?.name || null,
+          pipelineIcon: pipeline?.icon || null,
+          pipelineColor: pipeline?.color || null
+        };
+
         return transformDBToUIConversation(
-          conv as unknown as DBConversation,
+          enrichedConv as unknown as DBConversation,
           (messages || []) as unknown as DBMessage[]
         );
       })
