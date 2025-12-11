@@ -348,6 +348,19 @@ export function useConversations() {
     }
   }, [conversations]);
 
+  // Archive conversation (remove from active queue)
+  const archiveConversation = useCallback(async (conversationId: string) => {
+    try {
+      await api.archiveConversation(conversationId);
+      // Remove from local list (optimistic update)
+      setConversations(prev => prev.filter(c => c.id !== conversationId));
+      console.log('[useConversations] Conversation archived');
+    } catch (err) {
+      console.error('[useConversations] Error archiving conversation:', err);
+      throw err;
+    }
+  }, []);
+
   return {
     conversations,
     loading,
@@ -356,6 +369,7 @@ export function useConversations() {
     updateStatus,
     markAsRead,
     assignConversation,
+    archiveConversation,
     refetch: fetchConversations
   };
 }
