@@ -217,8 +217,12 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
     }
     
     const phoneDigits = formData.phone.replace(/\D/g, '');
-    if (!phoneDigits || phoneDigits.length < 10 || phoneDigits.length > 11) {
-      newErrors.phone = 'Telefone inválido (10-11 dígitos)';
+    // Aceita 12-13 dígitos (55 + DDD + número) ou 10-11 (sem código país)
+    const isValidWithCountryCode = phoneDigits.startsWith('55') && phoneDigits.length >= 12 && phoneDigits.length <= 13;
+    const isValidWithoutCountryCode = !phoneDigits.startsWith('55') && phoneDigits.length >= 10 && phoneDigits.length <= 11;
+    
+    if (!phoneDigits || (!isValidWithCountryCode && !isValidWithoutCountryCode)) {
+      newErrors.phone = 'Telefone inválido';
     }
     
     if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
