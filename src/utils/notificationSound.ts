@@ -1,4 +1,6 @@
 // Notification sound utility using Web Audio API
+const STORAGE_KEY = 'notification_sound_enabled';
+
 let audioContext: AudioContext | null = null;
 
 const getAudioContext = (): AudioContext => {
@@ -8,7 +10,21 @@ const getAudioContext = (): AudioContext => {
   return audioContext;
 };
 
+export const isNotificationSoundEnabled = (): boolean => {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  return stored === null ? true : stored === 'true';
+};
+
+export const setNotificationSoundEnabled = (enabled: boolean): void => {
+  localStorage.setItem(STORAGE_KEY, String(enabled));
+};
+
 export const playNotificationSound = () => {
+  // Check if notifications are enabled
+  if (!isNotificationSoundEnabled()) {
+    return;
+  }
+
   try {
     const ctx = getAudioContext();
     
