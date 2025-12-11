@@ -23,6 +23,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { TagSelector } from './TagSelector';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Input } from './ui/input';
+import { CallConfirmationModal } from './CallConfirmationModal';
 
 const ChatInterface: React.FC = () => {
   const navigate = useNavigate();
@@ -54,6 +55,10 @@ const ChatInterface: React.FC = () => {
   const [existingDeal, setExistingDeal] = useState<any>(null);
   const [isCheckingDeal, setIsCheckingDeal] = useState(false);
   const [isCreatingDeal, setIsCreatingDeal] = useState(false);
+  
+  // Call modal state
+  const [showCallModal, setShowCallModal] = useState(false);
+  const [defaultExtension, setDefaultExtension] = useState('1000');
   
   // Audio player state
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
@@ -94,6 +99,17 @@ const ChatInterface: React.FC = () => {
       .eq('is_active', false)
       .then(({ count }) => {
         setArchivedCount(count || 0);
+      });
+
+    // Fetch default extension for calls
+    supabase
+      .from('nina_settings')
+      .select('api4com_default_extension')
+      .single()
+      .then(({ data }) => {
+        if (data?.api4com_default_extension) {
+          setDefaultExtension(data.api4com_default_extension);
+        }
       });
   }, []);
 
@@ -761,31 +777,12 @@ const ChatInterface: React.FC = () => {
                   variant="ghost" 
                   size="icon" 
                   className="text-slate-400 hover:text-green-400 hover:bg-green-500/10"
-                  onClick={async () => {
+                  onClick={() => {
                     if (!activeChat.contactPhone) {
                       toast.error('Contato sem número de telefone');
                       return;
                     }
-                    const confirmed = window.confirm(`Ligar para ${activeChat.contactName}?\n${activeChat.contactPhone}`);
-                    if (!confirmed) return;
-                    
-                    try {
-                      const { data, error } = await supabase.functions.invoke('api4com-dial', {
-                        body: {
-                          contactId: activeChat.contactId,
-                          conversationId: activeChat.id,
-                          phoneNumber: activeChat.contactPhone
-                        }
-                      });
-                      if (error) throw error;
-                      if (data?.success) {
-                        toast.success('Ligação iniciada!', { description: 'Aguarde o ramal tocar...' });
-                      } else {
-                        throw new Error(data?.error || 'Erro ao iniciar ligação');
-                      }
-                    } catch (err: any) {
-                      toast.error('Erro ao ligar', { description: err.message });
-                    }
+                    setShowCallModal(true);
                   }}
                   title="Fazer ligação"
                 >
@@ -1291,6 +1288,25 @@ const ChatInterface: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Call Confirmation Modal */}
+      {activeChat && (
+        <CallConfirmationModal
+          isOpen={showCallModal}
+          onClose={() => setShowCallModal(false)}
+          contact={{
+            id: activeChat.contactId,
+            name: activeChat.contactName,
+            phone: activeChat.contactPhone,
+            avatar: activeChat.contactAvatar,
+            company: activeChat.contactCompany,
+            tags: activeChat.tags,
+          }}
+          conversationId={activeChat.id}
+          defaultExtension={defaultExtension}
+          onCallInitiated={() => setShowCallModal(false)}
+        />
       )}
     </div>
   );
