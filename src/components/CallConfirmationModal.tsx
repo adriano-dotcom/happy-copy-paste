@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Phone, Loader2, User } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { displayPhoneInternational } from "@/utils/phoneFormatter";
 
 interface CallConfirmationModalProps {
   isOpen: boolean;
@@ -27,34 +28,6 @@ interface CallConfirmationModalProps {
   conversationId: string;
   defaultExtension: string;
   onCallInitiated?: () => void;
-}
-
-function formatPhoneNumber(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  
-  if (digits.startsWith("55") && digits.length >= 12) {
-    const ddd = digits.slice(2, 4);
-    const number = digits.slice(4);
-    if (number.length === 9) {
-      return `+55 (${ddd}) ${number.slice(0, 5)}-${number.slice(5)}`;
-    } else if (number.length === 8) {
-      return `+55 (${ddd}) ${number.slice(0, 4)}-${number.slice(4)}`;
-    }
-  }
-  
-  if (digits.length === 11) {
-    const ddd = digits.slice(0, 2);
-    const number = digits.slice(2);
-    return `(${ddd}) ${number.slice(0, 5)}-${number.slice(5)}`;
-  }
-  
-  if (digits.length === 10) {
-    const ddd = digits.slice(0, 2);
-    const number = digits.slice(2);
-    return `(${ddd}) ${number.slice(0, 4)}-${number.slice(4)}`;
-  }
-  
-  return phone;
 }
 
 export function CallConfirmationModal({
@@ -93,9 +66,16 @@ export function CallConfirmationModal({
       }
     } catch (error: any) {
       console.error("Erro ao iniciar ligação:", error);
-      toast.error("Erro na ligação", {
-        description: error.message || "Não foi possível iniciar a chamada",
-      });
+      
+      // Check for specific error types
+      const errorMessage = error.message || "";
+      let description = "Não foi possível iniciar a chamada";
+      
+      if (errorMessage.includes("user not registered") || errorMessage.includes("não autorizado")) {
+        description = "Este número não está autorizado na API4Com. Verifique o cadastro no painel.";
+      }
+      
+      toast.error("Erro na ligação", { description });
     } finally {
       setIsLoading(false);
     }
@@ -141,7 +121,7 @@ export function CallConfirmationModal({
               <p className="text-sm text-slate-400">{contact.company}</p>
             )}
             <p className="text-base font-mono text-emerald-400">
-              {formatPhoneNumber(contact.phone)}
+              {displayPhoneInternational(contact.phone)}
             </p>
           </div>
 
