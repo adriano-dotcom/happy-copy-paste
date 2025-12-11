@@ -361,6 +361,35 @@ export function useConversations() {
     }
   }, []);
 
+  // Unarchive conversation (restore to active queue)
+  const unarchiveConversation = useCallback(async (conversationId: string) => {
+    try {
+      await api.unarchiveConversation(conversationId);
+      // Remove from local list (optimistic update - will be refetched)
+      setConversations(prev => prev.filter(c => c.id !== conversationId));
+      console.log('[useConversations] Conversation unarchived');
+    } catch (err) {
+      console.error('[useConversations] Error unarchiving conversation:', err);
+      throw err;
+    }
+  }, []);
+
+  // Fetch archived conversations
+  const fetchArchivedConversations = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await api.fetchArchivedConversations();
+      setConversations(data);
+    } catch (err) {
+      console.error('[useConversations] Error fetching archived:', err);
+      setError('Erro ao carregar conversas arquivadas');
+      toast.error('Erro ao carregar conversas arquivadas');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   return {
     conversations,
     loading,
@@ -370,6 +399,8 @@ export function useConversations() {
     markAsRead,
     assignConversation,
     archiveConversation,
+    unarchiveConversation,
+    fetchArchivedConversations,
     refetch: fetchConversations
   };
 }

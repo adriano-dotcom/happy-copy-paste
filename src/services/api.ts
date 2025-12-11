@@ -1800,4 +1800,76 @@ export const api = {
     
     console.log(`[API] Conversation ${conversationId} archived successfully`);
   },
+
+  /**
+   * Unarchive a conversation (set is_active to true)
+   */
+  unarchiveConversation: async (conversationId: string): Promise<void> => {
+    console.log(`[API] Unarchiving conversation ${conversationId}`);
+    
+    const { error } = await supabase
+      .from('conversations')
+      .update({ is_active: true })
+      .eq('id', conversationId);
+
+    if (error) {
+      console.error('[API] Error unarchiving conversation:', error);
+      throw error;
+    }
+    
+    console.log(`[API] Conversation ${conversationId} unarchived successfully`);
+  },
+
+  /**
+   * Fetch archived conversations
+   */
+  fetchArchivedConversations: async (): Promise<UIConversation[]> => {
+    console.log('[API] Fetching archived conversations...');
+    
+    const { data: conversations, error: convError } = await supabase
+      .from('conversations')
+      .select(`
+        *,
+        contact:contacts(*),
+        agent:agents(id, name, slug)
+      `)
+      .eq('is_active', false)
+      .order('last_message_at', { ascending: false })
+      .limit(50);
+
+    if (convError) {
+      console.error('[API] Error fetching archived conversations:', convError);
+      throw convError;
+    }
+
+    if (!conversations || conversations.length === 0) {
+      console.log('[API] No archived conversations found');
+      return [];
+    }
+
+    console.log(`[API] Found ${conversations.length} archived conversations`);
+
+    // Fetch messages for each conversation
+    const conversationsWithMessages: UIConversation[] = await Promise.all(
+      conversations.map(async (conv) => {
+        const { data: messages, error: msgError } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', conv.id)
+          .order('sent_at', { ascending: true })
+          .limit(100);
+
+        if (msgError) {
+          console.error(`[API] Error fetching messages for ${conv.id}:`, msgError);
+        }
+
+        return transformDBToUIConversation(
+          conv as unknown as DBConversation,
+          (messages || []) as unknown as DBMessage[]
+        );
+      })
+    );
+
+    return conversationsWithMessages;
+  },
 };
