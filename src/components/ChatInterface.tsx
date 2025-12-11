@@ -4,7 +4,7 @@ import {
   Search, MoreVertical, Phone, Paperclip, Send, Check, CheckCheck, 
   Smile, Play, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
   Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil,
-  Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore
+  Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -24,6 +24,9 @@ import { TagSelector } from './TagSelector';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Input } from './ui/input';
 import { CallConfirmationModal } from './CallConfirmationModal';
+import { useActiveCall } from '@/hooks/useActiveCall';
+import { ActiveCallIndicator } from './ActiveCallIndicator';
+import { CallHistoryPanel } from './CallHistoryPanel';
 
 const ChatInterface: React.FC = () => {
   const navigate = useNavigate();
@@ -68,6 +71,9 @@ const ChatInterface: React.FC = () => {
   
   const activeChat = conversations.find(c => c.id === selectedChatId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Active call state
+  const { activeCall, callHistory, loading: callHistoryLoading } = useActiveCall(selectedChatId);
   
   // Format audio time helper
   const formatAudioTime = (seconds: number): string => {
@@ -788,6 +794,12 @@ const ChatInterface: React.FC = () => {
                 >
                   <Phone className="w-5 h-5" />
                 </Button>
+                {/* Active Call Indicator in Header */}
+                {activeCall && (
+                  <div className="ml-2">
+                    <ActiveCallIndicator call={activeCall} />
+                  </div>
+                )}
                 <div className="h-6 w-px bg-slate-800 mx-1"></div>
                 <Button 
                   variant="ghost" 
@@ -1196,6 +1208,17 @@ const ChatInterface: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="h-px bg-slate-800/50 w-full"></div>
+
+                {/* Call History */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                    <PhoneCall className="w-4 h-4" />
+                    Histórico de Ligações
+                  </h4>
+                  <CallHistoryPanel calls={callHistory} loading={callHistoryLoading} />
                 </div>
 
                 <div className="h-px bg-slate-800/50 w-full"></div>
