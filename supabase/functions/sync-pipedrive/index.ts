@@ -140,10 +140,47 @@ serve(async (req) => {
 
       // Build custom fields data separately
       const customFieldsData: Record<string, any> = {};
+      
+      // Map CNPJ
       if (fieldMappings.person_fields?.cnpj && contact.cnpj) {
         const cnpjFieldKey = fieldMappings.person_fields.cnpj;
         customFieldsData[cnpjFieldKey] = contact.cnpj;
         console.log(`[sync-pipedrive] Will try mapping CNPJ ${contact.cnpj} to field ${cnpjFieldKey}`);
+      }
+      
+      // Map CEP
+      if (fieldMappings.person_fields?.cep && contact.cep) {
+        customFieldsData[fieldMappings.person_fields.cep] = contact.cep;
+        console.log(`[sync-pipedrive] Will try mapping CEP ${contact.cep}`);
+      }
+      
+      // Map full address (street + number + complement)
+      if (fieldMappings.person_fields?.street && contact.street) {
+        const fullAddress = [
+          contact.street,
+          contact.number ? `, ${contact.number}` : '',
+          contact.complement ? ` - ${contact.complement}` : ''
+        ].join('');
+        customFieldsData[fieldMappings.person_fields.street] = fullAddress;
+        console.log(`[sync-pipedrive] Will try mapping address: ${fullAddress}`);
+      }
+      
+      // Map neighborhood
+      if (fieldMappings.person_fields?.neighborhood && contact.neighborhood) {
+        customFieldsData[fieldMappings.person_fields.neighborhood] = contact.neighborhood;
+        console.log(`[sync-pipedrive] Will try mapping neighborhood: ${contact.neighborhood}`);
+      }
+      
+      // Map city
+      if (fieldMappings.person_fields?.city && contact.city) {
+        customFieldsData[fieldMappings.person_fields.city] = contact.city;
+        console.log(`[sync-pipedrive] Will try mapping city: ${contact.city}`);
+      }
+      
+      // Map state
+      if (fieldMappings.person_fields?.state && contact.state) {
+        customFieldsData[fieldMappings.person_fields.state] = contact.state;
+        console.log(`[sync-pipedrive] Will try mapping state: ${contact.state}`);
       }
 
       // First attempt: try with custom fields

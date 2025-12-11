@@ -76,6 +76,7 @@ export interface Conversation {
 export interface Contact {
   id: string;
   name: string;
+  call_name?: string;
   phone: string;
   email: string;
   company?: string;

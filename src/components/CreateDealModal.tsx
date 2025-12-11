@@ -157,7 +157,24 @@ export const CreateDealModal: React.FC<CreateDealModalProps> = ({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-slate-200">Contato *</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select 
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      // Auto-preencher dados da empresa quando contato é selecionado
+                      const selectedContact = contacts.find(c => c.id === value);
+                      if (selectedContact) {
+                        if (selectedContact.company) {
+                          form.setValue('company', selectedContact.company);
+                        }
+                        // Auto-preencher título com nome do contato/empresa se vazio
+                        const currentTitle = form.getValues('title');
+                        if (!currentTitle) {
+                          form.setValue('title', selectedContact.company || selectedContact.name || selectedContact.call_name || '');
+                        }
+                      }
+                    }} 
+                    defaultValue={field.value}
+                  >
                     <FormControl>
                       <SelectTrigger className="bg-slate-800 border-slate-700 text-slate-200">
                         <SelectValue placeholder="Selecione um contato" />
@@ -166,7 +183,12 @@ export const CreateDealModal: React.FC<CreateDealModalProps> = ({
                     <SelectContent className="bg-slate-800 border-slate-700">
                       {contacts.map((contact) => (
                         <SelectItem key={contact.id} value={contact.id}>
-                          {contact.name || contact.email || 'Sem nome'}
+                          <div className="flex flex-col">
+                            <span>{contact.name || contact.call_name || 'Sem nome'}</span>
+                            {contact.company && (
+                              <span className="text-xs text-slate-400">{contact.company}</span>
+                            )}
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>
