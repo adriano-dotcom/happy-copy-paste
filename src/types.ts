@@ -256,6 +256,7 @@ export interface DBConversation {
   is_active: boolean;
   assigned_user_id: string | null;
   assigned_team: string | null;
+  current_agent_id: string | null;
   tags: string[];
   metadata: Record<string, any>;
   nina_context: Record<string, any>;
@@ -266,6 +267,7 @@ export interface DBConversation {
   // Joined data
   contact?: DBContact;
   messages?: DBMessage[];
+  agent?: { id: string; name: string; slug: string } | null;
 }
 
 export interface DBMessage {
@@ -310,6 +312,9 @@ export interface UIConversation {
   messages: UIMessage[];
   clientMemory: ClientMemory;
   notes: string | null;
+  agentId: string | null;
+  agentName: string | null;
+  agentSlug: string | null;
 }
 
 export interface UIMessage {
@@ -357,7 +362,10 @@ export function transformDBToUIConversation(
     clientMemory: conv.contact?.client_memory || getDefaultClientMemory(),
     notes: conv.contact?.notes || null,
     contactCnpj: conv.contact?.cnpj || null,
-    contactCompany: conv.contact?.company || null
+    contactCompany: conv.contact?.company || null,
+    agentId: conv.agent?.id || null,
+    agentName: conv.agent?.name || null,
+    agentSlug: conv.agent?.slug || null
   };
 }
 

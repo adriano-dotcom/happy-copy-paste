@@ -928,7 +928,7 @@ export const api = {
   getDealByContactId: async (contactId: string): Promise<Deal | null> => {
     const { data, error } = await supabase
       .from('deals')
-      .select('*, owner:team_members(name, avatar)')
+      .select('*, owner:team_members(name, avatar), pipeline:pipelines(id, slug, name)')
       .eq('contact_id', contactId)
       .maybeSingle();
 
@@ -946,6 +946,7 @@ export const api = {
       value: Number(data.value) || 0,
       stage: data.stage,
       stageId: data.stage_id,
+      pipelineId: data.pipeline_id,
       ownerAvatar: data.owner?.avatar || 'https://ui-avatars.com/api/?name=NA&background=334155&color=fff',
       tags: data.tags || [],
       dueDate: data.due_date,
@@ -1254,12 +1255,13 @@ export const api = {
   fetchConversations: async (): Promise<UIConversation[]> => {
     console.log('[API] Fetching conversations from Supabase...');
     
-    // Fetch active conversations with contact data
+    // Fetch active conversations with contact data and agent data
     const { data: conversations, error: convError } = await supabase
       .from('conversations')
       .select(`
         *,
-        contact:contacts(*)
+        contact:contacts(*),
+        agent:agents(id, name, slug)
       `)
       .eq('is_active', true)
       .order('last_message_at', { ascending: false })
