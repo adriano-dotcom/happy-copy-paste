@@ -151,6 +151,7 @@ export type Database = {
           notes: string | null
           number: string | null
           phone_number: string
+          pipedrive_person_id: string | null
           profile_picture_url: string | null
           state: string | null
           street: string | null
@@ -180,6 +181,7 @@ export type Database = {
           notes?: string | null
           number?: string | null
           phone_number: string
+          pipedrive_person_id?: string | null
           profile_picture_url?: string | null
           state?: string | null
           street?: string | null
@@ -209,6 +211,7 @@ export type Database = {
           notes?: string | null
           number?: string | null
           phone_number?: string
+          pipedrive_person_id?: string | null
           profile_picture_url?: string | null
           state?: string | null
           street?: string | null
@@ -400,6 +403,7 @@ export type Database = {
           lost_reason: string | null
           notes: string | null
           owner_id: string | null
+          pipedrive_deal_id: string | null
           pipeline_id: string | null
           priority: string | null
           stage: string | null
@@ -420,6 +424,7 @@ export type Database = {
           lost_reason?: string | null
           notes?: string | null
           owner_id?: string | null
+          pipedrive_deal_id?: string | null
           pipeline_id?: string | null
           priority?: string | null
           stage?: string | null
@@ -440,6 +445,7 @@ export type Database = {
           lost_reason?: string | null
           notes?: string | null
           owner_id?: string | null
+          pipedrive_deal_id?: string | null
           pipeline_id?: string | null
           priority?: string | null
           stage?: string | null
@@ -746,6 +752,12 @@ export type Database = {
           openai_api_key: string | null
           openai_assistant_id: string
           openai_model: string
+          pipedrive_api_token: string | null
+          pipedrive_default_pipeline_id: string | null
+          pipedrive_domain: string | null
+          pipedrive_enabled: boolean | null
+          pipedrive_field_mappings: Json | null
+          pipedrive_min_score: number | null
           response_delay_max: number
           response_delay_min: number
           route_all_to_receiver_enabled: boolean
@@ -785,6 +797,12 @@ export type Database = {
           openai_api_key?: string | null
           openai_assistant_id?: string
           openai_model?: string
+          pipedrive_api_token?: string | null
+          pipedrive_default_pipeline_id?: string | null
+          pipedrive_domain?: string | null
+          pipedrive_enabled?: boolean | null
+          pipedrive_field_mappings?: Json | null
+          pipedrive_min_score?: number | null
           response_delay_max?: number
           response_delay_min?: number
           route_all_to_receiver_enabled?: boolean
@@ -824,6 +842,12 @@ export type Database = {
           openai_api_key?: string | null
           openai_assistant_id?: string
           openai_model?: string
+          pipedrive_api_token?: string | null
+          pipedrive_default_pipeline_id?: string | null
+          pipedrive_domain?: string | null
+          pipedrive_enabled?: boolean | null
+          pipedrive_field_mappings?: Json | null
+          pipedrive_min_score?: number | null
           response_delay_max?: number
           response_delay_min?: number
           route_all_to_receiver_enabled?: boolean
