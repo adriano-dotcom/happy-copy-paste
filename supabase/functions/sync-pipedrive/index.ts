@@ -253,6 +253,94 @@ serve(async (req) => {
       }
     }
 
+    // Fetch conversation history and add as note
+    if (contact?.id) {
+      console.log('[sync-pipedrive] Fetching conversation history...');
+      
+      // Get the most recent conversation for this contact
+      const { data: conversation } = await supabase
+        .from('conversations')
+        .select('id, current_agent_id')
+        .eq('contact_id', contact.id)
+        .order('last_message_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (conversation) {
+        // Fetch all messages from this conversation (limit to last 100)
+        const { data: messages } = await supabase
+          .from('messages')
+          .select('content, from_type, sent_at, type')
+          .eq('conversation_id', conversation.id)
+          .order('sent_at', { ascending: true })
+          .limit(100);
+
+        if (messages && messages.length > 0) {
+          const contactName = contact.name || contact.call_name || 'Cliente';
+          
+          // Format conversation history
+          let historyNote = `💬 **Histórico da Conversa**\n`;
+          historyNote += `👤 ${contactName}\n`;
+          historyNote += `📅 ${new Date().toLocaleDateString('pt-BR')}\n`;
+          historyNote += `📊 Total: ${messages.length} mensagens\n`;
+          historyNote += `─────────────────────────\n\n`;
+          
+          for (const msg of messages) {
+            const time = new Date(msg.sent_at).toLocaleString('pt-BR', { 
+              day: '2-digit',
+              month: '2-digit',
+              hour: '2-digit', 
+              minute: '2-digit' 
+            });
+            
+            let sender = '';
+            if (msg.from_type === 'user') {
+              sender = `👤 ${contactName}`;
+            } else if (msg.from_type === 'nina') {
+              sender = '🤖 Adri';
+            } else {
+              sender = '👨‍💼 Humano';
+            }
+            
+            // Handle different message types
+            let content = msg.content || '';
+            if (msg.type === 'audio') {
+              content = content || '[Áudio]';
+            } else if (msg.type === 'image') {
+              content = content || '[Imagem]';
+            } else if (msg.type === 'document') {
+              content = content || '[Documento]';
+            } else if (msg.type === 'video') {
+              content = content || '[Vídeo]';
+            }
+            
+            // Truncate very long messages
+            if (content.length > 500) {
+              content = content.substring(0, 500) + '...';
+            }
+            
+            historyNote += `[${time}] ${sender}:\n${content}\n\n`;
+          }
+
+          // Create note with conversation history
+          const noteResponse = await fetch(`${baseUrl}/notes?api_token=${apiToken}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              deal_id: parseInt(pipedriveDealId),
+              content: historyNote
+            })
+          });
+
+          if (noteResponse.ok) {
+            console.log(`[sync-pipedrive] Added conversation history note (${messages.length} messages)`);
+          } else {
+            console.error('[sync-pipedrive] Failed to add conversation history note');
+          }
+        }
+      }
+    }
+
     console.log(`[sync-pipedrive] Successfully synced deal ${dealId} -> Pipedrive ${pipedriveDealId}`);
 
     return new Response(
