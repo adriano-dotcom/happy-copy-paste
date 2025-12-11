@@ -34,22 +34,29 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Normalize event type - API4Com may use different naming conventions
-    const eventType = (body.event || body.type || body.Event || body.status || 'unknown').toLowerCase();
+    // Normalize event type - API4Com uses eventType field
+    const eventType = (body.eventType || body.event || body.type || body.Event || body.status || 'unknown').toLowerCase();
     
-    // Extract call ID - API4Com may use different field names
-    const callId = body.call_id || body.id || body.uniqueid || body.channel_id || 
+    // Extract call ID - API4Com uses 'id' field
+    const callId = body.id || body.call_id || body.uniqueid || body.channel_id || 
                    body.CallId || body.callId || body.linkedid;
     
+    // Extract metadata for alternative lookup
+    const metadata = body.metadata || {};
+    const metaContactId = metadata.contactId;
+    const metaConversationId = metadata.conversationId;
+    
     // Extract additional fields
-    const extension = body.extension || body.Extension || body.channel || body.caller_id_num;
-    const destination = body.destination || body.phone || body.called_number || body.Destination;
+    const extension = body.caller || body.extension || body.Extension || body.channel || body.caller_id_num;
+    const destination = body.called || body.destination || body.phone || body.called_number || body.Destination;
     
     console.log('[api4com-webhook] Processing event:', { 
       eventType, 
       callId, 
       extension, 
       destination,
+      metaContactId,
+      metaConversationId,
       rawBody: body 
     });
 
@@ -82,62 +89,97 @@ serve(async (req) => {
 
     const normalizedEvent = eventMapping[eventType] || eventType;
 
+    // Helper function to find call log by callId or by metadata
+    async function findCallLog() {
+      // First try by api4com_call_id
+      if (callId) {
+        const { data } = await supabase
+          .from('call_logs')
+          .select('id, api4com_call_id')
+          .eq('api4com_call_id', callId)
+          .maybeSingle();
+        
+        if (data) {
+          console.log('[api4com-webhook] Found call log by api4com_call_id:', data.id);
+          return data;
+        }
+      }
+
+      // Fallback: find by metadata (contactId + conversationId + active status)
+      if (metaContactId && metaConversationId) {
+        const { data } = await supabase
+          .from('call_logs')
+          .select('id, api4com_call_id')
+          .eq('contact_id', metaContactId)
+          .eq('conversation_id', metaConversationId)
+          .in('status', ['dialing', 'ringing', 'answered'])
+          .order('started_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (data) {
+          console.log('[api4com-webhook] Found call log by metadata fallback:', data.id);
+          return data;
+        }
+      }
+
+      console.log('[api4com-webhook] No matching call log found');
+      return null;
+    }
+
     if (normalizedEvent === 'hangup') {
       // Call ended - update call log
-      const duration = body.duration || body.billsec || body.call_duration || 0;
-      const hangupCause = body.hangup_cause || body.cause || body.disposition || 'normal';
-      const recordUrl = body.record_url || body.recording_url || body.recordingurl || null;
+      const duration = parseInt(body.duration || body.billsec || body.call_duration || '0', 10);
+      const hangupCause = body.hangupCause || body.hangup_cause || body.cause || body.disposition || 'normal';
+      const recordUrl = body.recordUrl || body.record_url || body.recording_url || body.recordingurl || null;
       const answeredAt = body.answered_at || body.answer_time || null;
 
-      // Determine final status
+      // Determine final status based on hangup cause
       let status = 'completed';
-      if (hangupCause === 'no_answer' || hangupCause === 'NO ANSWER') {
+      const hangupCauseLower = hangupCause.toLowerCase();
+      
+      if (hangupCauseLower.includes('no_answer') || hangupCauseLower.includes('no answer')) {
         status = 'no_answer';
-      } else if (hangupCause === 'busy' || hangupCause === 'BUSY') {
+      } else if (hangupCauseLower.includes('busy')) {
         status = 'busy';
-      } else if (hangupCause === 'failed' || hangupCause === 'FAILED') {
+      } else if (hangupCauseLower.includes('failed') || hangupCauseLower.includes('number_changed') || 
+                 hangupCauseLower.includes('unallocated') || hangupCauseLower.includes('not_registered')) {
         status = 'failed';
       } else if (duration > 0) {
         status = 'completed';
+      } else {
+        status = 'no_answer';
       }
 
-      // Try to find and update the call log
-      if (callId) {
-        const { data: existingLog, error: findError } = await supabase
+      const callLog = await findCallLog();
+      
+      if (callLog) {
+        const { error: updateError } = await supabase
           .from('call_logs')
-          .select('id')
-          .eq('api4com_call_id', callId)
-          .maybeSingle();
+          .update({
+            status: status,
+            ended_at: new Date().toISOString(),
+            answered_at: answeredAt ? new Date(answeredAt).toISOString() : null,
+            duration_seconds: duration,
+            hangup_cause: hangupCause,
+            record_url: recordUrl,
+            metadata: {
+              webhook_data: body,
+              updated_at: new Date().toISOString(),
+            }
+          })
+          .eq('id', callLog.id);
 
-        if (existingLog) {
-          const { error: updateError } = await supabase
-            .from('call_logs')
-            .update({
-              status: status,
-              ended_at: new Date().toISOString(),
-              answered_at: answeredAt ? new Date(answeredAt).toISOString() : null,
-              duration_seconds: duration,
-              hangup_cause: hangupCause,
-              record_url: recordUrl,
-              metadata: {
-                webhook_data: body,
-                updated_at: new Date().toISOString(),
-              }
-            })
-            .eq('api4com_call_id', callId);
-
-          if (updateError) {
-            console.error('[api4com-webhook] Update error:', updateError);
-          } else {
-            console.log('[api4com-webhook] Call log updated:', { callId, status, duration });
-          }
+        if (updateError) {
+          console.error('[api4com-webhook] Update error:', updateError);
         } else {
-          console.log('[api4com-webhook] No matching call log found for:', callId);
+          console.log('[api4com-webhook] Call log updated:', { id: callLog.id, status, duration, hangupCause });
         }
       }
     } else if (normalizedEvent === 'answered') {
-      // Call answered - update status
-      if (callId) {
+      const callLog = await findCallLog();
+      
+      if (callLog) {
         const { error: updateError } = await supabase
           .from('call_logs')
           .update({
@@ -148,17 +190,18 @@ serve(async (req) => {
               answered_at_source: new Date().toISOString(),
             }
           })
-          .eq('api4com_call_id', callId);
+          .eq('id', callLog.id);
 
         if (updateError) {
           console.error('[api4com-webhook] Answer update error:', updateError);
         } else {
-          console.log('[api4com-webhook] Call marked as answered:', callId);
+          console.log('[api4com-webhook] Call marked as answered:', callLog.id);
         }
       }
     } else if (normalizedEvent === 'ringing') {
-      // Call ringing - update status
-      if (callId) {
+      const callLog = await findCallLog();
+      
+      if (callLog) {
         const { error: updateError } = await supabase
           .from('call_logs')
           .update({ 
@@ -168,17 +211,18 @@ serve(async (req) => {
               ringing_at: new Date().toISOString(),
             }
           })
-          .eq('api4com_call_id', callId);
+          .eq('id', callLog.id);
         
         if (updateError) {
           console.error('[api4com-webhook] Ringing update error:', updateError);
         } else {
-          console.log('[api4com-webhook] Call marked as ringing:', callId);
+          console.log('[api4com-webhook] Call marked as ringing:', callLog.id);
         }
       }
     } else if (normalizedEvent === 'dialing') {
-      // Dialing event - update status if exists
-      if (callId) {
+      const callLog = await findCallLog();
+      
+      if (callLog) {
         const { error: updateError } = await supabase
           .from('call_logs')
           .update({ 
@@ -188,10 +232,10 @@ serve(async (req) => {
               dialing_at: new Date().toISOString(),
             }
           })
-          .eq('api4com_call_id', callId);
+          .eq('id', callLog.id);
         
         if (!updateError) {
-          console.log('[api4com-webhook] Call marked as dialing:', callId);
+          console.log('[api4com-webhook] Call marked as dialing:', callLog.id);
         }
       }
     } else {

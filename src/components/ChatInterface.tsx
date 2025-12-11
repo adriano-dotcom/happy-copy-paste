@@ -73,7 +73,7 @@ const ChatInterface: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Active call state
-  const { activeCall, callHistory, loading: callHistoryLoading } = useActiveCall(selectedChatId);
+  const { activeCall, callHistory, loading: callHistoryLoading, dismissActiveCall } = useActiveCall(selectedChatId);
   
   // Format audio time helper
   const formatAudioTime = (seconds: number): string => {
@@ -797,7 +797,7 @@ const ChatInterface: React.FC = () => {
                 {/* Active Call Indicator in Header */}
                 {activeCall && (
                   <div className="ml-2">
-                    <ActiveCallIndicator call={activeCall} />
+                    <ActiveCallIndicator call={activeCall} onDismiss={dismissActiveCall} />
                   </div>
                 )}
                 <div className="h-6 w-px bg-slate-800 mx-1"></div>
