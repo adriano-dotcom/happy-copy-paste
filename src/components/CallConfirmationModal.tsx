@@ -4,6 +4,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,6 +113,9 @@ export function CallConfirmationModal({
           <DialogTitle className="text-xl font-semibold text-slate-100">
             Confirmar Ligação
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Confirme os dados para iniciar a ligação
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col items-center py-4 space-y-4">
