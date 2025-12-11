@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Search, MoreVertical, Phone, Paperclip, Send, Check, CheckCheck, 
@@ -316,6 +316,18 @@ const ChatInterface: React.FC = () => {
     return clean.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   };
 
+  // Calculate conversation counts for filters
+  const conversationCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      all: conversations.length,
+      'no-pipeline': conversations.filter(c => c.pipelineId === null).length,
+    };
+    pipelines.forEach(p => {
+      counts[p.id] = conversations.filter(c => c.pipelineId === p.id).length;
+    });
+    return counts;
+  }, [conversations, pipelines]);
+
   const filteredConversations = conversations.filter(chat => {
     // Pipeline filter
     if (selectedPipelineFilter === 'no-pipeline') {
@@ -489,6 +501,7 @@ const ChatInterface: React.FC = () => {
             >
               <MessageSquare className="w-3.5 h-3.5" />
               Todos
+              <span className="text-[10px] opacity-70">({conversationCounts.all})</span>
             </button>
             <button
               onClick={() => setSelectedPipelineFilter('no-pipeline')}
@@ -500,6 +513,7 @@ const ChatInterface: React.FC = () => {
             >
               <Inbox className="w-3.5 h-3.5" />
               Sem Funil
+              <span className="text-[10px] opacity-70">({conversationCounts['no-pipeline']})</span>
             </button>
             {pipelines.map((pipeline) => (
               <button
@@ -518,6 +532,7 @@ const ChatInterface: React.FC = () => {
               >
                 <span className="text-sm">{pipeline.icon}</span>
                 {pipeline.name}
+                <span className="text-[10px] opacity-70">({conversationCounts[pipeline.id] || 0})</span>
               </button>
             ))}
           </div>
