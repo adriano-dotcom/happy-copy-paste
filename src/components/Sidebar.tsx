@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { LayoutDashboard, MessageSquare, Users, Settings as SettingsIcon, LogOut, Command, ShieldCheck, Calendar, Kanban, Code2 } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Users, Settings as SettingsIcon, LogOut, ShieldCheck, Calendar, Kanban, Code2 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
-import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { Sidebar, SidebarBody, SidebarLink, useSidebar } from '@/components/ui/sidebar';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import jacometoLogo from '@/assets/jacometo-logo.png';
 
 const menuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -17,14 +17,12 @@ const menuItems = [
   { id: 'settings', label: 'Configurações', icon: SettingsIcon },
 ];
 
-const Logo = ({ companyName }: { companyName: string }) => {
+const Logo = () => {
   return (
     <Link to="/dashboard" className="flex items-center space-x-3 py-1">
       <div className="relative w-10 h-10 flex items-center justify-center flex-shrink-0">
         <div className="absolute inset-0 bg-cyan-500/20 blur-lg rounded-full" />
-        <div className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-teal-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-          <Command className="w-5 h-5 text-white" />
-        </div>
+        <img src={jacometoLogo} alt="Jacometo" className="relative w-10 h-10 object-contain rounded-xl" />
       </div>
       <motion.div
         initial={{ opacity: 0 }}
@@ -32,8 +30,8 @@ const Logo = ({ companyName }: { companyName: string }) => {
         transition={{ duration: 0.2 }}
         className="flex flex-col overflow-hidden"
       >
-        <span className="font-bold text-lg tracking-tight text-white whitespace-nowrap">{companyName}</span>
-        <span className="text-[10px] uppercase tracking-wider text-cyan-500 font-semibold">Workspace</span>
+        <span className="font-bold text-lg tracking-tight text-white whitespace-nowrap">Jacometo</span>
+        <span className="text-[10px] uppercase tracking-wider text-cyan-500 font-semibold">Adri Sdr</span>
       </motion.div>
     </Link>
   );
@@ -44,19 +42,16 @@ const LogoIcon = () => {
     <Link to="/dashboard" className="flex items-center py-1">
       <div className="relative w-10 h-10 flex items-center justify-center flex-shrink-0">
         <div className="absolute inset-0 bg-cyan-500/20 blur-lg rounded-full" />
-        <div className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-teal-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-          <Command className="w-5 h-5 text-white" />
-        </div>
+        <img src={jacometoLogo} alt="Jacometo" className="relative w-10 h-10 object-contain rounded-xl" />
       </div>
     </Link>
   );
 };
 
 const SidebarContent = () => {
-  const { companyName } = useCompanySettings();
   const location = useLocation();
   const currentPath = location.pathname.substring(1) || 'dashboard';
-  const { open, setOpen } = useSidebar();
+  const { open } = useSidebar();
 
   const links = menuItems.map(item => ({
     label: item.label,
@@ -68,7 +63,7 @@ const SidebarContent = () => {
     <>
       <div className="flex flex-col flex-1 overflow-y-auto overflow-x-hidden">
         <div className="mb-6">
-          {open ? <Logo companyName={companyName} /> : <LogoIcon />}
+          {open ? <Logo /> : <LogoIcon />}
         </div>
         
         <nav className="flex flex-col gap-1.5">
