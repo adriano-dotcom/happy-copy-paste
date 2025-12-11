@@ -268,6 +268,11 @@ export interface DBConversation {
   contact?: DBContact;
   messages?: DBMessage[];
   agent?: { id: string; name: string; slug: string } | null;
+  // Pipeline data (from deal)
+  pipelineId?: string | null;
+  pipelineName?: string | null;
+  pipelineIcon?: string | null;
+  pipelineColor?: string | null;
 }
 
 export interface DBMessage {
@@ -315,6 +320,10 @@ export interface UIConversation {
   agentId: string | null;
   agentName: string | null;
   agentSlug: string | null;
+  pipelineId: string | null;
+  pipelineName: string | null;
+  pipelineIcon: string | null;
+  pipelineColor: string | null;
 }
 
 export interface UIMessage {
@@ -365,7 +374,11 @@ export function transformDBToUIConversation(
     contactCompany: conv.contact?.company || null,
     agentId: conv.agent?.id || null,
     agentName: conv.agent?.name || null,
-    agentSlug: conv.agent?.slug || null
+    agentSlug: conv.agent?.slug || null,
+    pipelineId: conv.pipelineId || null,
+    pipelineName: conv.pipelineName || null,
+    pipelineIcon: conv.pipelineIcon || null,
+    pipelineColor: conv.pipelineColor || null
   };
 }
 

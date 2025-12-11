@@ -517,6 +517,19 @@ const ChatInterface: React.FC = () => {
                           {chat.agentName}
                         </span>
                       )}
+                      {chat.pipelineName && (
+                        <span 
+                          className="px-1.5 py-0.5 text-[9px] rounded font-medium flex items-center gap-1 shrink-0 border"
+                          style={{ 
+                            backgroundColor: `${chat.pipelineColor}20`,
+                            color: chat.pipelineColor || '#3b82f6',
+                            borderColor: `${chat.pipelineColor}50`
+                          }}
+                        >
+                          <span className="text-[10px]">{chat.pipelineIcon}</span>
+                          {chat.pipelineName}
+                        </span>
+                      )}
                     </div>
                     <span className="text-[10px] text-slate-500 font-medium shrink-0 ml-2">{chat.lastMessageTime}</span>
                   </div>
