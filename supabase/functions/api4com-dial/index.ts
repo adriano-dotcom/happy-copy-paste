@@ -45,29 +45,37 @@ serve(async (req) => {
       throw new Error('API4Com API token is not configured');
     }
 
+    // Get extension from request or use default
     const extension = settings.api4com_default_extension || '1000';
     
     // Clean phone number - remove all non-digits
     const cleanPhone = phoneNumber.replace(/\D/g, '');
     
-    // Format for API4Com - Brazilian numbers need country code
+    // Format for API4Com - Brazilian numbers need country code with + prefix
     let formattedPhone = cleanPhone;
     if (!cleanPhone.startsWith('55') && cleanPhone.length >= 10) {
-      formattedPhone = '55' + cleanPhone;
+      formattedPhone = '+55' + cleanPhone;
+    } else if (cleanPhone.startsWith('55')) {
+      formattedPhone = '+' + cleanPhone;
     }
 
     console.log('[api4com-dial] Making API call:', { extension, formattedPhone });
 
-    // Call API4Com Dialer API
+    // Call API4Com Dialer API - correct endpoint and field names
     const api4comResponse = await fetch('https://api.api4com.com/api/v1/dialer', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${settings.api4com_api_token}`,
+        'Authorization': settings.api4com_api_token,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         extension: extension,
-        destination: formattedPhone,
+        phone: formattedPhone,
+        metadata: {
+          gateway: 'nina-crm',
+          contactId: contactId,
+          conversationId: conversationId,
+        }
       }),
     });
 
@@ -79,7 +87,8 @@ serve(async (req) => {
     });
 
     if (!api4comResponse.ok) {
-      throw new Error(api4comData.message || api4comData.error || 'API4Com call failed');
+      const errorMsg = api4comData?.message || api4comData?.error?.message || JSON.stringify(api4comData) || 'API4Com call failed';
+      throw new Error(errorMsg);
     }
 
     // Create call log entry
