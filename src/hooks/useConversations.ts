@@ -10,6 +10,7 @@ import {
   MessageType
 } from '@/types';
 import { toast } from 'sonner';
+import { playNotificationSound } from '@/utils/notificationSound';
 
 export function useConversations() {
   const [conversations, setConversations] = useState<UIConversation[]>([]);
@@ -89,9 +90,9 @@ export function useConversations() {
                   messages: [...conv.messages, uiMessage],
                   lastMessage: newMessage.content || '',
                   lastMessageTime: 'Agora',
-                  // Increment unread if it's from user
+                  // Increment unread if it's from user and play notification
                   unreadCount: newMessage.from_type === 'user' 
-                    ? conv.unreadCount + 1 
+                    ? (playNotificationSound(), conv.unreadCount + 1)
                     : conv.unreadCount
                 };
               }
