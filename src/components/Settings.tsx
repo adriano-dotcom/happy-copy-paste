@@ -1,10 +1,11 @@
 import React, { useRef, useState } from 'react';
-import { Shield, Bot, Plug, Loader2, Save, RotateCcw, Users, Mail } from 'lucide-react';
+import { Shield, Bot, Plug, Loader2, Save, RotateCcw, Users, Mail, Link } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import AgentSettings, { AgentSettingsRef } from './settings/AgentSettings';
 import ApiSettings, { ApiSettingsRef } from './settings/ApiSettings';
 import AgentsSettings, { AgentsSettingsRef } from './settings/AgentsSettings';
 import EmailTemplatesSettings from './settings/EmailTemplatesSettings';
+import PipedriveSettings, { PipedriveSettingsRef } from './settings/PipedriveSettings';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { Button } from './Button';
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
@@ -20,6 +21,7 @@ const Settings: React.FC = () => {
   const agentRef = useRef<AgentSettingsRef>(null);
   const apiRef = useRef<ApiSettingsRef>(null);
   const agentsRef = useRef<AgentsSettingsRef>(null);
+  const pipedriveRef = useRef<PipedriveSettingsRef>(null);
   const [activeTab, setActiveTab] = useState('agent');
   const { resetWizard } = useOnboardingStatus();
   const { setShowOnboarding } = useOutletContext<OutletContext>();
@@ -36,6 +38,8 @@ const Settings: React.FC = () => {
       await apiRef.current?.save();
     } else if (activeTab === 'agents') {
       await agentsRef.current?.save();
+    } else if (activeTab === 'pipedrive') {
+      await pipedriveRef.current?.save();
     }
   };
 
@@ -46,6 +50,8 @@ const Settings: React.FC = () => {
       apiRef.current?.cancel();
     } else if (activeTab === 'agents') {
       agentsRef.current?.cancel();
+    } else if (activeTab === 'pipedrive') {
+      pipedriveRef.current?.cancel();
     }
   };
 
@@ -53,7 +59,11 @@ const Settings: React.FC = () => {
     ? agentRef.current?.isSaving 
     : activeTab === 'apis'
     ? apiRef.current?.isSaving
-    : agentsRef.current?.isSaving;
+    : activeTab === 'agents'
+    ? agentsRef.current?.isSaving
+    : activeTab === 'pipedrive'
+    ? pipedriveRef.current?.isSaving
+    : false;
 
   const showSaveButtons = activeTab !== 'templates';
   
@@ -98,6 +108,10 @@ const Settings: React.FC = () => {
             <TabsTrigger value="templates" className="gap-2">
               <Mail className="w-4 h-4" />
               Templates
+            </TabsTrigger>
+            <TabsTrigger value="pipedrive" className="gap-2">
+              <Link className="w-4 h-4" />
+              Pipedrive
             </TabsTrigger>
           </TabsList>
 
@@ -146,6 +160,10 @@ const Settings: React.FC = () => {
 
         <TabsContent value="templates">
           <EmailTemplatesSettings />
+        </TabsContent>
+
+        <TabsContent value="pipedrive">
+          <PipedriveSettings ref={pipedriveRef} />
         </TabsContent>
       </Tabs>
     </div>
