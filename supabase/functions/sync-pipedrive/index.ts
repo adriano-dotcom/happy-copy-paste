@@ -120,40 +120,65 @@ serve(async (req) => {
     if (!pipedrivePersonId && contact) {
       console.log('[sync-pipedrive] Creating person in Pipedrive...');
       
-      // Build person data based on field mappings
-      const personData: Record<string, any> = {};
+      // Build basic person data (always works)
+      const basicPersonData: Record<string, any> = {};
       
       // Map standard fields
       if (contact.name || contact.call_name) {
-        personData.name = contact.name || contact.call_name || 'Sem nome';
+        basicPersonData.name = contact.name || contact.call_name || 'Sem nome';
       } else {
-        personData.name = 'Sem nome';
+        basicPersonData.name = 'Sem nome';
       }
       
       if (contact.phone_number) {
-        personData.phone = [{ value: contact.phone_number, primary: true }];
+        basicPersonData.phone = [{ value: contact.phone_number, primary: true }];
       }
       
       if (contact.email) {
-        personData.email = [{ value: contact.email, primary: true }];
+        basicPersonData.email = [{ value: contact.email, primary: true }];
       }
 
-      // Map CNPJ to custom field if configured
+      // Build custom fields data separately
+      const customFieldsData: Record<string, any> = {};
       if (fieldMappings.person_fields?.cnpj && contact.cnpj) {
         const cnpjFieldKey = fieldMappings.person_fields.cnpj;
-        personData[cnpjFieldKey] = contact.cnpj;
-        console.log(`[sync-pipedrive] Mapping CNPJ ${contact.cnpj} to field ${cnpjFieldKey}`);
+        customFieldsData[cnpjFieldKey] = contact.cnpj;
+        console.log(`[sync-pipedrive] Will try mapping CNPJ ${contact.cnpj} to field ${cnpjFieldKey}`);
       }
 
-      console.log('[sync-pipedrive] Person data:', JSON.stringify(personData));
+      // First attempt: try with custom fields
+      const hasCustomFields = Object.keys(customFieldsData).length > 0;
+      let personDataToSend = hasCustomFields 
+        ? { ...basicPersonData, ...customFieldsData }
+        : basicPersonData;
 
-      const personResponse = await fetch(`${baseUrl}/persons?api_token=${apiToken}`, {
+      console.log('[sync-pipedrive] Person data (attempt 1):', JSON.stringify(personDataToSend));
+
+      let personResponse = await fetch(`${baseUrl}/persons?api_token=${apiToken}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(personData)
+        body: JSON.stringify(personDataToSend)
       });
 
-      const personResult = await personResponse.json();
+      let personResult = await personResponse.json();
+      
+      // If failed due to invalid custom fields, retry without them
+      if (!personResult.success && personResult.error?.includes('Invalid field') && hasCustomFields) {
+        console.warn('[sync-pipedrive] Custom field invalid, retrying without custom fields...');
+        console.warn('[sync-pipedrive] Original error:', personResult.error);
+        
+        personResponse = await fetch(`${baseUrl}/persons?api_token=${apiToken}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(basicPersonData)
+        });
+        
+        personResult = await personResponse.json();
+        
+        if (personResult.success) {
+          console.warn('[sync-pipedrive] Person created WITHOUT custom fields (CNPJ not mapped). Please verify the custom field exists in Pipedrive.');
+        }
+      }
       
       if (!personResponse.ok || !personResult.success) {
         console.error('[sync-pipedrive] Error creating person:', personResult);
