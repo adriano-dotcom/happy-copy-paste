@@ -7,10 +7,12 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Clock, Zap, History, Play } from 'lucide-react';
+import { Plus, Pencil, Trash2, Clock, Zap, History, Play, BarChart3 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import AutomationsDashboard from './AutomationsDashboard';
 
 interface Template {
   id: string;
@@ -303,30 +305,46 @@ export default function FollowupAutomationsSettings() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-medium">Automações de Follow-up</h3>
-          <p className="text-sm text-muted-foreground">
-            Configure disparos automáticos quando leads ficam sem responder
-          </p>
+    <Tabs defaultValue="rules" className="space-y-6">
+      <TabsList>
+        <TabsTrigger value="rules">
+          <Zap className="h-4 w-4 mr-2" />
+          Regras
+        </TabsTrigger>
+        <TabsTrigger value="dashboard">
+          <BarChart3 className="h-4 w-4 mr-2" />
+          Dashboard
+        </TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="dashboard">
+        <AutomationsDashboard />
+      </TabsContent>
+
+      <TabsContent value="rules" className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-medium">Automações de Follow-up</h3>
+            <p className="text-sm text-muted-foreground">
+              Configure disparos automáticos quando leads ficam sem responder
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => { loadLogs(); setIsLogsModalOpen(true); }}>
+              <History className="h-4 w-4 mr-2" />
+              Histórico
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleRunNow} disabled={isRunning}>
+              <Play className="h-4 w-4 mr-2" />
+              {isRunning ? 'Executando...' : 'Executar Agora'}
+            </Button>
+            <Button onClick={openCreateModal}>
+              <Plus className="h-4 w-4 mr-2" />
+              Nova Automação
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => { loadLogs(); setIsLogsModalOpen(true); }}>
-            <History className="h-4 w-4 mr-2" />
-            Histórico
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleRunNow} disabled={isRunning}>
-            <Play className="h-4 w-4 mr-2" />
-            {isRunning ? 'Executando...' : 'Executar Agora'}
-          </Button>
-          <Button onClick={openCreateModal}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nova Automação
-          </Button>
-        </div>
-      </div>
 
       {/* List */}
       {automations.length === 0 ? (
@@ -605,6 +623,7 @@ export default function FollowupAutomationsSettings() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+      </TabsContent>
+    </Tabs>
   );
 }
