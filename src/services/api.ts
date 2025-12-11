@@ -360,6 +360,80 @@ export const api = {
   },
 
   /**
+   * Delete contact and all related data (conversations, messages, deals)
+   */
+  deleteContact: async (id: string): Promise<void> => {
+    // First delete related deals
+    const { error: dealsError } = await supabase
+      .from('deals')
+      .delete()
+      .eq('contact_id', id);
+
+    if (dealsError) {
+      console.error('[API] Error deleting deals:', dealsError);
+    }
+
+    // Delete messages for conversations of this contact
+    const { data: conversations } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('contact_id', id);
+
+    if (conversations && conversations.length > 0) {
+      const conversationIds = conversations.map(c => c.id);
+      
+      // Delete messages
+      const { error: messagesError } = await supabase
+        .from('messages')
+        .delete()
+        .in('conversation_id', conversationIds);
+
+      if (messagesError) {
+        console.error('[API] Error deleting messages:', messagesError);
+      }
+
+      // Delete from nina_processing_queue
+      await supabase
+        .from('nina_processing_queue')
+        .delete()
+        .in('conversation_id', conversationIds);
+
+      // Delete from send_queue
+      await supabase
+        .from('send_queue')
+        .delete()
+        .in('conversation_id', conversationIds);
+
+      // Delete conversations
+      const { error: conversationsError } = await supabase
+        .from('conversations')
+        .delete()
+        .eq('contact_id', id);
+
+      if (conversationsError) {
+        console.error('[API] Error deleting conversations:', conversationsError);
+      }
+    }
+
+    // Delete call logs
+    await supabase
+      .from('call_logs')
+      .delete()
+      .eq('contact_id', id);
+
+    // Finally delete the contact
+    const { error: contactError } = await supabase
+      .from('contacts')
+      .delete()
+      .eq('id', id);
+
+    if (contactError) {
+      console.error('[API] Error deleting contact:', contactError);
+      throw contactError;
+    }
+  },
+
+  /**
    * Fetch team members from database
    */
   fetchTeam: async (): Promise<TeamMember[]> => {
