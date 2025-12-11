@@ -565,11 +565,13 @@ const ChatInterface: React.FC = () => {
                 className={`flex items-center p-4 cursor-pointer transition-all duration-200 border-b border-slate-800/30 hover:bg-slate-800/50 ${
                   selectedChatId === chat.id 
                     ? 'bg-slate-800/80 border-l-2 border-l-cyan-500' 
-                    : 'border-l-2 border-l-transparent'
+                    : chat.unreadCount > 0
+                      ? 'bg-cyan-950/20 border-l-2 border-l-cyan-500/50'
+                      : 'border-l-2 border-l-transparent'
                 }`}
               >
                 <div className="relative">
-                  <div className="w-12 h-12 rounded-full p-0.5 bg-gradient-to-tr from-slate-700 to-slate-900">
+                  <div className={`w-12 h-12 rounded-full p-0.5 ${chat.unreadCount > 0 ? 'bg-gradient-to-tr from-cyan-600 to-teal-600' : 'bg-gradient-to-tr from-slate-700 to-slate-900'}`}>
                     <img 
                       src={chat.contactAvatar} 
                       alt={chat.contactName} 
@@ -586,7 +588,7 @@ const ChatInterface: React.FC = () => {
                 <div className="ml-3 flex-1 min-w-0">
                   <div className="flex justify-between items-baseline mb-1">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <h3 className={`text-sm font-semibold truncate ${selectedChatId === chat.id ? 'text-white' : 'text-slate-300'}`}>
+                      <h3 className={`text-sm truncate ${chat.unreadCount > 0 ? 'font-bold text-white' : selectedChatId === chat.id ? 'font-semibold text-white' : 'font-semibold text-slate-300'}`}>
                         {chat.contactName}
                       </h3>
                       {chat.agentName && (
