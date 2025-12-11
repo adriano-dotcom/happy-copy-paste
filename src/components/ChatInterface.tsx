@@ -14,6 +14,7 @@ import {
 } from './ui/dropdown-menu';
 import { MessageDirection, MessageType, UIConversation, UIMessage, ConversationStatus, TagDefinition } from '../types';
 import { Button } from './Button';
+import { Button as ShadcnButton } from './ui/button';
 import { useConversations } from '../hooks/useConversations';
 import { toast } from 'sonner';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
@@ -722,9 +723,9 @@ const ChatInterface: React.FC = () => {
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white">
+                    <ShadcnButton variant="ghost" size="icon" className="text-slate-400 hover:text-white">
                       <MoreVertical className="w-5 h-5" />
-                    </Button>
+                    </ShadcnButton>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="bg-slate-800 border-slate-700">
                     <DropdownMenuItem 
