@@ -328,24 +328,35 @@ const ChatInterface: React.FC = () => {
     return counts;
   }, [conversations, pipelines]);
 
-  const filteredConversations = conversations.filter(chat => {
-    // Pipeline filter
-    if (selectedPipelineFilter === 'no-pipeline') {
-      // Show only conversations WITHOUT pipeline
-      if (chat.pipelineId !== null) return false;
-    } else if (selectedPipelineFilter && chat.pipelineId !== selectedPipelineFilter) {
-      return false;
-    }
-    
-    // Text search filter
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      chat.contactName.toLowerCase().includes(query) ||
-      chat.contactPhone.includes(query) ||
-      chat.lastMessage.toLowerCase().includes(query)
-    );
-  });
+  const filteredConversations = conversations
+    .filter(chat => {
+      // Pipeline filter
+      if (selectedPipelineFilter === 'no-pipeline') {
+        // Show only conversations WITHOUT pipeline
+        if (chat.pipelineId !== null) return false;
+      } else if (selectedPipelineFilter && chat.pipelineId !== selectedPipelineFilter) {
+        return false;
+      }
+      
+      // Text search filter
+      if (!searchQuery) return true;
+      const query = searchQuery.toLowerCase();
+      return (
+        chat.contactName.toLowerCase().includes(query) ||
+        chat.contactPhone.includes(query) ||
+        chat.lastMessage.toLowerCase().includes(query)
+      );
+    })
+    .sort((a, b) => {
+      // Sort by unread first
+      if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
+      if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
+      
+      // Then by last message time (most recent first)
+      const timeA = a.messages.length > 0 ? new Date(a.messages[a.messages.length - 1].timestamp).getTime() : 0;
+      const timeB = b.messages.length > 0 ? new Date(b.messages[b.messages.length - 1].timestamp).getTime() : 0;
+      return timeB - timeA;
+    });
 
   const renderStatusBadge = (status: ConversationStatus) => {
     const config = {
