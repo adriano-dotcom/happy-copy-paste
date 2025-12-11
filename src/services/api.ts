@@ -923,6 +923,38 @@ export const api = {
   },
 
   /**
+   * Get deal by contact ID
+   */
+  getDealByContactId: async (contactId: string): Promise<Deal | null> => {
+    const { data, error } = await supabase
+      .from('deals')
+      .select('*, owner:team_members(name, avatar)')
+      .eq('contact_id', contactId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[API] Error fetching deal by contact:', error);
+      return null;
+    }
+
+    if (!data) return null;
+
+    return {
+      id: data.id,
+      title: data.title,
+      company: data.company || 'Sem empresa',
+      value: Number(data.value) || 0,
+      stage: data.stage,
+      stageId: data.stage_id,
+      ownerAvatar: data.owner?.avatar || 'https://ui-avatars.com/api/?name=NA&background=334155&color=fff',
+      tags: data.tags || [],
+      dueDate: data.due_date,
+      priority: data.priority as 'low' | 'medium' | 'high',
+      contactId: data.contact_id,
+    };
+  },
+
+  /**
    * Create a new deal
    */
   createDeal: async (deal: {

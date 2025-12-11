@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Search, MoreVertical, Phone, Paperclip, Send, Check, CheckCheck, 
   Smile, Play, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
-  Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil
+  Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil,
+  Briefcase, ExternalLink
 } from 'lucide-react';
 import { MessageDirection, MessageType, UIConversation, UIMessage, ConversationStatus, TagDefinition } from '../types';
 import { Button } from './Button';
@@ -15,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Input } from './ui/input';
 
 const ChatInterface: React.FC = () => {
+  const navigate = useNavigate();
   const { conversations, loading, sendMessage, updateStatus, markAsRead, assignConversation, refetch } = useConversations();
   const { sdrName, companyName } = useCompanySettings();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
@@ -32,6 +35,11 @@ const ChatInterface: React.FC = () => {
   const [editCompany, setEditCompany] = useState('');
   const [isSavingContact, setIsSavingContact] = useState(false);
   const [isLookingUpCnpj, setIsLookingUpCnpj] = useState(false);
+  
+  // Deal state
+  const [existingDeal, setExistingDeal] = useState<any>(null);
+  const [isCheckingDeal, setIsCheckingDeal] = useState(false);
+  const [isCreatingDeal, setIsCreatingDeal] = useState(false);
   
   // Audio player state
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
@@ -96,6 +104,27 @@ const ChatInterface: React.FC = () => {
       setIsEditingContact(false);
     }
   }, [activeChat?.id, activeChat?.contactEmail, activeChat?.contactCnpj, activeChat?.contactCompany]);
+
+  // Check for existing deal when chat changes
+  useEffect(() => {
+    const checkDeal = async () => {
+      if (!activeChat?.contactId) {
+        setExistingDeal(null);
+        return;
+      }
+      setIsCheckingDeal(true);
+      try {
+        const deal = await api.getDealByContactId(activeChat.contactId);
+        setExistingDeal(deal);
+      } catch (error) {
+        console.error('Error checking deal:', error);
+        setExistingDeal(null);
+      } finally {
+        setIsCheckingDeal(false);
+      }
+    };
+    checkDeal();
+  }, [activeChat?.contactId]);
 
   // Mark as read when selecting conversation
   useEffect(() => {
@@ -225,6 +254,46 @@ const ChatInterface: React.FC = () => {
       toast.error('Erro ao salvar dados');
     } finally {
       setIsSavingContact(false);
+    }
+  };
+
+  // Convert contact to deal
+  const handleConvertToDeal = async () => {
+    if (!activeChat) return;
+    
+    setIsCreatingDeal(true);
+    try {
+      // Get first stage of default pipeline
+      const pipelines = await api.fetchPipelines();
+      const defaultPipeline = pipelines.find(p => p.isActive) || pipelines[0];
+      
+      let firstStageId: string | undefined;
+      if (defaultPipeline) {
+        const stages = await api.fetchPipelineStages(defaultPipeline.id);
+        const firstStage = stages.sort((a, b) => a.position - b.position)[0];
+        firstStageId = firstStage?.id;
+      }
+      
+      const deal = await api.createDeal({
+        contact_id: activeChat.contactId,
+        title: activeChat.contactCompany || activeChat.contactName || 'Novo Negócio',
+        company: activeChat.contactCompany || undefined,
+        stage_id: firstStageId,
+        owner_id: activeChat.assignedUserId || undefined,
+      });
+      
+      setExistingDeal(deal);
+      toast.success('Negócio criado com sucesso!', {
+        action: {
+          label: 'Ver no Kanban',
+          onClick: () => navigate('/kanban')
+        }
+      });
+    } catch (error) {
+      console.error('Error creating deal:', error);
+      toast.error('Erro ao criar negócio');
+    } finally {
+      setIsCreatingDeal(false);
     }
   };
 
@@ -777,6 +846,38 @@ const ChatInterface: React.FC = () => {
                         <Save className="w-4 h-4 mr-2" />
                       )}
                       Salvar Alterações
+                    </Button>
+                  )}
+                </div>
+
+                {/* Convert to Deal Button */}
+                <div className="pt-2">
+                  {isCheckingDeal ? (
+                    <div className="flex items-center justify-center py-3">
+                      <Loader2 className="w-5 h-5 animate-spin text-slate-500" />
+                    </div>
+                  ) : existingDeal ? (
+                    <Button
+                      variant="outline"
+                      className="w-full border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/50"
+                      onClick={() => navigate('/kanban')}
+                    >
+                      <Briefcase className="w-4 h-4 mr-2" />
+                      Ver Negócio no Kanban
+                      <ExternalLink className="w-3 h-3 ml-2 opacity-50" />
+                    </Button>
+                  ) : (
+                    <Button
+                      className="w-full bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-700 hover:to-teal-700"
+                      onClick={handleConvertToDeal}
+                      disabled={isCreatingDeal}
+                    >
+                      {isCreatingDeal ? (
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      ) : (
+                        <Plus className="w-4 h-4 mr-2" />
+                      )}
+                      Converter em Negócio
                     </Button>
                   )}
                 </div>
