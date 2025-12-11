@@ -3,6 +3,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet';
 import { Button } from './ui/button';
 import { User, Building2, MapPin, Phone, Mail, FileText, Calendar, Edit, MessageSquare } from 'lucide-react';
 import { displayPhoneInternational } from '@/utils/phoneFormatter';
+import { CallHistoryPanel } from './CallHistoryPanel';
+import { useContactCallHistory } from '@/hooks/useContactCallHistory';
 
 interface ContactData {
   id: string;
@@ -45,9 +47,9 @@ const formatCEP = (cep: string | undefined) => {
   return `${digits.slice(0,5)}-${digits.slice(5,8)}`;
 };
 
-// Use international phone format from utility
-
 const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpenChange, contact, onEdit, onConverse }) => {
+  const { callHistory, loading: callsLoading } = useContactCallHistory(contact?.id || null);
+
   if (!contact) return null;
 
   const getStatusBadge = (status: string | undefined) => {
@@ -156,6 +158,14 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
               </div>
             </section>
           )}
+
+          {/* Histórico de Chamadas */}
+          <section>
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2 mb-4">
+              <Phone className="w-4 h-4" /> Histórico de Chamadas
+            </h3>
+            <CallHistoryPanel calls={callHistory} loading={callsLoading} compact />
+          </section>
 
           {/* Notas */}
           {contact.notes && (
