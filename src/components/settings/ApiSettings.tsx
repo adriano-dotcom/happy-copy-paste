@@ -10,6 +10,7 @@ interface NinaSettings {
   id?: string;
   whatsapp_access_token: string | null;
   whatsapp_phone_number_id: string | null;
+  whatsapp_waba_id: string | null;
   whatsapp_verify_token: string | null;
   elevenlabs_api_key: string | null;
   elevenlabs_voice_id: string;
@@ -105,6 +106,7 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
   const [settings, setSettings] = useState<NinaSettings>({
     whatsapp_access_token: null,
     whatsapp_phone_number_id: null,
+    whatsapp_waba_id: null,
     whatsapp_verify_token: 'webhook-verify-token',
     elevenlabs_api_key: null,
     elevenlabs_voice_id: '9BWtsMINqrJLrRacOk9x',
@@ -168,6 +170,7 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
             id: newData.id,
             whatsapp_access_token: newData.whatsapp_access_token,
             whatsapp_phone_number_id: newData.whatsapp_phone_number_id,
+            whatsapp_waba_id: (newData as any).whatsapp_waba_id || null,
             whatsapp_verify_token: newData.whatsapp_verify_token || 'webhook-verify-token',
             elevenlabs_api_key: newData.elevenlabs_api_key,
             elevenlabs_voice_id: newData.elevenlabs_voice_id,
@@ -188,6 +191,7 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
           id: data.id,
           whatsapp_access_token: data.whatsapp_access_token,
           whatsapp_phone_number_id: data.whatsapp_phone_number_id,
+          whatsapp_waba_id: (data as any).whatsapp_waba_id || null,
           whatsapp_verify_token: data.whatsapp_verify_token || 'webhook-verify-token',
           elevenlabs_api_key: data.elevenlabs_api_key,
           elevenlabs_voice_id: data.elevenlabs_voice_id,
@@ -224,6 +228,7 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
         .update({
           whatsapp_access_token: settings.whatsapp_access_token,
           whatsapp_phone_number_id: settings.whatsapp_phone_number_id,
+          whatsapp_waba_id: settings.whatsapp_waba_id,
           whatsapp_verify_token: settings.whatsapp_verify_token,
           elevenlabs_api_key: settings.elevenlabs_api_key,
           elevenlabs_voice_id: settings.elevenlabs_voice_id,
@@ -565,7 +570,7 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
           <div>
             <label className="text-xs font-medium text-slate-400 mb-1.5 block">Access Token</label>
             <div className="relative">
@@ -595,6 +600,23 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
               placeholder="123456789012345"
               className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
             />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-slate-400 mb-1.5 block">
+              WABA ID
+              <span className="text-slate-500 font-normal ml-1">(Business Account)</span>
+            </label>
+            <input
+              type="text"
+              value={settings.whatsapp_waba_id || ''}
+              onChange={(e) => setSettings({ ...settings, whatsapp_waba_id: e.target.value })}
+              placeholder="123456789012345"
+              className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Meta Business Manager → Contas → WhatsApp Business
+            </p>
           </div>
         </div>
 

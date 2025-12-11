@@ -973,6 +973,7 @@ export type Database = {
           whatsapp_access_token: string | null
           whatsapp_phone_number_id: string | null
           whatsapp_verify_token: string | null
+          whatsapp_waba_id: string | null
         }
         Insert: {
           adaptive_response_enabled?: boolean
@@ -1021,6 +1022,7 @@ export type Database = {
           whatsapp_access_token?: string | null
           whatsapp_phone_number_id?: string | null
           whatsapp_verify_token?: string | null
+          whatsapp_waba_id?: string | null
         }
         Update: {
           adaptive_response_enabled?: boolean
@@ -1069,6 +1071,7 @@ export type Database = {
           whatsapp_access_token?: string | null
           whatsapp_phone_number_id?: string | null
           whatsapp_verify_token?: string | null
+          whatsapp_waba_id?: string | null
         }
         Relationships: []
       }
