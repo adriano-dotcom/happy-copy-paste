@@ -47,7 +47,28 @@ export const SendWhatsAppTemplateModal: React.FC<SendWhatsAppTemplateModalProps>
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<WhatsAppTemplate | null>(null);
-  const [variables, setVariables] = useState<string[]>([]);
+  const [headerVariables, setHeaderVariables] = useState<string[]>([]);
+  const [bodyVariables, setBodyVariables] = useState<string[]>([]);
+
+  // Count variables in a text by finding {{N}} patterns
+  const countVariables = (text: string | undefined): number => {
+    if (!text) return 0;
+    const matches = text.match(/\{\{\d+\}\}/g);
+    return matches ? matches.length : 0;
+  };
+
+  // Get variable counts for selected template
+  const getTemplateCounts = (template: WhatsAppTemplate | null) => {
+    if (!template?.components) return { headerCount: 0, bodyCount: 0 };
+    
+    const headerComponent = template.components.find((c: any) => c.type === 'HEADER');
+    const bodyComponent = template.components.find((c: any) => c.type === 'BODY');
+    
+    return {
+      headerCount: countVariables(headerComponent?.text),
+      bodyCount: countVariables(bodyComponent?.text),
+    };
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -58,24 +79,30 @@ export const SendWhatsAppTemplateModal: React.FC<SendWhatsAppTemplateModalProps>
   // Auto-fill variables when template changes
   useEffect(() => {
     if (selectedTemplate) {
-      const bodyComponent = selectedTemplate.components?.find((c: any) => c.type === 'BODY');
-      const variablesCount = selectedTemplate.variables_count || 0;
+      const { headerCount, bodyCount } = getTemplateCounts(selectedTemplate);
       
-      // Initialize variables with auto-fill values
-      const initialVars = Array(variablesCount).fill('');
-      
-      // Try to auto-fill first variable with contact name
-      if (variablesCount >= 1 && contactName) {
-        initialVars[0] = contactName;
+      // Initialize header variables
+      const initialHeaderVars = Array(headerCount).fill('');
+      if (headerCount >= 1 && contactName) {
+        initialHeaderVars[0] = contactName;
       }
-      // Try to auto-fill second variable with company
-      if (variablesCount >= 2 && contactCompany) {
-        initialVars[1] = contactCompany;
-      }
+      setHeaderVariables(initialHeaderVars);
       
-      setVariables(initialVars);
+      // Initialize body variables
+      const initialBodyVars = Array(bodyCount).fill('');
+      if (bodyCount >= 1 && contactName && headerCount === 0) {
+        initialBodyVars[0] = contactName;
+      }
+      if (bodyCount >= 1 && contactCompany) {
+        const companyIndex = headerCount === 0 ? 1 : 0;
+        if (companyIndex < bodyCount) {
+          initialBodyVars[companyIndex] = contactCompany;
+        }
+      }
+      setBodyVariables(initialBodyVars);
     } else {
-      setVariables([]);
+      setHeaderVariables([]);
+      setBodyVariables([]);
     }
   }, [selectedTemplate, contactName, contactCompany]);
 
@@ -105,7 +132,7 @@ export const SendWhatsAppTemplateModal: React.FC<SendWhatsAppTemplateModalProps>
     }
 
     // Validate all variables are filled
-    if (variables.some(v => !v.trim())) {
+    if (headerVariables.some(v => !v.trim()) || bodyVariables.some(v => !v.trim())) {
       toast.error('Preencha todas as variáveis');
       return;
     }
@@ -118,7 +145,8 @@ export const SendWhatsAppTemplateModal: React.FC<SendWhatsAppTemplateModalProps>
           conversation_id: conversationId,
           template_name: selectedTemplate.name,
           language: selectedTemplate.language,
-          variables: variables.map(v => v.trim()),
+          variables: bodyVariables.map(v => v.trim()),
+          header_variables: headerVariables.map(v => v.trim()),
         },
       });
 
@@ -142,19 +170,32 @@ export const SendWhatsAppTemplateModal: React.FC<SendWhatsAppTemplateModalProps>
   const renderTemplatePreview = () => {
     if (!selectedTemplate) return null;
 
+    const headerComponent = selectedTemplate.components?.find((c: any) => c.type === 'HEADER');
     const bodyComponent = selectedTemplate.components?.find((c: any) => c.type === 'BODY');
-    let previewText = bodyComponent?.text || '';
     
-    // Replace variables with actual values or placeholders
-    variables.forEach((v, i) => {
-      previewText = previewText.replace(`{{${i + 1}}}`, v || `[Variável ${i + 1}]`);
+    let headerText = headerComponent?.text || '';
+    let bodyText = bodyComponent?.text || '';
+    
+    // Replace header variables
+    headerVariables.forEach((v, i) => {
+      headerText = headerText.replace(`{{${i + 1}}}`, v || `[Header ${i + 1}]`);
+    });
+    
+    // Replace body variables
+    bodyVariables.forEach((v, i) => {
+      bodyText = bodyText.replace(`{{${i + 1}}}`, v || `[Variável ${i + 1}]`);
     });
 
     return (
       <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
         <p className="text-xs text-slate-500 mb-2">Preview:</p>
+        {headerText && (
+          <div className="text-sm font-semibold text-white mb-2">
+            {headerText}
+          </div>
+        )}
         <div className="text-sm text-slate-300 whitespace-pre-wrap">
-          {previewText}
+          {bodyText}
         </div>
       </div>
     );
@@ -223,21 +264,45 @@ export const SendWhatsAppTemplateModal: React.FC<SendWhatsAppTemplateModalProps>
                 </Select>
               </div>
 
-              {/* Variables */}
-              {selectedTemplate && selectedTemplate.variables_count > 0 && (
+              {/* Header Variables */}
+              {selectedTemplate && headerVariables.length > 0 && (
                 <div className="space-y-3">
-                  <Label className="text-slate-300">Variáveis</Label>
-                  {Array.from({ length: selectedTemplate.variables_count }).map((_, i) => (
-                    <div key={i}>
+                  <Label className="text-slate-300">Variáveis do Cabeçalho</Label>
+                  {headerVariables.map((_, i) => (
+                    <div key={`header-${i}`}>
                       <Label className="text-xs text-slate-500 mb-1 block">
-                        Variável {i + 1} {`{{${i + 1}}}`}
+                        Header {`{{${i + 1}}}`}
                       </Label>
                       <Input
-                        value={variables[i] || ''}
+                        value={headerVariables[i] || ''}
                         onChange={(e) => {
-                          const newVars = [...variables];
+                          const newVars = [...headerVariables];
                           newVars[i] = e.target.value;
-                          setVariables(newVars);
+                          setHeaderVariables(newVars);
+                        }}
+                        placeholder="Ex: Nome do cliente"
+                        className="bg-slate-800/50 border-slate-700"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Body Variables */}
+              {selectedTemplate && bodyVariables.length > 0 && (
+                <div className="space-y-3">
+                  <Label className="text-slate-300">Variáveis do Corpo</Label>
+                  {bodyVariables.map((_, i) => (
+                    <div key={`body-${i}`}>
+                      <Label className="text-xs text-slate-500 mb-1 block">
+                        Body {`{{${i + 1}}}`}
+                      </Label>
+                      <Input
+                        value={bodyVariables[i] || ''}
+                        onChange={(e) => {
+                          const newVars = [...bodyVariables];
+                          newVars[i] = e.target.value;
+                          setBodyVariables(newVars);
                         }}
                         placeholder={i === 0 ? 'Ex: Nome do cliente' : i === 1 ? 'Ex: Empresa' : `Valor para variável ${i + 1}`}
                         className="bg-slate-800/50 border-slate-700"
