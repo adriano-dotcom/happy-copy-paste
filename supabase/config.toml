@@ -50,3 +50,6 @@ verify_jwt = false
 
 [functions.process-followups]
 verify_jwt = false
+
+[functions.register-whatsapp-number]
+verify_jwt = false
