@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Phone, Loader2, X } from 'lucide-react';
 import { CallLog } from '@/hooks/useActiveCall';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface ActiveCallIndicatorProps {
   call: CallLog;
+  onDismiss?: () => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -12,8 +15,9 @@ const formatDuration = (seconds: number): string => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
-export const ActiveCallIndicator: React.FC<ActiveCallIndicatorProps> = ({ call }) => {
+export const ActiveCallIndicator: React.FC<ActiveCallIndicatorProps> = ({ call, onDismiss }) => {
   const [elapsed, setElapsed] = useState(0);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Calculate elapsed time for active calls
   useEffect(() => {
@@ -32,6 +36,30 @@ export const ActiveCallIndicator: React.FC<ActiveCallIndicatorProps> = ({ call }
 
     return () => clearInterval(interval);
   }, [call.status, call.answered_at, call.started_at]);
+
+  const handleCancel = async () => {
+    setIsCancelling(true);
+    try {
+      const { error } = await supabase
+        .from('call_logs')
+        .update({ 
+          status: 'cancelled',
+          ended_at: new Date().toISOString(),
+          hangup_cause: 'user_cancelled'
+        })
+        .eq('id', call.id);
+
+      if (error) throw error;
+      
+      toast.info('Chamada cancelada');
+      onDismiss?.();
+    } catch (error) {
+      console.error('Error cancelling call:', error);
+      toast.error('Erro ao cancelar chamada');
+    } finally {
+      setIsCancelling(false);
+    }
+  };
 
   const getStatusConfig = () => {
     switch (call.status) {
@@ -76,6 +104,19 @@ export const ActiveCallIndicator: React.FC<ActiveCallIndicatorProps> = ({ call }
           )}
         </div>
       </div>
+
+      <button
+        onClick={handleCancel}
+        disabled={isCancelling}
+        className="flex items-center justify-center w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 transition-colors disabled:opacity-50"
+        title="Cancelar/Fechar"
+      >
+        {isCancelling ? (
+          <Loader2 className="w-4 h-4 text-white animate-spin" />
+        ) : (
+          <X className="w-4 h-4 text-white" />
+        )}
+      </button>
     </div>
   );
 };
