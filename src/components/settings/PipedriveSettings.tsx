@@ -36,7 +36,12 @@ const defaultFieldMappings: FieldMapping = {
     phone_number: 'phone',
     email: 'email',
     company: 'org_name',
-    cnpj: 'dc094ce47e758abfd2732eac5bfd5f32fea3e3d6'
+    cnpj: '',
+    cep: '',
+    street: '',
+    neighborhood: '',
+    city: '',
+    state: ''
   },
   deal_fields: {
     title: 'title',
@@ -47,17 +52,22 @@ const defaultFieldMappings: FieldMapping = {
 };
 
 const SYSTEM_PERSON_FIELDS = [
-  { key: 'name', label: 'Nome' },
-  { key: 'phone_number', label: 'Telefone' },
-  { key: 'email', label: 'Email' },
-  { key: 'company', label: 'Empresa' },
-  { key: 'cnpj', label: 'CNPJ' }
+  { key: 'name', label: 'Nome', description: 'Campo padrão: name' },
+  { key: 'phone_number', label: 'Telefone', description: 'Campo padrão: phone' },
+  { key: 'email', label: 'Email', description: 'Campo padrão: email' },
+  { key: 'company', label: 'Empresa', description: 'Campo padrão: org_name' },
+  { key: 'cnpj', label: 'CNPJ', description: 'Campo customizado - use o ID do Pipedrive' },
+  { key: 'cep', label: 'CEP', description: 'Campo customizado - use o ID do Pipedrive' },
+  { key: 'street', label: 'Endereço Completo', description: 'Logradouro + Número + Complemento' },
+  { key: 'neighborhood', label: 'Bairro', description: 'Campo customizado - use o ID do Pipedrive' },
+  { key: 'city', label: 'Cidade', description: 'Campo customizado - use o ID do Pipedrive' },
+  { key: 'state', label: 'Estado', description: 'Campo customizado - use o ID do Pipedrive' }
 ];
 
 const SYSTEM_DEAL_FIELDS = [
-  { key: 'title', label: 'Título' },
-  { key: 'value', label: 'Valor' },
-  { key: 'notes', label: 'Notas' }
+  { key: 'title', label: 'Título', description: 'Campo padrão: title' },
+  { key: 'value', label: 'Valor', description: 'Campo padrão: value' },
+  { key: 'notes', label: 'Notas', description: 'Campo padrão: notes' }
 ];
 
 const PipedriveSettings = forwardRef<PipedriveSettingsRef>((_, ref) => {
@@ -367,13 +377,18 @@ const PipedriveSettings = forwardRef<PipedriveSettingsRef>((_, ref) => {
                 <tbody>
                   {SYSTEM_PERSON_FIELDS.map(field => (
                     <tr key={field.key} className="border-b border-slate-700/50 last:border-0">
-                      <td className="px-4 py-2 text-slate-300">{field.label}</td>
+                      <td className="px-4 py-2">
+                        <div>
+                          <span className="text-slate-300">{field.label}</span>
+                          <p className="text-xs text-slate-500">{field.description}</p>
+                        </div>
+                      </td>
                       <td className="px-4 py-2 text-center text-slate-500">→</td>
                       <td className="px-4 py-2">
                         <Input
                           value={settings.pipedrive_field_mappings?.person_fields?.[field.key] || ''}
                           onChange={(e) => updateFieldMapping('person', field.key, e.target.value)}
-                          placeholder="nome_campo_pipedrive"
+                          placeholder={field.key === 'cnpj' || field.key === 'cep' || field.key === 'street' || field.key === 'neighborhood' || field.key === 'city' || field.key === 'state' ? 'ID do campo customizado' : 'nome_campo_pipedrive'}
                           className="bg-slate-700 border-slate-600 text-white text-sm h-8"
                         />
                       </td>
@@ -399,7 +414,12 @@ const PipedriveSettings = forwardRef<PipedriveSettingsRef>((_, ref) => {
                 <tbody>
                   {SYSTEM_DEAL_FIELDS.map(field => (
                     <tr key={field.key} className="border-b border-slate-700/50 last:border-0">
-                      <td className="px-4 py-2 text-slate-300">{field.label}</td>
+                      <td className="px-4 py-2">
+                        <div>
+                          <span className="text-slate-300">{field.label}</span>
+                          <p className="text-xs text-slate-500">{field.description}</p>
+                        </div>
+                      </td>
                       <td className="px-4 py-2 text-center text-slate-500">→</td>
                       <td className="px-4 py-2">
                         <Input
