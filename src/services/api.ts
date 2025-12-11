@@ -1780,4 +1780,24 @@ export const api = {
     console.log('[API] Created new conversation:', newConv.id);
     return newConv.id;
   },
+
+  /**
+   * Archive a conversation (set is_active to false)
+   * Used to remove disqualified leads from the queue
+   */
+  archiveConversation: async (conversationId: string): Promise<void> => {
+    console.log(`[API] Archiving conversation ${conversationId}`);
+    
+    const { error } = await supabase
+      .from('conversations')
+      .update({ is_active: false })
+      .eq('id', conversationId);
+
+    if (error) {
+      console.error('[API] Error archiving conversation:', error);
+      throw error;
+    }
+    
+    console.log(`[API] Conversation ${conversationId} archived successfully`);
+  },
 };
