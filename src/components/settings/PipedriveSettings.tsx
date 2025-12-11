@@ -35,7 +35,8 @@ const defaultFieldMappings: FieldMapping = {
     name: 'name',
     phone_number: 'phone',
     email: 'email',
-    company: 'org_name'
+    company: 'org_name',
+    cnpj: 'dc094ce47e758abfd2732eac5bfd5f32fea3e3d6'
   },
   deal_fields: {
     title: 'title',
