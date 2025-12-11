@@ -514,18 +514,6 @@ const ChatInterface: React.FC = () => {
               Todos
               <span className="text-[10px] opacity-70">({conversationCounts.all})</span>
             </button>
-            <button
-              onClick={() => setSelectedPipelineFilter('no-pipeline')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
-                selectedPipelineFilter === 'no-pipeline'
-                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                  : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
-              }`}
-            >
-              <Inbox className="w-3.5 h-3.5" />
-              Sem Funil
-              <span className="text-[10px] opacity-70">({conversationCounts['no-pipeline']})</span>
-            </button>
             {pipelines.map((pipeline) => (
               <button
                 key={pipeline.id}
@@ -546,6 +534,18 @@ const ChatInterface: React.FC = () => {
                 <span className="text-[10px] opacity-70">({conversationCounts[pipeline.id] || 0})</span>
               </button>
             ))}
+            <button
+              onClick={() => setSelectedPipelineFilter('no-pipeline')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                selectedPipelineFilter === 'no-pipeline'
+                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                  : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+              }`}
+            >
+              <Inbox className="w-3.5 h-3.5" />
+              Sem Funil
+              <span className="text-[10px] opacity-70">({conversationCounts['no-pipeline']})</span>
+            </button>
           </div>
           
           <div className="relative group">
