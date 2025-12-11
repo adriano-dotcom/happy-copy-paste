@@ -163,6 +163,7 @@ serve(async (req) => {
             duration_seconds: duration,
             hangup_cause: hangupCause,
             record_url: recordUrl,
+            transcription_status: recordUrl ? 'pending' : null,
             metadata: {
               webhook_data: body,
               updated_at: new Date().toISOString(),
@@ -173,7 +174,45 @@ serve(async (req) => {
         if (updateError) {
           console.error('[api4com-webhook] Update error:', updateError);
         } else {
-          console.log('[api4com-webhook] Call log updated:', { id: callLog.id, status, duration, hangupCause });
+          console.log('[api4com-webhook] Call log updated:', { id: callLog.id, status, duration, hangupCause, hasRecording: !!recordUrl });
+          
+          // Trigger auto-transcription in background if there's a recording
+          if (recordUrl) {
+            console.log('[api4com-webhook] Triggering auto-transcription for call:', callLog.id);
+            
+            // Background task for transcription
+            const transcribeInBackground = async () => {
+              try {
+                const response = await fetch(`${supabaseUrl}/functions/v1/transcribe-call-recording`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${supabaseKey}`,
+                  },
+                  body: JSON.stringify({ call_log_id: callLog.id }),
+                });
+                
+                if (response.ok) {
+                  console.log('[api4com-webhook] Auto-transcription completed for call:', callLog.id);
+                } else {
+                  const errorText = await response.text();
+                  console.error('[api4com-webhook] Auto-transcription failed:', errorText);
+                }
+              } catch (error) {
+                console.error('[api4com-webhook] Auto-transcription error:', error);
+              }
+            };
+            
+            // Use EdgeRuntime.waitUntil for background processing
+            // @ts-ignore - EdgeRuntime is available in Supabase Edge Functions
+            if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+              // @ts-ignore
+              EdgeRuntime.waitUntil(transcribeInBackground());
+            } else {
+              // Fallback: fire and forget
+              transcribeInBackground();
+            }
+          }
         }
       }
     } else if (normalizedEvent === 'answered') {
