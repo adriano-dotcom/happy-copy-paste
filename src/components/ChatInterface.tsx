@@ -4,7 +4,7 @@ import {
   Search, MoreVertical, Phone, Paperclip, Send, Check, CheckCheck, 
   Smile, Play, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
   Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil,
-  Briefcase, ExternalLink
+  Briefcase, ExternalLink, Inbox
 } from 'lucide-react';
 import { MessageDirection, MessageType, UIConversation, UIMessage, ConversationStatus, TagDefinition } from '../types';
 import { Button } from './Button';
@@ -318,7 +318,10 @@ const ChatInterface: React.FC = () => {
 
   const filteredConversations = conversations.filter(chat => {
     // Pipeline filter
-    if (selectedPipelineFilter && chat.pipelineId !== selectedPipelineFilter) {
+    if (selectedPipelineFilter === 'no-pipeline') {
+      // Show only conversations WITHOUT pipeline
+      if (chat.pipelineId !== null) return false;
+    } else if (selectedPipelineFilter && chat.pipelineId !== selectedPipelineFilter) {
       return false;
     }
     
@@ -486,6 +489,17 @@ const ChatInterface: React.FC = () => {
             >
               <MessageSquare className="w-3.5 h-3.5" />
               Todos
+            </button>
+            <button
+              onClick={() => setSelectedPipelineFilter('no-pipeline')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                selectedPipelineFilter === 'no-pipeline'
+                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                  : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+              }`}
+            >
+              <Inbox className="w-3.5 h-3.5" />
+              Sem Funil
             </button>
             {pipelines.map((pipeline) => (
               <button
