@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Plus, Search, MoreHorizontal, DollarSign, Loader2, CalendarClock, Tag, X, 
   Building, User, Calendar, ArrowRight, CheckCircle2, Circle, 
@@ -17,6 +18,7 @@ import { toast } from 'sonner';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 
 const Kanban: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { sdrName } = useCompanySettings();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [stages, setStages] = useState<KanbanColumn[]>([]);
@@ -47,7 +49,7 @@ const Kanban: React.FC = () => {
     setDeals(data);
   };
 
-  // Load pipelines on mount and set Transporte as default
+  // Load pipelines on mount and check URL param for pipeline selection
   useEffect(() => {
     const loadPipelines = async () => {
       try {
@@ -59,14 +61,23 @@ const Kanban: React.FC = () => {
         }
         setPipelines(data);
         
-        // Definir "Transporte" como padrão
-        const transportePipeline = data.find(p => p.slug === 'transporte');
-        if (transportePipeline) {
-          setSelectedPipelineId(transportePipeline.id);
-        } else if (data.length > 0) {
-          setSelectedPipelineId(data[0].id);
+        // Check URL param first
+        const pipelineParam = searchParams.get('pipeline');
+        if (pipelineParam && data.some(p => p.id === pipelineParam)) {
+          setSelectedPipelineId(pipelineParam);
+          // Clear URL param after using it
+          searchParams.delete('pipeline');
+          setSearchParams(searchParams, { replace: true });
         } else {
-          setSelectedPipelineId('all');
+          // Definir "Transporte" como padrão
+          const transportePipeline = data.find(p => p.slug === 'transporte');
+          if (transportePipeline) {
+            setSelectedPipelineId(transportePipeline.id);
+          } else if (data.length > 0) {
+            setSelectedPipelineId(data[0].id);
+          } else {
+            setSelectedPipelineId('all');
+          }
         }
       } catch (error) {
         console.error("Erro ao carregar pipelines", error);

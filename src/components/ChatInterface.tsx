@@ -268,10 +268,12 @@ const ChatInterface: React.FC = () => {
       const defaultPipeline = pipelines.find(p => p.isActive) || pipelines[0];
       
       let firstStageId: string | undefined;
+      let pipelineId: string | undefined;
       if (defaultPipeline) {
         const stages = await api.fetchPipelineStages(defaultPipeline.id);
         const firstStage = stages.sort((a, b) => a.position - b.position)[0];
         firstStageId = firstStage?.id;
+        pipelineId = defaultPipeline.id;
       }
       
       const deal = await api.createDeal({
@@ -282,11 +284,13 @@ const ChatInterface: React.FC = () => {
         owner_id: activeChat.assignedUserId || undefined,
       });
       
-      setExistingDeal(deal);
+      // Add pipelineId to deal for navigation
+      const dealWithPipeline = { ...deal, pipelineId };
+      setExistingDeal(dealWithPipeline);
       toast.success('Negócio criado com sucesso!', {
         action: {
           label: 'Ver no Kanban',
-          onClick: () => navigate('/kanban')
+          onClick: () => navigate(pipelineId ? `/kanban?pipeline=${pipelineId}` : '/kanban')
         }
       });
     } catch (error) {
@@ -503,10 +507,18 @@ const ChatInterface: React.FC = () => {
                 
                 <div className="ml-3 flex-1 min-w-0">
                   <div className="flex justify-between items-baseline mb-1">
-                    <h3 className={`text-sm font-semibold truncate ${selectedChatId === chat.id ? 'text-white' : 'text-slate-300'}`}>
-                      {chat.contactName}
-                    </h3>
-                    <span className="text-[10px] text-slate-500 font-medium">{chat.lastMessageTime}</span>
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <h3 className={`text-sm font-semibold truncate ${selectedChatId === chat.id ? 'text-white' : 'text-slate-300'}`}>
+                        {chat.contactName}
+                      </h3>
+                      {chat.agentName && (
+                        <span className="px-1.5 py-0.5 bg-violet-500/20 text-violet-400 border border-violet-500/30 text-[9px] rounded font-medium flex items-center gap-1 shrink-0">
+                          <Bot className="w-2.5 h-2.5" />
+                          {chat.agentName}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-medium shrink-0 ml-2">{chat.lastMessageTime}</span>
                   </div>
                   <p className="text-xs text-slate-500 truncate">
                     {chat.messages[chat.messages.length - 1]?.type === MessageType.IMAGE ? '📷 Imagem' : 
@@ -860,7 +872,7 @@ const ChatInterface: React.FC = () => {
                     <Button
                       variant="outline"
                       className="w-full border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/50"
-                      onClick={() => navigate('/kanban')}
+                      onClick={() => navigate(existingDeal.pipelineId ? `/kanban?pipeline=${existingDeal.pipelineId}` : '/kanban')}
                     >
                       <Briefcase className="w-4 h-4 mr-2" />
                       Ver Negócio no Kanban
