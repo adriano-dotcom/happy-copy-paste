@@ -4,7 +4,7 @@ import {
   Search, MoreVertical, Phone, Paperclip, Send, Check, CheckCheck, 
   Smile, Play, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
   Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil,
-  Briefcase, ExternalLink, Inbox, Archive
+  Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -19,13 +19,14 @@ import { useConversations } from '../hooks/useConversations';
 import { toast } from 'sonner';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { api } from '@/services/api';
+import { supabase } from '@/integrations/supabase/client';
 import { TagSelector } from './TagSelector';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Input } from './ui/input';
 
 const ChatInterface: React.FC = () => {
   const navigate = useNavigate();
-  const { conversations, loading, sendMessage, updateStatus, markAsRead, assignConversation, archiveConversation, refetch } = useConversations();
+  const { conversations, loading, sendMessage, updateStatus, markAsRead, assignConversation, archiveConversation, unarchiveConversation, fetchArchivedConversations, refetch } = useConversations();
   const { sdrName, companyName } = useCompanySettings();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
@@ -38,6 +39,8 @@ const ChatInterface: React.FC = () => {
   // Pipeline filter state
   const [selectedPipelineFilter, setSelectedPipelineFilter] = useState<string | null>(null);
   const [pipelines, setPipelines] = useState<{ id: string; name: string; icon: string; color: string }[]>([]);
+  const [viewingArchived, setViewingArchived] = useState(false);
+  const [archivedCount, setArchivedCount] = useState(0);
   
   // Editable contact fields
   const [isEditingContact, setIsEditingContact] = useState(false);
@@ -83,6 +86,15 @@ const ChatInterface: React.FC = () => {
     api.fetchPipelines().then(setPipelines).catch(err => {
       console.error('Error loading pipelines:', err);
     });
+
+    // Fetch archived conversations count
+    supabase
+      .from('conversations')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_active', false)
+      .then(({ count }) => {
+        setArchivedCount(count || 0);
+      });
   }, []);
 
   // Auto-select first conversation or from URL param
@@ -505,53 +517,87 @@ const ChatInterface: React.FC = () => {
       <div className="w-80 lg:w-96 border-r border-slate-800 flex flex-col bg-slate-900/50 backdrop-blur-md z-20 flex-shrink-0">
         {/* Search Header */}
         <div className="p-4 border-b border-slate-800/50">
-          <h2 className="text-lg font-bold text-white mb-3 px-1">Chats Ativos</h2>
+          <h2 className="text-lg font-bold text-white mb-3 px-1">
+            {viewingArchived ? '📦 Arquivados' : 'Chats Ativos'}
+          </h2>
           
           {/* Pipeline Filter Pills */}
           <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
+            {!viewingArchived && (
+              <>
+                <button
+                  onClick={() => setSelectedPipelineFilter(null)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all ${
+                    selectedPipelineFilter === null
+                      ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
+                      : 'bg-slate-800/50 text-slate-400 border border-slate-700/50 hover:bg-slate-800'
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  Todos
+                  <span className="text-[10px] opacity-70">({conversationCounts.all})</span>
+                </button>
+                {pipelines.map((pipeline) => (
+                  <button
+                    key={pipeline.id}
+                    onClick={() => setSelectedPipelineFilter(pipeline.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                      selectedPipelineFilter === pipeline.id
+                        ? ''
+                        : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                    }`}
+                    style={selectedPipelineFilter === pipeline.id ? {
+                      backgroundColor: `${pipeline.color}20`,
+                      color: pipeline.color,
+                      borderColor: `${pipeline.color}50`
+                    } : undefined}
+                  >
+                    <span className="text-sm">{pipeline.icon}</span>
+                    {pipeline.name}
+                    <span className="text-[10px] opacity-70">({conversationCounts[pipeline.id] || 0})</span>
+                  </button>
+                ))}
+                <button
+                  onClick={() => setSelectedPipelineFilter('no-pipeline')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                    selectedPipelineFilter === 'no-pipeline'
+                      ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                      : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                  }`}
+                >
+                  <Inbox className="w-3.5 h-3.5" />
+                  Sem Funil
+                  <span className="text-[10px] opacity-70">({conversationCounts['no-pipeline']})</span>
+                </button>
+              </>
+            )}
             <button
-              onClick={() => setSelectedPipelineFilter(null)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all ${
-                selectedPipelineFilter === null
-                  ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
-                  : 'bg-slate-800/50 text-slate-400 border border-slate-700/50 hover:bg-slate-800'
-              }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              Todos
-              <span className="text-[10px] opacity-70">({conversationCounts.all})</span>
-            </button>
-            {pipelines.map((pipeline) => (
-              <button
-                key={pipeline.id}
-                onClick={() => setSelectedPipelineFilter(pipeline.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
-                  selectedPipelineFilter === pipeline.id
-                    ? ''
-                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
-                }`}
-                style={selectedPipelineFilter === pipeline.id ? {
-                  backgroundColor: `${pipeline.color}20`,
-                  color: pipeline.color,
-                  borderColor: `${pipeline.color}50`
-                } : undefined}
-              >
-                <span className="text-sm">{pipeline.icon}</span>
-                {pipeline.name}
-                <span className="text-[10px] opacity-70">({conversationCounts[pipeline.id] || 0})</span>
-              </button>
-            ))}
-            <button
-              onClick={() => setSelectedPipelineFilter('no-pipeline')}
+              onClick={async () => {
+                const newViewingArchived = !viewingArchived;
+                setViewingArchived(newViewingArchived);
+                setSelectedChatId(null);
+                setSelectedPipelineFilter(null);
+                if (newViewingArchived) {
+                  await fetchArchivedConversations();
+                } else {
+                  await refetch();
+                  // Update archived count
+                  const { count } = await supabase
+                    .from('conversations')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('is_active', false);
+                  setArchivedCount(count || 0);
+                }
+              }}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
-                selectedPipelineFilter === 'no-pipeline'
-                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                viewingArchived
+                  ? 'bg-slate-500/20 text-slate-300 border-slate-500/40'
                   : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
               }`}
             >
-              <Inbox className="w-3.5 h-3.5" />
-              Sem Funil
-              <span className="text-[10px] opacity-70">({conversationCounts['no-pipeline']})</span>
+              <Archive className="w-3.5 h-3.5" />
+              {viewingArchived ? 'Voltar aos Ativos' : 'Arquivados'}
+              {!viewingArchived && <span className="text-[10px] opacity-70">({archivedCount})</span>}
             </button>
           </div>
           
@@ -728,24 +774,47 @@ const ChatInterface: React.FC = () => {
                     </ShadcnButton>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="bg-slate-800 border-slate-700">
-                    <DropdownMenuItem 
-                      onClick={async () => {
-                        if (!activeChat) return;
-                        try {
-                          await archiveConversation(activeChat.id);
-                          setSelectedChatId(null);
-                          toast.success('Conversa arquivada', {
-                            description: `${activeChat.contactName} foi removido da fila de atendimento`
-                          });
-                        } catch (error) {
-                          toast.error('Erro ao arquivar conversa');
-                        }
-                      }}
-                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer"
-                    >
-                      <Archive className="w-4 h-4 mr-2" />
-                      Arquivar conversa
-                    </DropdownMenuItem>
+                    {viewingArchived ? (
+                      <DropdownMenuItem 
+                        onClick={async () => {
+                          if (!activeChat) return;
+                          try {
+                            await unarchiveConversation(activeChat.id);
+                            setSelectedChatId(null);
+                            setArchivedCount(prev => Math.max(0, prev - 1));
+                            toast.success('Conversa restaurada', {
+                              description: `${activeChat.contactName} voltou para a fila de atendimento`
+                            });
+                          } catch (error) {
+                            toast.error('Erro ao restaurar conversa');
+                          }
+                        }}
+                        className="text-green-400 hover:text-green-300 hover:bg-green-500/10 cursor-pointer"
+                      >
+                        <ArchiveRestore className="w-4 h-4 mr-2" />
+                        Restaurar conversa
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem 
+                        onClick={async () => {
+                          if (!activeChat) return;
+                          try {
+                            await archiveConversation(activeChat.id);
+                            setSelectedChatId(null);
+                            setArchivedCount(prev => prev + 1);
+                            toast.success('Conversa arquivada', {
+                              description: `${activeChat.contactName} foi removido da fila de atendimento`
+                            });
+                          } catch (error) {
+                            toast.error('Erro ao arquivar conversa');
+                          }
+                        }}
+                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer"
+                      >
+                        <Archive className="w-4 h-4 mr-2" />
+                        Arquivar conversa
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
