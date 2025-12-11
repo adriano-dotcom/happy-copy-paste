@@ -2,6 +2,7 @@ import React from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet';
 import { Button } from './ui/button';
 import { User, Building2, MapPin, Phone, Mail, FileText, Calendar, Edit, MessageSquare } from 'lucide-react';
+import { displayPhoneInternational } from '@/utils/phoneFormatter';
 
 interface ContactData {
   id: string;
@@ -44,13 +45,7 @@ const formatCEP = (cep: string | undefined) => {
   return `${digits.slice(0,5)}-${digits.slice(5,8)}`;
 };
 
-const formatPhone = (phone: string | undefined) => {
-  if (!phone) return '-';
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length === 11) return `(${digits.slice(0,2)}) ${digits.slice(2,7)}-${digits.slice(7)}`;
-  if (digits.length === 10) return `(${digits.slice(0,2)}) ${digits.slice(2,6)}-${digits.slice(6)}`;
-  return phone;
-};
+// Use international phone format from utility
 
 const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpenChange, contact, onEdit, onConverse }) => {
   if (!contact) return null;
@@ -105,7 +100,7 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
             <div className="space-y-3">
               <div className="flex items-center gap-3 text-slate-300">
                 <Phone className="w-4 h-4 text-slate-500" />
-                <span>{formatPhone(contact.phone)}</span>
+                <span>{displayPhoneInternational(contact.phone)}</span>
               </div>
               <div className="flex items-center gap-3 text-slate-300">
                 <Mail className="w-4 h-4 text-slate-500" />

@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { toast } from 'sonner';
 import { Loader2, Search, User, Building2, MapPin, FileText } from 'lucide-react';
 import { api } from '../services/api';
+import { formatPhoneInternational } from '@/utils/phoneFormatter';
 
 interface ContactData {
   id: string;
@@ -92,13 +93,7 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
     }
   }, [contact, open]);
 
-  const formatPhone = (value: string) => {
-    const digits = value.replace(/\D/g, '');
-    if (digits.length <= 2) return `(${digits}`;
-    if (digits.length <= 7) return `(${digits.slice(0,2)}) ${digits.slice(2)}`;
-    if (digits.length <= 11) return `(${digits.slice(0,2)}) ${digits.slice(2,7)}-${digits.slice(7)}`;
-    return `(${digits.slice(0,2)}) ${digits.slice(2,7)}-${digits.slice(7,11)}`;
-  };
+  // Use international phone format from utility
 
   const formatCNPJ = (value: string) => {
     const digits = value.replace(/\D/g, '');
@@ -117,7 +112,7 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
 
   const handleChange = (field: string, value: string) => {
     let formattedValue = value;
-    if (field === 'phone') formattedValue = formatPhone(value);
+    if (field === 'phone') formattedValue = formatPhoneInternational(value);
     if (field === 'cnpj') formattedValue = formatCNPJ(value);
     if (field === 'cep') formattedValue = formatCEP(value);
     setFormData(prev => ({ ...prev, [field]: formattedValue }));
@@ -180,7 +175,7 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
         city: data.municipio || prev.city,
         state: data.uf || prev.state,
         email: data.email && !prev.email ? data.email.toLowerCase() : prev.email,
-        phone: data.ddd_telefone_1 && !prev.phone ? formatPhone(data.ddd_telefone_1) : prev.phone
+        phone: data.ddd_telefone_1 && !prev.phone ? formatPhoneInternational(data.ddd_telefone_1) : prev.phone
       }));
       toast.success('Dados da empresa preenchidos automaticamente');
     } catch (error) {
@@ -257,7 +252,7 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
                   <Input
                     value={formData.phone}
                     onChange={(e) => handleChange('phone', e.target.value)}
-                    placeholder="(00) 00000-0000"
+                    placeholder="+55 43 99999-9999"
                     className="bg-slate-950 border-slate-700 text-slate-100"
                   />
                 </div>
