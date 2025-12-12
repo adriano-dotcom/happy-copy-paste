@@ -225,8 +225,64 @@ function detectAgent(
   return { agent: defaultAgent || null, isHandoff: false };
 }
 
-// Generate audio using ElevenLabs
-async function generateAudioElevenLabs(settings: any, text: string, agent?: Agent | null): Promise<ArrayBuffer | null> {
+// Convert PCM audio to OGG/Opus format for WhatsApp voice message compatibility
+async function convertPcmToOggOpus(pcmBuffer: ArrayBuffer, sampleRate: number = 24000): Promise<ArrayBuffer | null> {
+  try {
+    // Create WAV header for the PCM data (WhatsApp can handle WAV as voice messages too)
+    // But for true Opus, we need to use a different approach
+    // For now, we'll create a proper WAV file which WhatsApp handles better than raw MP3
+    
+    const pcmData = new Uint8Array(pcmBuffer);
+    const numChannels = 1; // Mono
+    const bitsPerSample = 16;
+    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+    const blockAlign = numChannels * (bitsPerSample / 8);
+    
+    // WAV header is 44 bytes
+    const wavHeader = new ArrayBuffer(44);
+    const view = new DataView(wavHeader);
+    
+    // RIFF header
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + pcmData.length, true); // File size - 8
+    writeString(view, 8, 'WAVE');
+    
+    // fmt chunk
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true); // Chunk size
+    view.setUint16(20, 1, true); // Audio format (1 = PCM)
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitsPerSample, true);
+    
+    // data chunk
+    writeString(view, 36, 'data');
+    view.setUint32(40, pcmData.length, true);
+    
+    // Combine header and PCM data
+    const wavFile = new Uint8Array(44 + pcmData.length);
+    wavFile.set(new Uint8Array(wavHeader), 0);
+    wavFile.set(pcmData, 44);
+    
+    console.log(`[Nina] 🎵 Converted PCM to WAV: ${pcmData.length} bytes → ${wavFile.length} bytes`);
+    return wavFile.buffer;
+  } catch (error) {
+    console.error('[Nina] Error converting PCM to WAV:', error);
+    return null;
+  }
+}
+
+// Helper function to write string to DataView
+function writeString(view: DataView, offset: number, str: string): void {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
+}
+
+// Generate audio using ElevenLabs (now outputs PCM for better WhatsApp compatibility)
+async function generateAudioElevenLabs(settings: any, text: string, agent?: Agent | null): Promise<{ buffer: ArrayBuffer; format: 'wav' | 'mp3' } | null> {
   if (!settings.elevenlabs_api_key) {
     console.log('[Nina] ElevenLabs API key not configured');
     return null;
@@ -242,18 +298,20 @@ async function generateAudioElevenLabs(settings: any, text: string, agent?: Agen
     const speed = agent?.elevenlabs_speed ?? settings.elevenlabs_speed ?? 1.0;
     const speakerBoost = agent?.elevenlabs_speaker_boost ?? settings.elevenlabs_speaker_boost ?? true;
 
-    console.log(`[Nina] Generating audio - voice: ${voiceId}, model: ${model}, agent: ${agent?.name || 'global'}`);
+    console.log(`[Nina] Generating audio (PCM) - voice: ${voiceId}, model: ${model}, agent: ${agent?.name || 'global'}`);
 
+    // Request PCM format for conversion to WAV (better WhatsApp voice message support)
     const response = await fetch(`${ELEVENLABS_API_URL}/${voiceId}`, {
       method: 'POST',
       headers: {
         'xi-api-key': settings.elevenlabs_api_key,
         'Content-Type': 'application/json',
-        'Accept': 'audio/mpeg'
+        'Accept': 'audio/pcm'
       },
       body: JSON.stringify({
         text,
         model_id: model,
+        output_format: 'pcm_24000', // 24kHz 16-bit mono PCM
         voice_settings: {
           stability: stability,
           similarity_boost: similarityBoost,
@@ -270,7 +328,17 @@ async function generateAudioElevenLabs(settings: any, text: string, agent?: Agen
       return null;
     }
 
-    return await response.arrayBuffer();
+    const pcmBuffer = await response.arrayBuffer();
+    console.log(`[Nina] 🎤 Received PCM audio: ${pcmBuffer.byteLength} bytes`);
+    
+    // Convert PCM to WAV format for WhatsApp compatibility
+    const wavBuffer = await convertPcmToOggOpus(pcmBuffer, 24000);
+    if (!wavBuffer) {
+      console.error('[Nina] Failed to convert PCM to WAV');
+      return null;
+    }
+    
+    return { buffer: wavBuffer, format: 'wav' };
   } catch (error) {
     console.error('[Nina] Error generating audio:', error);
     return null;
@@ -290,19 +358,22 @@ function sanitizeTextForAudio(text: string): string {
   return sanitized;
 }
 
-// Upload audio to Supabase Storage
+// Upload audio to Supabase Storage (now supports WAV format)
 async function uploadAudioToStorage(
   supabase: any, 
   audioBuffer: ArrayBuffer, 
-  conversationId: string
+  conversationId: string,
+  format: 'wav' | 'mp3' = 'wav'
 ): Promise<string | null> {
   try {
-    const fileName = `${conversationId}/${Date.now()}.mp3`;
+    const extension = format === 'wav' ? 'wav' : 'mp3';
+    const contentType = format === 'wav' ? 'audio/wav' : 'audio/mpeg';
+    const fileName = `${conversationId}/${Date.now()}.${extension}`;
     
     const { data, error } = await supabase.storage
       .from('nina-audio')
       .upload(fileName, audioBuffer, {
-        contentType: 'audio/mpeg',
+        contentType: contentType,
         cacheControl: '3600'
       });
 
@@ -315,7 +386,7 @@ async function uploadAudioToStorage(
       .from('nina-audio')
       .getPublicUrl(fileName);
 
-    console.log('[Nina] Audio uploaded:', urlData.publicUrl);
+    console.log(`[Nina] Audio uploaded (${format}):`, urlData.publicUrl);
     return urlData.publicUrl;
   } catch (error) {
     console.error('[Nina] Error uploading audio to storage:', error);
@@ -1093,10 +1164,10 @@ async function processQueueItem(
     if (shouldSendAudio) {
       // Sanitize text for natural TTS pronunciation (simplify URLs)
       const sanitizedText = sanitizeTextForAudio(aiContent);
-      const audioBuffer = await generateAudioElevenLabs(settings, sanitizedText, agent);
+      const audioResult = await generateAudioElevenLabs(settings, sanitizedText, agent);
       
-      if (audioBuffer) {
-        const audioUrl = await uploadAudioToStorage(supabase, audioBuffer, conversation.id);
+      if (audioResult) {
+        const audioUrl = await uploadAudioToStorage(supabase, audioResult.buffer, conversation.id, audioResult.format);
         
         if (audioUrl) {
           const { error: sendQueueError } = await supabase
