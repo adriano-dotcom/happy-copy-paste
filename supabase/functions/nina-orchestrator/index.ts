@@ -628,6 +628,40 @@ async function processQueueItem(
   }
   // ===== END CNPJ DETECTION =====
 
+  // ===== IMMEDIATE EMAIL DETECTION =====
+  // Detect email in user message and save to contact automatically
+  if (message.content) {
+    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi;
+    const emailMatch = message.content.match(emailRegex);
+    
+    if (emailMatch) {
+      const detectedEmail = emailMatch[0].toLowerCase();
+      console.log(`[Nina] 📧 Email detected in message: ${detectedEmail}`);
+      
+      // Check if contact already has this email
+      const existingEmail = conversation.contact?.email?.toLowerCase();
+      if (existingEmail !== detectedEmail) {
+        // Update contact with email
+        const { error: emailUpdateError } = await supabase
+          .from('contacts')
+          .update({ 
+            email: detectedEmail,
+            updated_at: new Date().toISOString() 
+          })
+          .eq('id', conversation.contact_id);
+          
+        if (emailUpdateError) {
+          console.error(`[Nina] ❌ Error updating contact email:`, emailUpdateError);
+        } else {
+          console.log(`[Nina] ✅ Contact email updated: ${detectedEmail}`);
+        }
+      } else {
+        console.log(`[Nina] Email already saved: ${detectedEmail}`);
+      }
+    }
+  }
+  // ===== END EMAIL DETECTION =====
+
   // Check if this is the first interaction (only 1 user message, no assistant messages yet)
   const userMessages = conversationHistory.filter((m: any) => m.role === 'user');
   const assistantMessages = conversationHistory.filter((m: any) => m.role === 'assistant');
