@@ -123,6 +123,21 @@ serve(async (req) => {
 
     for (const item of queueItems) {
       try {
+        // 🔒 RACE CONDITION FIX: Verificar se item ainda está pendente de processamento
+        // (pode ter sido agregado por outro item na mesma iteração)
+        const { data: currentItem } = await supabase
+          .from('nina_processing_queue')
+          .select('status, error_message')
+          .eq('id', item.id)
+          .single();
+        
+        // Se já foi agregado ou processado, pular
+        if (currentItem?.status === 'completed' || 
+            currentItem?.error_message === 'Aggregated with other messages') {
+          console.log(`[Nina] ⏭️ Item ${item.id} já foi agregado, pulando...`);
+          continue;
+        }
+        
         await processQueueItem(supabase, lovableApiKey, item, settings, activeAgents, defaultAgent);
         
         // Mark as completed
@@ -355,7 +370,13 @@ async function aggregatePendingMessages(
     return null;
   }
 
-  const aggregatedContent = contents.join('\n');
+  // 🔒 DEDUPLICATION: Remove conteúdo idêntico (cliente enviou mesma mensagem múltiplas vezes)
+  const uniqueContents = [...new Set(contents)];
+  const aggregatedContent = uniqueContents.join('\n');
+  
+  if (uniqueContents.length < contents.length) {
+    console.log(`[Nina] 🔄 Deduplicados ${contents.length - uniqueContents.length} mensagens idênticas`);
+  }
   const primaryMessageId = messages[messages.length - 1].id; // Use latest message as primary
 
   console.log(`[Nina] 📦 Aggregated ${messages.length} messages into one: "${aggregatedContent.substring(0, 100)}..."`);
