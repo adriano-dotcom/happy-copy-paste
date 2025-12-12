@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Clock, Zap, History, Play, BarChart3, MessageSquare, FileText } from 'lucide-react';
+import { Plus, Pencil, Trash2, Clock, Zap, History, Play, BarChart3, MessageSquare, FileText, Timer } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import AutomationsDashboard from './AutomationsDashboard';
@@ -26,7 +26,7 @@ interface Automation {
   description: string | null;
   hours_without_response: number;
   time_unit: 'hours' | 'minutes';
-  automation_type: 'template' | 'free_text';
+  automation_type: 'template' | 'free_text' | 'window_expiring';
   template_id: string | null;
   template_variables: Record<string, string>;
   free_text_message: string | null;
@@ -39,6 +39,8 @@ interface Automation {
   active_days: number[];
   is_active: boolean;
   created_at: string;
+  minutes_before_expiry: number;
+  only_if_no_client_response: boolean;
 }
 
 interface FollowupLog {
@@ -88,7 +90,7 @@ export default function FollowupAutomationsSettings() {
     description: '',
     hours_without_response: 2,
     time_unit: 'hours' as 'hours' | 'minutes',
-    automation_type: 'free_text' as 'template' | 'free_text',
+    automation_type: 'free_text' as 'template' | 'free_text' | 'window_expiring',
     template_id: '',
     template_variables: {} as Record<string, string>,
     free_text_message: 'Oi {nome}, ainda consegue continuar?',
@@ -99,6 +101,8 @@ export default function FollowupAutomationsSettings() {
     active_hours_start: '09:00',
     active_hours_end: '18:00',
     active_days: [1, 2, 3, 4, 5],
+    minutes_before_expiry: 10,
+    only_if_no_client_response: true,
   });
 
   useEffect(() => {
@@ -120,9 +124,11 @@ export default function FollowupAutomationsSettings() {
         ...a,
         template_variables: (a.template_variables as Record<string, string>) || {},
         time_unit: (a.time_unit || 'hours') as 'hours' | 'minutes',
-        automation_type: (a.automation_type || 'template') as 'template' | 'free_text',
+        automation_type: (a.automation_type || 'template') as 'template' | 'free_text' | 'window_expiring',
         free_text_message: a.free_text_message || null,
         within_window_only: a.within_window_only ?? false,
+        minutes_before_expiry: a.minutes_before_expiry ?? 10,
+        only_if_no_client_response: a.only_if_no_client_response ?? true,
       }));
 
       setAutomations(mappedAutomations);
@@ -169,6 +175,8 @@ export default function FollowupAutomationsSettings() {
       active_hours_start: '09:00',
       active_hours_end: '18:00',
       active_days: [1, 2, 3, 4, 5],
+      minutes_before_expiry: 10,
+      only_if_no_client_response: true,
     });
     setIsModalOpen(true);
   };
@@ -191,6 +199,8 @@ export default function FollowupAutomationsSettings() {
       active_hours_start: automation.active_hours_start,
       active_hours_end: automation.active_hours_end,
       active_days: automation.active_days,
+      minutes_before_expiry: automation.minutes_before_expiry ?? 10,
+      only_if_no_client_response: automation.only_if_no_client_response ?? true,
     });
     setIsModalOpen(true);
   };
@@ -206,8 +216,8 @@ export default function FollowupAutomationsSettings() {
       return;
     }
 
-    if (formData.automation_type === 'free_text' && !formData.free_text_message?.trim()) {
-      toast.error('Mensagem é obrigatória para automações de texto livre');
+    if ((formData.automation_type === 'free_text' || formData.automation_type === 'window_expiring') && !formData.free_text_message?.trim()) {
+      toast.error('Mensagem é obrigatória');
       return;
     }
 
@@ -220,14 +230,16 @@ export default function FollowupAutomationsSettings() {
         automation_type: formData.automation_type,
         template_id: formData.automation_type === 'template' ? formData.template_id : null,
         template_variables: formData.automation_type === 'template' ? formData.template_variables : {},
-        free_text_message: formData.automation_type === 'free_text' ? formData.free_text_message : null,
-        within_window_only: formData.within_window_only,
+        free_text_message: (formData.automation_type === 'free_text' || formData.automation_type === 'window_expiring') ? formData.free_text_message : null,
+        within_window_only: formData.automation_type === 'window_expiring' ? true : formData.within_window_only,
         conversation_statuses: formData.conversation_statuses,
         max_attempts: formData.max_attempts,
         cooldown_hours: formData.cooldown_hours,
         active_hours_start: formData.active_hours_start,
         active_hours_end: formData.active_hours_end,
         active_days: formData.active_days,
+        minutes_before_expiry: formData.automation_type === 'window_expiring' ? formData.minutes_before_expiry : 10,
+        only_if_no_client_response: formData.automation_type === 'window_expiring' ? formData.only_if_no_client_response : true,
       };
 
       if (editingAutomation) {
@@ -335,6 +347,9 @@ export default function FollowupAutomationsSettings() {
   };
 
   const formatTimeDisplay = (automation: Automation) => {
+    if (automation.automation_type === 'window_expiring') {
+      return `${automation.minutes_before_expiry} min antes da janela expirar`;
+    }
     const unit = automation.time_unit === 'minutes' ? 'min' : 'h';
     return `Após ${automation.hours_without_response}${unit} sem resposta`;
   };
@@ -418,10 +433,14 @@ export default function FollowupAutomationsSettings() {
                   <span className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${
                     automation.automation_type === 'free_text' 
                       ? 'bg-blue-500/20 text-blue-600' 
-                      : 'bg-purple-500/20 text-purple-600'
+                      : automation.automation_type === 'window_expiring'
+                        ? 'bg-amber-500/20 text-amber-600'
+                        : 'bg-purple-500/20 text-purple-600'
                   }`}>
                     {automation.automation_type === 'free_text' ? (
                       <><MessageSquare className="h-3 w-3" /> Texto Livre</>
+                    ) : automation.automation_type === 'window_expiring' ? (
+                      <><Timer className="h-3 w-3" /> Última Chance</>
                     ) : (
                       <><FileText className="h-3 w-3" /> Template</>
                     )}
@@ -497,7 +516,7 @@ export default function FollowupAutomationsSettings() {
               {/* Automation Type Toggle */}
               <div className="col-span-2">
                 <Label>Tipo de automação</Label>
-                <div className="flex gap-2 mt-2">
+                <div className="flex flex-wrap gap-2 mt-2">
                   <Button
                     type="button"
                     variant={formData.automation_type === 'free_text' ? 'default' : 'outline'}
@@ -518,15 +537,59 @@ export default function FollowupAutomationsSettings() {
                     <FileText className="h-4 w-4" />
                     Template WhatsApp
                   </Button>
+                  <Button
+                    type="button"
+                    variant={formData.automation_type === 'window_expiring' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setFormData(prev => ({ 
+                      ...prev, 
+                      automation_type: 'window_expiring', 
+                      within_window_only: true,
+                      free_text_message: prev.free_text_message || 'Olá {nome}! Caso precise de ajuda com seu seguro, estou aqui. Me responde qualquer coisa pra gente continuar a conversa!'
+                    }))}
+                    className="flex items-center gap-2"
+                  >
+                    <Timer className="h-4 w-4" />
+                    Última Chance (Janela Expirando)
+                  </Button>
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
                   {formData.automation_type === 'free_text' 
                     ? 'Envia mensagem de texto livre. Funciona apenas dentro da janela de 24h do WhatsApp.' 
-                    : 'Envia template aprovado pelo WhatsApp. Funciona mesmo fora da janela de 24h.'}
+                    : formData.automation_type === 'window_expiring'
+                      ? 'Envia mensagem minutos antes da janela de 24h expirar. Última tentativa de reengajar o lead.'
+                      : 'Envia template aprovado pelo WhatsApp. Funciona mesmo fora da janela de 24h.'}
                 </p>
               </div>
 
-              {/* Time Configuration */}
+              {/* Window Expiring Specific Fields */}
+              {formData.automation_type === 'window_expiring' && (
+                <>
+                  <div>
+                    <Label>Minutos antes de expirar</Label>
+                    <Input
+                      type="number"
+                      min={5}
+                      max={30}
+                      value={formData.minutes_before_expiry}
+                      onChange={e => setFormData(prev => ({ ...prev, minutes_before_expiry: parseInt(e.target.value) || 10 }))}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Dispara {formData.minutes_before_expiry} minutos antes da janela de 24h fechar
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={formData.only_if_no_client_response}
+                      onCheckedChange={checked => setFormData(prev => ({ ...prev, only_if_no_client_response: checked }))}
+                    />
+                    <Label className="text-sm">Apenas se todas as tentativas foram frustradas</Label>
+                  </div>
+                </>
+              )}
+
+              {/* Time Configuration - only for non-window_expiring */}
+              {formData.automation_type !== 'window_expiring' && (
               <div>
                 <Label>Tempo sem resposta</Label>
                 <div className="flex gap-2">
@@ -551,6 +614,7 @@ export default function FollowupAutomationsSettings() {
                   </Select>
                 </div>
               </div>
+              )}
 
               {/* Within Window Only Checkbox - only for templates */}
               {formData.automation_type === 'template' && (
@@ -563,14 +627,16 @@ export default function FollowupAutomationsSettings() {
                 </div>
               )}
 
-              {/* Free Text Message */}
-              {formData.automation_type === 'free_text' && (
+              {/* Free Text Message - for free_text and window_expiring */}
+              {(formData.automation_type === 'free_text' || formData.automation_type === 'window_expiring') && (
                 <div className="col-span-2">
                   <Label>Mensagem *</Label>
                   <Textarea
                     value={formData.free_text_message}
                     onChange={e => setFormData(prev => ({ ...prev, free_text_message: e.target.value }))}
-                    placeholder="Oi {nome}, ainda consegue continuar?"
+                    placeholder={formData.automation_type === 'window_expiring' 
+                      ? "Olá {nome}! Caso precise de ajuda, estou aqui. Me responde qualquer coisa pra gente continuar a conversa!"
+                      : "Oi {nome}, ainda consegue continuar?"}
                     rows={3}
                   />
                   <div className="flex flex-wrap gap-2 mt-2">
