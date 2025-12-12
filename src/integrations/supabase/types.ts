@@ -647,6 +647,7 @@ export type Database = {
           active_days: number[] | null
           active_hours_end: string | null
           active_hours_start: string | null
+          agent_messages: Json | null
           automation_type: string
           conversation_statuses: string[] | null
           cooldown_hours: number | null
@@ -672,6 +673,7 @@ export type Database = {
           active_days?: number[] | null
           active_hours_end?: string | null
           active_hours_start?: string | null
+          agent_messages?: Json | null
           automation_type?: string
           conversation_statuses?: string[] | null
           cooldown_hours?: number | null
@@ -697,6 +699,7 @@ export type Database = {
           active_days?: number[] | null
           active_hours_end?: string | null
           active_hours_start?: string | null
+          agent_messages?: Json | null
           automation_type?: string
           conversation_statuses?: string[] | null
           cooldown_hours?: number | null

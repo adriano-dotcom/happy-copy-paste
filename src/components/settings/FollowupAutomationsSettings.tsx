@@ -30,6 +30,7 @@ interface Automation {
   template_id: string | null;
   template_variables: Record<string, string>;
   free_text_message: string | null;
+  agent_messages: Record<string, string> | null;
   within_window_only: boolean;
   conversation_statuses: string[];
   max_attempts: number;
@@ -41,6 +42,13 @@ interface Automation {
   created_at: string;
   minutes_before_expiry: number;
   only_if_no_client_response: boolean;
+}
+
+interface Agent {
+  id: string;
+  name: string;
+  slug: string;
+  is_active: boolean;
 }
 
 interface FollowupLog {
@@ -77,6 +85,7 @@ const FREE_TEXT_VARIABLES = [
 export default function FollowupAutomationsSettings() {
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [logs, setLogs] = useState<FollowupLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -94,6 +103,7 @@ export default function FollowupAutomationsSettings() {
     template_id: '',
     template_variables: {} as Record<string, string>,
     free_text_message: 'Oi {nome}, ainda consegue continuar?',
+    agent_messages: {} as Record<string, string>,
     within_window_only: true,
     conversation_statuses: ['nina', 'human'],
     max_attempts: 2,
@@ -112,17 +122,20 @@ export default function FollowupAutomationsSettings() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [automationsRes, templatesRes] = await Promise.all([
+      const [automationsRes, templatesRes, agentsRes] = await Promise.all([
         supabase.from('followup_automations').select('*').order('created_at', { ascending: false }),
         supabase.from('whatsapp_templates').select('id, name, status').eq('status', 'APPROVED'),
+        supabase.from('agents').select('id, name, slug, is_active').eq('is_active', true),
       ]);
 
       if (automationsRes.error) throw automationsRes.error;
       if (templatesRes.error) throw templatesRes.error;
+      if (agentsRes.error) throw agentsRes.error;
 
       const mappedAutomations: Automation[] = (automationsRes.data || []).map(a => ({
         ...a,
         template_variables: (a.template_variables as Record<string, string>) || {},
+        agent_messages: (a.agent_messages as Record<string, string>) || {},
         time_unit: (a.time_unit || 'hours') as 'hours' | 'minutes',
         automation_type: (a.automation_type || 'template') as 'template' | 'free_text' | 'window_expiring',
         free_text_message: a.free_text_message || null,
@@ -133,6 +146,7 @@ export default function FollowupAutomationsSettings() {
 
       setAutomations(mappedAutomations);
       setTemplates(templatesRes.data || []);
+      setAgents(agentsRes.data || []);
     } catch (error) {
       console.error('Error loading data:', error);
       toast.error('Erro ao carregar automações');
@@ -168,6 +182,7 @@ export default function FollowupAutomationsSettings() {
       template_id: '',
       template_variables: {},
       free_text_message: 'Oi {nome}, ainda consegue continuar?',
+      agent_messages: {},
       within_window_only: true,
       conversation_statuses: ['nina', 'human'],
       max_attempts: 2,
@@ -192,6 +207,7 @@ export default function FollowupAutomationsSettings() {
       template_id: automation.template_id || '',
       template_variables: automation.template_variables || {},
       free_text_message: automation.free_text_message || 'Oi {nome}, ainda consegue continuar?',
+      agent_messages: automation.agent_messages || {},
       within_window_only: automation.within_window_only ?? false,
       conversation_statuses: automation.conversation_statuses,
       max_attempts: automation.max_attempts,
@@ -231,6 +247,7 @@ export default function FollowupAutomationsSettings() {
         template_id: formData.automation_type === 'template' ? formData.template_id : null,
         template_variables: formData.automation_type === 'template' ? formData.template_variables : {},
         free_text_message: (formData.automation_type === 'free_text' || formData.automation_type === 'window_expiring') ? formData.free_text_message : null,
+        agent_messages: formData.automation_type === 'window_expiring' ? formData.agent_messages : {},
         within_window_only: formData.automation_type === 'window_expiring' ? true : formData.within_window_only,
         conversation_statuses: formData.conversation_statuses,
         max_attempts: formData.max_attempts,
@@ -627,16 +644,14 @@ export default function FollowupAutomationsSettings() {
                 </div>
               )}
 
-              {/* Free Text Message - for free_text and window_expiring */}
-              {(formData.automation_type === 'free_text' || formData.automation_type === 'window_expiring') && (
+              {/* Free Text Message - for free_text only */}
+              {formData.automation_type === 'free_text' && (
                 <div className="col-span-2">
                   <Label>Mensagem *</Label>
                   <Textarea
                     value={formData.free_text_message}
                     onChange={e => setFormData(prev => ({ ...prev, free_text_message: e.target.value }))}
-                    placeholder={formData.automation_type === 'window_expiring' 
-                      ? "Olá {nome}! Caso precise de ajuda, estou aqui. Me responde qualquer coisa pra gente continuar a conversa!"
-                      : "Oi {nome}, ainda consegue continuar?"}
+                    placeholder="Oi {nome}, ainda consegue continuar?"
                     rows={3}
                   />
                   <div className="flex flex-wrap gap-2 mt-2">
@@ -654,6 +669,84 @@ export default function FollowupAutomationsSettings() {
                         {v.placeholder}
                       </span>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Agent Messages - for window_expiring */}
+              {formData.automation_type === 'window_expiring' && agents.length > 0 && (
+                <div className="col-span-2 space-y-4">
+                  <div>
+                    <Label className="text-base font-medium">Mensagens por Agente</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Configure mensagens personalizadas para cada agente. Se não definir, usará a mensagem padrão.
+                    </p>
+                  </div>
+                  
+                  {agents.map(agent => (
+                    <div key={agent.id} className="space-y-2 p-3 border rounded-lg bg-muted/20">
+                      <Label className="flex items-center gap-2">
+                        <span className="text-lg">{agent.slug === 'adri' ? '🚛' : agent.slug === 'barbara' ? '🏥' : '🤖'}</span>
+                        {agent.name}
+                      </Label>
+                      <Textarea
+                        value={formData.agent_messages[agent.id] || ''}
+                        onChange={e => setFormData(prev => ({ 
+                          ...prev, 
+                          agent_messages: { ...prev.agent_messages, [agent.id]: e.target.value } 
+                        }))}
+                        placeholder={`Mensagem específica para ${agent.name}...`}
+                        rows={2}
+                      />
+                      <div className="flex flex-wrap gap-1">
+                        {FREE_TEXT_VARIABLES.map(v => (
+                          <span 
+                            key={v.placeholder} 
+                            className="text-xs px-1.5 py-0.5 bg-muted rounded cursor-pointer hover:bg-muted/80"
+                            onClick={() => setFormData(prev => ({ 
+                              ...prev, 
+                              agent_messages: { 
+                                ...prev.agent_messages, 
+                                [agent.id]: (prev.agent_messages[agent.id] || '') + ' ' + v.placeholder 
+                              } 
+                            }))}
+                          >
+                            {v.placeholder}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Fallback Message */}
+                  <div className="space-y-2 p-3 border rounded-lg bg-amber-500/10 border-amber-500/30">
+                    <Label className="flex items-center gap-2">
+                      <span className="text-lg">📋</span>
+                      Mensagem Padrão (fallback)
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Usada quando o agente não tem mensagem específica ou não está identificado na conversa
+                    </p>
+                    <Textarea
+                      value={formData.free_text_message}
+                      onChange={e => setFormData(prev => ({ ...prev, free_text_message: e.target.value }))}
+                      placeholder="Olá {nome}! Caso precise de ajuda, estou aqui. Me responde qualquer coisa pra gente continuar a conversa!"
+                      rows={2}
+                    />
+                    <div className="flex flex-wrap gap-1">
+                      {FREE_TEXT_VARIABLES.map(v => (
+                        <span 
+                          key={v.placeholder} 
+                          className="text-xs px-1.5 py-0.5 bg-muted rounded cursor-pointer hover:bg-muted/80"
+                          onClick={() => setFormData(prev => ({ 
+                            ...prev, 
+                            free_text_message: prev.free_text_message + ' ' + v.placeholder 
+                          }))}
+                        >
+                          {v.placeholder}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
