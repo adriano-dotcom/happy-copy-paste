@@ -105,7 +105,7 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden p-3 sm:p-4">
       {/* Background Image - Truck Fleet */}
       <div 
         className="absolute inset-0 bg-cover bg-center bg-no-repeat scale-105"
@@ -118,59 +118,59 @@ export default function Auth() {
       <div className="absolute inset-0 bg-gradient-to-br from-blue-900/85 via-slate-900/80 to-indigo-900/85" />
       
       {/* Decorative Blur Orbs */}
-      <div className="absolute top-1/4 -left-20 w-72 h-72 bg-cyan-500/20 rounded-full blur-3xl animate-pulse" />
-      <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-blue-500/15 rounded-full blur-3xl animate-pulse" />
+      <div className="absolute top-1/4 -left-20 w-48 sm:w-72 h-48 sm:h-72 bg-cyan-500/20 rounded-full blur-3xl animate-pulse" />
+      <div className="absolute bottom-1/4 -right-20 w-64 sm:w-96 h-64 sm:h-96 bg-blue-500/15 rounded-full blur-3xl animate-pulse" />
 
       {/* Login Card */}
-      <Card className="w-full max-w-md relative z-10 mx-4 bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl shadow-black/20 animate-fade-in">
-        <CardHeader className="text-center pb-2">
+      <Card className="w-full max-w-md relative z-10 bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl shadow-black/20 animate-fade-in">
+        <CardHeader className="text-center pb-2 px-4 sm:px-6 pt-5 sm:pt-6">
           {/* Logo */}
-          <div className="flex justify-center mb-4">
-            <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-sm border border-white/10">
-              <img src={logo} alt="Jacometo Seguros" className="h-12" />
+          <div className="flex justify-center mb-3 sm:mb-4">
+            <div className="p-2 sm:p-3 bg-white/10 rounded-xl sm:rounded-2xl backdrop-blur-sm border border-white/10">
+              <img src={logo} alt="Jacometo Seguros" className="h-9 sm:h-12" />
             </div>
           </div>
           
           {/* Title */}
-          <h1 className="text-3xl font-bold text-white tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
             Jacometo CRM
           </h1>
           
           {/* SDR Badge */}
-          <div className="mt-3 flex items-center justify-center gap-3">
-            <div className="h-px w-12 bg-gradient-to-r from-transparent to-white/40" />
-            <span className="text-cyan-400 font-semibold text-sm uppercase tracking-[0.2em]">
+          <div className="mt-2 sm:mt-3 flex items-center justify-center gap-2 sm:gap-3">
+            <div className="h-px w-8 sm:w-12 bg-gradient-to-r from-transparent to-white/40" />
+            <span className="text-cyan-400 font-semibold text-xs sm:text-sm uppercase tracking-[0.15em] sm:tracking-[0.2em]">
               SDR
             </span>
-            <div className="h-px w-12 bg-gradient-to-l from-transparent to-white/40" />
+            <div className="h-px w-8 sm:w-12 bg-gradient-to-l from-transparent to-white/40" />
           </div>
           
-          <p className="text-white/60 text-sm mt-4">
+          <p className="text-white/60 text-xs sm:text-sm mt-3 sm:mt-4">
             Faça login ou crie sua conta para continuar
           </p>
         </CardHeader>
         
-        <CardContent className="pt-2">
+        <CardContent className="pt-2 px-4 sm:px-6 pb-5 sm:pb-6">
           <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 bg-white/10 border border-white/10 p-1">
+            <TabsList className="grid w-full grid-cols-2 bg-white/10 border border-white/10 p-1 h-10 sm:h-11">
               <TabsTrigger 
                 value="login" 
-                className="data-[state=active]:bg-white/20 data-[state=active]:text-white data-[state=active]:shadow-lg text-white/70 transition-all"
+                className="data-[state=active]:bg-white/20 data-[state=active]:text-white data-[state=active]:shadow-lg text-white/70 transition-all text-sm sm:text-base h-8 sm:h-9"
               >
                 Entrar
               </TabsTrigger>
               <TabsTrigger 
                 value="signup"
-                className="data-[state=active]:bg-white/20 data-[state=active]:text-white data-[state=active]:shadow-lg text-white/70 transition-all"
+                className="data-[state=active]:bg-white/20 data-[state=active]:text-white data-[state=active]:shadow-lg text-white/70 transition-all text-sm sm:text-base h-8 sm:h-9"
               >
                 Criar Conta
               </TabsTrigger>
             </TabsList>
             
-            <TabsContent value="login" className="mt-6">
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="login-email" className="text-white/90 text-sm font-medium">
+            <TabsContent value="login" className="mt-4 sm:mt-6">
+              <form onSubmit={handleLogin} className="space-y-3 sm:space-y-4">
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label htmlFor="login-email" className="text-white/90 text-xs sm:text-sm font-medium">
                     Email
                   </Label>
                   <Input
@@ -180,11 +180,11 @@ export default function Auth() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={isLoading}
-                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all"
+                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all h-10 sm:h-11 text-sm sm:text-base"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="login-password" className="text-white/90 text-sm font-medium">
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label htmlFor="login-password" className="text-white/90 text-xs sm:text-sm font-medium">
                     Senha
                   </Label>
                   <Input
@@ -194,12 +194,12 @@ export default function Auth() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={isLoading}
-                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all"
+                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all h-10 sm:h-11 text-sm sm:text-base"
                   />
                 </div>
                 <Button 
                   type="submit" 
-                  className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/25 border-0 transition-all duration-300" 
+                  className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/25 border-0 transition-all duration-300 h-10 sm:h-11 text-sm sm:text-base mt-1 sm:mt-2" 
                   disabled={isLoading}
                 >
                   {isLoading ? (
@@ -217,10 +217,10 @@ export default function Auth() {
               </form>
             </TabsContent>
             
-            <TabsContent value="signup" className="mt-6">
-              <form onSubmit={handleSignUp} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-email" className="text-white/90 text-sm font-medium">
+            <TabsContent value="signup" className="mt-4 sm:mt-6">
+              <form onSubmit={handleSignUp} className="space-y-3 sm:space-y-4">
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label htmlFor="signup-email" className="text-white/90 text-xs sm:text-sm font-medium">
                     Email
                   </Label>
                   <Input
@@ -230,11 +230,11 @@ export default function Auth() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={isLoading}
-                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all"
+                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all h-10 sm:h-11 text-sm sm:text-base"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password" className="text-white/90 text-sm font-medium">
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label htmlFor="signup-password" className="text-white/90 text-xs sm:text-sm font-medium">
                     Senha
                   </Label>
                   <Input
@@ -244,12 +244,12 @@ export default function Auth() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={isLoading}
-                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all"
+                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all h-10 sm:h-11 text-sm sm:text-base"
                   />
                 </div>
                 <Button 
                   type="submit" 
-                  className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/25 border-0 transition-all duration-300" 
+                  className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/25 border-0 transition-all duration-300 h-10 sm:h-11 text-sm sm:text-base mt-1 sm:mt-2" 
                   disabled={isLoading}
                 >
                   {isLoading ? (
