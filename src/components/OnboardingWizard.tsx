@@ -195,8 +195,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
   const [accessToken, setAccessToken] = useState('');
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [verifyToken, setVerifyToken] = useState('');
+  const [wabaId, setWabaId] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [aiModelMode, setAiModelMode] = useState('flash');
+  
+  // WABA registration status
+  const [registrationStatus, setRegistrationStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [registrationError, setRegistrationError] = useState('');
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-webhook`;
 
@@ -214,6 +219,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
         setAccessToken(data.whatsapp_access_token || '');
         setPhoneNumberId(data.whatsapp_phone_number_id || '');
         setVerifyToken(data.whatsapp_verify_token || '');
+        setWabaId(data.whatsapp_waba_id || '');
         setSystemPrompt(data.system_prompt_override || '');
         setAiModelMode(data.ai_model_mode || 'flash');
       }
@@ -222,6 +228,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
     if (isOpen) {
       loadSettings();
       setActiveStep(currentStep);
+      setRegistrationStatus('idle');
+      setRegistrationError('');
     }
   }, [isOpen, currentStep]);
 
@@ -239,6 +247,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
         whatsapp_access_token: accessToken || null,
         whatsapp_phone_number_id: phoneNumberId || null,
         whatsapp_verify_token: verifyToken || null,
+        whatsapp_waba_id: wabaId || null,
         system_prompt_override: systemPrompt || null,
         ai_model_mode: aiModelMode,
       };
@@ -261,10 +270,47 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
     } finally {
       setIsSaving(false);
     }
-  }, [companyName, sdrName, accessToken, phoneNumberId, verifyToken, systemPrompt, aiModelMode, refetch]);
+  }, [companyName, sdrName, accessToken, phoneNumberId, verifyToken, wabaId, systemPrompt, aiModelMode, refetch]);
+
+  const registerWaba = useCallback(async (): Promise<boolean> => {
+    if (!wabaId || !accessToken) {
+      return true; // Skip if no WABA ID configured
+    }
+
+    setRegistrationStatus('loading');
+    setRegistrationError('');
+
+    try {
+      const { data, error } = await supabase.functions.invoke('register-whatsapp-number', {});
+
+      if (error) {
+        throw error;
+      }
+
+      if (data?.success) {
+        setRegistrationStatus('success');
+        toast.success('WhatsApp configurado e registrado com sucesso!');
+        return true;
+      } else {
+        throw new Error(data?.error || 'Erro desconhecido ao registrar WABA');
+      }
+    } catch (error: any) {
+      console.error('Error registering WABA:', error);
+      setRegistrationStatus('error');
+      setRegistrationError(error.message || 'Erro ao registrar WABA');
+      toast.error('Erro ao registrar WABA. Você pode continuar e tentar novamente depois.');
+      return false;
+    }
+  }, [wabaId, accessToken]);
 
   const handleNext = async () => {
     await saveSettings();
+    
+    // If leaving WhatsApp step (step 1), try to register WABA
+    if (activeStep === 1 && wabaId && accessToken) {
+      await registerWaba();
+    }
+    
     if (activeStep < steps.length - 1) {
       setDirection(1);
       setActiveStep(activeStep + 1);
@@ -335,10 +381,14 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
             accessToken={accessToken}
             phoneNumberId={phoneNumberId}
             verifyToken={verifyToken}
+            wabaId={wabaId}
             onAccessTokenChange={setAccessToken}
             onPhoneNumberIdChange={setPhoneNumberId}
             onVerifyTokenChange={setVerifyToken}
+            onWabaIdChange={setWabaId}
             webhookUrl={webhookUrl}
+            registrationStatus={registrationStatus}
+            registrationError={registrationError}
           />
         );
       case 2:

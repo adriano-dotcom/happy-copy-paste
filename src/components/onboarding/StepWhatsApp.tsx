@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MessageSquare, Key, Phone, ExternalLink, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { MessageSquare, Key, Phone, ExternalLink, Copy, Check, ChevronDown, Building2, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,10 +9,14 @@ interface StepWhatsAppProps {
   accessToken: string;
   phoneNumberId: string;
   verifyToken: string;
+  wabaId: string;
   onAccessTokenChange: (value: string) => void;
   onPhoneNumberIdChange: (value: string) => void;
   onVerifyTokenChange: (value: string) => void;
+  onWabaIdChange: (value: string) => void;
   webhookUrl: string;
+  registrationStatus?: 'idle' | 'loading' | 'success' | 'error';
+  registrationError?: string;
 }
 
 const containerVariants = {
@@ -39,10 +43,14 @@ export const StepWhatsApp: React.FC<StepWhatsAppProps> = ({
   accessToken,
   phoneNumberId,
   verifyToken,
+  wabaId,
   onAccessTokenChange,
   onPhoneNumberIdChange,
   onVerifyTokenChange,
+  onWabaIdChange,
   webhookUrl,
+  registrationStatus = 'idle',
+  registrationError,
 }) => {
   const [showWebhook, setShowWebhook] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
@@ -103,6 +111,68 @@ export const StepWhatsApp: React.FC<StepWhatsAppProps> = ({
             className="bg-slate-800/50 border-slate-700 focus:border-green-500 text-white placeholder:text-slate-500 font-mono text-sm"
           />
         </motion.div>
+
+        <motion.div variants={itemVariants} className="space-y-2">
+          <Label htmlFor="wabaId" className="text-slate-300 flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-slate-500" />
+            WABA ID
+            <span className="text-xs text-slate-500">(WhatsApp Business Account ID)</span>
+          </Label>
+          <Input
+            id="wabaId"
+            value={wabaId}
+            onChange={(e) => onWabaIdChange(e.target.value)}
+            placeholder="123456789012345"
+            className="bg-slate-800/50 border-slate-700 focus:border-green-500 text-white placeholder:text-slate-500 font-mono text-sm"
+          />
+          <p className="text-xs text-slate-500">
+            Encontre em Meta Business Suite → WhatsApp Manager → ID da Conta
+          </p>
+        </motion.div>
+
+        {/* Registration Status Indicator */}
+        <AnimatePresence>
+          {registrationStatus !== 'idle' && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className={`p-3 rounded-lg border ${
+                registrationStatus === 'loading' 
+                  ? 'bg-slate-800/50 border-slate-700' 
+                  : registrationStatus === 'success'
+                    ? 'bg-green-500/10 border-green-500/30'
+                    : 'bg-red-500/10 border-red-500/30'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {registrationStatus === 'loading' && (
+                  <>
+                    <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
+                    <span className="text-sm text-slate-300">Registrando WABA no app...</span>
+                  </>
+                )}
+                {registrationStatus === 'success' && (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-green-400" />
+                    <span className="text-sm text-green-400">WhatsApp configurado e registrado com sucesso!</span>
+                  </>
+                )}
+                {registrationStatus === 'error' && (
+                  <>
+                    <XCircle className="w-4 h-4 text-red-400" />
+                    <div className="flex-1">
+                      <span className="text-sm text-red-400">Erro ao registrar WABA</span>
+                      {registrationError && (
+                        <p className="text-xs text-red-400/70 mt-1">{registrationError}</p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Webhook Configuration (Collapsible) */}
         <motion.div variants={itemVariants} className="pt-4 border-t border-slate-700/50">
