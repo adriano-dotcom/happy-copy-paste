@@ -78,3 +78,6 @@ verify_jwt = true
 
 [functions.sales-coaching-analysis]
 verify_jwt = true
+
+[functions.send-invite-email]
+verify_jwt = true

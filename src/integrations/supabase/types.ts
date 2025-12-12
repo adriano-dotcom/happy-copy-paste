@@ -1144,6 +1144,44 @@ export type Database = {
         }
         Relationships: []
       }
+      pending_invites: {
+        Row: {
+          app_role: Database["public"]["Enums"]["app_role"]
+          created_at: string | null
+          email: string
+          expires_at: string | null
+          id: string
+          invited_by: string | null
+          team_member_id: string | null
+        }
+        Insert: {
+          app_role?: Database["public"]["Enums"]["app_role"]
+          created_at?: string | null
+          email: string
+          expires_at?: string | null
+          id?: string
+          invited_by?: string | null
+          team_member_id?: string | null
+        }
+        Update: {
+          app_role?: Database["public"]["Enums"]["app_role"]
+          created_at?: string | null
+          email?: string
+          expires_at?: string | null
+          id?: string
+          invited_by?: string | null
+          team_member_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pending_invites_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pipeline_stages: {
         Row: {
           ai_trigger_criteria: string | null
