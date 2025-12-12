@@ -30,8 +30,8 @@ Analisar as interações do agente de IA e dos operadores humanos para:
 - Engajamento do lead (respostas rápidas, continuidade)
 - Conversão para próximo estágio do funil
 
-# REGRAS DO AGENTE ADRI
-O agente Adri deve seguir estas regras - avalie se estão sendo cumpridas:
+# REGRAS DO AGENTE
+O agente deve seguir estas regras - avalie se estão sendo cumpridas:
 - Sem emojis
 - Máximo 2 linhas por mensagem
 - Nunca repetir nome do cliente mais de 2x na conversa
@@ -64,6 +64,341 @@ Responda APENAS com um JSON válido no formato:
   ]
 }`;
 
+const ALERT_THRESHOLD = 70;
+const DEFAULT_ALERT_RECIPIENTS = ["adriano@jacometo.com.br"];
+
+interface Agent {
+  id: string;
+  name: string;
+  slug: string;
+  specialty: string | null;
+}
+
+interface Pipeline {
+  id: string;
+  name: string;
+  agent_id: string | null;
+}
+
+async function sendAlertEmail(
+  supabaseUrl: string,
+  supabaseKey: string,
+  report: any,
+  agentName: string,
+  pipelineName: string | null
+): Promise<{ sent: boolean; recipients: string[] }> {
+  const recipients = DEFAULT_ALERT_RECIPIENTS;
+  
+  const improvementsList = (report.improvement_areas || [])
+    .slice(0, 3)
+    .map((area: any) => `<li><strong>${area.title}</strong>: ${area.description}</li>`)
+    .join("");
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h1 style="color: #dc2626;">Alerta de Coaching - Score Baixo Detectado</h1>
+      
+      <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 16px; margin: 16px 0;">
+        <h2 style="margin: 0 0 8px 0; color: #991b1b;">Score: ${report.overall_score}/100</h2>
+        <p style="margin: 0; color: #7f1d1d;">Threshold mínimo: ${ALERT_THRESHOLD}</p>
+      </div>
+      
+      <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><strong>Agente:</strong></td>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${agentName}</td>
+        </tr>
+        ${pipelineName ? `
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><strong>Departamento:</strong></td>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${pipelineName}</td>
+        </tr>
+        ` : ''}
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><strong>Qualificação:</strong></td>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${report.qualification_effectiveness || 'N/A'}/100</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><strong>Objeções:</strong></td>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${report.objection_handling_score || 'N/A'}/100</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><strong>Fechamento:</strong></td>
+          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${report.closing_skills_score || 'N/A'}/100</td>
+        </tr>
+      </table>
+      
+      ${improvementsList ? `
+      <h3 style="color: #374151;">Principais Áreas de Melhoria:</h3>
+      <ul style="color: #4b5563;">
+        ${improvementsList}
+      </ul>
+      ` : ''}
+      
+      <div style="margin-top: 24px; padding: 16px; background: #f3f4f6; border-radius: 8px;">
+        <p style="margin: 0; color: #6b7280; font-size: 14px;">
+          Este alerta foi gerado automaticamente pelo sistema de coaching.
+          Acesse o painel de configurações para ver o relatório completo.
+        </p>
+      </div>
+    </div>
+  `;
+
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({
+        to: recipients[0],
+        subject: `Alerta de Coaching - ${agentName} com Score ${report.overall_score}`,
+        html,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("[sales-coaching] Erro ao enviar email de alerta:", await response.text());
+      return { sent: false, recipients };
+    }
+
+    console.log("[sales-coaching] Email de alerta enviado para:", recipients);
+    return { sent: true, recipients };
+  } catch (error) {
+    console.error("[sales-coaching] Erro ao enviar email:", error);
+    return { sent: false, recipients };
+  }
+}
+
+async function generateReportForAgent(
+  supabase: any,
+  lovableApiKey: string,
+  agent: Agent,
+  pipeline: Pipeline | null,
+  days: number,
+  reportType: string
+): Promise<any> {
+  const periodEnd = new Date();
+  const periodStart = new Date();
+  periodStart.setDate(periodStart.getDate() - days);
+
+  console.log(`[sales-coaching] Gerando relatório para ${agent.name} (${days} dias)`);
+
+  // Fetch conversations for this agent
+  const { data: conversations, error: convError } = await supabase
+    .from('conversations')
+    .select(`
+      id,
+      status,
+      current_agent_id,
+      nina_context,
+      contacts!inner (
+        id,
+        name,
+        phone_number
+      )
+    `)
+    .eq('current_agent_id', agent.id)
+    .gte('last_message_at', periodStart.toISOString())
+    .lte('last_message_at', periodEnd.toISOString())
+    .order('last_message_at', { ascending: false })
+    .limit(50);
+
+  if (convError) {
+    console.error('[sales-coaching] Error fetching conversations:', convError);
+    throw convError;
+  }
+
+  console.log(`[sales-coaching] Found ${conversations?.length || 0} conversations for ${agent.name}`);
+
+  // Fetch messages for these conversations
+  const conversationIds = conversations?.map((c: any) => c.id) || [];
+  
+  let messages: any[] = [];
+  if (conversationIds.length > 0) {
+    const { data: msgData, error: msgError } = await supabase
+      .from('messages')
+      .select('*')
+      .in('conversation_id', conversationIds)
+      .gte('created_at', periodStart.toISOString())
+      .order('created_at', { ascending: true });
+
+    if (msgError) {
+      console.error('[sales-coaching] Error fetching messages:', msgError);
+    } else {
+      messages = msgData || [];
+    }
+  }
+
+  console.log(`[sales-coaching] Found ${messages.length} messages for ${agent.name}`);
+
+  // Fetch call logs with transcriptions for contacts in these conversations
+  const contactIds = conversations?.map((c: any) => c.contacts?.id).filter(Boolean) || [];
+  
+  let calls: any[] = [];
+  if (contactIds.length > 0) {
+    const { data: callData, error: callError } = await supabase
+      .from('call_logs')
+      .select('*')
+      .in('contact_id', contactIds)
+      .gte('created_at', periodStart.toISOString())
+      .not('transcription', 'is', null)
+      .limit(20);
+
+    if (callError) {
+      console.error('[sales-coaching] Error fetching calls:', callError);
+    } else {
+      calls = callData || [];
+    }
+  }
+
+  console.log(`[sales-coaching] Found ${calls.length} calls with transcriptions for ${agent.name}`);
+
+  // Group messages by conversation
+  const conversationsWithMessages = conversations?.map((conv: any) => {
+    const convMessages = messages.filter(m => m.conversation_id === conv.id) || [];
+    return {
+      ...conv,
+      messages: convMessages.map((m: any) => ({
+        from: m.from_type,
+        content: m.content,
+        type: m.type,
+        time: m.sent_at
+      }))
+    };
+  }) || [];
+
+  // Count message types
+  const ninaMessages = messages.filter(m => m.from_type === 'nina').length;
+  const humanMessages = messages.filter(m => m.from_type === 'human').length;
+  const userMessages = messages.filter(m => m.from_type === 'user').length;
+
+  // Prepare analysis data
+  const analysisData = {
+    period: {
+      start: periodStart.toISOString(),
+      end: periodEnd.toISOString(),
+      days
+    },
+    agent: agent.name,
+    agent_specialty: agent.specialty,
+    pipeline: pipeline?.name || null,
+    metrics: {
+      total_conversations: conversations?.length || 0,
+      total_messages: messages.length,
+      nina_messages: ninaMessages,
+      human_messages: humanMessages,
+      user_messages: userMessages,
+      calls_with_transcription: calls.length
+    },
+    conversations: conversationsWithMessages.slice(0, 20),
+    call_transcriptions: calls.map((c: any) => ({
+      id: c.id,
+      duration: c.duration_seconds,
+      transcription: c.transcription?.substring(0, 2000)
+    }))
+  };
+
+  // Call AI for analysis
+  console.log(`[sales-coaching] Calling AI for analysis of ${agent.name}...`);
+  
+  const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${lovableApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'google/gemini-2.5-flash',
+      messages: [
+        { role: 'system', content: SALES_MANAGER_PROMPT },
+        { 
+          role: 'user', 
+          content: `Analise os dados de vendas abaixo e gere um relatório de coaching:\n\n${JSON.stringify(analysisData, null, 2)}`
+        }
+      ],
+      max_tokens: 4000
+    }),
+  });
+
+  if (!aiResponse.ok) {
+    const errorText = await aiResponse.text();
+    console.error('[sales-coaching] AI error:', aiResponse.status, errorText);
+    throw new Error(`AI analysis failed: ${aiResponse.status}`);
+  }
+
+  const aiData = await aiResponse.json();
+  const analysisContent = aiData.choices?.[0]?.message?.content;
+
+  console.log(`[sales-coaching] AI response received for ${agent.name}, parsing...`);
+
+  // Parse JSON from AI response
+  let report;
+  try {
+    const jsonMatch = analysisContent.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      report = JSON.parse(jsonMatch[0]);
+    } else {
+      throw new Error('No JSON found in response');
+    }
+  } catch (parseError) {
+    console.error('[sales-coaching] Failed to parse AI response:', parseError);
+    report = {
+      overall_score: 70,
+      qualification_effectiveness: 70,
+      objection_handling_score: 70,
+      closing_skills_score: 70,
+      strengths: [{ title: 'Análise em andamento', description: 'Não foi possível gerar análise detalhada', example: '' }],
+      improvement_areas: [],
+      recommended_actions: [],
+      prompt_suggestions: 'Análise não disponível - tente novamente',
+      good_examples: [],
+      bad_examples: []
+    };
+  }
+
+  // Save report to database
+  const { data: savedReport, error: saveError } = await supabase
+    .from('sales_coaching_reports')
+    .insert({
+      agent_id: agent.id,
+      pipeline_id: pipeline?.id || null,
+      pipeline_name: pipeline?.name || null,
+      report_type: reportType,
+      analysis_period_start: periodStart.toISOString(),
+      analysis_period_end: periodEnd.toISOString(),
+      conversations_analyzed: conversations?.length || 0,
+      calls_analyzed: calls.length,
+      human_interactions_analyzed: humanMessages,
+      strengths: report.strengths || [],
+      improvement_areas: report.improvement_areas || [],
+      recommended_actions: report.recommended_actions || [],
+      prompt_suggestions: report.prompt_suggestions || '',
+      good_examples: report.good_examples || [],
+      bad_examples: report.bad_examples || [],
+      overall_score: report.overall_score,
+      qualification_effectiveness: report.qualification_effectiveness,
+      objection_handling_score: report.objection_handling_score,
+      closing_skills_score: report.closing_skills_score
+    })
+    .select()
+    .single();
+
+  if (saveError) {
+    console.error('[sales-coaching] Error saving report:', saveError);
+    throw saveError;
+  }
+
+  console.log(`[sales-coaching] Report saved for ${agent.name}:`, savedReport.id);
+
+  return {
+    ...savedReport,
+    agent_name: agent.name,
+    pipeline_name: pipeline?.name
+  };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -80,226 +415,113 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { report_type = 'daily', agent_id, days = 1 } = await req.json();
+    const { 
+      report_type = 'daily', 
+      agent_id = null, 
+      days = 1,
+      generate_all = true,
+      send_alerts = true
+    } = await req.json();
 
-    console.log(`[sales-coaching] Starting ${report_type} analysis for ${days} day(s)`);
+    console.log(`[sales-coaching] Starting ${report_type} analysis for ${days} day(s), generate_all=${generate_all}`);
 
-    // Calculate period
-    const periodEnd = new Date();
-    const periodStart = new Date();
-    periodStart.setDate(periodStart.getDate() - days);
+    // Fetch active agents
+    const { data: agents, error: agentsError } = await supabase
+      .from('agents')
+      .select('id, name, slug, specialty')
+      .eq('is_active', true)
+      .order('name');
 
-    // Fetch agent info
-    let agentFilter = agent_id;
-    let agentName = 'Todos';
-    
+    if (agentsError) throw agentsError;
+
+    // Fetch pipelines
+    const { data: pipelines, error: pipelinesError } = await supabase
+      .from('pipelines')
+      .select('id, name, agent_id')
+      .eq('is_active', true);
+
+    if (pipelinesError) throw pipelinesError;
+
+    const reports: any[] = [];
+    const alertsSent: any[] = [];
+
+    // If specific agent_id, generate only for that agent
     if (agent_id) {
-      const { data: agent } = await supabase
-        .from('agents')
-        .select('name')
-        .eq('id', agent_id)
-        .single();
-      agentName = agent?.name || 'Desconhecido';
-    }
-
-    // Fetch conversations with messages from the period
-    const { data: conversations, error: convError } = await supabase
-      .from('conversations')
-      .select(`
-        id,
-        status,
-        current_agent_id,
-        nina_context,
-        contacts!inner (
-          id,
-          name,
-          phone_number
-        )
-      `)
-      .gte('last_message_at', periodStart.toISOString())
-      .lte('last_message_at', periodEnd.toISOString())
-      .order('last_message_at', { ascending: false })
-      .limit(50);
-
-    if (convError) {
-      console.error('[sales-coaching] Error fetching conversations:', convError);
-      throw convError;
-    }
-
-    console.log(`[sales-coaching] Found ${conversations?.length || 0} conversations`);
-
-    // Fetch messages for these conversations
-    const conversationIds = conversations?.map(c => c.id) || [];
-    
-    const { data: messages, error: msgError } = await supabase
-      .from('messages')
-      .select('*')
-      .in('conversation_id', conversationIds)
-      .gte('created_at', periodStart.toISOString())
-      .order('created_at', { ascending: true });
-
-    if (msgError) {
-      console.error('[sales-coaching] Error fetching messages:', msgError);
-      throw msgError;
-    }
-
-    console.log(`[sales-coaching] Found ${messages?.length || 0} messages`);
-
-    // Fetch call logs with transcriptions
-    const { data: calls, error: callError } = await supabase
-      .from('call_logs')
-      .select('*')
-      .gte('created_at', periodStart.toISOString())
-      .not('transcription', 'is', null)
-      .limit(20);
-
-    if (callError) {
-      console.error('[sales-coaching] Error fetching calls:', callError);
-    }
-
-    console.log(`[sales-coaching] Found ${calls?.length || 0} calls with transcriptions`);
-
-    // Group messages by conversation
-    const conversationsWithMessages = conversations?.map(conv => {
-      const convMessages = messages?.filter(m => m.conversation_id === conv.id) || [];
-      return {
-        ...conv,
-        messages: convMessages.map(m => ({
-          from: m.from_type,
-          content: m.content,
-          type: m.type,
-          time: m.sent_at
-        }))
-      };
-    }) || [];
-
-    // Count human vs nina interactions
-    const ninaMessages = messages?.filter(m => m.from_type === 'nina').length || 0;
-    const humanMessages = messages?.filter(m => m.from_type === 'human').length || 0;
-    const userMessages = messages?.filter(m => m.from_type === 'user').length || 0;
-
-    // Prepare analysis data
-    const analysisData = {
-      period: {
-        start: periodStart.toISOString(),
-        end: periodEnd.toISOString(),
-        days
-      },
-      agent: agentName,
-      metrics: {
-        total_conversations: conversations?.length || 0,
-        total_messages: messages?.length || 0,
-        nina_messages: ninaMessages,
-        human_messages: humanMessages,
-        user_messages: userMessages,
-        calls_with_transcription: calls?.length || 0
-      },
-      conversations: conversationsWithMessages.slice(0, 20), // Limit for API
-      call_transcriptions: calls?.map(c => ({
-        id: c.id,
-        duration: c.duration_seconds,
-        transcription: c.transcription?.substring(0, 2000) // Limit size
-      })) || []
-    };
-
-    // Call AI for analysis
-    console.log('[sales-coaching] Calling AI for analysis...');
-    
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: SALES_MANAGER_PROMPT },
-          { 
-            role: 'user', 
-            content: `Analise os dados de vendas abaixo e gere um relatório de coaching:\n\n${JSON.stringify(analysisData, null, 2)}`
-          }
-        ],
-        max_tokens: 4000
-      }),
-    });
-
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error('[sales-coaching] AI error:', aiResponse.status, errorText);
-      throw new Error(`AI analysis failed: ${aiResponse.status}`);
-    }
-
-    const aiData = await aiResponse.json();
-    const analysisContent = aiData.choices?.[0]?.message?.content;
-
-    console.log('[sales-coaching] AI response received, parsing...');
-
-    // Parse JSON from AI response
-    let report;
-    try {
-      // Try to extract JSON from the response
-      const jsonMatch = analysisContent.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        report = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error('No JSON found in response');
+      const agent = agents?.find((a: Agent) => a.id === agent_id);
+      if (!agent) {
+        throw new Error(`Agent ${agent_id} not found`);
       }
-    } catch (parseError) {
-      console.error('[sales-coaching] Failed to parse AI response:', parseError);
-      console.log('[sales-coaching] Raw response:', analysisContent);
-      
-      // Create a basic report if parsing fails
-      report = {
-        overall_score: 70,
-        qualification_effectiveness: 70,
-        objection_handling_score: 70,
-        closing_skills_score: 70,
-        strengths: [{ title: 'Análise em andamento', description: 'Não foi possível gerar análise detalhada', example: '' }],
-        improvement_areas: [],
-        recommended_actions: [],
-        prompt_suggestions: 'Análise não disponível - tente novamente',
-        good_examples: [],
-        bad_examples: []
-      };
+
+      const pipeline = pipelines?.find((p: Pipeline) => p.agent_id === agent.id) || null;
+      const report = await generateReportForAgent(
+        supabase, lovableApiKey, agent, pipeline, days, report_type
+      );
+      reports.push(report);
+
+      // Check for alert
+      if (send_alerts && report.overall_score < ALERT_THRESHOLD) {
+        const alertResult = await sendAlertEmail(
+          supabaseUrl, supabaseServiceKey, report, agent.name, pipeline?.name || null
+        );
+        if (alertResult.sent) {
+          await supabase
+            .from('sales_coaching_reports')
+            .update({
+              alert_sent: true,
+              alert_sent_at: new Date().toISOString(),
+              alert_recipients: alertResult.recipients,
+            })
+            .eq('id', report.id);
+          alertsSent.push({ agent: agent.name, score: report.overall_score });
+        }
+      }
+    } 
+    // Generate for all agents
+    else if (generate_all) {
+      for (const agent of agents || []) {
+        try {
+          const pipeline = pipelines?.find((p: Pipeline) => p.agent_id === agent.id) || null;
+          const report = await generateReportForAgent(
+            supabase, lovableApiKey, agent, pipeline, days, report_type
+          );
+          reports.push(report);
+
+          // Check for alert
+          if (send_alerts && report.overall_score < ALERT_THRESHOLD) {
+            const alertResult = await sendAlertEmail(
+              supabaseUrl, supabaseServiceKey, report, agent.name, pipeline?.name || null
+            );
+            if (alertResult.sent) {
+              await supabase
+                .from('sales_coaching_reports')
+                .update({
+                  alert_sent: true,
+                  alert_sent_at: new Date().toISOString(),
+                  alert_recipients: alertResult.recipients,
+                })
+                .eq('id', report.id);
+              alertsSent.push({ agent: agent.name, score: report.overall_score });
+            }
+          }
+        } catch (agentError) {
+          console.error(`[sales-coaching] Error generating report for ${agent.name}:`, agentError);
+        }
+      }
     }
 
-    // Save report to database
-    const { data: savedReport, error: saveError } = await supabase
-      .from('sales_coaching_reports')
-      .insert({
-        agent_id: agent_id || null,
-        report_type,
-        analysis_period_start: periodStart.toISOString(),
-        analysis_period_end: periodEnd.toISOString(),
-        conversations_analyzed: conversations?.length || 0,
-        calls_analyzed: calls?.length || 0,
-        human_interactions_analyzed: humanMessages,
-        strengths: report.strengths || [],
-        improvement_areas: report.improvement_areas || [],
-        recommended_actions: report.recommended_actions || [],
-        prompt_suggestions: report.prompt_suggestions || '',
-        good_examples: report.good_examples || [],
-        bad_examples: report.bad_examples || [],
-        overall_score: report.overall_score,
-        qualification_effectiveness: report.qualification_effectiveness,
-        objection_handling_score: report.objection_handling_score,
-        closing_skills_score: report.closing_skills_score
-      })
-      .select()
-      .single();
-
-    if (saveError) {
-      console.error('[sales-coaching] Error saving report:', saveError);
-      throw saveError;
-    }
-
-    console.log('[sales-coaching] Report saved:', savedReport.id);
+    console.log(`[sales-coaching] Reports generated: ${reports.length}, Alerts sent: ${alertsSent.length}`);
 
     return new Response(JSON.stringify({
       success: true,
-      report_id: savedReport.id,
-      report: savedReport
+      reports_count: reports.length,
+      reports: reports.map(r => ({
+        id: r.id,
+        agent_id: r.agent_id,
+        agent_name: r.agent_name,
+        pipeline_name: r.pipeline_name,
+        overall_score: r.overall_score,
+      })),
+      alerts_sent: alertsSent,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

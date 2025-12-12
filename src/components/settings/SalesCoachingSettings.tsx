@@ -15,7 +15,10 @@ import {
   Target,
   AlertTriangle,
   CheckCircle,
-  Clock
+  Clock,
+  Users,
+  Mail,
+  Building2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -51,6 +54,8 @@ interface ExampleItem {
 interface CoachingReport {
   id: string;
   agent_id: string | null;
+  pipeline_id: string | null;
+  pipeline_name: string | null;
   report_type: string;
   analysis_period_start: string;
   analysis_period_end: string;
@@ -68,6 +73,7 @@ interface CoachingReport {
   objection_handling_score: number | null;
   closing_skills_score: number | null;
   is_applied: boolean;
+  alert_sent: boolean;
   created_at: string;
 }
 
@@ -76,10 +82,19 @@ interface Agent {
   name: string;
 }
 
+interface Pipeline {
+  id: string;
+  name: string;
+  icon: string | null;
+  agent_id: string | null;
+}
+
 export default function SalesCoachingSettings() {
   const [reports, setReports] = useState<CoachingReport[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
+  const [selectedPipeline, setSelectedPipeline] = useState<string>('all');
   const [reportType, setReportType] = useState<string>('daily');
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -88,6 +103,7 @@ export default function SalesCoachingSettings() {
   useEffect(() => {
     fetchReports();
     fetchAgents();
+    fetchPipelines();
   }, []);
 
   const fetchAgents = async () => {
@@ -98,19 +114,35 @@ export default function SalesCoachingSettings() {
     setAgents(data || []);
   };
 
+  const fetchPipelines = async () => {
+    const { data } = await supabase
+      .from('pipelines')
+      .select('id, name, icon, agent_id')
+      .eq('is_active', true);
+    setPipelines(data || []);
+  };
+
   const fetchReports = async () => {
     setIsLoading(true);
-    const { data, error } = await supabase
+    let query = supabase
       .from('sales_coaching_reports')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(30);
+
+    if (selectedAgent !== 'all') {
+      query = query.eq('agent_id', selectedAgent);
+    }
+    if (selectedPipeline !== 'all') {
+      query = query.eq('pipeline_id', selectedPipeline);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       toast.error('Erro ao carregar relatórios');
       console.error(error);
     } else {
-      // Cast the data to our interface
       const typedReports = (data || []).map(r => ({
         ...r,
         strengths: (r.strengths || []) as unknown as StrengthItem[],
@@ -124,22 +156,37 @@ export default function SalesCoachingSettings() {
     setIsLoading(false);
   };
 
+  useEffect(() => {
+    fetchReports();
+  }, [selectedAgent, selectedPipeline]);
+
   const generateReport = async () => {
     setIsGenerating(true);
     try {
       const days = reportType === 'weekly' ? 7 : 1;
+      const generateAll = selectedAgent === 'all';
       
       const { data, error } = await supabase.functions.invoke('sales-coaching-analysis', {
         body: {
           report_type: reportType,
           agent_id: selectedAgent === 'all' ? null : selectedAgent,
-          days
+          days,
+          generate_all: generateAll,
+          send_alerts: true
         }
       });
 
       if (error) throw error;
 
-      toast.success('Relatório gerado com sucesso!');
+      const reportsCount = data?.reports_count || 1;
+      const alertsSent = data?.alerts_sent?.length || 0;
+      
+      let message = `${reportsCount} relatório(s) gerado(s) com sucesso!`;
+      if (alertsSent > 0) {
+        message += ` ${alertsSent} alerta(s) enviado(s) por email.`;
+      }
+      
+      toast.success(message);
       fetchReports();
     } catch (error) {
       console.error('Error generating report:', error);
@@ -152,15 +199,20 @@ export default function SalesCoachingSettings() {
   const getScoreColor = (score: number | null) => {
     if (!score) return 'text-muted-foreground';
     if (score >= 80) return 'text-green-500';
-    if (score >= 60) return 'text-yellow-500';
+    if (score >= 70) return 'text-yellow-500';
     return 'text-red-500';
   };
 
   const getScoreBg = (score: number | null) => {
     if (!score) return 'bg-muted';
     if (score >= 80) return 'bg-green-500/20';
-    if (score >= 60) return 'bg-yellow-500/20';
+    if (score >= 70) return 'bg-yellow-500/20';
     return 'bg-red-500/20';
+  };
+
+  const getAgentName = (agentId: string | null) => {
+    if (!agentId) return 'Todos';
+    return agents.find(a => a.id === agentId)?.name || 'Desconhecido';
   };
 
   const ScoreCard = ({ label, score }: { label: string; score: number | null }) => (
@@ -172,6 +224,18 @@ export default function SalesCoachingSettings() {
     </div>
   );
 
+  // Group reports by agent for summary view
+  const latestReportsByAgent = agents.map(agent => {
+    const agentReports = reports.filter(r => r.agent_id === agent.id);
+    const latestReport = agentReports[0];
+    const pipeline = pipelines.find(p => p.agent_id === agent.id);
+    return {
+      agent,
+      pipeline,
+      latestReport
+    };
+  }).filter(item => item.latestReport);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -181,17 +245,82 @@ export default function SalesCoachingSettings() {
             Gerente de Vendas IA
           </h3>
           <p className="text-sm text-muted-foreground">
-            Análise automática de performance e coaching para agentes
+            Análise automática de performance por agente e departamento
           </p>
         </div>
       </div>
+
+      {/* Agent/Department Summary Cards */}
+      {latestReportsByAgent.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {latestReportsByAgent.map(({ agent, pipeline, latestReport }) => (
+            <Card key={agent.id} className={`${latestReport.overall_score && latestReport.overall_score < 70 ? 'border-red-500/50' : ''}`}>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {pipeline && <span className="text-lg">{pipeline.icon}</span>}
+                    <div>
+                      <CardTitle className="text-base">{agent.name}</CardTitle>
+                      {pipeline && (
+                        <CardDescription className="flex items-center gap-1">
+                          <Building2 className="h-3 w-3" />
+                          {pipeline.name}
+                        </CardDescription>
+                      )}
+                    </div>
+                  </div>
+                  <div className={`p-2 rounded-lg ${getScoreBg(latestReport.overall_score)}`}>
+                    <span className={`text-xl font-bold ${getScoreColor(latestReport.overall_score)}`}>
+                      {latestReport.overall_score ?? '-'}
+                    </span>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Qualificação</p>
+                    <p className={`font-semibold ${getScoreColor(latestReport.qualification_effectiveness)}`}>
+                      {latestReport.qualification_effectiveness ?? '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Objeções</p>
+                    <p className={`font-semibold ${getScoreColor(latestReport.objection_handling_score)}`}>
+                      {latestReport.objection_handling_score ?? '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Fechamento</p>
+                    <p className={`font-semibold ${getScoreColor(latestReport.closing_skills_score)}`}>
+                      {latestReport.closing_skills_score ?? '-'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-3 pt-3 border-t text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {format(new Date(latestReport.created_at), "dd/MM HH:mm", { locale: ptBR })}
+                  </span>
+                  {latestReport.alert_sent && (
+                    <span className="flex items-center gap-1 text-red-500">
+                      <Mail className="h-3 w-3" />
+                      Alerta enviado
+                    </span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Generate Report Section */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Gerar Novo Relatório</CardTitle>
           <CardDescription>
-            Analise as conversas e ligações para obter insights de melhoria
+            Analise as conversas e ligações por agente/departamento
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -203,12 +332,23 @@ export default function SalesCoachingSettings() {
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos os agentes</SelectItem>
-                  {agents.map(agent => (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="all">
+                    <span className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      Todos os agentes
+                    </span>
+                  </SelectItem>
+                  {agents.map(agent => {
+                    const pipeline = pipelines.find(p => p.agent_id === agent.id);
+                    return (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        <span className="flex items-center gap-2">
+                          {pipeline?.icon && <span>{pipeline.icon}</span>}
+                          {agent.name}
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -236,9 +376,13 @@ export default function SalesCoachingSettings() {
               ) : (
                 <Brain className="h-4 w-4" />
               )}
-              {isGenerating ? 'Analisando...' : 'Gerar Análise'}
+              {isGenerating ? 'Analisando...' : selectedAgent === 'all' ? 'Gerar para Todos' : 'Gerar Análise'}
             </Button>
           </div>
+          
+          <p className="text-xs text-muted-foreground mt-3">
+            Relatórios com score abaixo de 70 enviam alerta automático por email para adriano@jacometo.com.br
+          </p>
         </CardContent>
       </Card>
 
@@ -246,9 +390,24 @@ export default function SalesCoachingSettings() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h4 className="font-medium">Relatórios Recentes</h4>
-          <Button variant="ghost" size="sm" onClick={fetchReports} disabled={isLoading}>
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Select value={selectedPipeline} onValueChange={setSelectedPipeline}>
+              <SelectTrigger className="w-[150px] h-8 text-xs">
+                <SelectValue placeholder="Departamento" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {pipelines.map(pipeline => (
+                  <SelectItem key={pipeline.id} value={pipeline.id}>
+                    {pipeline.icon} {pipeline.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="ghost" size="sm" onClick={fetchReports} disabled={isLoading}>
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
         </div>
 
         {reports.length === 0 ? (
@@ -261,7 +420,7 @@ export default function SalesCoachingSettings() {
           </Card>
         ) : (
           reports.map(report => (
-            <Card key={report.id} className="overflow-hidden">
+            <Card key={report.id} className={`overflow-hidden ${report.alert_sent ? 'border-l-4 border-l-red-500' : ''}`}>
               <CardHeader 
                 className="cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => setExpandedReport(expandedReport === report.id ? null : report.id)}
@@ -275,13 +434,30 @@ export default function SalesCoachingSettings() {
                     </div>
                     <div>
                       <CardTitle className="text-base flex items-center gap-2">
-                        {report.report_type === 'daily' ? 'Análise Diária' : 'Análise Semanal'}
+                        <span className="flex items-center gap-1">
+                          {report.pipeline_name && (
+                            <span className="text-muted-foreground">
+                              {pipelines.find(p => p.id === report.pipeline_id)?.icon}
+                            </span>
+                          )}
+                          {getAgentName(report.agent_id)}
+                        </span>
+                        <span className="text-xs font-normal px-2 py-0.5 bg-muted rounded">
+                          {report.report_type === 'daily' ? 'Diário' : 'Semanal'}
+                        </span>
                         <span className="text-xs font-normal text-muted-foreground flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {format(new Date(report.created_at), "dd/MM HH:mm", { locale: ptBR })}
                         </span>
+                        {report.alert_sent && (
+                          <span className="text-xs font-normal text-red-500 flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            Alerta
+                          </span>
+                        )}
                       </CardTitle>
                       <CardDescription className="flex items-center gap-4 mt-1">
+                        {report.pipeline_name && <span>{report.pipeline_name}</span>}
                         <span>{report.conversations_analyzed} conversas</span>
                         <span>{report.calls_analyzed} ligações</span>
                         <span>{report.human_interactions_analyzed} msg humanas</span>
@@ -341,7 +517,7 @@ export default function SalesCoachingSettings() {
                             <p className="text-sm text-muted-foreground">{area.description}</p>
                             {area.suggestion && (
                               <p className="text-xs mt-2 text-amber-600">
-                                💡 Sugestão: {area.suggestion}
+                                Sugestão: {area.suggestion}
                               </p>
                             )}
                           </div>
@@ -405,7 +581,7 @@ export default function SalesCoachingSettings() {
                         {report.good_examples.map((ex, i) => (
                           <div key={i} className="p-3 bg-green-500/5 rounded-lg border border-green-500/20">
                             <p className="text-sm italic">"{ex.excerpt}"</p>
-                            <p className="text-xs text-green-600 mt-2">✓ {ex.why_good}</p>
+                            <p className="text-xs text-green-600 mt-2">{ex.why_good}</p>
                           </div>
                         ))}
                       </div>
@@ -423,10 +599,10 @@ export default function SalesCoachingSettings() {
                         {report.bad_examples.map((ex, i) => (
                           <div key={i} className="p-3 bg-red-500/5 rounded-lg border border-red-500/20">
                             <p className="text-sm italic">"{ex.excerpt}"</p>
-                            <p className="text-xs text-red-600 mt-2">✗ {ex.why_bad}</p>
+                            <p className="text-xs text-red-600 mt-2">{ex.why_bad}</p>
                             {ex.better_response && (
                               <p className="text-xs text-green-600 mt-1">
-                                ↳ Melhor: "{ex.better_response}"
+                                Melhor: "{ex.better_response}"
                               </p>
                             )}
                           </div>
