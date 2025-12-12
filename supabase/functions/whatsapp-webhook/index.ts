@@ -7,7 +7,57 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Note: Audio transcription requires OpenAI API key (not supported by Lovable AI Gateway)
+// Transcribe audio using ElevenLabs Scribe v1
+async function transcribeAudio(
+  audioBuffer: ArrayBuffer, 
+  mimeType: string,
+  supabase: any
+): Promise<string | null> {
+  try {
+    // Get ElevenLabs API key from settings
+    const { data: settings } = await supabase
+      .from('nina_settings')
+      .select('elevenlabs_api_key')
+      .maybeSingle();
+
+    if (!settings?.elevenlabs_api_key) {
+      console.log('[Webhook] ElevenLabs API key not configured, skipping transcription');
+      return null;
+    }
+
+    console.log('[Webhook] Transcribing audio with ElevenLabs, size:', audioBuffer.byteLength, 'bytes');
+
+    const formData = new FormData();
+    const extension = mimeType.split('/')[1]?.replace('ogg; codecs=opus', 'ogg') || 'ogg';
+    const blob = new Blob([audioBuffer], { type: mimeType });
+    formData.append('file', blob, `audio.${extension}`);
+    formData.append('model_id', 'scribe_v1');
+
+    const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+      method: 'POST',
+      headers: { 'xi-api-key': settings.elevenlabs_api_key },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Webhook] ElevenLabs STT error:', response.status, errorText);
+      return null;
+    }
+
+    const result = await response.json();
+    const transcription = result.text?.trim() || null;
+    
+    if (transcription) {
+      console.log('[Webhook] Transcription result:', transcription.substring(0, 100));
+    }
+    
+    return transcription;
+  } catch (error) {
+    console.error('[Webhook] Error transcribing audio:', error);
+    return null;
+  }
+}
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -163,10 +213,10 @@ async function downloadAndStoreMedia(
   mediaId: string,
   contactPhone: string,
   messageType: string
-): Promise<{ storageUrl: string | null; audioBuffer: ArrayBuffer | null }> {
+): Promise<{ storageUrl: string | null; audioBuffer: ArrayBuffer | null; mimeType: string | null }> {
   if (!settings?.whatsapp_access_token) {
     console.error('[Webhook] No WhatsApp access token configured');
-    return { storageUrl: null, audioBuffer: null };
+    return { storageUrl: null, audioBuffer: null, mimeType: null };
   }
 
   try {
@@ -184,7 +234,7 @@ async function downloadAndStoreMedia(
     if (!mediaInfoResponse.ok) {
       const errorText = await mediaInfoResponse.text();
       console.error('[Webhook] Failed to get media info:', errorText);
-      return { storageUrl: null, audioBuffer: null };
+      return { storageUrl: null, audioBuffer: null, mimeType: null };
     }
 
     const mediaInfo = await mediaInfoResponse.json();
@@ -193,7 +243,7 @@ async function downloadAndStoreMedia(
 
     if (!mediaUrl) {
       console.error('[Webhook] No media URL in response');
-      return { storageUrl: null, audioBuffer: null };
+      return { storageUrl: null, audioBuffer: null, mimeType: null };
     }
 
     // Step 2: Download the actual media from WhatsApp
@@ -207,7 +257,7 @@ async function downloadAndStoreMedia(
     if (!mediaResponse.ok) {
       const errorText = await mediaResponse.text();
       console.error('[Webhook] Failed to download media:', errorText);
-      return { storageUrl: null, audioBuffer: null };
+      return { storageUrl: null, audioBuffer: null, mimeType: null };
     }
 
     const audioBuffer = await mediaResponse.arrayBuffer();
@@ -232,7 +282,7 @@ async function downloadAndStoreMedia(
 
     if (uploadError) {
       console.error('[Webhook] Storage upload error:', uploadError);
-      return { storageUrl: null, audioBuffer };
+      return { storageUrl: null, audioBuffer, mimeType };
     }
 
     // Step 4: Get public URL
@@ -243,11 +293,11 @@ async function downloadAndStoreMedia(
     const storageUrl = urlData?.publicUrl || null;
     console.log('[Webhook] Media stored successfully:', storageUrl);
 
-    return { storageUrl, audioBuffer };
+    return { storageUrl, audioBuffer, mimeType };
 
   } catch (error) {
     console.error('[Webhook] Error downloading/storing media:', error);
-    return { storageUrl: null, audioBuffer: null };
+    return { storageUrl: null, audioBuffer: null, mimeType: null };
   }
 }
 
@@ -362,11 +412,11 @@ async function processIncomingMessage(
     case 'audio':
       messageType = 'audio';
       mediaType = 'audio';
-      // Download and store the audio permanently
+      // Download, store, and transcribe the audio
       const audioMediaId = message.audio?.id;
       if (audioMediaId && settings?.whatsapp_access_token) {
         console.log('[Webhook] Processing audio message:', audioMediaId);
-        const { storageUrl } = await downloadAndStoreMedia(
+        const { storageUrl, audioBuffer, mimeType: audioMimeType } = await downloadAndStoreMedia(
           supabase, settings, audioMediaId, phoneNumber, 'audio'
         );
         
@@ -374,9 +424,22 @@ async function processIncomingMessage(
           mediaUrl = storageUrl;
           console.log('[Webhook] Audio stored at:', storageUrl);
         }
+        
+        // Try to transcribe with ElevenLabs if we have the audio buffer
+        if (audioBuffer && audioMimeType) {
+          const transcription = await transcribeAudio(audioBuffer, audioMimeType, supabase);
+          if (transcription) {
+            content = transcription;
+            console.log('[Webhook] Audio transcribed:', transcription.substring(0, 100));
+          } else {
+            content = '[áudio]';
+          }
+        } else {
+          content = '[áudio]';
+        }
+      } else {
+        content = '[áudio]';
       }
-      // Audio messages show as [áudio] - playback available via media_url
-      content = '[áudio]';
       break;
     case 'video':
       messageType = 'video';
