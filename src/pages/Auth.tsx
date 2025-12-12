@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Loader2, LogIn, UserPlus } from "lucide-react";
@@ -105,28 +105,74 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
+      {/* Background Image - Truck Fleet */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat scale-105"
+        style={{
+          backgroundImage: `url('https://images.unsplash.com/photo-1492168732976-2676c584c675?auto=format&fit=crop&w=2000&q=80')`
+        }}
+      />
+      
+      {/* Dark Gradient Overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-900/85 via-slate-900/80 to-indigo-900/85" />
+      
+      {/* Decorative Blur Orbs */}
+      <div className="absolute top-1/4 -left-20 w-72 h-72 bg-cyan-500/20 rounded-full blur-3xl animate-pulse" />
+      <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-blue-500/15 rounded-full blur-3xl animate-pulse" />
+
+      {/* Login Card */}
+      <Card className="w-full max-w-md relative z-10 mx-4 bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl shadow-black/20 animate-fade-in">
+        <CardHeader className="text-center pb-2">
+          {/* Logo */}
           <div className="flex justify-center mb-4">
-            <img src={logo} alt="Jacometo Seguros" className="h-12" />
+            <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-sm border border-white/10">
+              <img src={logo} alt="Jacometo Seguros" className="h-12" />
+            </div>
           </div>
-          <CardTitle className="text-2xl">Bem-vindo ao CRM</CardTitle>
-          <CardDescription>
+          
+          {/* Title */}
+          <h1 className="text-3xl font-bold text-white tracking-tight">
+            Jacometo CRM
+          </h1>
+          
+          {/* SDR Badge */}
+          <div className="mt-3 flex items-center justify-center gap-3">
+            <div className="h-px w-12 bg-gradient-to-r from-transparent to-white/40" />
+            <span className="text-cyan-400 font-semibold text-sm uppercase tracking-[0.2em]">
+              SDR
+            </span>
+            <div className="h-px w-12 bg-gradient-to-l from-transparent to-white/40" />
+          </div>
+          
+          <p className="text-white/60 text-sm mt-4">
             Faça login ou crie sua conta para continuar
-          </CardDescription>
+          </p>
         </CardHeader>
-        <CardContent>
+        
+        <CardContent className="pt-2">
           <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">Entrar</TabsTrigger>
-              <TabsTrigger value="signup">Criar Conta</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 bg-white/10 border border-white/10 p-1">
+              <TabsTrigger 
+                value="login" 
+                className="data-[state=active]:bg-white/20 data-[state=active]:text-white data-[state=active]:shadow-lg text-white/70 transition-all"
+              >
+                Entrar
+              </TabsTrigger>
+              <TabsTrigger 
+                value="signup"
+                className="data-[state=active]:bg-white/20 data-[state=active]:text-white data-[state=active]:shadow-lg text-white/70 transition-all"
+              >
+                Criar Conta
+              </TabsTrigger>
             </TabsList>
             
-            <TabsContent value="login">
+            <TabsContent value="login" className="mt-6">
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="login-email">Email</Label>
+                  <Label htmlFor="login-email" className="text-white/90 text-sm font-medium">
+                    Email
+                  </Label>
                   <Input
                     id="login-email"
                     type="email"
@@ -134,10 +180,13 @@ export default function Auth() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={isLoading}
+                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="login-password">Senha</Label>
+                  <Label htmlFor="login-password" className="text-white/90 text-sm font-medium">
+                    Senha
+                  </Label>
                   <Input
                     id="login-password"
                     type="password"
@@ -145,9 +194,14 @@ export default function Auth() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={isLoading}
+                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all"
                   />
                 </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
+                <Button 
+                  type="submit" 
+                  className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/25 border-0 transition-all duration-300" 
+                  disabled={isLoading}
+                >
                   {isLoading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -163,10 +217,12 @@ export default function Auth() {
               </form>
             </TabsContent>
             
-            <TabsContent value="signup">
+            <TabsContent value="signup" className="mt-6">
               <form onSubmit={handleSignUp} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="signup-email">Email</Label>
+                  <Label htmlFor="signup-email" className="text-white/90 text-sm font-medium">
+                    Email
+                  </Label>
                   <Input
                     id="signup-email"
                     type="email"
@@ -174,10 +230,13 @@ export default function Auth() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={isLoading}
+                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="signup-password">Senha</Label>
+                  <Label htmlFor="signup-password" className="text-white/90 text-sm font-medium">
+                    Senha
+                  </Label>
                   <Input
                     id="signup-password"
                     type="password"
@@ -185,9 +244,14 @@ export default function Auth() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={isLoading}
+                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all"
                   />
                 </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
+                <Button 
+                  type="submit" 
+                  className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/25 border-0 transition-all duration-300" 
+                  disabled={isLoading}
+                >
                   {isLoading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
