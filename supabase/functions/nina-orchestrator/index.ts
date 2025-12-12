@@ -751,12 +751,13 @@ async function processQueueItem(
     systemPrompt = settings?.system_prompt_override || getDefaultSystemPrompt();
   }
 
-  // Build enhanced system prompt with context
+  // Build enhanced system prompt with context (including qualification answers from nina_context)
   const enhancedSystemPrompt = buildEnhancedPrompt(
     systemPrompt, 
     conversation.contact, 
     clientMemory,
-    agent
+    agent,
+    conversation.nina_context
   );
 
   // Process template variables
@@ -1100,7 +1101,8 @@ function buildEnhancedPrompt(
   basePrompt: string, 
   contact: any, 
   memory: any,
-  agent?: Agent | null
+  agent?: Agent | null,
+  ninaContext?: any
 ): string {
   let contextInfo = '';
 
@@ -1115,6 +1117,41 @@ function buildEnhancedPrompt(
     if (contact.name) contextInfo += `\n- Nome: ${contact.name}`;
     if (contact.call_name) contextInfo += ` (trate por: ${contact.call_name})`;
     if (contact.tags?.length) contextInfo += `\n- Tags: ${contact.tags.join(', ')}`;
+  }
+
+  // ===== QUALIFICATION ANSWERS - CRITICAL ANTI-REPETITION =====
+  if (ninaContext?.qualification_answers) {
+    const qa = ninaContext.qualification_answers;
+    const answeredFields: string[] = [];
+    
+    // Map field names to readable labels
+    const fieldLabels: Record<string, string> = {
+      contratacao: 'Tipo de contratação',
+      tipo_carga: 'Tipo de carga',
+      estados: 'Estados atendidos',
+      viagens_mes: 'Viagens/mês',
+      valor_medio: 'Valor médio por carga',
+      maior_valor: 'Maior valor transportado',
+      tipo_frota: 'Tipo de frota',
+      antt: 'ANTT',
+      cte: 'Emite CT-e',
+      sinistros: 'Histórico de sinistros',
+      plano_tipo: 'Tipo de plano',
+      quantidade_vidas: 'Quantidade de vidas',
+      idades: 'Idades dos beneficiários',
+      cidade: 'Cidade/região',
+      operadora_preferida: 'Operadora preferida'
+    };
+    
+    for (const [key, value] of Object.entries(qa)) {
+      if (value && fieldLabels[key]) {
+        answeredFields.push(`- ${fieldLabels[key]}: ${value}`);
+      }
+    }
+    
+    if (answeredFields.length > 0) {
+      contextInfo += `\n\n## INFORMAÇÕES JÁ COLETADAS (NÃO PERGUNTE NOVAMENTE, NÃO REPITA):\n${answeredFields.join('\n')}`;
+    }
   }
 
   if (memory && Object.keys(memory).length > 0) {
@@ -1133,6 +1170,19 @@ function buildEnhancedPrompt(
       if (si.next_best_action) contextInfo += `\n- Próxima ação sugerida: ${si.next_best_action}`;
     }
   }
+
+  // ===== ANTI-ECHO RULE =====
+  contextInfo += `\n\n## REGRA ANTI-ECO (CRÍTICO):
+- NUNCA repita ou resuma o que o cliente acabou de dizer
+- Vá DIRETO para a próxima pergunta ou ação
+- NÃO use frases como "Entendi que você...", "Então você transporta...", "Certo, [resposta]..."
+- Não confirme informações já dadas - apenas prossiga
+
+ERRADO: "Entendi, alimentos. Quais estados atende?"
+CORRETO: "Quais estados atende?"
+
+ERRADO: "Certo, SP, PR e MT. Qual o CNPJ?"
+CORRETO: "Qual o CNPJ?"`;
 
   return basePrompt + contextInfo;
 }
