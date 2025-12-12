@@ -308,6 +308,115 @@ async function uploadAudioToStorage(
   }
 }
 
+// Aggregate pending messages from the same conversation for debouncing
+async function aggregatePendingMessages(
+  supabase: any,
+  conversationId: string,
+  currentItemId: string
+): Promise<{ aggregatedContent: string; messageIds: string[]; primaryMessageId: string; queueItemIds: string[] } | null> {
+  // Get all pending messages for this conversation that are ready to process
+  const { data: pendingItems, error } = await supabase
+    .from('nina_processing_queue')
+    .select('id, message_id')
+    .eq('conversation_id', conversationId)
+    .eq('status', 'processing')
+    .order('created_at', { ascending: true });
+
+  if (error || !pendingItems || pendingItems.length === 0) {
+    return null;
+  }
+
+  // Fetch all messages
+  const messageIds = pendingItems.map((p: any) => p.message_id);
+  const queueItemIds = pendingItems.map((p: any) => p.id);
+  
+  const { data: messages, error: msgError } = await supabase
+    .from('messages')
+    .select('id, content, type, sent_at')
+    .in('id', messageIds)
+    .eq('from_type', 'user')
+    .order('sent_at', { ascending: true });
+
+  if (msgError || !messages || messages.length === 0) {
+    return null;
+  }
+
+  // If only one message, no aggregation needed
+  if (messages.length === 1) {
+    return null;
+  }
+
+  // Aggregate content from multiple messages
+  const contents = messages
+    .filter((m: any) => m.content && m.content.trim())
+    .map((m: any) => m.content.trim());
+
+  if (contents.length === 0) {
+    return null;
+  }
+
+  const aggregatedContent = contents.join('\n');
+  const primaryMessageId = messages[messages.length - 1].id; // Use latest message as primary
+
+  console.log(`[Nina] 📦 Aggregated ${messages.length} messages into one: "${aggregatedContent.substring(0, 100)}..."`);
+
+  return {
+    aggregatedContent,
+    messageIds: messages.map((m: any) => m.id),
+    primaryMessageId,
+    queueItemIds
+  };
+}
+
+// Helper to mark all aggregated messages as processed
+async function markMessagesAsProcessed(
+  supabase: any,
+  primaryMessageId: string,
+  aggregatedMessageIds: string[],
+  responseTime: number
+) {
+  // Mark primary message
+  await supabase
+    .from('messages')
+    .update({ 
+      processed_by_nina: true,
+      nina_response_time: responseTime
+    })
+    .eq('id', primaryMessageId);
+
+  // Mark additional aggregated messages (if any)
+  if (aggregatedMessageIds.length > 1) {
+    const otherMessageIds = aggregatedMessageIds.filter(id => id !== primaryMessageId);
+    if (otherMessageIds.length > 0) {
+      await supabase
+        .from('messages')
+        .update({ processed_by_nina: true })
+        .in('id', otherMessageIds);
+    }
+  }
+}
+
+// Helper to mark all aggregated queue items as completed
+async function markAggregatedQueueItemsCompleted(
+  supabase: any,
+  currentItemId: string,
+  aggregatedQueueItemIds: string[]
+) {
+  // Mark all aggregated queue items as completed (except the current one, which is handled by the main loop)
+  const otherQueueIds = aggregatedQueueItemIds.filter(id => id !== currentItemId);
+  if (otherQueueIds.length > 0) {
+    console.log(`[Nina] Marking ${otherQueueIds.length} additional queue items as completed (aggregated)`);
+    await supabase
+      .from('nina_processing_queue')
+      .update({ 
+        status: 'completed', 
+        processed_at: new Date().toISOString(),
+        error_message: 'Aggregated with other messages'
+      })
+      .in('id', otherQueueIds);
+  }
+}
+
 async function processQueueItem(
   supabase: any,
   lovableApiKey: string,
@@ -321,15 +430,48 @@ async function processQueueItem(
   
   console.log(`[Nina] Processing queue item: ${item.id}`);
 
-  // Get the message
-  const { data: message } = await supabase
-    .from('messages')
-    .select('*')
-    .eq('id', item.message_id)
-    .maybeSingle();
+  // Check for message aggregation (debouncing)
+  const aggregated = await aggregatePendingMessages(supabase, item.conversation_id, item.id);
+  
+  let message: any;
+  let aggregatedMessageIds: string[] = [];
+  let aggregatedQueueItemIds: string[] = [];
+  
+  if (aggregated) {
+    // Use aggregated content but get the primary message for metadata
+    const { data: primaryMessage } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('id', aggregated.primaryMessageId)
+      .maybeSingle();
 
-  if (!message) {
-    throw new Error('Message not found');
+    if (!primaryMessage) {
+      throw new Error('Primary message not found');
+    }
+
+    // Override content with aggregated content
+    message = { ...primaryMessage, content: aggregated.aggregatedContent };
+    aggregatedMessageIds = aggregated.messageIds;
+    aggregatedQueueItemIds = aggregated.queueItemIds;
+    
+    console.log(`[Nina] Using aggregated content from ${aggregated.messageIds.length} messages`);
+    
+    // Mark other queue items as completed immediately
+    await markAggregatedQueueItemsCompleted(supabase, item.id, aggregatedQueueItemIds);
+  } else {
+    // Normal single message processing
+    const { data: singleMessage } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('id', item.message_id)
+      .maybeSingle();
+
+    if (!singleMessage) {
+      throw new Error('Message not found');
+    }
+    
+    message = singleMessage;
+    aggregatedMessageIds = [singleMessage.id];
   }
 
   // Get conversation with contact info
