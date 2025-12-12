@@ -312,7 +312,15 @@ const ChatInterface: React.FC = () => {
     const content = inputText.trim();
     setInputText('');
     
-    await sendMessage(activeChat.id, content);
+    // Extract operator name from email (e.g., "adriano.jacometo@email.com" -> "Adriano Jacometo")
+    const operatorName = user?.email 
+      ? user.email.split('@')[0]
+          .split(/[._-]/)
+          .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+          .join(' ')
+      : undefined;
+    
+    await sendMessage(activeChat.id, content, operatorName);
   };
 
   const handleStatusChange = async (status: ConversationStatus) => {
@@ -983,6 +991,12 @@ const ChatInterface: React.FC = () => {
                                 : 'bg-slate-800 text-slate-200 rounded-tl-sm border border-slate-700/50'
                             }`}
                           >
+                            {/* Show operator name above message for human messages */}
+                            {msg.fromType === 'human' && msg.senderName && (
+                              <div className="text-xs font-bold text-cyan-200/80 mb-1.5 uppercase tracking-wide">
+                                {msg.senderName}:
+                              </div>
+                            )}
                             {renderMessageContent(msg)}
                           </div>
                           

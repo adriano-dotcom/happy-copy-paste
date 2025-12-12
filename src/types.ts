@@ -343,6 +343,7 @@ export interface UIMessage {
   status: 'sent' | 'delivered' | 'read';
   fromType: MessageFromType;
   mediaUrl: string | null;
+  senderName: string | null;
 }
 
 // ============= Utility Functions =============
@@ -403,6 +404,10 @@ export function transformDBToUIConversation(
 }
 
 export function transformDBToUIMessage(msg: DBMessage): UIMessage {
+  // Extract sender_name from metadata if present
+  const metadata = msg.metadata as Record<string, any> | null;
+  const senderName = metadata?.sender_name || null;
+  
   return {
     id: msg.id,
     content: msg.content || '',
@@ -411,7 +416,8 @@ export function transformDBToUIMessage(msg: DBMessage): UIMessage {
     type: mapDBMessageType(msg.type),
     status: mapDBMessageStatus(msg.status),
     fromType: msg.from_type,
-    mediaUrl: msg.media_url
+    mediaUrl: msg.media_url,
+    senderName
   };
 }
 

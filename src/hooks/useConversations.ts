@@ -223,7 +223,7 @@ export function useConversations() {
   }, [fetchConversations]);
 
   // Send message
-  const sendMessage = useCallback(async (conversationId: string, content: string) => {
+  const sendMessage = useCallback(async (conversationId: string, content: string, operatorName?: string) => {
     if (!content.trim()) return;
 
     // Optimistic update with temporary ID
@@ -236,7 +236,8 @@ export function useConversations() {
       type: MessageType.TEXT,
       status: 'sent',
       fromType: 'human',
-      mediaUrl: null
+      mediaUrl: null,
+      senderName: operatorName || null
     };
 
     setConversations(prev => {
@@ -255,7 +256,7 @@ export function useConversations() {
 
     try {
       // The realtime handler will detect and replace the temp message automatically
-      await api.sendMessage(conversationId, content);
+      await api.sendMessage(conversationId, content, operatorName);
     } catch (err) {
       console.error('[useConversations] Error sending message:', err);
       toast.error('Erro ao enviar mensagem');

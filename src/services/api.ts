@@ -1417,8 +1417,9 @@ export const api = {
   /**
    * Send a message (insert into send_queue for human messages)
    * Returns the ID of the created message
+   * @param operatorName - Optional operator name to display in WhatsApp message
    */
-  sendMessage: async (conversationId: string, content: string): Promise<string> => {
+  sendMessage: async (conversationId: string, content: string, operatorName?: string): Promise<string> => {
     console.log(`[API] Sending message to conversation ${conversationId}`);
 
     // Get conversation to find contact_id
@@ -1433,7 +1434,13 @@ export const api = {
       throw new Error('Conversation not found');
     }
 
+    // Format content for WhatsApp (with operator name on separate line)
+    const whatsappContent = operatorName 
+      ? `*${operatorName.toUpperCase()}:*\n${content}` 
+      : content;
+
     // First create the message record with status 'processing'
+    // Store original content (without prefix) + sender_name in metadata
     const { data: msgData, error: msgError } = await supabase
       .from('messages')
       .insert({
@@ -1442,7 +1449,8 @@ export const api = {
         type: 'text',
         from_type: 'human',
         status: 'processing',
-        sent_at: new Date().toISOString()
+        sent_at: new Date().toISOString(),
+        metadata: operatorName ? { sender_name: operatorName } : {}
       })
       .select('id')
       .single();
@@ -1454,13 +1462,13 @@ export const api = {
 
     console.log('[API] Message created with ID:', msgData.id);
 
-    // Then queue message for sending WITH message_id reference
+    // Then queue message for sending WITH formatted content for WhatsApp
     const { error: sendError } = await supabase
       .from('send_queue')
       .insert({
         conversation_id: conversationId,
         contact_id: conversation.contact_id,
-        content: content,
+        content: whatsappContent, // Formatted with operator name
         from_type: 'human',
         message_type: 'text',
         priority: 2, // Higher priority for human messages
