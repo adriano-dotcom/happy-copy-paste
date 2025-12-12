@@ -262,6 +262,19 @@ async function generateAudioElevenLabs(settings: any, text: string, agent?: Agen
   }
 }
 
+// Sanitize text for TTS - simplify URLs for natural speech
+function sanitizeTextForAudio(text: string): string {
+  let sanitized = text;
+  
+  // Remove protocol (https://, http://)
+  sanitized = sanitized.replace(/https?:\/\//g, '');
+  
+  // Simplify jacometoseguros.com.br paths to just the domain
+  sanitized = sanitized.replace(/jacometoseguros\.com\.br\/[\w-]+/g, 'jacometoseguros.com.br');
+  
+  return sanitized;
+}
+
 // Upload audio to Supabase Storage
 async function uploadAudioToStorage(
   supabase: any, 
@@ -915,7 +928,9 @@ async function processQueueItem(
     console.log(`[Nina] Audio decision - Global: ${settings?.audio_response_enabled}, Agent (${agent?.name}): ${agentAudioEnabled}, Incoming audio: ${incomingWasAudio} -> Send audio: ${shouldSendAudio}`);
 
     if (shouldSendAudio) {
-      const audioBuffer = await generateAudioElevenLabs(settings, aiContent, agent);
+      // Sanitize text for natural TTS pronunciation (simplify URLs)
+      const sanitizedText = sanitizeTextForAudio(aiContent);
+      const audioBuffer = await generateAudioElevenLabs(settings, sanitizedText, agent);
       
       if (audioBuffer) {
         const audioUrl = await uploadAudioToStorage(supabase, audioBuffer, conversation.id);
