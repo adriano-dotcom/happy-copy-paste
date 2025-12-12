@@ -472,6 +472,31 @@ export const api = {
   },
 
   /**
+   * Create pending invite for a user
+   */
+  createPendingInvite: async (invite: {
+    email: string;
+    app_role: 'admin' | 'operator';
+    team_member_id: string;
+  }): Promise<void> => {
+    const { data: userData } = await supabase.auth.getUser();
+    
+    const { error } = await supabase
+      .from('pending_invites')
+      .upsert({
+        email: invite.email,
+        app_role: invite.app_role,
+        team_member_id: invite.team_member_id,
+        invited_by: userData.user?.id
+      }, { onConflict: 'email' });
+    
+    if (error) {
+      console.error('[API] Error creating pending invite:', error);
+      throw error;
+    }
+  },
+
+  /**
    * Create team member
    */
   createTeamMember: async (member: {

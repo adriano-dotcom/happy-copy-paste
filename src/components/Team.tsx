@@ -64,7 +64,8 @@ const Team: React.FC = () => {
     e.preventDefault();
     
     try {
-      await api.createTeamMember({
+      // 1. Criar team_member
+      const member = await api.createTeamMember({
         name: formData.name,
         email: formData.email,
         role: formData.role as 'agent' | 'admin' | 'manager',
@@ -73,7 +74,34 @@ const Team: React.FC = () => {
         weight: formData.weight
       });
 
-      toast.success('Membro convidado com sucesso!');
+      // 2. Criar pending_invite com app_role
+      const appRole = formData.role === 'admin' ? 'admin' : 'operator';
+      await api.createPendingInvite({
+        email: formData.email,
+        app_role: appRole,
+        team_member_id: member.id
+      });
+
+      // 3. Enviar email de convite
+      const { data: userData } = await supabase.auth.getUser();
+      const inviterName = userData.user?.email?.split('@')[0] || 'Equipe Jacometo';
+      
+      const { error: emailError } = await supabase.functions.invoke('send-invite-email', {
+        body: {
+          email: formData.email,
+          name: formData.name,
+          role: formData.role,
+          inviter_name: inviterName.charAt(0).toUpperCase() + inviterName.slice(1)
+        }
+      });
+
+      if (emailError) {
+        console.warn('Erro ao enviar email de convite:', emailError);
+        toast.success('Membro convidado! (Email não enviado - configure RESEND_API_KEY)');
+      } else {
+        toast.success('Convite enviado por email!');
+      }
+
       setShowModal(false);
       setFormData({ name: '', email: '', role: 'agent', team_id: '', function_id: '', weight: 1 });
       await loadAllData();
