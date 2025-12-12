@@ -555,7 +555,7 @@ export default function FollowupAutomationsSettings() {
                           <SelectValue placeholder="Selecione..." />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Não usar</SelectItem>
+                          <SelectItem value="__none__">Não usar</SelectItem>
                           {VARIABLE_OPTIONS.map(opt => (
                             <SelectItem key={opt.value} value={opt.value}>
                               {opt.label}
