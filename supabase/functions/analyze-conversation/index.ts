@@ -187,6 +187,82 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
             additionalProperties: false
           }
         }
+      },
+      {
+        type: "function",
+        function: {
+          name: "extract_qualification_answers",
+          description: "Extrair respostas específicas de qualificação dadas pelo cliente na conversa. Use para identificar informações já coletadas.",
+          parameters: {
+            type: "object",
+            properties: {
+              contratacao: {
+                type: "string",
+                enum: ["direto", "subcontratado", "ambos"],
+                description: "Tipo de contratação: direto, subcontratado, ou ambos"
+              },
+              tipo_carga: {
+                type: "string",
+                description: "Tipo de mercadoria/carga transportada (ex: grãos, alimentos, químicos)"
+              },
+              estados: {
+                type: "string",
+                description: "Estados/regiões atendidos (ex: SP, PR, MT)"
+              },
+              viagens_mes: {
+                type: "string",
+                description: "Quantidade de viagens por mês"
+              },
+              valor_medio: {
+                type: "string",
+                description: "Valor médio por carga transportada"
+              },
+              maior_valor: {
+                type: "string",
+                description: "Maior valor já transportado"
+              },
+              tipo_frota: {
+                type: "string",
+                description: "Tipo de frota: própria, agregados, terceiros, ou combinação"
+              },
+              antt: {
+                type: "string",
+                description: "Status da ANTT: regularizada, pendente, ou não possui"
+              },
+              cte: {
+                type: "string",
+                enum: ["sim", "nao", "as_vezes"],
+                description: "Se emite CT-e"
+              },
+              sinistros: {
+                type: "string",
+                description: "Histórico de sinistros (roubo, acidente)"
+              },
+              plano_tipo: {
+                type: "string",
+                enum: ["individual", "familiar", "empresarial"],
+                description: "Tipo de plano de saúde (para agente Barbara)"
+              },
+              quantidade_vidas: {
+                type: "string",
+                description: "Quantidade de pessoas/vidas para plano de saúde"
+              },
+              idades: {
+                type: "string",
+                description: "Idades dos beneficiários do plano"
+              },
+              cidade: {
+                type: "string",
+                description: "Cidade/região para cobertura do plano"
+              },
+              operadora_preferida: {
+                type: "string",
+                description: "Operadora de preferência (Unimed, Bradesco, etc)"
+              }
+            },
+            additionalProperties: false
+          }
+        }
       }
     ];
 
@@ -263,6 +339,7 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
     let insights = null;
     let stageResult = null;
     let contactData = null;
+    let qualificationAnswers = null;
 
     for (const toolCall of toolCalls) {
       if (toolCall.function?.name === 'update_memory_insights') {
@@ -271,12 +348,54 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
         stageResult = JSON.parse(toolCall.function.arguments);
       } else if (toolCall.function?.name === 'extract_contact_data') {
         contactData = JSON.parse(toolCall.function.arguments);
+      } else if (toolCall.function?.name === 'extract_qualification_answers') {
+        qualificationAnswers = JSON.parse(toolCall.function.arguments);
       }
     }
 
     console.log('[Analyze] Insights extracted:', insights);
     console.log('[Analyze] Stage suggestion:', stageResult);
     console.log('[Analyze] Contact data extracted:', contactData);
+    console.log('[Analyze] Qualification answers extracted:', qualificationAnswers);
+
+    // ===== UPDATE NINA_CONTEXT WITH QUALIFICATION ANSWERS =====
+    if (qualificationAnswers && Object.keys(qualificationAnswers).filter(k => qualificationAnswers[k]).length > 0) {
+      // Get current nina_context from conversation
+      const { data: convData } = await supabase
+        .from('conversations')
+        .select('nina_context')
+        .eq('id', conversation_id)
+        .maybeSingle();
+      
+      const currentContext = convData?.nina_context || {};
+      const existingAnswers = currentContext.qualification_answers || {};
+      
+      // Merge new answers with existing ones (don't overwrite with empty/null values)
+      const mergedAnswers: Record<string, any> = { ...existingAnswers };
+      for (const [key, value] of Object.entries(qualificationAnswers)) {
+        if (value && String(value).trim()) {
+          mergedAnswers[key] = value;
+        }
+      }
+      
+      // Update nina_context on conversation
+      const updatedContext = {
+        ...currentContext,
+        qualification_answers: mergedAnswers,
+        last_qualification_update: new Date().toISOString()
+      };
+      
+      const { error: contextUpdateError } = await supabase
+        .from('conversations')
+        .update({ nina_context: updatedContext })
+        .eq('id', conversation_id);
+      
+      if (contextUpdateError) {
+        console.error('[Analyze] Error updating nina_context:', contextUpdateError);
+      } else {
+        console.log('[Analyze] ✅ Nina context updated with qualification answers:', Object.keys(mergedAnswers).length, 'fields');
+      }
+    }
 
     // Auto-update contact data if extracted
     if (contactData && (contactData.cnpj || contactData.email || contactData.name || contactData.company)) {
