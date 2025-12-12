@@ -13,78 +13,121 @@ serve(async (req) => {
   }
 
   try {
-    console.log('🔧 Registering WhatsApp number...');
+    console.log('[Register WhatsApp] Starting WABA subscription...');
 
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get WhatsApp credentials from nina_settings
+    // Get settings from database
     const { data: settings, error: settingsError } = await supabase
       .from('nina_settings')
-      .select('whatsapp_access_token, whatsapp_phone_number_id')
+      .select('whatsapp_access_token, whatsapp_waba_id, whatsapp_phone_number_id')
       .single();
 
     if (settingsError || !settings) {
-      console.error('❌ Error fetching settings:', settingsError);
+      console.error('[Register WhatsApp] Failed to get settings:', settingsError);
       return new Response(
-        JSON.stringify({ success: false, error: 'Failed to fetch WhatsApp settings' }),
+        JSON.stringify({ error: 'Failed to get settings', details: settingsError }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const { whatsapp_access_token, whatsapp_phone_number_id } = settings;
+    const { whatsapp_access_token, whatsapp_waba_id, whatsapp_phone_number_id } = settings;
 
-    if (!whatsapp_access_token || !whatsapp_phone_number_id) {
+    if (!whatsapp_access_token) {
       return new Response(
-        JSON.stringify({ success: false, error: 'WhatsApp credentials not configured' }),
+        JSON.stringify({ error: 'WhatsApp access token not configured' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`📱 Phone Number ID: ${whatsapp_phone_number_id}`);
+    if (!whatsapp_waba_id) {
+      return new Response(
+        JSON.stringify({ error: 'WhatsApp Business Account ID (WABA ID) not configured' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    // Register the phone number
-    const registerUrl = `https://graph.facebook.com/v19.0/${whatsapp_phone_number_id}/register`;
+    console.log(`[Register WhatsApp] WABA ID: ${whatsapp_waba_id}`);
+    console.log(`[Register WhatsApp] Phone Number ID: ${whatsapp_phone_number_id}`);
+
+    // Step 1: Subscribe the WABA to the app (required for receiving webhooks)
+    console.log(`[Register WhatsApp] Subscribing WABA ${whatsapp_waba_id} to app...`);
     
-    console.log('📤 Sending register request to:', registerUrl);
-
-    const response = await fetch(registerUrl, {
+    const subscribeUrl = `https://graph.facebook.com/v21.0/${whatsapp_waba_id}/subscribed_apps`;
+    
+    const subscribeResponse = await fetch(subscribeUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${whatsapp_access_token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        pin: '123456'
-      }),
     });
 
-    const result = await response.json();
-    console.log('📥 Register response:', JSON.stringify(result, null, 2));
+    const subscribeResult = await subscribeResponse.json();
+    console.log('[Register WhatsApp] Subscription result:', JSON.stringify(subscribeResult));
 
-    if (!response.ok) {
-      console.error('❌ Register error:', result);
+    if (!subscribeResponse.ok) {
+      console.error('[Register WhatsApp] Subscription failed:', subscribeResult);
       return new Response(
-        JSON.stringify({ success: false, error: result.error?.message || 'Registration failed', details: result }),
-        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ 
+          error: 'Failed to subscribe WABA to app', 
+          details: subscribeResult,
+          waba_id: whatsapp_waba_id
+        }),
+        { status: subscribeResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('✅ Phone number registered successfully!');
+    // Step 2: Verify current subscriptions
+    console.log('[Register WhatsApp] Verifying subscriptions...');
+    const verifyUrl = `https://graph.facebook.com/v21.0/${whatsapp_waba_id}/subscribed_apps`;
+    const verifyResponse = await fetch(verifyUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${whatsapp_access_token}`,
+      },
+    });
+
+    const verifyResult = await verifyResponse.json();
+    console.log('[Register WhatsApp] Current subscriptions:', JSON.stringify(verifyResult));
+
+    // Step 3: Get phone number info to confirm it's properly registered
+    if (whatsapp_phone_number_id) {
+      console.log('[Register WhatsApp] Checking phone number status...');
+      const phoneInfoUrl = `https://graph.facebook.com/v21.0/${whatsapp_phone_number_id}`;
+      const phoneInfoResponse = await fetch(phoneInfoUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${whatsapp_access_token}`,
+        },
+      });
+      
+      const phoneInfoResult = await phoneInfoResponse.json();
+      console.log('[Register WhatsApp] Phone info:', JSON.stringify(phoneInfoResult));
+    }
+
+    console.log('[Register WhatsApp] ✅ WABA subscription completed successfully!');
 
     return new Response(
-      JSON.stringify({ success: true, message: 'Phone number registered successfully', result }),
+      JSON.stringify({ 
+        success: true, 
+        message: 'WABA subscribed to app successfully! Real messages should now be received.',
+        subscription_result: subscribeResult,
+        current_subscriptions: verifyResult,
+        waba_id: whatsapp_waba_id,
+        phone_number_id: whatsapp_phone_number_id
+      }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('❌ Unexpected error:', error);
+    console.error('[Register WhatsApp] Error:', error);
     return new Response(
-      JSON.stringify({ success: false, error: errorMessage }),
+      JSON.stringify({ error: 'Internal server error', details: errorMessage }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
