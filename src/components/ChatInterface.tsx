@@ -4,8 +4,10 @@ import {
   Search, MoreVertical, Phone, Paperclip, Send, Check, CheckCheck, 
   Smile, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
   Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
-  Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle
+  Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle,
+  ArrowLeft
 } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +37,7 @@ import { AudioPlayer } from './AudioPlayer';
 
 const ChatInterface: React.FC = () => {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { conversations, loading, sendMessage, updateStatus, markAsRead, assignConversation, archiveConversation, unarchiveConversation, fetchArchivedConversations, refetch } = useConversations();
   const { user } = useAuth();
   const { sdrName, companyName } = useCompanySettings();
@@ -45,6 +48,9 @@ const ChatInterface: React.FC = () => {
   const [availableTags, setAvailableTags] = useState<TagDefinition[]>([]);
   const [isTagSelectorOpen, setIsTagSelectorOpen] = useState(false);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  
+  // Mobile navigation state
+  const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   
   // Pipeline filter state
   const [selectedPipelineFilter, setSelectedPipelineFilter] = useState<string | null>(null);
@@ -76,6 +82,19 @@ const ChatInterface: React.FC = () => {
   // WhatsApp window real-time timer state
   const [windowTimeRemaining, setWindowTimeRemaining] = useState<{ isOpen: boolean; hoursRemaining: number | null }>({ isOpen: false, hoursRemaining: null });
   
+  // Navigate to chat view on mobile when selecting a chat
+  useEffect(() => {
+    if (isMobile && selectedChatId) {
+      setMobileView('chat');
+    }
+  }, [selectedChatId, isMobile]);
+
+  // Handle back button on mobile
+  const handleMobileBack = () => {
+    setMobileView('list');
+    setSelectedChatId(null);
+  };
+
   const activeChat = conversations.find(c => c.id === selectedChatId);
   
   // Nina processing status for typing indicator
@@ -550,10 +569,10 @@ const ChatInterface: React.FC = () => {
   }
 
   return (
-    <div className="flex h-full bg-slate-950 rounded-tl-2xl overflow-hidden border-t border-l border-slate-800/50 shadow-2xl">
+    <div className="flex h-full bg-slate-950 md:rounded-tl-2xl overflow-hidden md:border-t md:border-l border-slate-800/50 shadow-2xl">
       
       {/* Left Sidebar: Chat List */}
-      <div className="w-80 lg:w-96 border-r border-slate-800 flex flex-col bg-slate-900/50 backdrop-blur-md z-20 flex-shrink-0">
+      <div className={`${isMobile ? (mobileView === 'list' ? 'w-full' : 'hidden') : 'w-80 lg:w-96'} border-r border-slate-800 flex flex-col bg-slate-900/50 backdrop-blur-md z-20 flex-shrink-0`}>
         {/* Search Header */}
         <div className="p-4 border-b border-slate-800/50">
           <h2 className="text-lg font-bold text-white mb-3 px-1">
@@ -744,88 +763,117 @@ const ChatInterface: React.FC = () => {
 
       {/* Right Area: Chat Window & Profile */}
       {activeChat ? (
-        <div className="flex-1 flex overflow-hidden bg-[#0B0E14]">
+        <div className={`flex-1 flex overflow-hidden bg-[#0B0E14] ${isMobile && mobileView === 'list' ? 'hidden' : ''}`}>
           {/* Main Chat Content */}
           <div className="flex-1 flex flex-col min-w-0 relative">
             <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '30px 30px' }}></div>
 
             {/* Chat Header */}
-            <div className="h-16 px-6 flex items-center justify-between bg-slate-900/80 backdrop-blur-md border-b border-slate-800 z-10 shrink-0">
-              <div 
-                className="flex items-center cursor-pointer hover:bg-slate-800/50 p-1.5 -ml-1.5 rounded-lg transition-colors pr-3"
-                onClick={() => setShowProfileInfo(!showProfileInfo)}
-              >
-                <div className="relative">
-                  <img src={activeChat.contactAvatar} alt={activeChat.contactName} className="w-9 h-9 rounded-full ring-2 ring-slate-800" />
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-slate-900 rounded-full"></span>
-                </div>
-                <div className="ml-3">
-                  <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                    {activeChat.contactName}
-                    {renderStatusBadge(activeChat.status, activeChat.assignedUserName)}
-                    {/* WhatsApp Window Badge - Real-time */}
-                    {windowTimeRemaining.isOpen ? (
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 ${getWindowBadgeStyle()}`}>
-                        <Clock className="w-3 h-3" />
-                        {formatWindowTime()}
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 bg-red-500/20 text-red-400 border-red-500/30">
-                        <AlertTriangle className="w-3 h-3" />
-                        Janela fechada
-                      </span>
-                    )}
-                  </h2>
-                  <p className="text-xs text-cyan-500 font-medium">{activeChat.contactPhone}</p>
+            <div className={`${isMobile ? 'h-14 px-3' : 'h-16 px-6'} flex items-center justify-between bg-slate-900/80 backdrop-blur-md border-b border-slate-800 z-10 shrink-0`}>
+              <div className="flex items-center gap-2">
+                {/* Back button on mobile */}
+                {isMobile && (
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={handleMobileBack}
+                    className="text-slate-400 hover:text-white -ml-1"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </Button>
+                )}
+                <div 
+                  className="flex items-center cursor-pointer hover:bg-slate-800/50 p-1.5 rounded-lg transition-colors pr-3"
+                  onClick={() => !isMobile && setShowProfileInfo(!showProfileInfo)}
+                >
+                  <div className="relative">
+                    <img src={activeChat.contactAvatar} alt={activeChat.contactName} className={`${isMobile ? 'w-8 h-8' : 'w-9 h-9'} rounded-full ring-2 ring-slate-800`} />
+                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-slate-900 rounded-full"></span>
+                  </div>
+                  <div className="ml-3">
+                    <h2 className={`${isMobile ? 'text-sm' : 'text-sm'} font-bold text-slate-100 flex items-center gap-2 flex-wrap`}>
+                      <span className="truncate max-w-[120px] md:max-w-none">{activeChat.contactName}</span>
+                      {!isMobile && renderStatusBadge(activeChat.status, activeChat.assignedUserName)}
+                      {/* WhatsApp Window Badge - Real-time (hidden on mobile) */}
+                      {!isMobile && windowTimeRemaining.isOpen ? (
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 ${getWindowBadgeStyle()}`}>
+                          <Clock className="w-3 h-3" />
+                          {formatWindowTime()}
+                        </span>
+                      ) : !isMobile && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 bg-red-500/20 text-red-400 border-red-500/30">
+                          <AlertTriangle className="w-3 h-3" />
+                          Janela fechada
+                        </span>
+                      )}
+                    </h2>
+                    <p className="text-xs text-cyan-500 font-medium">{activeChat.contactPhone}</p>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
-                {/* Status control buttons */}
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className={`text-slate-400 hover:text-white ${activeChat.status === 'nina' ? 'bg-violet-500/20 text-violet-400' : ''}`}
-                  onClick={() => handleStatusChange('nina')}
-                  title={`Ativar ${sdrName} (IA)`}
-                >
-                  <Bot className="w-5 h-5" />
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className={`text-slate-400 hover:text-white ${activeChat.status === 'human' ? 'bg-emerald-500/20 text-emerald-400' : ''}`}
-                  onClick={() => handleStatusChange('human')}
-                  title="Assumir conversa"
-                >
-                  <User className="w-5 h-5" />
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className={`text-slate-400 hover:text-white ${activeChat.status === 'paused' ? 'bg-amber-500/20 text-amber-400' : ''}`}
-                  onClick={() => handleStatusChange('paused')}
-                  title="Pausar conversa"
-                >
-                  <Pause className="w-5 h-5" />
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="text-slate-400 hover:text-green-400 hover:bg-green-500/10"
-                  onClick={() => {
-                    if (!activeChat.contactPhone) {
-                      toast.error('Contato sem número de telefone');
-                      return;
-                    }
-                    setShowCallModal(true);
-                  }}
-                  title="Fazer ligação"
-                >
-                  <Phone className="w-5 h-5" />
-                </Button>
+              <div className={`flex items-center ${isMobile ? 'gap-0.5' : 'gap-1'}`}>
+                {/* Status control buttons - show fewer on mobile */}
+                {!isMobile && (
+                  <>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className={`text-slate-400 hover:text-white ${activeChat.status === 'nina' ? 'bg-violet-500/20 text-violet-400' : ''}`}
+                      onClick={() => handleStatusChange('nina')}
+                      title={`Ativar ${sdrName} (IA)`}
+                    >
+                      <Bot className="w-5 h-5" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className={`text-slate-400 hover:text-white ${activeChat.status === 'human' ? 'bg-emerald-500/20 text-emerald-400' : ''}`}
+                      onClick={() => handleStatusChange('human')}
+                      title="Assumir conversa"
+                    >
+                      <User className="w-5 h-5" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className={`text-slate-400 hover:text-white ${activeChat.status === 'paused' ? 'bg-amber-500/20 text-amber-400' : ''}`}
+                      onClick={() => handleStatusChange('paused')}
+                      title="Pausar conversa"
+                    >
+                      <Pause className="w-5 h-5" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="text-slate-400 hover:text-green-400 hover:bg-green-500/10"
+                      onClick={() => {
+                        if (!activeChat.contactPhone) {
+                          toast.error('Contato sem número de telefone');
+                          return;
+                        }
+                        setShowCallModal(true);
+                      }}
+                      title="Fazer ligação"
+                    >
+                      <Phone className="w-5 h-5" />
+                    </Button>
+                  </>
+                )}
+                {/* Mobile: compact status toggle */}
+                {isMobile && (
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className={`text-slate-400 hover:text-white ${activeChat.status === 'human' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-violet-500/20 text-violet-400'}`}
+                    onClick={() => handleStatusChange(activeChat.status === 'human' ? 'nina' : 'human')}
+                    title={activeChat.status === 'human' ? `Ativar ${sdrName}` : 'Assumir conversa'}
+                  >
+                    {activeChat.status === 'human' ? <Bot className="w-5 h-5" /> : <User className="w-5 h-5" />}
+                  </Button>
+                )}
                 {/* Active Call Indicator in Header */}
                 {activeCall && (
-                  <div className="ml-2">
+                  <div className={isMobile ? 'ml-1' : 'ml-2'}>
                     <ActiveCallIndicator call={activeCall} onDismiss={dismissActiveCall} />
                   </div>
                 )}
@@ -893,7 +941,7 @@ const ChatInterface: React.FC = () => {
             </div>
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar relative z-0">
+            <div className={`flex-1 overflow-y-auto ${isMobile ? 'p-3 space-y-4' : 'p-6 space-y-6'} custom-scrollbar relative z-0`}>
               {activeChat.messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-slate-500">
                   <MessageSquare className="w-16 h-16 mb-4 opacity-30" />
@@ -910,9 +958,9 @@ const ChatInterface: React.FC = () => {
                     const isOutgoing = msg.direction === MessageDirection.OUTGOING;
                     return (
                       <div key={msg.id} className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} group animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-                        <div className={`flex flex-col max-w-[75%] ${isOutgoing ? 'items-end' : 'items-start'}`}>
+                        <div className={`flex flex-col ${isMobile ? 'max-w-[85%]' : 'max-w-[75%]'} ${isOutgoing ? 'items-end' : 'items-start'}`}>
                           <div 
-                            className={`px-5 py-3 rounded-2xl shadow-md relative text-sm leading-relaxed ${
+                            className={`${isMobile ? 'px-3 py-2' : 'px-5 py-3'} rounded-2xl shadow-md relative ${isMobile ? 'text-[15px]' : 'text-sm'} leading-relaxed ${
                               isOutgoing 
                                 ? msg.fromType === 'nina'
                                   ? 'bg-gradient-to-br from-violet-600 to-purple-700 text-white rounded-tr-sm shadow-violet-900/20'
@@ -962,14 +1010,14 @@ const ChatInterface: React.FC = () => {
             </div>
 
             {/* Input Area */}
-            <div className="p-4 bg-slate-900/90 border-t border-slate-800 backdrop-blur-sm z-10">
+            <div className={`${isMobile ? 'p-2' : 'p-4'} bg-slate-900/90 border-t border-slate-800 backdrop-blur-sm z-10`}>
               {/* Window closed banner - uses real-time state */}
               {!windowTimeRemaining.isOpen && (
-                <div className="mb-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
-                  <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                <div className={`mb-2 md:mb-3 ${isMobile ? 'p-2' : 'p-3'} bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2 md:gap-3`}>
+                  <AlertTriangle className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'} text-red-400 flex-shrink-0`} />
                   <div className="flex-1">
-                    <p className="text-sm text-red-300 font-medium">Janela de 24h expirou</p>
-                    <p className="text-xs text-red-400/80">Envie um template aprovado para reabrir a conversa.</p>
+                    <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-red-300 font-medium`}>Janela de 24h expirou</p>
+                    {!isMobile && <p className="text-xs text-red-400/80">Envie um template aprovado para reabrir a conversa.</p>}
                   </div>
                   <Button 
                     size="sm"
@@ -982,14 +1030,18 @@ const ChatInterface: React.FC = () => {
                 </div>
               )}
               
-              <form onSubmit={handleSendMessage} className="flex items-end gap-3 max-w-4xl mx-auto">
-                <div className="flex items-center gap-1">
-                  <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors" disabled={!windowTimeRemaining.isOpen}>
-                    <Smile className="w-5 h-5" />
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors" disabled={!windowTimeRemaining.isOpen}>
-                    <Paperclip className="w-5 h-5" />
-                  </Button>
+              <form onSubmit={handleSendMessage} className="flex items-end gap-2 md:gap-3 max-w-4xl mx-auto">
+                <div className={`flex items-center ${isMobile ? 'gap-0.5' : 'gap-1'}`}>
+                  {!isMobile && (
+                    <>
+                      <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors" disabled={!windowTimeRemaining.isOpen}>
+                        <Smile className="w-5 h-5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors" disabled={!windowTimeRemaining.isOpen}>
+                        <Paperclip className="w-5 h-5" />
+                      </Button>
+                    </>
+                  )}
                   <Button 
                     type="button" 
                     variant="ghost" 
@@ -1021,23 +1073,23 @@ const ChatInterface: React.FC = () => {
                     }}
                     placeholder={
                       !windowTimeRemaining.isOpen 
-                        ? 'Janela expirada - use template para continuar' 
+                        ? 'Janela expirada - use template' 
                         : activeChat.status === 'nina' 
-                          ? `${sdrName} está respondendo automaticamente...` 
+                          ? `${sdrName} respondendo...` 
                           : 'Digite sua mensagem...'
                     }
-                    className="w-full bg-transparent border-none p-3.5 max-h-32 min-h-[48px] text-sm text-slate-200 focus:ring-0 resize-none outline-none placeholder:text-slate-600 disabled:cursor-not-allowed"
+                    className={`w-full bg-transparent border-none ${isMobile ? 'p-3 min-h-[44px] text-base' : 'p-3.5 min-h-[48px] text-sm'} max-h-32 text-slate-200 focus:ring-0 resize-none outline-none placeholder:text-slate-600 disabled:cursor-not-allowed`}
                     rows={1}
                     disabled={!windowTimeRemaining.isOpen}
                   />
                 </div>
 
                 {inputText.trim() && windowTimeRemaining.isOpen ? (
-                  <Button type="submit" className="rounded-full w-12 h-12 p-0 shadow-lg shadow-cyan-500/20 hover:scale-105 active:scale-95 transition-all">
+                  <Button type="submit" className={`rounded-full ${isMobile ? 'w-11 h-11' : 'w-12 h-12'} p-0 shadow-lg shadow-cyan-500/20 hover:scale-105 active:scale-95 transition-all`}>
                     <Send className="w-5 h-5 ml-0.5" />
                   </Button>
                 ) : (
-                  <Button type="button" variant="secondary" className="rounded-full w-12 h-12 p-0 bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700" disabled={!windowTimeRemaining.isOpen}>
+                  <Button type="button" variant="secondary" className={`rounded-full ${isMobile ? 'w-11 h-11' : 'w-12 h-12'} p-0 bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700`} disabled={!windowTimeRemaining.isOpen}>
                     <Mic className="w-5 h-5" />
                   </Button>
                 )}
@@ -1045,7 +1097,8 @@ const ChatInterface: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Profile Sidebar (CRM View) */}
+          {/* Right Profile Sidebar (CRM View) - Hidden on mobile */}
+          {!isMobile && (
           <div 
             className={`${showProfileInfo ? 'w-80 border-l border-slate-800 opacity-100' : 'w-0 opacity-0 border-none'} transition-all duration-300 ease-in-out bg-slate-900/95 flex-shrink-0 flex flex-col overflow-hidden`}
           >
@@ -1372,6 +1425,7 @@ const ChatInterface: React.FC = () => {
               </div>
             </div>
           </div>
+          )}
 
         </div>
       ) : (
