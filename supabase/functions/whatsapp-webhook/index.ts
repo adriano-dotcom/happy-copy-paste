@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -155,15 +156,22 @@ serve(async (req) => {
   }
 });
 
-// Download media from WhatsApp API
-async function downloadWhatsAppMedia(settings: any, mediaId: string): Promise<ArrayBuffer | null> {
+// Download media from WhatsApp API and upload to Supabase Storage
+async function downloadAndStoreMedia(
+  supabase: any, 
+  settings: any, 
+  mediaId: string,
+  contactPhone: string,
+  messageType: string
+): Promise<{ storageUrl: string | null; audioBuffer: ArrayBuffer | null }> {
   if (!settings?.whatsapp_access_token) {
     console.error('[Webhook] No WhatsApp access token configured');
-    return null;
+    return { storageUrl: null, audioBuffer: null };
   }
 
   try {
-    // Step 1: Get the media URL
+    // Step 1: Get the media URL from WhatsApp
+    console.log('[Webhook] Getting media info for:', mediaId);
     const mediaInfoResponse = await fetch(
       `https://graph.facebook.com/v18.0/${mediaId}`,
       {
@@ -174,19 +182,22 @@ async function downloadWhatsAppMedia(settings: any, mediaId: string): Promise<Ar
     );
 
     if (!mediaInfoResponse.ok) {
-      console.error('[Webhook] Failed to get media info:', await mediaInfoResponse.text());
-      return null;
+      const errorText = await mediaInfoResponse.text();
+      console.error('[Webhook] Failed to get media info:', errorText);
+      return { storageUrl: null, audioBuffer: null };
     }
 
     const mediaInfo = await mediaInfoResponse.json();
     const mediaUrl = mediaInfo.url;
+    const mimeType = mediaInfo.mime_type || 'audio/ogg';
 
     if (!mediaUrl) {
       console.error('[Webhook] No media URL in response');
-      return null;
+      return { storageUrl: null, audioBuffer: null };
     }
 
-    // Step 2: Download the actual media
+    // Step 2: Download the actual media from WhatsApp
+    console.log('[Webhook] Downloading media from WhatsApp...');
     const mediaResponse = await fetch(mediaUrl, {
       headers: {
         'Authorization': `Bearer ${settings.whatsapp_access_token}`
@@ -194,14 +205,49 @@ async function downloadWhatsAppMedia(settings: any, mediaId: string): Promise<Ar
     });
 
     if (!mediaResponse.ok) {
-      console.error('[Webhook] Failed to download media:', await mediaResponse.text());
-      return null;
+      const errorText = await mediaResponse.text();
+      console.error('[Webhook] Failed to download media:', errorText);
+      return { storageUrl: null, audioBuffer: null };
     }
 
-    return await mediaResponse.arrayBuffer();
+    const audioBuffer = await mediaResponse.arrayBuffer();
+    console.log('[Webhook] Downloaded media, size:', audioBuffer.byteLength, 'bytes');
+
+    // Step 3: Generate unique filename and upload to Supabase Storage
+    const fileExtension = mimeType.includes('ogg') ? 'ogg' : 
+                          mimeType.includes('mp4') ? 'mp4' : 
+                          mimeType.includes('mpeg') ? 'mp3' : 'ogg';
+    const timestamp = Date.now();
+    const sanitizedPhone = contactPhone.replace(/\D/g, '');
+    const fileName = `${messageType}/${sanitizedPhone}/${timestamp}_${mediaId.substring(0, 8)}.${fileExtension}`;
+
+    console.log('[Webhook] Uploading to Storage:', fileName);
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('whatsapp-media')
+      .upload(fileName, audioBuffer, {
+        contentType: mimeType,
+        cacheControl: '31536000', // 1 year cache
+        upsert: false
+      });
+
+    if (uploadError) {
+      console.error('[Webhook] Storage upload error:', uploadError);
+      return { storageUrl: null, audioBuffer };
+    }
+
+    // Step 4: Get public URL
+    const { data: urlData } = supabase.storage
+      .from('whatsapp-media')
+      .getPublicUrl(fileName);
+
+    const storageUrl = urlData?.publicUrl || null;
+    console.log('[Webhook] Media stored successfully:', storageUrl);
+
+    return { storageUrl, audioBuffer };
+
   } catch (error) {
-    console.error('[Webhook] Error downloading media:', error);
-    return null;
+    console.error('[Webhook] Error downloading/storing media:', error);
+    return { storageUrl: null, audioBuffer: null };
   }
 }
 
@@ -337,25 +383,49 @@ async function processIncomingMessage(
       messageType = 'image';
       mediaType = 'image';
       content = message.image?.caption || null;
+      // Download and store the image
+      const imageMediaId = message.image?.id;
+      if (imageMediaId && settings?.whatsapp_access_token) {
+        console.log('[Webhook] Processing image message:', imageMediaId);
+        const { storageUrl: imageStorageUrl } = await downloadAndStoreMedia(
+          supabase, settings, imageMediaId, phoneNumber, 'image'
+        );
+        if (imageStorageUrl) {
+          mediaUrl = imageStorageUrl;
+          console.log('[Webhook] Image stored at:', imageStorageUrl);
+        }
+      }
       break;
     case 'audio':
       messageType = 'audio';
       mediaType = 'audio';
-      // Try to transcribe the audio
+      // Download, store, and transcribe the audio
       const audioMediaId = message.audio?.id;
-      if (audioMediaId && settings?.whatsapp_access_token && lovableApiKey) {
-        console.log('[Webhook] Attempting to transcribe audio message:', audioMediaId);
-        const audioBuffer = await downloadWhatsAppMedia(settings, audioMediaId);
-        if (audioBuffer) {
+      if (audioMediaId && settings?.whatsapp_access_token) {
+        console.log('[Webhook] Processing audio message:', audioMediaId);
+        const { storageUrl, audioBuffer } = await downloadAndStoreMedia(
+          supabase, settings, audioMediaId, phoneNumber, 'audio'
+        );
+        
+        // Save the permanent storage URL
+        if (storageUrl) {
+          mediaUrl = storageUrl;
+          console.log('[Webhook] Audio stored at:', storageUrl);
+        }
+        
+        // Try to transcribe if we have the audio buffer and API key
+        if (audioBuffer && lovableApiKey) {
           const transcription = await transcribeAudio(audioBuffer, lovableApiKey);
           if (transcription) {
             content = transcription;
-            console.log('[Webhook] Audio transcribed successfully:', transcription.substring(0, 100));
+            console.log('[Webhook] Audio transcribed:', transcription.substring(0, 100));
           } else {
             content = '[áudio não transcrito]';
           }
-        } else {
+        } else if (!audioBuffer) {
           content = '[áudio não baixado]';
+        } else {
+          content = '[áudio]';
         }
       } else {
         content = '[áudio]';
