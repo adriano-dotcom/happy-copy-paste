@@ -1229,6 +1229,95 @@ export type Database = {
           },
         ]
       }
+      sales_coaching_reports: {
+        Row: {
+          agent_id: string | null
+          analysis_period_end: string | null
+          analysis_period_start: string | null
+          bad_examples: Json | null
+          calls_analyzed: number | null
+          closing_skills_score: number | null
+          conversations_analyzed: number | null
+          created_at: string | null
+          generated_by: string | null
+          good_examples: Json | null
+          human_interactions_analyzed: number | null
+          id: string
+          improvement_areas: Json | null
+          is_applied: boolean | null
+          objection_handling_score: number | null
+          overall_score: number | null
+          prompt_suggestions: string | null
+          qualification_effectiveness: number | null
+          recommended_actions: Json | null
+          report_type: string
+          review_notes: string | null
+          reviewed_by: string | null
+          strengths: Json | null
+          updated_at: string | null
+        }
+        Insert: {
+          agent_id?: string | null
+          analysis_period_end?: string | null
+          analysis_period_start?: string | null
+          bad_examples?: Json | null
+          calls_analyzed?: number | null
+          closing_skills_score?: number | null
+          conversations_analyzed?: number | null
+          created_at?: string | null
+          generated_by?: string | null
+          good_examples?: Json | null
+          human_interactions_analyzed?: number | null
+          id?: string
+          improvement_areas?: Json | null
+          is_applied?: boolean | null
+          objection_handling_score?: number | null
+          overall_score?: number | null
+          prompt_suggestions?: string | null
+          qualification_effectiveness?: number | null
+          recommended_actions?: Json | null
+          report_type?: string
+          review_notes?: string | null
+          reviewed_by?: string | null
+          strengths?: Json | null
+          updated_at?: string | null
+        }
+        Update: {
+          agent_id?: string | null
+          analysis_period_end?: string | null
+          analysis_period_start?: string | null
+          bad_examples?: Json | null
+          calls_analyzed?: number | null
+          closing_skills_score?: number | null
+          conversations_analyzed?: number | null
+          created_at?: string | null
+          generated_by?: string | null
+          good_examples?: Json | null
+          human_interactions_analyzed?: number | null
+          id?: string
+          improvement_areas?: Json | null
+          is_applied?: boolean | null
+          objection_handling_score?: number | null
+          overall_score?: number | null
+          prompt_suggestions?: string | null
+          qualification_effectiveness?: number | null
+          recommended_actions?: Json | null
+          report_type?: string
+          review_notes?: string | null
+          reviewed_by?: string | null
+          strengths?: Json | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_coaching_reports_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       send_queue: {
         Row: {
           contact_id: string
