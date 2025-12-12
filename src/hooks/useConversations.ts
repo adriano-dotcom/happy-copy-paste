@@ -153,11 +153,22 @@ export function useConversations() {
             setConversations(prev => {
               return prev.map(conv => {
                 if (conv.id === updated.id) {
+                  // Recalculate window status if whatsapp_window_start changed
+                  const windowStart = updated.whatsapp_window_start ? new Date(updated.whatsapp_window_start) : null;
+                  const now = new Date();
+                  const windowEndTime = windowStart ? new Date(windowStart.getTime() + 24 * 60 * 60 * 1000) : null;
+                  const isWindowOpen = windowStart !== null && windowEndTime !== null && now < windowEndTime;
+                  const msRemaining = isWindowOpen && windowEndTime ? windowEndTime.getTime() - now.getTime() : null;
+                  const hoursRemaining = msRemaining !== null ? Math.max(0, msRemaining / (1000 * 60 * 60)) : null;
+
                   return {
                     ...conv,
                     status: updated.status,
                     isActive: updated.is_active,
-                    assignedTeam: updated.assigned_team
+                    assignedTeam: updated.assigned_team,
+                    whatsappWindowStart: updated.whatsapp_window_start || conv.whatsappWindowStart,
+                    isWhatsAppWindowOpen: updated.whatsapp_window_start !== undefined ? isWindowOpen : conv.isWhatsAppWindowOpen,
+                    windowHoursRemaining: updated.whatsapp_window_start !== undefined ? hoursRemaining : conv.windowHoursRemaining
                   };
                 }
                 return conv;

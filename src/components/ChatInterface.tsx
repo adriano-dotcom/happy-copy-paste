@@ -4,7 +4,7 @@ import {
   Search, MoreVertical, Phone, Paperclip, Send, Check, CheckCheck, 
   Smile, Play, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
   Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
-  Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall
+  Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -241,6 +241,12 @@ const ChatInterface: React.FC = () => {
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!inputText.trim() || !activeChat) return;
+
+    // Check if WhatsApp window is closed
+    if (!activeChat.isWhatsAppWindowOpen) {
+      toast.error('Janela de 24h expirou. Use um template para reabrir a conversa.');
+      return;
+    }
 
     const content = inputText.trim();
     setInputText('');
@@ -755,6 +761,23 @@ const ChatInterface: React.FC = () => {
                   <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
                     {activeChat.contactName}
                     {renderStatusBadge(activeChat.status)}
+                    {/* WhatsApp Window Badge */}
+                    {activeChat.isWhatsAppWindowOpen ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                        <Clock className="w-3 h-3" />
+                        {activeChat.windowHoursRemaining !== null && activeChat.windowHoursRemaining > 1 
+                          ? `${Math.floor(activeChat.windowHoursRemaining)}h restantes`
+                          : activeChat.windowHoursRemaining !== null 
+                            ? `${Math.floor(activeChat.windowHoursRemaining * 60)}min restantes`
+                            : 'Janela aberta'
+                        }
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 bg-red-500/20 text-red-400 border-red-500/30">
+                        <AlertTriangle className="w-3 h-3" />
+                        Janela fechada
+                      </span>
+                    )}
                   </h2>
                   <p className="text-xs text-cyan-500 font-medium">{activeChat.contactPhone}</p>
                 </div>
@@ -928,19 +951,41 @@ const ChatInterface: React.FC = () => {
 
             {/* Input Area */}
             <div className="p-4 bg-slate-900/90 border-t border-slate-800 backdrop-blur-sm z-10">
+              {/* Window closed banner */}
+              {!activeChat.isWhatsAppWindowOpen && (
+                <div className="mb-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
+                  <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm text-red-300 font-medium">Janela de 24h expirou</p>
+                    <p className="text-xs text-red-400/80">Envie um template aprovado para reabrir a conversa.</p>
+                  </div>
+                  <Button 
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                    onClick={() => setShowTemplateModal(true)}
+                  >
+                    <FileType className="w-4 h-4 mr-1.5" />
+                    Enviar Template
+                  </Button>
+                </div>
+              )}
+              
               <form onSubmit={handleSendMessage} className="flex items-end gap-3 max-w-4xl mx-auto">
                 <div className="flex items-center gap-1">
-                  <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors">
+                  <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors" disabled={!activeChat.isWhatsAppWindowOpen}>
                     <Smile className="w-5 h-5" />
                   </Button>
-                  <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors">
+                  <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors" disabled={!activeChat.isWhatsAppWindowOpen}>
                     <Paperclip className="w-5 h-5" />
                   </Button>
                   <Button 
                     type="button" 
                     variant="ghost" 
                     size="icon" 
-                    className="text-slate-400 hover:text-green-400 hover:bg-green-500/10 rounded-full transition-colors"
+                    className={`rounded-full transition-colors ${!activeChat.isWhatsAppWindowOpen 
+                      ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30 animate-pulse' 
+                      : 'text-slate-400 hover:text-green-400 hover:bg-green-500/10'
+                    }`}
                     onClick={() => setShowTemplateModal(true)}
                     title="Enviar template WhatsApp"
                   >
@@ -948,7 +993,11 @@ const ChatInterface: React.FC = () => {
                   </Button>
                 </div>
                 
-                <div className="flex-1 bg-slate-950 rounded-2xl border border-slate-800 focus-within:ring-2 focus-within:ring-cyan-500/30 focus-within:border-cyan-500/50 transition-all shadow-inner">
+                <div className={`flex-1 bg-slate-950 rounded-2xl border ${
+                  !activeChat.isWhatsAppWindowOpen 
+                    ? 'border-red-500/30 opacity-50' 
+                    : 'border-slate-800 focus-within:ring-2 focus-within:ring-cyan-500/30 focus-within:border-cyan-500/50'
+                } transition-all shadow-inner`}>
                   <textarea
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
@@ -958,18 +1007,25 @@ const ChatInterface: React.FC = () => {
                         handleSendMessage();
                       }
                     }}
-                    placeholder={activeChat.status === 'nina' ? `${sdrName} está respondendo automaticamente...` : 'Digite sua mensagem...'}
-                    className="w-full bg-transparent border-none p-3.5 max-h-32 min-h-[48px] text-sm text-slate-200 focus:ring-0 resize-none outline-none placeholder:text-slate-600"
+                    placeholder={
+                      !activeChat.isWhatsAppWindowOpen 
+                        ? 'Janela expirada - use template para continuar' 
+                        : activeChat.status === 'nina' 
+                          ? `${sdrName} está respondendo automaticamente...` 
+                          : 'Digite sua mensagem...'
+                    }
+                    className="w-full bg-transparent border-none p-3.5 max-h-32 min-h-[48px] text-sm text-slate-200 focus:ring-0 resize-none outline-none placeholder:text-slate-600 disabled:cursor-not-allowed"
                     rows={1}
+                    disabled={!activeChat.isWhatsAppWindowOpen}
                   />
                 </div>
 
-                {inputText.trim() ? (
+                {inputText.trim() && activeChat.isWhatsAppWindowOpen ? (
                   <Button type="submit" className="rounded-full w-12 h-12 p-0 shadow-lg shadow-cyan-500/20 hover:scale-105 active:scale-95 transition-all">
                     <Send className="w-5 h-5 ml-0.5" />
                   </Button>
                 ) : (
-                  <Button type="button" variant="secondary" className="rounded-full w-12 h-12 p-0 bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700">
+                  <Button type="button" variant="secondary" className="rounded-full w-12 h-12 p-0 bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700" disabled={!activeChat.isWhatsAppWindowOpen}>
                     <Mic className="w-5 h-5" />
                   </Button>
                 )}
