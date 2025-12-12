@@ -1,22 +1,28 @@
 import React, { useState } from 'react';
-import { MessageSquare, Key, Phone, ExternalLink, Copy, Check, ChevronDown, Building2, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { MessageSquare, Key, Phone, ExternalLink, Copy, Check, ChevronDown, Building2, Loader2, CheckCircle2, XCircle, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/Button';
+import { PhoneInput } from '@/components/ui/phone-input';
 
 interface StepWhatsAppProps {
   accessToken: string;
   phoneNumberId: string;
   verifyToken: string;
   wabaId: string;
+  testPhoneNumber: string;
   onAccessTokenChange: (value: string) => void;
   onPhoneNumberIdChange: (value: string) => void;
   onVerifyTokenChange: (value: string) => void;
   onWabaIdChange: (value: string) => void;
+  onTestPhoneNumberChange: (value: string) => void;
+  onTestConnection: () => void;
   webhookUrl: string;
   registrationStatus?: 'idle' | 'loading' | 'success' | 'error';
   registrationError?: string;
+  connectionTestStatus?: 'idle' | 'testing' | 'success' | 'error';
+  connectionTestError?: string;
 }
 
 const containerVariants = {
@@ -44,13 +50,18 @@ export const StepWhatsApp: React.FC<StepWhatsAppProps> = ({
   phoneNumberId,
   verifyToken,
   wabaId,
+  testPhoneNumber,
   onAccessTokenChange,
   onPhoneNumberIdChange,
   onVerifyTokenChange,
   onWabaIdChange,
+  onTestPhoneNumberChange,
+  onTestConnection,
   webhookUrl,
   registrationStatus = 'idle',
   registrationError,
+  connectionTestStatus = 'idle',
+  connectionTestError,
 }) => {
   const [showWebhook, setShowWebhook] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
@@ -128,6 +139,83 @@ export const StepWhatsApp: React.FC<StepWhatsAppProps> = ({
           <p className="text-xs text-slate-500">
             Encontre em Meta Business Suite → WhatsApp Manager → ID da Conta
           </p>
+        </motion.div>
+
+        {/* Connection Test Section */}
+        <motion.div variants={itemVariants} className="space-y-3 pt-4 border-t border-slate-700/50">
+          <div className="space-y-2">
+            <Label htmlFor="testPhone" className="text-slate-300 flex items-center gap-2">
+              <Send className="w-4 h-4 text-slate-500" />
+              Testar Conexão
+            </Label>
+            <p className="text-xs text-slate-500">
+              Envie uma mensagem de teste para verificar se as credenciais estão corretas.
+            </p>
+            <div className="flex gap-2">
+              <PhoneInput
+                id="testPhone"
+                value={testPhoneNumber}
+                onChange={onTestPhoneNumberChange}
+                placeholder="+55 43 99999-9999"
+                className="bg-slate-800/50 border-slate-700 focus:border-green-500 text-white placeholder:text-slate-500 font-mono text-sm flex-1"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onTestConnection}
+                disabled={!accessToken || !phoneNumberId || !testPhoneNumber || connectionTestStatus === 'testing'}
+                className="px-4 whitespace-nowrap"
+              >
+                {connectionTestStatus === 'testing' ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Testando...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    Testar
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* Connection Test Status */}
+          <AnimatePresence>
+            {connectionTestStatus !== 'idle' && connectionTestStatus !== 'testing' && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className={`p-3 rounded-lg border ${
+                  connectionTestStatus === 'success'
+                    ? 'bg-green-500/10 border-green-500/30'
+                    : 'bg-red-500/10 border-red-500/30'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {connectionTestStatus === 'success' && (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-green-400" />
+                      <span className="text-sm text-green-400">Conexão bem-sucedida! Mensagem de teste enviada.</span>
+                    </>
+                  )}
+                  {connectionTestStatus === 'error' && (
+                    <>
+                      <XCircle className="w-4 h-4 text-red-400" />
+                      <div className="flex-1">
+                        <span className="text-sm text-red-400">Falha no teste de conexão</span>
+                        {connectionTestError && (
+                          <p className="text-xs text-red-400/70 mt-1">{connectionTestError}</p>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
 
         {/* Registration Status Indicator */}
