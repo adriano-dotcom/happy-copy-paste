@@ -1,58 +1,72 @@
 project_id = "xaqepnvvoljtlsyofifu"
 
-[functions.simulate-webhook]
-verify_jwt = false
-
-[functions.simulate-audio-webhook]
-verify_jwt = false
-
+# Webhooks - devem permanecer públicos (chamados por serviços externos)
 [functions.whatsapp-webhook]
-verify_jwt = false
-
-[functions.nina-orchestrator]
-verify_jwt = false
-
-[functions.trigger-nina-orchestrator]
-verify_jwt = false
-
-[functions.generate-prompt]
-verify_jwt = false
-
-[functions.whatsapp-sender]
-verify_jwt = false
-
-[functions.trigger-whatsapp-sender]
-verify_jwt = false
-
-[functions.analyze-conversation]
-verify_jwt = false
-
-[functions.sync-pipedrive]
-verify_jwt = false
-
-[functions.api4com-dial]
 verify_jwt = false
 
 [functions.api4com-webhook]
 verify_jwt = false
 
-[functions.api4com-hangup]
+# Funções de processamento interno (chamadas por triggers do banco)
+# Estas ainda precisam ser públicas pois são acionadas por database triggers
+[functions.nina-orchestrator]
 verify_jwt = false
+
+[functions.whatsapp-sender]
+verify_jwt = false
+
+# Funções de simulação/teste - requerem JWT em produção
+[functions.simulate-webhook]
+verify_jwt = true
+
+[functions.simulate-audio-webhook]
+verify_jwt = true
+
+# Funções internas - requerem autenticação
+[functions.trigger-nina-orchestrator]
+verify_jwt = true
+
+[functions.generate-prompt]
+verify_jwt = true
+
+[functions.trigger-whatsapp-sender]
+verify_jwt = true
+
+[functions.analyze-conversation]
+verify_jwt = true
+
+[functions.sync-pipedrive]
+verify_jwt = true
+
+[functions.api4com-dial]
+verify_jwt = true
+
+[functions.api4com-hangup]
+verify_jwt = true
 
 [functions.transcribe-call-recording]
-verify_jwt = false
+verify_jwt = true
 
 [functions.sync-whatsapp-templates]
-verify_jwt = false
+verify_jwt = true
 
 [functions.send-whatsapp-template]
-verify_jwt = false
+verify_jwt = true
 
 [functions.process-followups]
-verify_jwt = false
+verify_jwt = true
 
 [functions.register-whatsapp-number]
-verify_jwt = false
+verify_jwt = true
 
 [functions.test-whatsapp-message]
-verify_jwt = false
+verify_jwt = true
+
+[functions.test-elevenlabs-tts]
+verify_jwt = true
+
+[functions.send-email]
+verify_jwt = true
+
+[functions.seed-appointments]
+verify_jwt = true
