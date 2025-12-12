@@ -18,6 +18,7 @@ import { Toaster } from 'sonner';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { OnboardingBanner } from './components/OnboardingBanner';
 import { useOnboardingStatus } from './hooks/useOnboardingStatus';
+import { useUserRole } from './hooks/useUserRole';
 
 // Mobile redirect component - redirects to /chat on mobile, /dashboard on desktop
 const MobileRedirect: React.FC = () => {
@@ -29,6 +30,7 @@ const MobileRedirect: React.FC = () => {
 const AppLayout: React.FC = () => {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const { isComplete, hasSeenWizard, loading } = useOnboardingStatus();
+  const { isAdmin, loading: roleLoading } = useUserRole();
 
   // Show wizard automatically on first load if not complete and never seen
   useEffect(() => {
@@ -50,8 +52,8 @@ const AppLayout: React.FC = () => {
         {/* Top Border Gradient */}
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent opacity-50 z-20"></div>
         
-        {/* Onboarding Banner - não-bloqueante, hidden on mobile */}
-        {!isComplete && !loading && (
+        {/* Onboarding Banner - only for admins, hidden on mobile */}
+        {isAdmin && !isComplete && !loading && !roleLoading && (
           <div className="hidden md:block">
             <OnboardingBanner onOpenWizard={() => setShowOnboarding(true)} />
           </div>
