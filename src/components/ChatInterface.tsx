@@ -232,7 +232,8 @@ const ChatInterface: React.FC = () => {
           // Clear URL param after selection
           window.history.replaceState({}, '', window.location.pathname);
         }
-      } else if (conversations.length > 0) {
+      } else if (conversations.length > 0 && !isMobile) {
+        // Only auto-select first conversation on desktop, not mobile
         setSelectedChatId(conversations[0].id);
       }
     }
