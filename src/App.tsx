@@ -14,6 +14,7 @@ import Auth from './pages/Auth';
 import { CompanySettingsProvider } from './hooks/useCompanySettings';
 import { AuthProvider } from './hooks/useAuth';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { AdminRoute } from './components/AdminRoute';
 import { Toaster } from 'sonner';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { OnboardingBanner } from './components/OnboardingBanner';
@@ -96,9 +97,9 @@ const App: React.FC = () => {
               <Route path="/chat" element={<ChatInterface />} />
               <Route path="/contacts" element={<Contacts />} />
               <Route path="/scheduling" element={<Scheduling />} />
-              <Route path="/team" element={<Team />} />
-              <Route path="/functions" element={<Functions />} />
-              <Route path="/settings" element={<Settings />} />
+              <Route path="/team" element={<AdminRoute><Team /></AdminRoute>} />
+              <Route path="/functions" element={<AdminRoute><Functions /></AdminRoute>} />
+              <Route path="/settings" element={<AdminRoute><Settings /></AdminRoute>} />
             </Route>
           </Routes>
         </BrowserRouter>
