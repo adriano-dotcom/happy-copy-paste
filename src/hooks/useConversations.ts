@@ -278,15 +278,22 @@ export function useConversations() {
   // Update conversation status
   const updateStatus = useCallback(async (
     conversationId: string, 
-    status: 'nina' | 'human' | 'paused'
+    status: 'nina' | 'human' | 'paused',
+    userId?: string,
+    userName?: string
   ) => {
     try {
-      await api.updateConversationStatus(conversationId, status);
+      await api.updateConversationStatus(conversationId, status, userId);
       
       setConversations(prev => {
         return prev.map(conv => {
           if (conv.id === conversationId) {
-            return { ...conv, status };
+            return { 
+              ...conv, 
+              status,
+              assignedUserId: status === 'human' ? (userId || conv.assignedUserId) : (status === 'nina' ? null : conv.assignedUserId),
+              assignedUserName: status === 'human' ? (userName || conv.assignedUserName) : (status === 'nina' ? null : conv.assignedUserName)
+            };
           }
           return conv;
         });

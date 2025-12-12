@@ -16,6 +16,7 @@ import { MessageDirection, MessageType, UIConversation, UIMessage, ConversationS
 import { Button } from './Button';
 import { Button as ShadcnButton } from './ui/button';
 import { useConversations } from '../hooks/useConversations';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { api } from '@/services/api';
@@ -32,6 +33,7 @@ import { SendWhatsAppTemplateModal } from './SendWhatsAppTemplateModal';
 const ChatInterface: React.FC = () => {
   const navigate = useNavigate();
   const { conversations, loading, sendMessage, updateStatus, markAsRead, assignConversation, archiveConversation, unarchiveConversation, fetchArchivedConversations, refetch } = useConversations();
+  const { user } = useAuth();
   const { sdrName, companyName } = useCompanySettings();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
@@ -315,7 +317,11 @@ const ChatInterface: React.FC = () => {
 
   const handleStatusChange = async (status: ConversationStatus) => {
     if (!activeChat) return;
-    await updateStatus(activeChat.id, status);
+    // Extract display name from user email
+    const userName = user?.email ? 
+      user.email.split('@')[0].charAt(0).toUpperCase() + user.email.split('@')[0].slice(1) : 
+      undefined;
+    await updateStatus(activeChat.id, status, user?.id, userName);
   };
 
   // CNPJ Lookup via BrasilAPI
@@ -473,10 +479,10 @@ const ChatInterface: React.FC = () => {
       return timeB - timeA;
     });
 
-  const renderStatusBadge = (status: ConversationStatus) => {
+  const renderStatusBadge = (status: ConversationStatus, operatorName?: string | null) => {
     const config = {
       nina: { label: sdrName, icon: Bot, color: 'bg-violet-500/20 text-violet-400 border-violet-500/30' },
-      human: { label: 'Humano', icon: User, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+      human: { label: operatorName || 'Humano', icon: User, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
       paused: { label: 'Pausado', icon: Pause, color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' }
     };
     const { label, icon: Icon, color } = config[status];
@@ -780,7 +786,7 @@ const ChatInterface: React.FC = () => {
                   </p>
                   
                   <div className="flex items-center mt-2 gap-1.5">
-                    {renderStatusBadge(chat.status)}
+                    {renderStatusBadge(chat.status, chat.assignedUserName)}
                     {chat.tags.slice(0, 1).map(tag => (
                       <span key={tag} className="px-2 py-0.5 bg-slate-800/80 border border-slate-700 text-slate-400 text-[10px] rounded-md font-medium">
                         {tag}
@@ -819,7 +825,7 @@ const ChatInterface: React.FC = () => {
                 <div className="ml-3">
                   <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
                     {activeChat.contactName}
-                    {renderStatusBadge(activeChat.status)}
+                    {renderStatusBadge(activeChat.status, activeChat.assignedUserName)}
                     {/* WhatsApp Window Badge - Real-time */}
                     {windowTimeRemaining.isOpen ? (
                       <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 ${getWindowBadgeStyle()}`}>
