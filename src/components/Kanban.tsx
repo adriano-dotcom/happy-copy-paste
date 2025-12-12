@@ -233,6 +233,21 @@ const Kanban: React.FC = () => {
     }
   };
 
+  const handleDeleteDeal = async (dealId: string) => {
+    const confirmed = window.confirm("Tem certeza que deseja excluir este negócio? Esta ação não pode ser desfeita.");
+    if (!confirmed) return;
+    
+    try {
+      await api.deleteDeal(dealId);
+      setDeals(deals.filter(d => d.id !== dealId));
+      setSelectedDeal(null);
+      toast.success("Negócio excluído com sucesso");
+    } catch (error) {
+      console.error('Erro ao excluir deal:', error);
+      toast.error("Erro ao excluir negócio");
+    }
+  };
+
   const handleOwnerChange = async (ownerId: string) => {
     if (!selectedDeal) return;
     try {
@@ -620,6 +635,14 @@ const Kanban: React.FC = () => {
                             </div>
                         </div>
                         <div className="flex gap-2">
+                            <Button 
+                              variant="secondary" 
+                              onClick={() => handleDeleteDeal(selectedDeal.id)} 
+                              className="bg-slate-700/50 hover:bg-red-500/20 border-slate-700 text-slate-400 hover:text-red-400"
+                              title="Excluir negócio"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
                             <Button variant="secondary" onClick={handleMarkWon} className="bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20 text-emerald-400">
                               Ganho
                             </Button>
