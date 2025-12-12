@@ -225,64 +225,11 @@ function detectAgent(
   return { agent: defaultAgent || null, isHandoff: false };
 }
 
-// Convert PCM audio to OGG/Opus format for WhatsApp voice message compatibility
-async function convertPcmToOggOpus(pcmBuffer: ArrayBuffer, sampleRate: number = 24000): Promise<ArrayBuffer | null> {
-  try {
-    // Create WAV header for the PCM data (WhatsApp can handle WAV as voice messages too)
-    // But for true Opus, we need to use a different approach
-    // For now, we'll create a proper WAV file which WhatsApp handles better than raw MP3
-    
-    const pcmData = new Uint8Array(pcmBuffer);
-    const numChannels = 1; // Mono
-    const bitsPerSample = 16;
-    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
-    const blockAlign = numChannels * (bitsPerSample / 8);
-    
-    // WAV header is 44 bytes
-    const wavHeader = new ArrayBuffer(44);
-    const view = new DataView(wavHeader);
-    
-    // RIFF header
-    writeString(view, 0, 'RIFF');
-    view.setUint32(4, 36 + pcmData.length, true); // File size - 8
-    writeString(view, 8, 'WAVE');
-    
-    // fmt chunk
-    writeString(view, 12, 'fmt ');
-    view.setUint32(16, 16, true); // Chunk size
-    view.setUint16(20, 1, true); // Audio format (1 = PCM)
-    view.setUint16(22, numChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, byteRate, true);
-    view.setUint16(32, blockAlign, true);
-    view.setUint16(34, bitsPerSample, true);
-    
-    // data chunk
-    writeString(view, 36, 'data');
-    view.setUint32(40, pcmData.length, true);
-    
-    // Combine header and PCM data
-    const wavFile = new Uint8Array(44 + pcmData.length);
-    wavFile.set(new Uint8Array(wavHeader), 0);
-    wavFile.set(pcmData, 44);
-    
-    console.log(`[Nina] 🎵 Converted PCM to WAV: ${pcmData.length} bytes → ${wavFile.length} bytes`);
-    return wavFile.buffer;
-  } catch (error) {
-    console.error('[Nina] Error converting PCM to WAV:', error);
-    return null;
-  }
-}
+// Note: WhatsApp only supports audio/ogg; codecs=opus, audio/mpeg, audio/amr, audio/mp4, audio/aac
+// WAV is NOT supported. We use MP3 directly from ElevenLabs.
 
-// Helper function to write string to DataView
-function writeString(view: DataView, offset: number, str: string): void {
-  for (let i = 0; i < str.length; i++) {
-    view.setUint8(offset + i, str.charCodeAt(i));
-  }
-}
-
-// Generate audio using ElevenLabs (now outputs PCM for better WhatsApp compatibility)
-async function generateAudioElevenLabs(settings: any, text: string, agent?: Agent | null): Promise<{ buffer: ArrayBuffer; format: 'wav' | 'mp3' } | null> {
+// Generate audio using ElevenLabs (outputs MP3 for WhatsApp compatibility)
+async function generateAudioElevenLabs(settings: any, text: string, agent?: Agent | null): Promise<{ buffer: ArrayBuffer; format: 'mp3' } | null> {
   if (!settings.elevenlabs_api_key) {
     console.log('[Nina] ElevenLabs API key not configured');
     return null;
@@ -298,20 +245,20 @@ async function generateAudioElevenLabs(settings: any, text: string, agent?: Agen
     const speed = agent?.elevenlabs_speed ?? settings.elevenlabs_speed ?? 1.0;
     const speakerBoost = agent?.elevenlabs_speaker_boost ?? settings.elevenlabs_speaker_boost ?? true;
 
-    console.log(`[Nina] Generating audio (PCM) - voice: ${voiceId}, model: ${model}, agent: ${agent?.name || 'global'}`);
+    console.log(`[Nina] Generating audio (MP3) - voice: ${voiceId}, model: ${model}, agent: ${agent?.name || 'global'}`);
 
-    // Request PCM format for conversion to WAV (better WhatsApp voice message support)
+    // Request MP3 format (WhatsApp supports audio/mpeg)
     const response = await fetch(`${ELEVENLABS_API_URL}/${voiceId}`, {
       method: 'POST',
       headers: {
         'xi-api-key': settings.elevenlabs_api_key,
         'Content-Type': 'application/json',
-        'Accept': 'audio/pcm'
+        'Accept': 'audio/mpeg'
       },
       body: JSON.stringify({
         text,
         model_id: model,
-        output_format: 'pcm_24000', // 24kHz 16-bit mono PCM
+        output_format: 'mp3_44100_128', // MP3 44.1kHz 128kbps
         voice_settings: {
           stability: stability,
           similarity_boost: similarityBoost,
@@ -328,17 +275,10 @@ async function generateAudioElevenLabs(settings: any, text: string, agent?: Agen
       return null;
     }
 
-    const pcmBuffer = await response.arrayBuffer();
-    console.log(`[Nina] 🎤 Received PCM audio: ${pcmBuffer.byteLength} bytes`);
+    const mp3Buffer = await response.arrayBuffer();
+    console.log(`[Nina] 🎤 Received MP3 audio: ${mp3Buffer.byteLength} bytes`);
     
-    // Convert PCM to WAV format for WhatsApp compatibility
-    const wavBuffer = await convertPcmToOggOpus(pcmBuffer, 24000);
-    if (!wavBuffer) {
-      console.error('[Nina] Failed to convert PCM to WAV');
-      return null;
-    }
-    
-    return { buffer: wavBuffer, format: 'wav' };
+    return { buffer: mp3Buffer, format: 'mp3' };
   } catch (error) {
     console.error('[Nina] Error generating audio:', error);
     return null;
@@ -358,17 +298,16 @@ function sanitizeTextForAudio(text: string): string {
   return sanitized;
 }
 
-// Upload audio to Supabase Storage (now supports WAV format)
+// Upload audio to Supabase Storage (MP3 format for WhatsApp compatibility)
 async function uploadAudioToStorage(
   supabase: any, 
   audioBuffer: ArrayBuffer, 
   conversationId: string,
-  format: 'wav' | 'mp3' = 'wav'
+  format: 'mp3' = 'mp3'
 ): Promise<string | null> {
   try {
-    const extension = format === 'wav' ? 'wav' : 'mp3';
-    const contentType = format === 'wav' ? 'audio/wav' : 'audio/mpeg';
-    const fileName = `${conversationId}/${Date.now()}.${extension}`;
+    const fileName = `${conversationId}/${Date.now()}.mp3`;
+    const contentType = 'audio/mpeg';
     
     const { data, error } = await supabase.storage
       .from('nina-audio')
