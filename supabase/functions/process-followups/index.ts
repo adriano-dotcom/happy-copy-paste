@@ -11,7 +11,7 @@ interface Automation {
   name: string;
   hours_without_response: number;
   time_unit: 'hours' | 'minutes';
-  automation_type: 'template' | 'free_text';
+  automation_type: 'template' | 'free_text' | 'window_expiring';
   template_id: string | null;
   template_variables: Record<string, string>;
   free_text_message: string | null;
@@ -25,6 +25,8 @@ interface Automation {
   active_hours_end: string;
   active_days: number[];
   is_active: boolean;
+  minutes_before_expiry: number;
+  only_if_no_client_response: boolean;
 }
 
 interface EligibleConversation {
@@ -46,6 +48,16 @@ function isWindowOpen(windowStart: string | null): boolean {
   const now = new Date();
   const hoursSinceStart = (now.getTime() - start.getTime()) / (1000 * 60 * 60);
   return hoursSinceStart < 24;
+}
+
+// Get minutes remaining until window expires
+function getWindowMinutesRemaining(windowStart: string | null): number {
+  if (!windowStart) return -1;
+  const start = new Date(windowStart);
+  const now = new Date();
+  const expiresAt = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  const minutesRemaining = (expiresAt.getTime() - now.getTime()) / (1000 * 60);
+  return minutesRemaining;
 }
 
 // Replace variables in message template
@@ -124,6 +136,14 @@ serve(async (req) => {
       if (!automation.active_days.includes(currentDay)) {
         console.log(`[process-followups] Day ${currentDay} not in active days, skipping`);
         results.push({ automation: automation.name, sent: 0, skipped: 0, failed: 0 });
+        continue;
+      }
+
+      // Handle window_expiring automation type
+      if (automation.automation_type === 'window_expiring') {
+        const windowExpiryResult = await processWindowExpiringAutomation(supabase, supabaseUrl, supabaseServiceKey, automation, now);
+        results.push(windowExpiryResult);
+        totalProcessed += windowExpiryResult.sent;
         continue;
       }
 
@@ -455,3 +475,220 @@ serve(async (req) => {
     });
   }
 });
+
+// Process window expiring automations
+async function processWindowExpiringAutomation(
+  supabase: any,
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  automation: Automation,
+  now: Date
+): Promise<{ automation: string; sent: number; skipped: number; failed: number }> {
+  console.log(`[process-followups] Processing window_expiring automation: ${automation.name}`);
+  
+  let sent = 0;
+  let skipped = 0;
+  let failed = 0;
+  
+  const minutesBeforeExpiry = automation.minutes_before_expiry || 10;
+  
+  // Find conversations with windows expiring within the configured margin
+  const { data: conversationsRaw, error: convError } = await supabase
+    .from('conversations')
+    .select(`
+      id,
+      contact_id,
+      last_message_at,
+      status,
+      whatsapp_window_start,
+      contacts!inner (
+        name,
+        call_name,
+        company,
+        phone_number
+      )
+    `)
+    .eq('is_active', true)
+    .in('status', automation.conversation_statuses)
+    .not('whatsapp_window_start', 'is', null);
+
+  if (convError) {
+    console.error(`[process-followups] Error fetching conversations:`, convError);
+    return { automation: automation.name, sent: 0, skipped: 0, failed: 0 };
+  }
+
+  if (!conversationsRaw || conversationsRaw.length === 0) {
+    console.log(`[process-followups] No conversations with active windows found`);
+    return { automation: automation.name, sent: 0, skipped: 0, failed: 0 };
+  }
+
+  console.log(`[process-followups] Found ${conversationsRaw.length} conversations with active windows`);
+
+  for (const convRaw of conversationsRaw) {
+    const conv: EligibleConversation = {
+      id: convRaw.id,
+      contact_id: convRaw.contact_id,
+      last_message_at: convRaw.last_message_at,
+      status: convRaw.status,
+      whatsapp_window_start: convRaw.whatsapp_window_start,
+      contact_name: (convRaw.contacts as any)?.name,
+      contact_call_name: (convRaw.contacts as any)?.call_name,
+      contact_company: (convRaw.contacts as any)?.company,
+      contact_phone: (convRaw.contacts as any)?.phone_number,
+    };
+
+    // Check if window is expiring within the configured margin
+    const minutesRemaining = getWindowMinutesRemaining(conv.whatsapp_window_start);
+    
+    // Window must be expiring soon (within margin) but not already expired
+    if (minutesRemaining < 0 || minutesRemaining > minutesBeforeExpiry) {
+      console.log(`[process-followups] Window for ${conv.id} has ${minutesRemaining.toFixed(1)} min remaining, not within ${minutesBeforeExpiry} min margin, skipping`);
+      skipped++;
+      continue;
+    }
+
+    console.log(`[process-followups] Window for ${conv.id} expires in ${minutesRemaining.toFixed(1)} min - within margin!`);
+
+    // Check if client responded during this window period
+    if (automation.only_if_no_client_response) {
+      const { data: clientMessages, error: msgError } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('conversation_id', conv.id)
+        .eq('from_type', 'user')
+        .gte('sent_at', conv.whatsapp_window_start)
+        .limit(2); // Just need to know if there's more than the initial message
+
+      if (msgError) {
+        console.error(`[process-followups] Error checking client messages:`, msgError);
+        failed++;
+        continue;
+      }
+
+      // If client sent messages after the window started (beyond the initial message that opened the window)
+      // We check for > 1 because the first message is what opened the window
+      const hasClientResponse = clientMessages && clientMessages.length > 1;
+      
+      if (hasClientResponse) {
+        console.log(`[process-followups] Client responded during window for ${conv.id}, skipping (only_if_no_client_response=true)`);
+        skipped++;
+        continue;
+      }
+    }
+
+    // Check previous follow-ups from this automation (max attempts)
+    const { data: previousLogs, error: logsError } = await supabase
+      .from('followup_logs')
+      .select('id, created_at')
+      .eq('automation_id', automation.id)
+      .eq('conversation_id', conv.id)
+      .order('created_at', { ascending: false });
+
+    if (logsError) {
+      console.error(`[process-followups] Error checking logs:`, logsError);
+      failed++;
+      continue;
+    }
+
+    if (previousLogs && previousLogs.length >= automation.max_attempts) {
+      console.log(`[process-followups] Max attempts reached for conversation ${conv.id}`);
+      skipped++;
+      continue;
+    }
+
+    // Check cooldown
+    const cooldownTime = new Date(now.getTime() - automation.cooldown_hours * 60 * 60 * 1000);
+    if (previousLogs && previousLogs.length > 0) {
+      const lastLog = previousLogs[0];
+      if (new Date(lastLog.created_at) > cooldownTime) {
+        console.log(`[process-followups] Within cooldown period for conversation ${conv.id}`);
+        skipped++;
+        continue;
+      }
+    }
+
+    // Calculate hours waited
+    const msWaited = now.getTime() - new Date(conv.last_message_at).getTime();
+    const hoursWaited = msWaited / (1000 * 60 * 60);
+
+    try {
+      // Send free text message (window_expiring always uses free text since window is still open)
+      const messageContent = replaceVariables(automation.free_text_message || 'Olá {nome}! Caso precise de ajuda, estou aqui. Me responde qualquer coisa pra gente continuar a conversa!', conv);
+      
+      console.log(`[process-followups] Sending window expiring message to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
+
+      // Insert into send_queue
+      const { error: queueError } = await supabase
+        .from('send_queue')
+        .insert({
+          contact_id: conv.contact_id,
+          conversation_id: conv.id,
+          message_type: 'text',
+          from_type: 'nina',
+          content: messageContent,
+          status: 'pending',
+          priority: 3, // Higher priority for time-sensitive messages
+        });
+
+      if (queueError) {
+        console.error(`[process-followups] Failed to queue window expiring message:`, queueError);
+        
+        await supabase.from('followup_logs').insert({
+          automation_id: automation.id,
+          conversation_id: conv.id,
+          contact_id: conv.contact_id,
+          template_name: `[Última Chance] ${automation.name}`,
+          status: 'failed',
+          error_message: queueError.message,
+          hours_waited: hoursWaited,
+        });
+        
+        failed++;
+        continue;
+      }
+
+      // Log success
+      await supabase.from('followup_logs').insert({
+        automation_id: automation.id,
+        conversation_id: conv.id,
+        contact_id: conv.contact_id,
+        template_name: `[Última Chance] ${automation.name}`,
+        status: 'sent',
+        hours_waited: hoursWaited,
+      });
+
+      console.log(`[process-followups] Queued window expiring message for conversation ${conv.id} (${minutesRemaining.toFixed(1)} min before expiry)`);
+      sent++;
+
+    } catch (sendError) {
+      console.error(`[process-followups] Error sending window expiring message:`, sendError);
+      
+      await supabase.from('followup_logs').insert({
+        automation_id: automation.id,
+        conversation_id: conv.id,
+        contact_id: conv.contact_id,
+        template_name: `[Última Chance] ${automation.name}`,
+        status: 'failed',
+        error_message: String(sendError),
+        hours_waited: hoursWaited,
+      });
+      
+      failed++;
+    }
+  }
+
+  console.log(`[process-followups] Window expiring automation ${automation.name}: sent=${sent}, skipped=${skipped}, failed=${failed}`);
+  return { automation: automation.name, sent, skipped, failed };
+}
+
+interface EligibleConversation {
+  id: string;
+  contact_id: string;
+  last_message_at: string;
+  status: string;
+  whatsapp_window_start: string | null;
+  contact_name: string | null;
+  contact_call_name: string | null;
+  contact_company: string | null;
+  contact_phone: string;
+}

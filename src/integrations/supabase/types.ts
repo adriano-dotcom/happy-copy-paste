@@ -657,7 +657,9 @@ export type Database = {
           id: string
           is_active: boolean | null
           max_attempts: number | null
+          minutes_before_expiry: number | null
           name: string
+          only_if_no_client_response: boolean | null
           pipeline_ids: string[] | null
           tags: string[] | null
           template_id: string | null
@@ -680,7 +682,9 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           max_attempts?: number | null
+          minutes_before_expiry?: number | null
           name: string
+          only_if_no_client_response?: boolean | null
           pipeline_ids?: string[] | null
           tags?: string[] | null
           template_id?: string | null
@@ -703,7 +707,9 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           max_attempts?: number | null
+          minutes_before_expiry?: number | null
           name?: string
+          only_if_no_client_response?: boolean | null
           pipeline_ids?: string[] | null
           tags?: string[] | null
           template_id?: string | null
