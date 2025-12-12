@@ -260,7 +260,7 @@ async function uploadAudioToStorage(
     const fileName = `${conversationId}/${Date.now()}.mp3`;
     
     const { data, error } = await supabase.storage
-      .from('audio-messages')
+      .from('nina-audio')
       .upload(fileName, audioBuffer, {
         contentType: 'audio/mpeg',
         cacheControl: '3600'
@@ -272,7 +272,7 @@ async function uploadAudioToStorage(
     }
 
     const { data: urlData } = supabase.storage
-      .from('audio-messages')
+      .from('nina-audio')
       .getPublicUrl(fileName);
 
     console.log('[Nina] Audio uploaded:', urlData.publicUrl);
