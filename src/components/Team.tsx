@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Mail } from 'lucide-react';
 import { UserPlus, Search, MoreVertical, Loader2, X, Check, ChevronDown, Edit2, Shield, Users, Briefcase, Settings } from 'lucide-react';
 import { Button } from './Button';
 import { api } from '../services/api';
@@ -118,6 +119,51 @@ const Team: React.FC = () => {
     } catch (error) {
       console.error('Erro ao atualizar membro:', error);
       toast.error('Erro ao atualizar membro');
+    }
+  };
+
+  const handleResendInvite = async (member: TeamMember) => {
+    try {
+      // 1. Atualizar expires_at do pending_invite (renovar por mais 7 dias)
+      const { error: updateError } = await supabase
+        .from('pending_invites')
+        .update({ 
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() 
+        })
+        .eq('email', member.email);
+
+      if (updateError) {
+        console.warn('Pending invite não encontrado, criando novo...');
+        const appRole = member.role === 'admin' ? 'admin' : 'operator';
+        await api.createPendingInvite({
+          email: member.email,
+          app_role: appRole,
+          team_member_id: member.id
+        });
+      }
+
+      // 2. Reenviar email de convite
+      const { data: userData } = await supabase.auth.getUser();
+      const inviterName = userData.user?.email?.split('@')[0] || 'Equipe Jacometo';
+
+      const { error: emailError } = await supabase.functions.invoke('send-invite-email', {
+        body: {
+          email: member.email,
+          name: member.name,
+          role: member.role,
+          inviter_name: inviterName.charAt(0).toUpperCase() + inviterName.slice(1)
+        }
+      });
+
+      if (emailError) {
+        console.warn('Erro ao enviar email:', emailError);
+        toast.success('Convite renovado! (Email não enviado - configure RESEND_API_KEY)');
+      } else {
+        toast.success('Convite reenviado com sucesso!');
+      }
+    } catch (error) {
+      console.error('Erro ao reenviar convite:', error);
+      toast.error('Erro ao reenviar convite');
     }
   };
 
@@ -299,9 +345,20 @@ const Team: React.FC = () => {
 
                                 {/* Actions */}
                                 <td className="px-6 py-4 whitespace-nowrap text-center">
-                                    <button className="p-2 rounded-lg text-slate-500 hover:bg-slate-800 hover:text-white transition-colors">
-                                        <Edit2 className="w-4 h-4" />
-                                    </button>
+                                    <div className="flex items-center justify-center gap-1">
+                                        {member.status === 'invited' && (
+                                            <button 
+                                                onClick={() => handleResendInvite(member)}
+                                                className="p-2 rounded-lg text-amber-500 hover:bg-slate-800 hover:text-amber-400 transition-colors"
+                                                title="Reenviar convite"
+                                            >
+                                                <Mail className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                        <button className="p-2 rounded-lg text-slate-500 hover:bg-slate-800 hover:text-white transition-colors">
+                                            <Edit2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
