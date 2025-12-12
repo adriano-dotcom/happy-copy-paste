@@ -523,6 +523,7 @@ const ChatInterface: React.FC = () => {
       const isPlaying = playingAudioId === msg.id;
       const duration = audioDurations[msg.id] || 0;
       const progress = audioProgress[msg.id] || 0;
+      const hasTranscription = msg.content && msg.content !== '[áudio]';
       
       const togglePlay = () => {
         const audio = audioRefs.current[msg.id];
@@ -540,68 +541,93 @@ const ChatInterface: React.FC = () => {
       };
 
       return (
-        <div className="flex items-center gap-3 min-w-[220px] py-1">
-          {/* Hidden audio element */}
-          {msg.mediaUrl && (
-            <audio
-              ref={el => { if (el) audioRefs.current[msg.id] = el; }}
-              src={msg.mediaUrl}
-              onLoadedMetadata={(e) => {
-                const audio = e.currentTarget;
-                setAudioDurations(prev => ({ ...prev, [msg.id]: audio.duration }));
-              }}
-              onTimeUpdate={(e) => {
-                const audio = e.currentTarget;
-                setAudioProgress(prev => ({ ...prev, [msg.id]: audio.currentTime }));
-              }}
-              onEnded={() => setPlayingAudioId(null)}
-            />
-          )}
-          
-          {/* Play/Pause button */}
-          <button 
-            onClick={togglePlay}
-            disabled={!msg.mediaUrl}
-            className={`flex items-center justify-center w-9 h-9 rounded-full transition-all shadow-md ${
-              msg.direction === MessageDirection.OUTGOING 
-                ? 'bg-white text-cyan-600 hover:bg-cyan-50 disabled:opacity-50' 
-                : 'bg-cyan-500 text-white hover:bg-cyan-400 disabled:opacity-50'
-            }`}
-          >
-            {isPlaying ? (
-              <Pause className="w-3.5 h-3.5 fill-current" />
-            ) : (
-              <Play className="w-3.5 h-3.5 ml-0.5 fill-current" />
-            )}
-          </button>
-          
-          {/* Progress bar and duration */}
-          <div className="flex-1 flex flex-col gap-1 justify-center h-9">
-            <div 
-              className={`h-1.5 rounded-full overflow-hidden cursor-pointer ${
-                msg.direction === MessageDirection.OUTGOING ? 'bg-white/30' : 'bg-slate-600'
-              }`}
-              onClick={(e) => {
-                const audio = audioRefs.current[msg.id];
-                if (!audio || !duration) return;
-                const rect = e.currentTarget.getBoundingClientRect();
-                const percent = (e.clientX - rect.left) / rect.width;
-                audio.currentTime = percent * duration;
-              }}
-            >
-              <div 
-                className={`h-full rounded-full transition-all ${
-                  msg.direction === MessageDirection.OUTGOING ? 'bg-white' : 'bg-cyan-400'
-                }`}
-                style={{ width: `${duration ? (progress / duration) * 100 : 0}%` }}
+        <div className="space-y-2">
+          {/* Audio player */}
+          <div className="flex items-center gap-3 min-w-[220px] py-1">
+            {/* Hidden audio element */}
+            {msg.mediaUrl && (
+              <audio
+                ref={el => { if (el) audioRefs.current[msg.id] = el; }}
+                src={msg.mediaUrl}
+                onLoadedMetadata={(e) => {
+                  const audio = e.currentTarget;
+                  setAudioDurations(prev => ({ ...prev, [msg.id]: audio.duration }));
+                }}
+                onTimeUpdate={(e) => {
+                  const audio = e.currentTarget;
+                  setAudioProgress(prev => ({ ...prev, [msg.id]: audio.currentTime }));
+                }}
+                onEnded={() => setPlayingAudioId(null)}
               />
+            )}
+            
+            {/* Play/Pause button */}
+            <button 
+              onClick={togglePlay}
+              disabled={!msg.mediaUrl}
+              className={`flex items-center justify-center w-9 h-9 rounded-full transition-all shadow-md ${
+                msg.direction === MessageDirection.OUTGOING 
+                  ? 'bg-white text-cyan-600 hover:bg-cyan-50 disabled:opacity-50' 
+                  : 'bg-cyan-500 text-white hover:bg-cyan-400 disabled:opacity-50'
+              }`}
+            >
+              {isPlaying ? (
+                <Pause className="w-3.5 h-3.5 fill-current" />
+              ) : (
+                <Play className="w-3.5 h-3.5 ml-0.5 fill-current" />
+              )}
+            </button>
+            
+            {/* Progress bar and duration */}
+            <div className="flex-1 flex flex-col gap-1 justify-center h-9">
+              <div 
+                className={`h-1.5 rounded-full overflow-hidden cursor-pointer ${
+                  msg.direction === MessageDirection.OUTGOING ? 'bg-white/30' : 'bg-slate-600'
+                }`}
+                onClick={(e) => {
+                  const audio = audioRefs.current[msg.id];
+                  if (!audio || !duration) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const percent = (e.clientX - rect.left) / rect.width;
+                  audio.currentTime = percent * duration;
+                }}
+              >
+                <div 
+                  className={`h-full rounded-full transition-all ${
+                    msg.direction === MessageDirection.OUTGOING ? 'bg-white' : 'bg-cyan-400'
+                  }`}
+                  style={{ width: `${duration ? (progress / duration) * 100 : 0}%` }}
+                />
+              </div>
+              <span className={`text-[10px] font-medium ${
+                msg.direction === MessageDirection.OUTGOING ? 'text-cyan-100' : 'text-slate-400'
+              }`}>
+                {formatAudioTime(progress)} / {formatAudioTime(duration)}
+              </span>
             </div>
-            <span className={`text-[10px] font-medium ${
-              msg.direction === MessageDirection.OUTGOING ? 'text-cyan-100' : 'text-slate-400'
-            }`}>
-              {formatAudioTime(progress)} / {formatAudioTime(duration)}
-            </span>
           </div>
+          
+          {/* Transcription indicator */}
+          {hasTranscription && (
+            <div className={`flex items-start gap-2 pt-2 border-t ${
+              msg.direction === MessageDirection.OUTGOING 
+                ? 'border-white/20' 
+                : 'border-slate-700/50'
+            }`}>
+              <Mic className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${
+                msg.direction === MessageDirection.OUTGOING 
+                  ? 'text-cyan-200' 
+                  : 'text-cyan-400'
+              }`} />
+              <p className={`text-sm italic leading-relaxed ${
+                msg.direction === MessageDirection.OUTGOING 
+                  ? 'text-cyan-100/90' 
+                  : 'text-slate-300/90'
+              }`}>
+                {msg.content}
+              </p>
+            </div>
+          )}
         </div>
       );
     }
