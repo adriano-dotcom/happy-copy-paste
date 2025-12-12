@@ -1232,6 +1232,9 @@ export type Database = {
       sales_coaching_reports: {
         Row: {
           agent_id: string | null
+          alert_recipients: string[] | null
+          alert_sent: boolean | null
+          alert_sent_at: string | null
           analysis_period_end: string | null
           analysis_period_start: string | null
           bad_examples: Json | null
@@ -1247,6 +1250,8 @@ export type Database = {
           is_applied: boolean | null
           objection_handling_score: number | null
           overall_score: number | null
+          pipeline_id: string | null
+          pipeline_name: string | null
           prompt_suggestions: string | null
           qualification_effectiveness: number | null
           recommended_actions: Json | null
@@ -1258,6 +1263,9 @@ export type Database = {
         }
         Insert: {
           agent_id?: string | null
+          alert_recipients?: string[] | null
+          alert_sent?: boolean | null
+          alert_sent_at?: string | null
           analysis_period_end?: string | null
           analysis_period_start?: string | null
           bad_examples?: Json | null
@@ -1273,6 +1281,8 @@ export type Database = {
           is_applied?: boolean | null
           objection_handling_score?: number | null
           overall_score?: number | null
+          pipeline_id?: string | null
+          pipeline_name?: string | null
           prompt_suggestions?: string | null
           qualification_effectiveness?: number | null
           recommended_actions?: Json | null
@@ -1284,6 +1294,9 @@ export type Database = {
         }
         Update: {
           agent_id?: string | null
+          alert_recipients?: string[] | null
+          alert_sent?: boolean | null
+          alert_sent_at?: string | null
           analysis_period_end?: string | null
           analysis_period_start?: string | null
           bad_examples?: Json | null
@@ -1299,6 +1312,8 @@ export type Database = {
           is_applied?: boolean | null
           objection_handling_score?: number | null
           overall_score?: number | null
+          pipeline_id?: string | null
+          pipeline_name?: string | null
           prompt_suggestions?: string | null
           qualification_effectiveness?: number | null
           recommended_actions?: Json | null
@@ -1314,6 +1329,13 @@ export type Database = {
             columns: ["agent_id"]
             isOneToOne: false
             referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_coaching_reports_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
             referencedColumns: ["id"]
           },
         ]
