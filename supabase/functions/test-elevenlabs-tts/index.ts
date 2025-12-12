@@ -16,7 +16,16 @@ serve(async (req) => {
   console.log('[test-elevenlabs-tts] Starting TTS generation...');
 
   try {
-    const { text } = await req.json();
+    const { 
+      text, 
+      voiceId: paramVoiceId, 
+      model: paramModel,
+      stability: paramStability,
+      similarity: paramSimilarity,
+      style: paramStyle,
+      speed: paramSpeed,
+      speakerBoost: paramSpeakerBoost
+    } = await req.json();
 
     if (!text || typeof text !== 'string') {
       return new Response(
@@ -58,10 +67,17 @@ serve(async (req) => {
       );
     }
 
-    const voiceId = settings.elevenlabs_voice_id || '9BWtsMINqrJLrRacOk9x'; // Aria default
-    const model = settings.elevenlabs_model || 'eleven_turbo_v2_5';
+    // Use passed parameters or fall back to system settings
+    const voiceId = paramVoiceId || settings.elevenlabs_voice_id || '9BWtsMINqrJLrRacOk9x'; // Aria default
+    const model = paramModel || settings.elevenlabs_model || 'eleven_turbo_v2_5';
+    const stability = paramStability ?? settings.elevenlabs_stability ?? 0.75;
+    const similarity = paramSimilarity ?? settings.elevenlabs_similarity_boost ?? 0.80;
+    const style = paramStyle ?? settings.elevenlabs_style ?? 0.30;
+    const speed = paramSpeed ?? settings.elevenlabs_speed ?? 1.0;
+    const speakerBoost = paramSpeakerBoost ?? settings.elevenlabs_speaker_boost ?? true;
 
     console.log(`[test-elevenlabs-tts] Generating audio with voice: ${voiceId}, model: ${model}`);
+    console.log(`[test-elevenlabs-tts] Settings: stability=${stability}, similarity=${similarity}, style=${style}, speed=${speed}, speakerBoost=${speakerBoost}`);
     console.log(`[test-elevenlabs-tts] Text length: ${text.length} chars`);
 
     // Call ElevenLabs API
@@ -78,10 +94,10 @@ serve(async (req) => {
           text,
           model_id: model,
           voice_settings: {
-            stability: settings.elevenlabs_stability ?? 0.75,
-            similarity_boost: settings.elevenlabs_similarity_boost ?? 0.80,
-            style: settings.elevenlabs_style ?? 0.30,
-            use_speaker_boost: settings.elevenlabs_speaker_boost ?? true,
+            stability,
+            similarity_boost: similarity,
+            style,
+            use_speaker_boost: speakerBoost,
           },
         }),
       }
@@ -141,7 +157,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        audioBase64,
+        audioContent: audioBase64,
         format: 'mp3',
         duration_ms: duration,
         size_kb: parseFloat(sizeKB),

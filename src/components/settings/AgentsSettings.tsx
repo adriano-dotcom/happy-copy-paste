@@ -3,10 +3,19 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { 
   Bot, Plus, Trash2, Edit2, Check, X, Loader2, 
-  MessageSquare, Sparkles, Star, Users, FlaskConical, ArrowRight, Volume2
+  MessageSquare, Sparkles, Star, Users, FlaskConical, ArrowRight, Volume2,
+  ChevronDown, ChevronUp, Play, Settings2
 } from 'lucide-react';
 import { Button } from '../Button';
 import { Switch } from '../ui/switch';
+import { Slider } from '../ui/slider';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../ui/select';
 
 interface TestResult {
   success: boolean;
@@ -33,6 +42,12 @@ interface Agent {
   qualification_questions: Array<{ order: number; question: string }>;
   audio_response_enabled: boolean;
   elevenlabs_voice_id: string | null;
+  elevenlabs_model: string | null;
+  elevenlabs_stability: number | null;
+  elevenlabs_similarity_boost: number | null;
+  elevenlabs_style: number | null;
+  elevenlabs_speed: number | null;
+  elevenlabs_speaker_boost: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +57,36 @@ export interface AgentsSettingsRef {
   cancel: () => void;
   isSaving: boolean;
 }
+
+// Available voices from ElevenLabs
+const VOICES = [
+  { id: '9BWtsMINqrJLrRacOk9x', name: 'Aria', gender: 'Feminina' },
+  { id: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger', gender: 'Masculina' },
+  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', gender: 'Feminina' },
+  { id: 'FGY2WhTYpPnrIDTdsKH5', name: 'Laura', gender: 'Feminina' },
+  { id: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie', gender: 'Masculina' },
+  { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', gender: 'Masculina' },
+  { id: 'N2lVS1w4EtoT3dr4eOWO', name: 'Callum', gender: 'Masculina' },
+  { id: 'SAz9YHcvj6GT2YYXdXww', name: 'River', gender: 'Neutra' },
+  { id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam', gender: 'Masculina' },
+  { id: 'XB0fDUnXU5powFXDhCwa', name: 'Charlotte', gender: 'Feminina' },
+  { id: 'Xb7hH8MSUJpSbSDYk0k2', name: 'Alice', gender: 'Feminina' },
+  { id: 'XrExE9yKIg1WjnnlVkGX', name: 'Matilda', gender: 'Feminina' },
+  { id: 'bIHbv24MWmeRgasZH58o', name: 'Will', gender: 'Masculina' },
+  { id: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica', gender: 'Feminina' },
+  { id: 'cjVigY5qzO86Huf0OWal', name: 'Eric', gender: 'Masculina' },
+  { id: 'iP95p4xoKVk53GoZ742B', name: 'Chris', gender: 'Masculina' },
+  { id: 'nPczCjzI2devNBz1zQrb', name: 'Brian', gender: 'Masculina' },
+  { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', gender: 'Masculina' },
+  { id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', gender: 'Feminina' },
+  { id: 'pqHfZKP75CvOlQylNhV4', name: 'Bill', gender: 'Masculina' },
+];
+
+const MODELS = [
+  { id: 'eleven_turbo_v2_5', name: 'Turbo v2.5 (Recomendado)', description: 'Mais rápido e econômico' },
+  { id: 'eleven_turbo_v2', name: 'Turbo v2', description: 'Rápido' },
+  { id: 'eleven_multilingual_v2', name: 'Multilingual v2', description: 'Qualidade máxima' },
+];
 
 const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
   const [loading, setLoading] = useState(true);
@@ -54,6 +99,13 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [testMessage, setTestMessage] = useState('Olá, quero saber sobre plano de saúde');
+  
+  // Voice settings UI state
+  const [showAdvancedVoice, setShowAdvancedVoice] = useState(false);
+  const [showAudioTest, setShowAudioTest] = useState(false);
+  const [audioTestText, setAudioTestText] = useState('Olá! Sou a assistente virtual da Jacometo Seguros. Como posso ajudar?');
+  const [generatingAudio, setGeneratingAudio] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
 
   useImperativeHandle(ref, () => ({
     save: handleSave,
@@ -110,7 +162,13 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
           handoff_message: editingAgent.handoff_message,
           qualification_questions: editingAgent.qualification_questions,
           audio_response_enabled: editingAgent.audio_response_enabled,
-          elevenlabs_voice_id: editingAgent.elevenlabs_voice_id || null
+          elevenlabs_voice_id: editingAgent.elevenlabs_voice_id || null,
+          elevenlabs_model: editingAgent.elevenlabs_model,
+          elevenlabs_stability: editingAgent.elevenlabs_stability,
+          elevenlabs_similarity_boost: editingAgent.elevenlabs_similarity_boost,
+          elevenlabs_style: editingAgent.elevenlabs_style,
+          elevenlabs_speed: editingAgent.elevenlabs_speed,
+          elevenlabs_speaker_boost: editingAgent.elevenlabs_speaker_boost
         })
         .eq('id', editingAgent.id);
 
@@ -118,6 +176,9 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
       
       toast.success('Agente atualizado!');
       setEditingAgent(null);
+      setShowAdvancedVoice(false);
+      setShowAudioTest(false);
+      setAudioUrl(null);
       await loadAgents();
     } catch (error) {
       console.error('Erro ao salvar agente:', error);
@@ -130,6 +191,9 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
   const handleCancel = () => {
     setEditingAgent(null);
     setIsCreating(false);
+    setShowAdvancedVoice(false);
+    setShowAudioTest(false);
+    setAudioUrl(null);
   };
 
   const handleCreate = async () => {
@@ -152,7 +216,13 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
           handoff_message: editingAgent.handoff_message,
           qualification_questions: editingAgent.qualification_questions,
           audio_response_enabled: editingAgent.audio_response_enabled,
-          elevenlabs_voice_id: editingAgent.elevenlabs_voice_id || null
+          elevenlabs_voice_id: editingAgent.elevenlabs_voice_id || null,
+          elevenlabs_model: editingAgent.elevenlabs_model,
+          elevenlabs_stability: editingAgent.elevenlabs_stability,
+          elevenlabs_similarity_boost: editingAgent.elevenlabs_similarity_boost,
+          elevenlabs_style: editingAgent.elevenlabs_style,
+          elevenlabs_speed: editingAgent.elevenlabs_speed,
+          elevenlabs_speaker_boost: editingAgent.elevenlabs_speaker_boost
         });
 
       if (error) throw error;
@@ -160,6 +230,8 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
       toast.success('Agente criado!');
       setEditingAgent(null);
       setIsCreating(false);
+      setShowAdvancedVoice(false);
+      setShowAudioTest(false);
       await loadAgents();
     } catch (error) {
       console.error('Erro ao criar agente:', error);
@@ -226,7 +298,13 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
       handoff_message: '',
       qualification_questions: [],
       audio_response_enabled: false,
-      elevenlabs_voice_id: null,
+      elevenlabs_voice_id: 'FGY2WhTYpPnrIDTdsKH5', // Laura default
+      elevenlabs_model: 'eleven_turbo_v2_5',
+      elevenlabs_stability: 0.75,
+      elevenlabs_similarity_boost: 0.80,
+      elevenlabs_style: 0.30,
+      elevenlabs_speed: 1.0,
+      elevenlabs_speaker_boost: true,
       created_at: '',
       updated_at: ''
     });
@@ -329,6 +407,53 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
     } finally {
       setTesting(false);
     }
+  };
+
+  const testAudio = async () => {
+    if (!editingAgent || !audioTestText.trim()) return;
+    
+    setGeneratingAudio(true);
+    setAudioUrl(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('test-elevenlabs-tts', {
+        body: { 
+          text: audioTestText,
+          voiceId: editingAgent.elevenlabs_voice_id,
+          model: editingAgent.elevenlabs_model,
+          stability: editingAgent.elevenlabs_stability,
+          similarity: editingAgent.elevenlabs_similarity_boost,
+          style: editingAgent.elevenlabs_style,
+          speed: editingAgent.elevenlabs_speed,
+          speakerBoost: editingAgent.elevenlabs_speaker_boost
+        }
+      });
+
+      if (error) throw error;
+      
+      if (data?.audioContent) {
+        const audioBlob = new Blob(
+          [Uint8Array.from(atob(data.audioContent), c => c.charCodeAt(0))],
+          { type: 'audio/mpeg' }
+        );
+        const url = URL.createObjectURL(audioBlob);
+        setAudioUrl(url);
+        toast.success('Áudio gerado!');
+      } else {
+        throw new Error('Sem conteúdo de áudio na resposta');
+      }
+    } catch (error) {
+      console.error('Erro ao gerar áudio:', error);
+      toast.error('Erro ao gerar áudio. Verifique a API Key do ElevenLabs.');
+    } finally {
+      setGeneratingAudio(false);
+    }
+  };
+
+  const getVoiceName = (voiceId: string | null) => {
+    if (!voiceId) return 'Voz do Sistema';
+    const voice = VOICES.find(v => v.id === voiceId);
+    return voice ? `${voice.name} (${voice.gender})` : voiceId;
   };
 
   if (loading) {
@@ -445,14 +570,55 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
           </div>
         </div>
 
-        {/* Audio Response Settings */}
+        {/* Audio Response Settings - Visual Version */}
         <div className="bg-slate-800/30 rounded-lg p-4 space-y-4">
           <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2">
             <Volume2 className="w-4 h-4 text-cyan-400" />
             Resposta em Áudio
           </h4>
           
-          <div className="flex items-center justify-between">
+          {/* Voice and Model Selectors */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Voz</label>
+              <Select
+                value={editingAgent.elevenlabs_voice_id || 'FGY2WhTYpPnrIDTdsKH5'}
+                onValueChange={(value) => setEditingAgent({ ...editingAgent, elevenlabs_voice_id: value })}
+              >
+                <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
+                  <SelectValue placeholder="Selecione uma voz" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-600">
+                  {VOICES.map((voice) => (
+                    <SelectItem key={voice.id} value={voice.id} className="text-white hover:bg-slate-700">
+                      {voice.name} - {voice.gender}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Modelo</label>
+              <Select
+                value={editingAgent.elevenlabs_model || 'eleven_turbo_v2_5'}
+                onValueChange={(value) => setEditingAgent({ ...editingAgent, elevenlabs_model: value })}
+              >
+                <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
+                  <SelectValue placeholder="Selecione um modelo" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-600">
+                  {MODELS.map((model) => (
+                    <SelectItem key={model.id} value={model.id} className="text-white hover:bg-slate-700">
+                      {model.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Audio Response Toggle */}
+          <div className="flex items-center justify-between py-2 border-t border-slate-700/50">
             <div>
               <p className="text-sm text-white">Responder em áudio quando cliente envia áudio</p>
               <p className="text-xs text-slate-400">
@@ -466,27 +632,154 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
               }
             />
           </div>
-          
-          {editingAgent.audio_response_enabled && (
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                Voice ID do ElevenLabs (opcional)
-              </label>
-              <input
-                type="text"
-                value={editingAgent.elevenlabs_voice_id || ''}
-                onChange={(e) => setEditingAgent({ 
-                  ...editingAgent, 
-                  elevenlabs_voice_id: e.target.value || null 
-                })}
-                className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-white"
-                placeholder="Deixe vazio para usar voz padrão do sistema"
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                IDs de vozes disponíveis em elevenlabs.io/voices
-              </p>
-            </div>
-          )}
+
+          {/* Advanced Voice Settings - Collapsible */}
+          <div className="border-t border-slate-700/50 pt-3">
+            <button
+              onClick={() => setShowAdvancedVoice(!showAdvancedVoice)}
+              className="flex items-center justify-between w-full text-sm text-slate-300 hover:text-white transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <Settings2 className="w-4 h-4" />
+                Configurações Avançadas de Voz
+              </span>
+              {showAdvancedVoice ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+            
+            {showAdvancedVoice && (
+              <div className="mt-4 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="flex justify-between text-xs font-medium text-slate-400 mb-2">
+                      <span>Stability</span>
+                      <span className="text-cyan-400">{(editingAgent.elevenlabs_stability ?? 0.75).toFixed(2)}</span>
+                    </label>
+                    <Slider
+                      value={[editingAgent.elevenlabs_stability ?? 0.75]}
+                      onValueChange={([value]) => setEditingAgent({ ...editingAgent, elevenlabs_stability: value })}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Menor = mais expressivo, Maior = mais consistente</p>
+                  </div>
+                  <div>
+                    <label className="flex justify-between text-xs font-medium text-slate-400 mb-2">
+                      <span>Similarity</span>
+                      <span className="text-cyan-400">{(editingAgent.elevenlabs_similarity_boost ?? 0.80).toFixed(2)}</span>
+                    </label>
+                    <Slider
+                      value={[editingAgent.elevenlabs_similarity_boost ?? 0.80]}
+                      onValueChange={([value]) => setEditingAgent({ ...editingAgent, elevenlabs_similarity_boost: value })}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Quão próximo da voz original</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="flex justify-between text-xs font-medium text-slate-400 mb-2">
+                      <span>Style</span>
+                      <span className="text-cyan-400">{(editingAgent.elevenlabs_style ?? 0.30).toFixed(2)}</span>
+                    </label>
+                    <Slider
+                      value={[editingAgent.elevenlabs_style ?? 0.30]}
+                      onValueChange={([value]) => setEditingAgent({ ...editingAgent, elevenlabs_style: value })}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Intensidade de estilo/emoção</p>
+                  </div>
+                  <div>
+                    <label className="flex justify-between text-xs font-medium text-slate-400 mb-2">
+                      <span>Speed</span>
+                      <span className="text-cyan-400">{(editingAgent.elevenlabs_speed ?? 1.0).toFixed(2)}x</span>
+                    </label>
+                    <Slider
+                      value={[editingAgent.elevenlabs_speed ?? 1.0]}
+                      onValueChange={([value]) => setEditingAgent({ ...editingAgent, elevenlabs_speed: value })}
+                      min={0.7}
+                      max={1.2}
+                      step={0.05}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Velocidade da fala</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <div>
+                    <p className="text-sm text-white">Speaker Boost</p>
+                    <p className="text-xs text-slate-400">Aumenta clareza e fidelidade da voz</p>
+                  </div>
+                  <Switch
+                    checked={editingAgent.elevenlabs_speaker_boost ?? true}
+                    onCheckedChange={(checked) => 
+                      setEditingAgent({ ...editingAgent, elevenlabs_speaker_boost: checked })
+                    }
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Audio Test - Collapsible */}
+          <div className="border-t border-slate-700/50 pt-3">
+            <button
+              onClick={() => setShowAudioTest(!showAudioTest)}
+              className="flex items-center justify-between w-full text-sm text-slate-300 hover:text-white transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <Play className="w-4 h-4" />
+                Testar Áudio
+              </span>
+              {showAudioTest ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+            
+            {showAudioTest && (
+              <div className="mt-4 space-y-3">
+                <textarea
+                  value={audioTestText}
+                  onChange={(e) => setAudioTestText(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-white h-20"
+                  placeholder="Texto para testar a voz..."
+                />
+                
+                <div className="flex items-center gap-3">
+                  <Button 
+                    variant="primary" 
+                    size="sm" 
+                    onClick={testAudio}
+                    disabled={generatingAudio || !audioTestText.trim()}
+                  >
+                    {generatingAudio ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                    ) : (
+                      <Volume2 className="w-4 h-4 mr-1" />
+                    )}
+                    {generatingAudio ? 'Gerando...' : 'Gerar Áudio'}
+                  </Button>
+                  
+                  {audioUrl && (
+                    <audio controls src={audioUrl} className="h-8 flex-1">
+                      Seu navegador não suporta o elemento de áudio.
+                    </audio>
+                  )}
+                </div>
+                
+                <p className="text-xs text-slate-500">
+                  Requer API Key do ElevenLabs configurada em Configurações → APIs
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Detection Keywords */}
@@ -676,6 +969,11 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
                         Inativo
                       </span>
                     )}
+                    {agent.audio_response_enabled && (
+                      <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 text-xs rounded-full flex items-center gap-1">
+                        <Volume2 className="w-3 h-3" /> {getVoiceName(agent.elevenlabs_voice_id)}
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-slate-400">{agent.description || agent.specialty}</p>
                   {agent.detection_keywords.length > 0 && (
@@ -706,7 +1004,7 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
                 >
                   {agent.is_active ? 'Ativo' : 'Inativo'}
                 </button>
-                <Button variant="ghost" size="sm" onClick={() => setEditingAgent(agent)}>
+                <Button variant="ghost" size="sm" onClick={() => setEditingAgent(agent as Agent)}>
                   <Edit2 className="w-4 h-4" />
                 </Button>
                 {!agent.is_default && (
