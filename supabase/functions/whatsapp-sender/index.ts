@@ -23,7 +23,7 @@ serve(async (req) => {
     // Get WhatsApp credentials from settings
     const { data: settings } = await supabase
       .from('nina_settings')
-      .select('whatsapp_access_token, whatsapp_phone_number_id')
+      .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_token_in_vault')
       .maybeSingle();
 
     if (!settings) {
@@ -38,7 +38,23 @@ serve(async (req) => {
       });
     }
 
-    if (!settings.whatsapp_access_token || !settings.whatsapp_phone_number_id) {
+    // Get access token from Vault or fallback to table
+    let accessToken = settings.whatsapp_access_token;
+    if (settings.whatsapp_token_in_vault) {
+      try {
+        const { data: vaultToken } = await supabase.rpc('get_vault_secret', { 
+          secret_name: 'vault_whatsapp_token' 
+        });
+        if (vaultToken) {
+          accessToken = vaultToken;
+          console.log('[Sender] Using WhatsApp token from Vault');
+        }
+      } catch (e) {
+        console.log('[Sender] Vault lookup failed, using table fallback');
+      }
+    }
+
+    if (!accessToken || !settings.whatsapp_phone_number_id) {
       console.log('[Sender] WhatsApp credentials not configured');
       return new Response(JSON.stringify({ 
         error: 'WhatsApp não configurado',
@@ -49,6 +65,12 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
+
+    // Create settings object with resolved token
+    const resolvedSettings = {
+      ...settings,
+      whatsapp_access_token: accessToken
+    };
 
     const MAX_EXECUTION_TIME = 25000; // 25 seconds
     const startTime = Date.now();
@@ -111,7 +133,7 @@ serve(async (req) => {
 
       for (const item of queueItems) {
         try {
-          await sendMessage(supabase, settings, item);
+          await sendMessage(supabase, resolvedSettings, item);
           
           // Mark as completed
           await supabase

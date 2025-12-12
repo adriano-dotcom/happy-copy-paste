@@ -45,7 +45,7 @@ serve(async (req) => {
     // Fetch Pipedrive settings
     const { data: settings, error: settingsError } = await supabase
       .from('nina_settings')
-      .select('pipedrive_enabled, pipedrive_api_token, pipedrive_domain, pipedrive_default_pipeline_id, pipedrive_field_mappings')
+      .select('pipedrive_enabled, pipedrive_api_token, pipedrive_domain, pipedrive_default_pipeline_id, pipedrive_field_mappings, pipedrive_token_in_vault')
       .single();
 
     if (settingsError) {
@@ -56,10 +56,8 @@ serve(async (req) => {
       );
     }
 
-    const pipedriveSettings = settings as PipedriveSettings;
-
     // Check if Pipedrive is enabled
-    if (!pipedriveSettings.pipedrive_enabled) {
+    if (!settings.pipedrive_enabled) {
       console.log('[sync-pipedrive] Pipedrive integration is disabled');
       return new Response(
         JSON.stringify({ success: false, message: 'Pipedrive integration is disabled' }),
@@ -67,14 +65,35 @@ serve(async (req) => {
       );
     }
 
+    // Get API token from Vault or fallback to table
+    let apiToken = settings.pipedrive_api_token;
+    if (settings.pipedrive_token_in_vault) {
+      try {
+        const { data: vaultToken } = await supabase.rpc('get_vault_secret', { 
+          secret_name: 'vault_pipedrive_token' 
+        });
+        if (vaultToken) {
+          apiToken = vaultToken;
+          console.log('[sync-pipedrive] Using Pipedrive token from Vault');
+        }
+      } catch (e) {
+        console.log('[sync-pipedrive] Vault lookup failed, using table fallback');
+      }
+    }
+
     // Validate Pipedrive credentials
-    if (!pipedriveSettings.pipedrive_api_token || !pipedriveSettings.pipedrive_domain) {
+    if (!apiToken || !settings.pipedrive_domain) {
       console.error('[sync-pipedrive] Missing Pipedrive credentials');
       return new Response(
         JSON.stringify({ error: 'Pipedrive API token and domain are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const pipedriveSettings = {
+      ...settings,
+      pipedrive_api_token: apiToken
+    } as PipedriveSettings;
 
     // Fetch deal with contact data
     const { data: deal, error: dealError } = await supabase
@@ -110,7 +129,6 @@ serve(async (req) => {
       custom_fields: []
     };
 
-    const apiToken = pipedriveSettings.pipedrive_api_token;
     const domain = pipedriveSettings.pipedrive_domain;
     const baseUrl = `https://${domain}.pipedrive.com/api/v1`;
 

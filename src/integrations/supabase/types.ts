@@ -974,6 +974,7 @@ export type Database = {
           api4com_api_token: string | null
           api4com_default_extension: string | null
           api4com_enabled: boolean | null
+          api4com_token_in_vault: boolean | null
           async_booking_enabled: boolean | null
           audio_response_enabled: boolean | null
           auto_response_enabled: boolean
@@ -981,9 +982,11 @@ export type Database = {
           business_hours_end: string
           business_hours_start: string
           calcom_api_key: string | null
+          calcom_key_in_vault: boolean | null
           company_name: string | null
           created_at: string
           elevenlabs_api_key: string | null
+          elevenlabs_key_in_vault: boolean | null
           elevenlabs_model: string | null
           elevenlabs_similarity_boost: number
           elevenlabs_speaker_boost: boolean
@@ -996,6 +999,7 @@ export type Database = {
           message_breaking_enabled: boolean
           openai_api_key: string | null
           openai_assistant_id: string
+          openai_key_in_vault: boolean | null
           openai_model: string
           pipedrive_api_token: string | null
           pipedrive_default_pipeline_id: string | null
@@ -1003,6 +1007,7 @@ export type Database = {
           pipedrive_enabled: boolean | null
           pipedrive_field_mappings: Json | null
           pipedrive_min_score: number | null
+          pipedrive_token_in_vault: boolean | null
           response_delay_max: number
           response_delay_min: number
           route_all_to_receiver_enabled: boolean
@@ -1014,6 +1019,7 @@ export type Database = {
           updated_at: string
           whatsapp_access_token: string | null
           whatsapp_phone_number_id: string | null
+          whatsapp_token_in_vault: boolean | null
           whatsapp_verify_token: string | null
           whatsapp_waba_id: string | null
         }
@@ -1023,6 +1029,7 @@ export type Database = {
           api4com_api_token?: string | null
           api4com_default_extension?: string | null
           api4com_enabled?: boolean | null
+          api4com_token_in_vault?: boolean | null
           async_booking_enabled?: boolean | null
           audio_response_enabled?: boolean | null
           auto_response_enabled?: boolean
@@ -1030,9 +1037,11 @@ export type Database = {
           business_hours_end?: string
           business_hours_start?: string
           calcom_api_key?: string | null
+          calcom_key_in_vault?: boolean | null
           company_name?: string | null
           created_at?: string
           elevenlabs_api_key?: string | null
+          elevenlabs_key_in_vault?: boolean | null
           elevenlabs_model?: string | null
           elevenlabs_similarity_boost?: number
           elevenlabs_speaker_boost?: boolean
@@ -1045,6 +1054,7 @@ export type Database = {
           message_breaking_enabled?: boolean
           openai_api_key?: string | null
           openai_assistant_id?: string
+          openai_key_in_vault?: boolean | null
           openai_model?: string
           pipedrive_api_token?: string | null
           pipedrive_default_pipeline_id?: string | null
@@ -1052,6 +1062,7 @@ export type Database = {
           pipedrive_enabled?: boolean | null
           pipedrive_field_mappings?: Json | null
           pipedrive_min_score?: number | null
+          pipedrive_token_in_vault?: boolean | null
           response_delay_max?: number
           response_delay_min?: number
           route_all_to_receiver_enabled?: boolean
@@ -1063,6 +1074,7 @@ export type Database = {
           updated_at?: string
           whatsapp_access_token?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_token_in_vault?: boolean | null
           whatsapp_verify_token?: string | null
           whatsapp_waba_id?: string | null
         }
@@ -1072,6 +1084,7 @@ export type Database = {
           api4com_api_token?: string | null
           api4com_default_extension?: string | null
           api4com_enabled?: boolean | null
+          api4com_token_in_vault?: boolean | null
           async_booking_enabled?: boolean | null
           audio_response_enabled?: boolean | null
           auto_response_enabled?: boolean
@@ -1079,9 +1092,11 @@ export type Database = {
           business_hours_end?: string
           business_hours_start?: string
           calcom_api_key?: string | null
+          calcom_key_in_vault?: boolean | null
           company_name?: string | null
           created_at?: string
           elevenlabs_api_key?: string | null
+          elevenlabs_key_in_vault?: boolean | null
           elevenlabs_model?: string | null
           elevenlabs_similarity_boost?: number
           elevenlabs_speaker_boost?: boolean
@@ -1094,6 +1109,7 @@ export type Database = {
           message_breaking_enabled?: boolean
           openai_api_key?: string | null
           openai_assistant_id?: string
+          openai_key_in_vault?: boolean | null
           openai_model?: string
           pipedrive_api_token?: string | null
           pipedrive_default_pipeline_id?: string | null
@@ -1101,6 +1117,7 @@ export type Database = {
           pipedrive_enabled?: boolean | null
           pipedrive_field_mappings?: Json | null
           pipedrive_min_score?: number | null
+          pipedrive_token_in_vault?: boolean | null
           response_delay_max?: number
           response_delay_min?: number
           route_all_to_receiver_enabled?: boolean
@@ -1112,6 +1129,7 @@ export type Database = {
           updated_at?: string
           whatsapp_access_token?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_token_in_vault?: boolean | null
           whatsapp_verify_token?: string | null
           whatsapp_waba_id?: string | null
         }
@@ -1617,6 +1635,7 @@ export type Database = {
       }
       cleanup_processed_message_queue: { Args: never; Returns: undefined }
       cleanup_processed_queues: { Args: never; Returns: undefined }
+      delete_vault_secret: { Args: { secret_name: string }; Returns: boolean }
       get_or_create_conversation_state: {
         Args: { p_conversation_id: string }
         Returns: {
@@ -1636,6 +1655,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      get_vault_secret: { Args: { secret_name: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -1643,10 +1663,15 @@ export type Database = {
         }
         Returns: boolean
       }
+      has_vault_secret: { Args: { secret_name: string }; Returns: boolean }
       is_authenticated_user: { Args: never; Returns: boolean }
       is_whatsapp_window_open: {
         Args: { p_conversation_id: string }
         Returns: boolean
+      }
+      set_vault_secret: {
+        Args: { secret_name: string; secret_value: string }
+        Returns: string
       }
       update_client_memory: {
         Args: { p_contact_id: string; p_new_memory: Json }
