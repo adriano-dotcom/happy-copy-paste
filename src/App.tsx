@@ -10,7 +10,10 @@ import Scheduling from './components/Scheduling';
 import Kanban from './components/Kanban';
 import MeetingRoom from './components/MeetingRoom';
 import Functions from './components/Functions';
+import Auth from './pages/Auth';
 import { CompanySettingsProvider } from './hooks/useCompanySettings';
+import { AuthProvider } from './hooks/useAuth';
+import { ProtectedRoute } from './components/ProtectedRoute';
 import { Toaster } from 'sonner';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { OnboardingBanner } from './components/OnboardingBanner';
@@ -58,34 +61,44 @@ const AppLayout: React.FC = () => {
     </div>
   );
 };
+
 const App: React.FC = () => {
   return (
-    <CompanySettingsProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Rota Externa: Sala de Reunião (Sem Sidebar) */}
-          <Route path="/meeting/:id" element={<MeetingRoom />} />
+    <AuthProvider>
+      <CompanySettingsProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* Auth Route */}
+            <Route path="/auth" element={<Auth />} />
+            
+            {/* Rota Externa: Sala de Reunião (Sem Sidebar) */}
+            <Route path="/meeting/:id" element={<MeetingRoom />} />
 
-          {/* Rotas Internas (Com Sidebar) */}
-          <Route element={<AppLayout />}>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/kanban" element={<Kanban />} />
-            <Route path="/chat" element={<ChatInterface />} />
-            <Route path="/contacts" element={<Contacts />} />
-            <Route path="/scheduling" element={<Scheduling />} />
-            <Route path="/team" element={<Team />} />
-            <Route path="/functions" element={<Functions />} />
-            <Route path="/settings" element={<Settings />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-      <Toaster 
-        position="top-right"
-        richColors
-        theme="dark"
-      />
-    </CompanySettingsProvider>
+            {/* Rotas Internas (Com Sidebar) - Protected */}
+            <Route element={
+              <ProtectedRoute>
+                <AppLayout />
+              </ProtectedRoute>
+            }>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/kanban" element={<Kanban />} />
+              <Route path="/chat" element={<ChatInterface />} />
+              <Route path="/contacts" element={<Contacts />} />
+              <Route path="/scheduling" element={<Scheduling />} />
+              <Route path="/team" element={<Team />} />
+              <Route path="/functions" element={<Functions />} />
+              <Route path="/settings" element={<Settings />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+        <Toaster 
+          position="top-right"
+          richColors
+          theme="dark"
+        />
+      </CompanySettingsProvider>
+    </AuthProvider>
   );
 };
 
