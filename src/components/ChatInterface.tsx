@@ -123,28 +123,33 @@ const ChatInterface: React.FC = () => {
       });
   }, []);
 
-  // Auto-select first conversation or from URL param
+  // Auto-select first conversation or from URL param (only on initial load)
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const conversationParam = urlParams.get('conversation');
     const phoneParam = urlParams.get('phone');
     
-    if (conversationParam && conversations.some(c => c.id === conversationParam)) {
-      setSelectedChatId(conversationParam);
-    } else if (phoneParam) {
-      // Find conversation by phone number
-      const cleanPhone = phoneParam.replace(/\D/g, '');
-      const matchingConv = conversations.find(c => 
-        c.contactPhone.replace(/\D/g, '').includes(cleanPhone) ||
-        cleanPhone.includes(c.contactPhone.replace(/\D/g, ''))
-      );
-      if (matchingConv) {
-        setSelectedChatId(matchingConv.id);
-        // Clear URL param after selection
+    // Only use URL param if no chat is selected yet
+    if (!selectedChatId) {
+      if (conversationParam && conversations.some(c => c.id === conversationParam)) {
+        setSelectedChatId(conversationParam);
+        // Clear URL param after initial selection
         window.history.replaceState({}, '', window.location.pathname);
+      } else if (phoneParam) {
+        // Find conversation by phone number
+        const cleanPhone = phoneParam.replace(/\D/g, '');
+        const matchingConv = conversations.find(c => 
+          c.contactPhone.replace(/\D/g, '').includes(cleanPhone) ||
+          cleanPhone.includes(c.contactPhone.replace(/\D/g, ''))
+        );
+        if (matchingConv) {
+          setSelectedChatId(matchingConv.id);
+          // Clear URL param after selection
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+      } else if (conversations.length > 0) {
+        setSelectedChatId(conversations[0].id);
       }
-    } else if (conversations.length > 0 && !selectedChatId) {
-      setSelectedChatId(conversations[0].id);
     }
   }, [conversations, selectedChatId]);
 
