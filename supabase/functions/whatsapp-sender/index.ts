@@ -182,6 +182,38 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
     throw new Error('Contact not found');
   }
 
+  // ========================================
+  // CHECK WHATSAPP 24H WINDOW (for non-template messages)
+  // ========================================
+  const isTemplateMessage = queueItem.metadata?.is_template === true;
+  
+  if (!isTemplateMessage) {
+    // Get conversation to check window
+    const { data: conversation } = await supabase
+      .from('conversations')
+      .select('whatsapp_window_start')
+      .eq('id', queueItem.conversation_id)
+      .maybeSingle();
+
+    if (!conversation) {
+      throw new Error('Conversation not found');
+    }
+
+    const windowStart = conversation.whatsapp_window_start ? new Date(conversation.whatsapp_window_start) : null;
+    const now = new Date();
+    const windowEndTime = windowStart ? new Date(windowStart.getTime() + 24 * 60 * 60 * 1000) : null;
+    const isWindowOpen = windowStart !== null && windowEndTime !== null && now < windowEndTime;
+
+    if (!isWindowOpen) {
+      console.log('[Sender] WhatsApp 24h window is closed, rejecting message');
+      throw new Error('Janela de 24h expirada - use template para reabrir conversa');
+    }
+    
+    console.log('[Sender] WhatsApp window is open, proceeding with message');
+  } else {
+    console.log('[Sender] Template message - bypassing window check');
+  }
+
   const recipient = contact.whatsapp_id || contact.phone_number;
 
   // ========================================

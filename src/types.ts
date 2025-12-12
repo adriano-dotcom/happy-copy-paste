@@ -264,6 +264,7 @@ export interface DBConversation {
   last_message_at: string;
   created_at: string;
   updated_at: string;
+  whatsapp_window_start: string | null;
   // Joined data
   contact?: DBContact;
   messages?: DBMessage[];
@@ -324,6 +325,10 @@ export interface UIConversation {
   pipelineName: string | null;
   pipelineIcon: string | null;
   pipelineColor: string | null;
+  // WhatsApp 24h window fields
+  whatsappWindowStart: string | null;
+  isWhatsAppWindowOpen: boolean;
+  windowHoursRemaining: number | null;
 }
 
 export interface UIMessage {
@@ -350,6 +355,14 @@ export function transformDBToUIConversation(
   const unreadCount = messages.filter(
     m => m.from_type === 'user' && m.status !== 'read'
   ).length;
+
+  // Calculate WhatsApp window status
+  const windowStart = conv.whatsapp_window_start ? new Date(conv.whatsapp_window_start) : null;
+  const now = new Date();
+  const windowEndTime = windowStart ? new Date(windowStart.getTime() + 24 * 60 * 60 * 1000) : null;
+  const isWindowOpen = windowStart !== null && windowEndTime !== null && now < windowEndTime;
+  const msRemaining = isWindowOpen && windowEndTime ? windowEndTime.getTime() - now.getTime() : null;
+  const hoursRemaining = msRemaining !== null ? Math.max(0, msRemaining / (1000 * 60 * 60)) : null;
 
   return {
     id: conv.id,
@@ -378,7 +391,11 @@ export function transformDBToUIConversation(
     pipelineId: conv.pipelineId || null,
     pipelineName: conv.pipelineName || null,
     pipelineIcon: conv.pipelineIcon || null,
-    pipelineColor: conv.pipelineColor || null
+    pipelineColor: conv.pipelineColor || null,
+    // WhatsApp 24h window
+    whatsappWindowStart: conv.whatsapp_window_start || null,
+    isWhatsAppWindowOpen: isWindowOpen,
+    windowHoursRemaining: hoursRemaining
   };
 }
 

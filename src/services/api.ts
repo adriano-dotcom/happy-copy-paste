@@ -1335,7 +1335,8 @@ export const api = {
       .select(`
         *,
         contact:contacts(*),
-        agent:agents(id, name, slug)
+        agent:agents(id, name, slug),
+        whatsapp_window_start
       `)
       .eq('is_active', true)
       .order('last_message_at', { ascending: false })

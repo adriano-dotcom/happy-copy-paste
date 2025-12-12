@@ -307,7 +307,7 @@ async function processQueueItem(
   // Get conversation with contact info
   const { data: conversation } = await supabase
     .from('conversations')
-    .select('*, contact:contacts(*)')
+    .select('*, contact:contacts(*), whatsapp_window_start')
     .eq('id', item.conversation_id)
     .maybeSingle();
 
@@ -318,6 +318,21 @@ async function processQueueItem(
   // Check if conversation is still in Nina mode
   if (conversation.status !== 'nina') {
     console.log('[Nina] Conversation no longer in Nina mode, skipping');
+    return;
+  }
+
+  // Check WhatsApp 24h window
+  const windowStart = conversation.whatsapp_window_start ? new Date(conversation.whatsapp_window_start) : null;
+  const now = new Date();
+  const windowEndTime = windowStart ? new Date(windowStart.getTime() + 24 * 60 * 60 * 1000) : null;
+  const isWindowOpen = windowStart !== null && windowEndTime !== null && now < windowEndTime;
+
+  if (!isWindowOpen) {
+    console.log('[Nina] WhatsApp 24h window is closed, skipping AI response');
+    await supabase
+      .from('messages')
+      .update({ processed_by_nina: true })
+      .eq('id', message.id);
     return;
   }
 

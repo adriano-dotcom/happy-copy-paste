@@ -363,6 +363,7 @@ export type Database = {
           status: Database["public"]["Enums"]["conversation_status"]
           tags: string[] | null
           updated_at: string
+          whatsapp_window_start: string | null
         }
         Insert: {
           assigned_team?: Database["public"]["Enums"]["team_assignment"] | null
@@ -379,6 +380,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["conversation_status"]
           tags?: string[] | null
           updated_at?: string
+          whatsapp_window_start?: string | null
         }
         Update: {
           assigned_team?: Database["public"]["Enums"]["team_assignment"] | null
@@ -395,6 +397,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["conversation_status"]
           tags?: string[] | null
           updated_at?: string
+          whatsapp_window_start?: string | null
         }
         Relationships: [
           {
@@ -1602,6 +1605,10 @@ export type Database = {
         Returns: boolean
       }
       is_authenticated_user: { Args: never; Returns: boolean }
+      is_whatsapp_window_open: {
+        Args: { p_conversation_id: string }
+        Returns: boolean
+      }
       update_client_memory: {
         Args: { p_contact_id: string; p_new_memory: Json }
         Returns: undefined
