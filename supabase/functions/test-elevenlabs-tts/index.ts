@@ -49,7 +49,7 @@ serve(async (req) => {
     // Load ElevenLabs settings from nina_settings
     const { data: settings, error: settingsError } = await supabase
       .from('nina_settings')
-      .select('elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_model, elevenlabs_stability, elevenlabs_similarity_boost, elevenlabs_style, elevenlabs_speed, elevenlabs_speaker_boost')
+      .select('elevenlabs_api_key, elevenlabs_voice_id, elevenlabs_model, elevenlabs_stability, elevenlabs_similarity_boost, elevenlabs_style, elevenlabs_speed, elevenlabs_speaker_boost, elevenlabs_key_in_vault')
       .maybeSingle();
 
     if (settingsError) {
@@ -60,7 +60,23 @@ serve(async (req) => {
       );
     }
 
-    if (!settings?.elevenlabs_api_key) {
+    // Get API key from Vault or fallback to table
+    let apiKey = settings?.elevenlabs_api_key;
+    if (settings?.elevenlabs_key_in_vault) {
+      try {
+        const { data: vaultKey } = await supabase.rpc('get_vault_secret', { 
+          secret_name: 'vault_elevenlabs_key' 
+        });
+        if (vaultKey) {
+          apiKey = vaultKey;
+          console.log('[test-elevenlabs-tts] Usando API key do Vault');
+        }
+      } catch (e) {
+        console.log('[test-elevenlabs-tts] Falha ao buscar do Vault, usando tabela');
+      }
+    }
+
+    if (!apiKey) {
       return new Response(
         JSON.stringify({ error: 'API Key da ElevenLabs não configurada. Configure em Settings → APIs.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -68,13 +84,13 @@ serve(async (req) => {
     }
 
     // Use passed parameters or fall back to system settings
-    const voiceId = paramVoiceId || settings.elevenlabs_voice_id || '9BWtsMINqrJLrRacOk9x'; // Aria default
-    const model = paramModel || settings.elevenlabs_model || 'eleven_turbo_v2_5';
-    const stability = paramStability ?? settings.elevenlabs_stability ?? 0.75;
-    const similarity = paramSimilarity ?? settings.elevenlabs_similarity_boost ?? 0.80;
-    const style = paramStyle ?? settings.elevenlabs_style ?? 0.30;
-    const speed = paramSpeed ?? settings.elevenlabs_speed ?? 1.0;
-    const speakerBoost = paramSpeakerBoost ?? settings.elevenlabs_speaker_boost ?? true;
+    const voiceId = paramVoiceId || settings?.elevenlabs_voice_id || '9BWtsMINqrJLrRacOk9x'; // Aria default
+    const model = paramModel || settings?.elevenlabs_model || 'eleven_turbo_v2_5';
+    const stability = paramStability ?? settings?.elevenlabs_stability ?? 0.75;
+    const similarity = paramSimilarity ?? settings?.elevenlabs_similarity_boost ?? 0.80;
+    const style = paramStyle ?? settings?.elevenlabs_style ?? 0.30;
+    const speed = paramSpeed ?? settings?.elevenlabs_speed ?? 1.0;
+    const speakerBoost = paramSpeakerBoost ?? settings?.elevenlabs_speaker_boost ?? true;
 
     console.log(`[test-elevenlabs-tts] Generating audio with voice: ${voiceId}, model: ${model}`);
     console.log(`[test-elevenlabs-tts] Settings: stability=${stability}, similarity=${similarity}, style=${style}, speed=${speed}, speakerBoost=${speakerBoost}`);
@@ -88,7 +104,7 @@ serve(async (req) => {
         headers: {
           'Accept': 'audio/mpeg',
           'Content-Type': 'application/json',
-          'xi-api-key': settings.elevenlabs_api_key,
+          'xi-api-key': apiKey,
         },
         body: JSON.stringify({
           text,

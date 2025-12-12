@@ -121,7 +121,7 @@ serve(async (req) => {
     console.log('[api4com-dial] Buscando configurações...');
     const { data: settings, error: settingsError } = await supabase
       .from('nina_settings')
-      .select('api4com_api_token, api4com_default_extension, api4com_enabled')
+      .select('api4com_api_token, api4com_default_extension, api4com_enabled, api4com_token_in_vault')
       .maybeSingle();
 
     if (settingsError) {
@@ -133,8 +133,24 @@ serve(async (req) => {
       throw new Error('Integração API4Com não está habilitada. Ative em Configurações → APIs.');
     }
 
+    // Get API token from Vault or fallback to table
+    let apiToken = settings?.api4com_api_token || '';
+    if (settings?.api4com_token_in_vault) {
+      try {
+        const { data: vaultToken } = await supabase.rpc('get_vault_secret', { 
+          secret_name: 'vault_api4com_token' 
+        });
+        if (vaultToken) {
+          apiToken = vaultToken;
+          console.log('[api4com-dial] Usando token do Vault');
+        }
+      } catch (e) {
+        console.log('[api4com-dial] Falha ao buscar do Vault, usando tabela');
+      }
+    }
+
     // Validate token
-    const tokenValidation = validateToken(settings?.api4com_api_token || '');
+    const tokenValidation = validateToken(apiToken);
     if (!tokenValidation.valid) {
       console.error('[api4com-dial] Token inválido:', tokenValidation.error);
       throw new Error(tokenValidation.error);
@@ -147,8 +163,8 @@ serve(async (req) => {
     console.log('[api4com-dial] Configuração válida:', { 
       extension, 
       formattedPhone,
-      tokenLength: settings.api4com_api_token?.length,
-      tokenPrefix: settings.api4com_api_token?.substring(0, 10) + '...'
+      tokenLength: apiToken.length,
+      tokenPrefix: apiToken.substring(0, 10) + '...'
     });
 
     // Call API4Com Dialer API
@@ -156,7 +172,7 @@ serve(async (req) => {
     const api4comResponse = await fetch('https://api.api4com.com/api/v1/dialer', {
       method: 'POST',
       headers: {
-        'Authorization': settings.api4com_api_token!,
+        'Authorization': apiToken,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

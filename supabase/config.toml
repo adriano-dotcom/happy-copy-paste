@@ -72,3 +72,6 @@ verify_jwt = true
 
 [functions.test-qualification-email]
 verify_jwt = true
+
+[functions.manage-secrets]
+verify_jwt = true

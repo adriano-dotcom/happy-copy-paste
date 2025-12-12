@@ -228,9 +228,29 @@ function detectAgent(
 // Note: WhatsApp only supports audio/ogg; codecs=opus, audio/mpeg, audio/amr, audio/mp4, audio/aac
 // WAV is NOT supported. We use MP3 directly from ElevenLabs.
 
+// Helper function to get secret from Vault or fallback to table
+async function getSecret(supabase: any, vaultName: string, tableValue: string | null): Promise<string | null> {
+  // Try Vault first
+  try {
+    const { data: vaultSecret } = await supabase.rpc('get_vault_secret', { secret_name: vaultName });
+    if (vaultSecret) {
+      console.log(`[Nina] Using secret from Vault: ${vaultName}`);
+      return vaultSecret;
+    }
+  } catch (e) {
+    console.log(`[Nina] Vault lookup failed for ${vaultName}, using table fallback`);
+  }
+  
+  // Fallback to table value
+  return tableValue;
+}
+
 // Generate audio using ElevenLabs (outputs MP3 for WhatsApp compatibility)
-async function generateAudioElevenLabs(settings: any, text: string, agent?: Agent | null): Promise<{ buffer: ArrayBuffer; format: 'mp3' } | null> {
-  if (!settings.elevenlabs_api_key) {
+async function generateAudioElevenLabs(supabase: any, settings: any, text: string, agent?: Agent | null): Promise<{ buffer: ArrayBuffer; format: 'mp3' } | null> {
+  // Get API key from Vault or fallback to table
+  const apiKey = await getSecret(supabase, 'vault_elevenlabs_key', settings.elevenlabs_api_key);
+  
+  if (!apiKey) {
     console.log('[Nina] ElevenLabs API key not configured');
     return null;
   }
@@ -251,7 +271,7 @@ async function generateAudioElevenLabs(settings: any, text: string, agent?: Agen
     const response = await fetch(`${ELEVENLABS_API_URL}/${voiceId}`, {
       method: 'POST',
       headers: {
-        'xi-api-key': settings.elevenlabs_api_key,
+        'xi-api-key': apiKey,
         'Content-Type': 'application/json',
         'Accept': 'audio/mpeg'
       },
@@ -1103,7 +1123,7 @@ async function processQueueItem(
     if (shouldSendAudio) {
       // Sanitize text for natural TTS pronunciation (simplify URLs)
       const sanitizedText = sanitizeTextForAudio(aiContent);
-      const audioResult = await generateAudioElevenLabs(settings, sanitizedText, agent);
+      const audioResult = await generateAudioElevenLabs(supabase, settings, sanitizedText, agent);
       
       if (audioResult) {
         const audioUrl = await uploadAudioToStorage(supabase, audioResult.buffer, conversation.id, audioResult.format);

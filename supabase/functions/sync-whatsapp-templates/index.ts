@@ -19,14 +19,30 @@ serve(async (req) => {
     // Get WhatsApp settings
     const { data: settings, error: settingsError } = await supabase
       .from('nina_settings')
-      .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id')
+      .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_waba_id, whatsapp_token_in_vault')
       .single();
 
     if (settingsError || !settings) {
       throw new Error('Failed to load WhatsApp settings');
     }
 
-    if (!settings.whatsapp_access_token) {
+    // Get access token from Vault or fallback to table
+    let accessToken = settings.whatsapp_access_token;
+    if (settings.whatsapp_token_in_vault) {
+      try {
+        const { data: vaultToken } = await supabase.rpc('get_vault_secret', { 
+          secret_name: 'vault_whatsapp_token' 
+        });
+        if (vaultToken) {
+          accessToken = vaultToken;
+          console.log('Usando WhatsApp token do Vault');
+        }
+      } catch (e) {
+        console.log('Falha ao buscar do Vault, usando tabela');
+      }
+    }
+
+    if (!accessToken) {
       throw new Error('WhatsApp Access Token não configurado');
     }
 
@@ -44,7 +60,7 @@ serve(async (req) => {
       `https://graph.facebook.com/v21.0/${wabaId}/message_templates?fields=id,name,language,status,category,components`,
       {
         headers: {
-          'Authorization': `Bearer ${settings.whatsapp_access_token}`,
+          'Authorization': `Bearer ${accessToken}`,
         },
       }
     );
