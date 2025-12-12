@@ -274,6 +274,8 @@ export interface DBConversation {
   pipelineName?: string | null;
   pipelineIcon?: string | null;
   pipelineColor?: string | null;
+  // Assigned user name (extracted from email)
+  assignedUserName?: string | null;
 }
 
 export interface DBMessage {
@@ -375,7 +377,7 @@ export function transformDBToUIConversation(
     isActive: conv.is_active,
     assignedTeam: conv.assigned_team,
     assignedUserId: conv.assigned_user_id,
-    assignedUserName: null, // Will be populated if needed
+    assignedUserName: conv.assignedUserName || null,
     lastMessage: lastMsg?.content || '',
     lastMessageTime: formatRelativeTime(conv.last_message_at),
     unreadCount,

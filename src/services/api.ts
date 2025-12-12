@@ -1374,6 +1374,9 @@ export const api = {
       }
     }
 
+    // Note: assigned_user_name is populated when the operator takes over
+    // and passed from the client side (derived from their email)
+
     // Fetch messages for each conversation
     const conversationsWithMessages: UIConversation[] = await Promise.all(
       conversations.map(async (conv) => {
@@ -1390,12 +1393,15 @@ export const api = {
 
         // Enrich conversation with pipeline data
         const pipeline = pipelineByContact.get(conv.contact_id);
+
         const enrichedConv = {
           ...conv,
           pipelineId: pipeline?.id || null,
           pipelineName: pipeline?.name || null,
           pipelineIcon: pipeline?.icon || null,
-          pipelineColor: pipeline?.color || null
+          pipelineColor: pipeline?.color || null,
+          // assignedUserName will be null on initial load - populated when operator assumes
+          assignedUserName: null
         };
 
         return transformDBToUIConversation(
@@ -1489,14 +1495,27 @@ export const api = {
 
   /**
    * Update conversation status (nina/human/paused)
+   * When switching to 'human', also assigns the current user
    */
   updateConversationStatus: async (
     conversationId: string, 
-    status: 'nina' | 'human' | 'paused'
+    status: 'nina' | 'human' | 'paused',
+    userId?: string
   ): Promise<void> => {
+    const updateData: any = { status };
+    
+    // When switching to human, assign the current user
+    if (status === 'human' && userId) {
+      updateData.assigned_user_id = userId;
+    }
+    // When switching back to nina, clear the assignment
+    if (status === 'nina') {
+      updateData.assigned_user_id = null;
+    }
+    
     const { error } = await supabase
       .from('conversations')
-      .update({ status })
+      .update(updateData)
       .eq('id', conversationId);
 
     if (error) {
