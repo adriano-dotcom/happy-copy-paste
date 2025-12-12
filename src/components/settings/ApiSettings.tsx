@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
+import { VaultMigrationPanel } from './VaultMigrationPanel';
 
 interface NinaSettings {
   id?: string;
@@ -553,6 +554,9 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
 
   return (
     <div className="space-y-6">
+      {/* Vault Migration Panel */}
+      <VaultMigrationPanel />
+
       {/* WhatsApp Cloud API + Webhook */}
       <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
         <div className="flex items-center justify-between mb-4">
