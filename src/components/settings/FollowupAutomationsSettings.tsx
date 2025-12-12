@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Clock, Zap, History, Play, BarChart3, MessageSquare, FileText, Timer } from 'lucide-react';
+import { Plus, Pencil, Trash2, Clock, Zap, History, Play, BarChart3, MessageSquare, FileText, Timer, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import AutomationsDashboard from './AutomationsDashboard';
@@ -81,6 +81,13 @@ const FREE_TEXT_VARIABLES = [
   { placeholder: '{nome}', description: 'Nome do contato' },
   { placeholder: '{empresa}', description: 'Empresa do contato' },
 ];
+
+// Sugestões de mensagens pré-preenchidas por agente (baseadas no contexto do produto)
+const AGENT_MESSAGE_SUGGESTIONS: Record<string, string> = {
+  'adri': 'Oi {nome}! Nossa conversa sobre seguro de carga está prestes a expirar. Me responde qualquer coisa pra gente continuar falando sobre a proteção da sua operação de transporte!',
+  'barbara': 'Oi {nome}! Nossa conversa sobre plano de saúde está prestes a expirar. Me responde qualquer coisa pra gente continuar com a cotação!',
+  'default': 'Oi {nome}! Nossa conversa está prestes a expirar. Me responde qualquer coisa pra gente continuar!',
+};
 
 export default function FollowupAutomationsSettings() {
   const [automations, setAutomations] = useState<Automation[]>([]);
@@ -683,40 +690,58 @@ export default function FollowupAutomationsSettings() {
                     </p>
                   </div>
                   
-                  {agents.map(agent => (
-                    <div key={agent.id} className="space-y-2 p-3 border rounded-lg bg-muted/20">
-                      <Label className="flex items-center gap-2">
-                        <span className="text-lg">{agent.slug === 'adri' ? '🚛' : agent.slug === 'barbara' ? '🏥' : '🤖'}</span>
-                        {agent.name}
-                      </Label>
-                      <Textarea
-                        value={formData.agent_messages[agent.id] || ''}
-                        onChange={e => setFormData(prev => ({ 
-                          ...prev, 
-                          agent_messages: { ...prev.agent_messages, [agent.id]: e.target.value } 
-                        }))}
-                        placeholder={`Mensagem específica para ${agent.name}...`}
-                        rows={2}
-                      />
-                      <div className="flex flex-wrap gap-1">
-                        {FREE_TEXT_VARIABLES.map(v => (
-                          <span 
-                            key={v.placeholder} 
-                            className="text-xs px-1.5 py-0.5 bg-muted rounded cursor-pointer hover:bg-muted/80"
+                  {agents.map(agent => {
+                    const suggestion = AGENT_MESSAGE_SUGGESTIONS[agent.slug] || AGENT_MESSAGE_SUGGESTIONS['default'];
+                    return (
+                      <div key={agent.id} className="space-y-2 p-3 border rounded-lg bg-muted/20">
+                        <Label className="flex items-center gap-2">
+                          <span className="text-lg">{agent.slug === 'adri' ? '🚛' : agent.slug === 'barbara' ? '🏥' : '🤖'}</span>
+                          {agent.name}
+                        </Label>
+                        <Textarea
+                          value={formData.agent_messages[agent.id] || ''}
+                          onChange={e => setFormData(prev => ({ 
+                            ...prev, 
+                            agent_messages: { ...prev.agent_messages, [agent.id]: e.target.value } 
+                          }))}
+                          placeholder={`Mensagem específica para ${agent.name}...`}
+                          rows={2}
+                        />
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex flex-wrap gap-1">
+                            {FREE_TEXT_VARIABLES.map(v => (
+                              <span 
+                                key={v.placeholder} 
+                                className="text-xs px-1.5 py-0.5 bg-muted rounded cursor-pointer hover:bg-muted/80"
+                                onClick={() => setFormData(prev => ({ 
+                                  ...prev, 
+                                  agent_messages: { 
+                                    ...prev.agent_messages, 
+                                    [agent.id]: (prev.agent_messages[agent.id] || '') + ' ' + v.placeholder 
+                                  } 
+                                }))}
+                              >
+                                {v.placeholder}
+                              </span>
+                            ))}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="text-xs gap-1 shrink-0"
                             onClick={() => setFormData(prev => ({ 
                               ...prev, 
-                              agent_messages: { 
-                                ...prev.agent_messages, 
-                                [agent.id]: (prev.agent_messages[agent.id] || '') + ' ' + v.placeholder 
-                              } 
+                              agent_messages: { ...prev.agent_messages, [agent.id]: suggestion } 
                             }))}
                           >
-                            {v.placeholder}
-                          </span>
-                        ))}
+                            <Sparkles className="h-3 w-3" />
+                            Usar sugestão
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {/* Fallback Message */}
                   <div className="space-y-2 p-3 border rounded-lg bg-amber-500/10 border-amber-500/30">
@@ -733,19 +758,34 @@ export default function FollowupAutomationsSettings() {
                       placeholder="Olá {nome}! Caso precise de ajuda, estou aqui. Me responde qualquer coisa pra gente continuar a conversa!"
                       rows={2}
                     />
-                    <div className="flex flex-wrap gap-1">
-                      {FREE_TEXT_VARIABLES.map(v => (
-                        <span 
-                          key={v.placeholder} 
-                          className="text-xs px-1.5 py-0.5 bg-muted rounded cursor-pointer hover:bg-muted/80"
-                          onClick={() => setFormData(prev => ({ 
-                            ...prev, 
-                            free_text_message: prev.free_text_message + ' ' + v.placeholder 
-                          }))}
-                        >
-                          {v.placeholder}
-                        </span>
-                      ))}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-wrap gap-1">
+                        {FREE_TEXT_VARIABLES.map(v => (
+                          <span 
+                            key={v.placeholder} 
+                            className="text-xs px-1.5 py-0.5 bg-muted rounded cursor-pointer hover:bg-muted/80"
+                            onClick={() => setFormData(prev => ({ 
+                              ...prev, 
+                              free_text_message: prev.free_text_message + ' ' + v.placeholder 
+                            }))}
+                          >
+                            {v.placeholder}
+                          </span>
+                        ))}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs gap-1 shrink-0"
+                        onClick={() => setFormData(prev => ({ 
+                          ...prev, 
+                          free_text_message: AGENT_MESSAGE_SUGGESTIONS['default']
+                        }))}
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Usar sugestão
+                      </Button>
                     </div>
                   </div>
                 </div>
