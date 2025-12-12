@@ -23,6 +23,12 @@ interface Agent {
   qualification_questions: Array<{ order: number; question: string }>;
   audio_response_enabled?: boolean;
   elevenlabs_voice_id?: string | null;
+  elevenlabs_model?: string | null;
+  elevenlabs_stability?: number | null;
+  elevenlabs_similarity_boost?: number | null;
+  elevenlabs_style?: number | null;
+  elevenlabs_speed?: number | null;
+  elevenlabs_speaker_boost?: boolean | null;
 }
 
 serve(async (req) => {
@@ -212,11 +218,16 @@ async function generateAudioElevenLabs(settings: any, text: string, agent?: Agen
   }
 
   try {
-    // Priority: agent voice > global voice > fallback
+    // Priority: agent config > global config > fallback defaults
     const voiceId = agent?.elevenlabs_voice_id || settings.elevenlabs_voice_id || '9BWtsMINqrJLrRacOk9x';
-    const model = settings.elevenlabs_model || 'eleven_turbo_v2_5';
+    const model = agent?.elevenlabs_model || settings.elevenlabs_model || 'eleven_turbo_v2_5';
+    const stability = agent?.elevenlabs_stability ?? settings.elevenlabs_stability ?? 0.75;
+    const similarityBoost = agent?.elevenlabs_similarity_boost ?? settings.elevenlabs_similarity_boost ?? 0.80;
+    const style = agent?.elevenlabs_style ?? settings.elevenlabs_style ?? 0.30;
+    const speed = agent?.elevenlabs_speed ?? settings.elevenlabs_speed ?? 1.0;
+    const speakerBoost = agent?.elevenlabs_speaker_boost ?? settings.elevenlabs_speaker_boost ?? true;
 
-    console.log(`[Nina] Generating audio with ElevenLabs, voice: ${voiceId}, agent: ${agent?.name || 'global'}`);
+    console.log(`[Nina] Generating audio - voice: ${voiceId}, model: ${model}, agent: ${agent?.name || 'global'}`);
 
     const response = await fetch(`${ELEVENLABS_API_URL}/${voiceId}`, {
       method: 'POST',
@@ -229,10 +240,11 @@ async function generateAudioElevenLabs(settings: any, text: string, agent?: Agen
         text,
         model_id: model,
         voice_settings: {
-          stability: settings.elevenlabs_stability || 0.75,
-          similarity_boost: settings.elevenlabs_similarity_boost || 0.80,
-          style: settings.elevenlabs_style || 0.30,
-          use_speaker_boost: settings.elevenlabs_speaker_boost !== false
+          stability: stability,
+          similarity_boost: similarityBoost,
+          style: style,
+          speed: speed,
+          use_speaker_boost: speakerBoost
         }
       })
     });
