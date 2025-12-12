@@ -522,8 +522,18 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
           // Check if it's a qualification stage and send email notifications
           const isQualifiedStage = newStage.title.toLowerCase().includes('qualificad');
           
+          console.log(`[Analyze] 📧 Stage qualification check: "${newStage.title}" → isQualifiedStage: ${isQualifiedStage}`);
+          
           if (isQualifiedStage) {
-            console.log('[Analyze] Lead qualified! Sending email notifications...');
+            console.log('='.repeat(60));
+            console.log('[Analyze] 🎯 LEAD QUALIFICADO - INICIANDO NOTIFICAÇÃO POR EMAIL');
+            console.log('='.repeat(60));
+            console.log(`[Analyze] Deal ID: ${currentDeal.id}`);
+            console.log(`[Analyze] Contact ID: ${contact_id}`);
+            console.log(`[Analyze] Conversation ID: ${conversation_id}`);
+            console.log(`[Analyze] Novo estágio: ${newStage.title}`);
+            console.log(`[Analyze] Confiança: ${stageResult.confidence}%`);
+            console.log(`[Analyze] Razão: ${stageResult.reasoning}`);
             
             try {
               // Fetch contact data
@@ -533,11 +543,20 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
                 .eq('id', contact_id)
                 .single();
               
+              console.log('[Analyze] 📋 Dados do contato carregados:', {
+                name: contactData?.name || 'N/A',
+                phone: contactData?.phone_number || 'N/A',
+                email: contactData?.email || 'N/A',
+                company: contactData?.company || 'N/A',
+                cnpj: contactData?.cnpj || 'N/A'
+              });
+              
               // Build recipients list - always include admin
               const recipients: string[] = ['adriano@jacometo.com.br'];
               
               // Fetch owner email if exists
               if (currentDeal.owner_id) {
+                console.log(`[Analyze] 👤 Buscando owner do deal: ${currentDeal.owner_id}`);
                 const { data: owner } = await supabase
                   .from('team_members')
                   .select('email, name')
@@ -546,8 +565,11 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
                 
                 if (owner?.email && !recipients.includes(owner.email)) {
                   recipients.push(owner.email);
+                  console.log(`[Analyze] 👤 Owner adicionado: ${owner.name} <${owner.email}>`);
                 }
               }
+              
+              console.log(`[Analyze] 📬 Destinatários: ${recipients.join(', ')}`);
               
               // Fetch qualification answers from conversation
               const { data: convData } = await supabase
@@ -557,6 +579,11 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
                 .single();
               
               const qualificationAnswers = (convData?.nina_context as any)?.qualification_answers || {};
+              const answersCount = Object.keys(qualificationAnswers).filter(k => qualificationAnswers[k]).length;
+              console.log(`[Analyze] 📝 Respostas de qualificação: ${answersCount} campos preenchidos`);
+              if (answersCount > 0) {
+                console.log('[Analyze] Campos:', Object.keys(qualificationAnswers).filter(k => qualificationAnswers[k]).join(', '));
+              }
               
               // Format qualification answers for email
               const formatKey = (key: string) => {
@@ -640,23 +667,46 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
                 </div>
               `;
               
+              console.log('[Analyze] 📧 Enviando emails de notificação...');
+              
               // Send emails to all recipients
+              let emailsSent = 0;
+              let emailsFailed = 0;
+              
               for (const recipientEmail of recipients) {
                 try {
-                  await supabase.functions.invoke('send-email', {
+                  console.log(`[Analyze] 📤 Enviando para: ${recipientEmail}...`);
+                  const startTime = Date.now();
+                  
+                  const { data: emailResult, error: emailError } = await supabase.functions.invoke('send-email', {
                     body: {
                       to: recipientEmail,
                       subject: `🎯 Lead Qualificado: ${contactData?.name || contactData?.phone_number || 'Novo Lead'}`,
                       html: emailHtml
                     }
                   });
-                  console.log(`[Analyze] Notification email sent to: ${recipientEmail}`);
+                  
+                  const elapsed = Date.now() - startTime;
+                  
+                  if (emailError) {
+                    console.error(`[Analyze] ❌ Falha ao enviar para ${recipientEmail} (${elapsed}ms):`, emailError);
+                    emailsFailed++;
+                  } else {
+                    console.log(`[Analyze] ✅ Email enviado para ${recipientEmail} (${elapsed}ms)`, emailResult);
+                    emailsSent++;
+                  }
                 } catch (emailError) {
-                  console.error(`[Analyze] Error sending email to ${recipientEmail}:`, emailError);
+                  console.error(`[Analyze] ❌ Exceção ao enviar para ${recipientEmail}:`, emailError);
+                  emailsFailed++;
                 }
               }
+              
+              console.log('='.repeat(60));
+              console.log(`[Analyze] 📊 RESUMO DE NOTIFICAÇÕES: ${emailsSent} enviados, ${emailsFailed} falhas`);
+              console.log('='.repeat(60));
+              
             } catch (notificationError) {
-              console.error('[Analyze] Error sending notification emails:', notificationError);
+              console.error('[Analyze] ❌ Erro geral no envio de notificações:', notificationError);
               // Don't fail the analysis if email fails
             }
           }
