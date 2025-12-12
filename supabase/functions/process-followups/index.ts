@@ -15,6 +15,7 @@ interface Automation {
   template_id: string | null;
   template_variables: Record<string, string>;
   free_text_message: string | null;
+  agent_messages: Record<string, string> | null;
   within_window_only: boolean;
   conversation_statuses: string[];
   pipeline_ids: string[] | null;
@@ -39,6 +40,8 @@ interface EligibleConversation {
   contact_call_name: string | null;
   contact_company: string | null;
   contact_phone: string;
+  current_agent_id: string | null;
+  pipeline_id: string | null;
 }
 
 // Check if WhatsApp 24h window is still open
@@ -234,6 +237,8 @@ serve(async (req) => {
           contact_call_name: (convRaw.contacts as any)?.call_name,
           contact_company: (convRaw.contacts as any)?.company,
           contact_phone: (convRaw.contacts as any)?.phone_number,
+          current_agent_id: null,
+          pipeline_id: null,
         };
 
         // Check within_window_only constraint
@@ -501,6 +506,7 @@ async function processWindowExpiringAutomation(
       last_message_at,
       status,
       whatsapp_window_start,
+      current_agent_id,
       contacts!inner (
         name,
         call_name,
@@ -524,7 +530,38 @@ async function processWindowExpiringAutomation(
 
   console.log(`[process-followups] Found ${conversationsRaw.length} conversations with active windows`);
 
+  // Get agent-to-pipeline mapping for fallback
+  const { data: pipelines } = await supabase
+    .from('pipelines')
+    .select('id, agent_id')
+    .not('agent_id', 'is', null);
+  
+  const pipelineAgentMap: Record<string, string> = {};
+  if (pipelines) {
+    for (const p of pipelines) {
+      if (p.agent_id) pipelineAgentMap[p.id] = p.agent_id;
+    }
+  }
+
   for (const convRaw of conversationsRaw) {
+    // Try to get agent from conversation or via pipeline through deal
+    let agentId = convRaw.current_agent_id;
+    
+    // If no agent on conversation, try to find via deal -> pipeline -> agent
+    if (!agentId) {
+      const { data: deal } = await supabase
+        .from('deals')
+        .select('pipeline_id')
+        .eq('contact_id', convRaw.contact_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (deal?.pipeline_id && pipelineAgentMap[deal.pipeline_id]) {
+        agentId = pipelineAgentMap[deal.pipeline_id];
+      }
+    }
+
     const conv: EligibleConversation = {
       id: convRaw.id,
       contact_id: convRaw.contact_id,
@@ -535,6 +572,8 @@ async function processWindowExpiringAutomation(
       contact_call_name: (convRaw.contacts as any)?.call_name,
       contact_company: (convRaw.contacts as any)?.company,
       contact_phone: (convRaw.contacts as any)?.phone_number,
+      current_agent_id: agentId,
+      pipeline_id: null,
     };
 
     // Check if window is expiring within the configured margin
@@ -612,8 +651,18 @@ async function processWindowExpiringAutomation(
     const hoursWaited = msWaited / (1000 * 60 * 60);
 
     try {
-      // Send free text message (window_expiring always uses free text since window is still open)
-      const messageContent = replaceVariables(automation.free_text_message || 'Olá {nome}! Caso precise de ajuda, estou aqui. Me responde qualquer coisa pra gente continuar a conversa!', conv);
+      // Select message based on agent
+      let rawMessage = automation.free_text_message || 'Olá {nome}! Caso precise de ajuda, estou aqui. Me responde qualquer coisa pra gente continuar a conversa!';
+      
+      // Check if there's an agent-specific message
+      if (conv.current_agent_id && automation.agent_messages && automation.agent_messages[conv.current_agent_id]) {
+        rawMessage = automation.agent_messages[conv.current_agent_id];
+        console.log(`[process-followups] Using agent-specific message for agent ${conv.current_agent_id}`);
+      } else if (conv.current_agent_id) {
+        console.log(`[process-followups] No agent-specific message for agent ${conv.current_agent_id}, using fallback`);
+      }
+      
+      const messageContent = replaceVariables(rawMessage, conv);
       
       console.log(`[process-followups] Sending window expiring message to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
 
@@ -681,14 +730,4 @@ async function processWindowExpiringAutomation(
   return { automation: automation.name, sent, skipped, failed };
 }
 
-interface EligibleConversation {
-  id: string;
-  contact_id: string;
-  last_message_at: string;
-  status: string;
-  whatsapp_window_start: string | null;
-  contact_name: string | null;
-  contact_call_name: string | null;
-  contact_company: string | null;
-  contact_phone: string;
-}
+// Note: EligibleConversation interface is defined at the top of the file
