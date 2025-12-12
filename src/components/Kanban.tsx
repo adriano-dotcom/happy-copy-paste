@@ -351,76 +351,146 @@ const Kanban: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full bg-slate-950">
-        <Loader2 className="h-8 w-8 animate-spin text-cyan-500" />
+      <div className="h-full flex flex-col bg-slate-950 text-slate-50 p-4 md:p-6 overflow-hidden">
+        {/* Header skeleton */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4 flex-shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="space-y-2">
+              <div className="h-8 w-48 bg-slate-800/50 rounded animate-pulse" />
+              <div className="h-4 w-64 bg-slate-800/50 rounded animate-pulse" />
+            </div>
+            <div className="h-9 w-[200px] bg-slate-800/50 rounded animate-pulse" />
+          </div>
+          <div className="flex gap-3">
+            <div className="h-10 w-64 bg-slate-800/50 rounded-lg animate-pulse" />
+            <div className="h-10 w-28 bg-slate-800/50 rounded-lg animate-pulse" />
+            <div className="h-10 w-28 bg-slate-800/50 rounded-lg animate-pulse" />
+          </div>
+        </div>
+        {/* Columns skeleton */}
+        <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
+          <div className="flex h-full gap-4 min-w-max">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="w-72 flex flex-col h-full bg-slate-900/30 rounded-xl border border-slate-800/50">
+                <div className="p-3 border-b border-slate-800/50 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <div className="h-4 w-24 bg-slate-800/50 rounded animate-pulse" />
+                    <div className="h-5 w-8 bg-slate-800/50 rounded-full animate-pulse" />
+                  </div>
+                  <div className="h-3 w-20 bg-slate-800/50 rounded animate-pulse" />
+                </div>
+                <div className="flex-1 p-2 space-y-2">
+                  {[1, 2, 3].map((j) => (
+                    <div key={j} className="bg-slate-900 border border-slate-800 rounded-lg p-3 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 bg-slate-800/50 rounded animate-pulse" />
+                        <div className="h-4 flex-1 bg-slate-800/50 rounded animate-pulse" />
+                      </div>
+                      <div className="h-3 w-2/3 bg-slate-800/50 rounded animate-pulse" />
+                      <div className="flex items-center justify-between">
+                        <div className="h-5 w-20 bg-slate-800/50 rounded-full animate-pulse" />
+                        <div className="h-4 w-16 bg-slate-800/50 rounded animate-pulse" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-slate-950 text-slate-50 p-6 overflow-hidden relative">
+    <div className="h-full flex flex-col bg-slate-950 text-slate-50 p-4 md:p-6 overflow-hidden relative">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4 flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <div>
-            <h2 className="text-3xl font-bold tracking-tight text-white">Pipeline de Vendas</h2>
-            <p className="text-sm text-slate-400 mt-1">Gerencie oportunidades e acompanhe o fluxo de receita.</p>
-          </div>
-          {/* Pipeline Selector */}
-          <Select value={selectedPipelineId} onValueChange={setSelectedPipelineId}>
-            <SelectTrigger className="w-[200px] h-9 bg-slate-900 border-slate-700">
-              <SelectValue placeholder="Selecione pipeline">
-                {selectedPipelineId === 'all' ? (
-                  <span className="flex items-center gap-2">📊 Todos</span>
-                ) : (
-                  <span className="flex items-center gap-2">
-                    {pipelines.find(p => p.id === selectedPipelineId)?.icon} {pipelines.find(p => p.id === selectedPipelineId)?.name}
-                  </span>
-                )}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">
-                <span className="flex items-center gap-2">📊 Todos os Pipelines</span>
-              </SelectItem>
-              {pipelines.map((pipeline) => (
-                <SelectItem key={pipeline.id} value={pipeline.id}>
-                  <span className="flex items-center gap-2">
-                    {pipeline.icon} {pipeline.name}
-                    {pipeline.agentName && (
-                      <span className="text-xs text-slate-500">({pipeline.agentName})</span>
-                    )}
-                  </span>
+      <div className="flex flex-col gap-4 mb-6 md:mb-8 flex-shrink-0">
+        {/* Title row */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 md:gap-4">
+            <div>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-white">Pipeline de Vendas</h2>
+              <p className="text-xs md:text-sm text-slate-400 mt-1 hidden sm:block">Gerencie oportunidades e acompanhe o fluxo de receita.</p>
+            </div>
+            {/* Pipeline Selector */}
+            <Select value={selectedPipelineId} onValueChange={setSelectedPipelineId}>
+              <SelectTrigger className="w-full sm:w-[180px] md:w-[200px] h-9 bg-slate-900 border-slate-700">
+                <SelectValue placeholder="Selecione pipeline">
+                  {selectedPipelineId === 'all' ? (
+                    <span className="flex items-center gap-2">📊 Todos</span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      {pipelines.find(p => p.id === selectedPipelineId)?.icon} {pipelines.find(p => p.id === selectedPipelineId)?.name}
+                    </span>
+                  )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <span className="flex items-center gap-2">📊 Todos os Pipelines</span>
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex gap-3 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-64">
-             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-             <input 
+                {pipelines.map((pipeline) => (
+                  <SelectItem key={pipeline.id} value={pipeline.id}>
+                    <span className="flex items-center gap-2">
+                      {pipeline.icon} {pipeline.name}
+                      {pipeline.agentName && (
+                        <span className="text-xs text-slate-500">({pipeline.agentName})</span>
+                      )}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {/* Actions row */}
+          <div className="flex gap-2 md:gap-3 w-full sm:w-auto">
+            <div className="relative flex-1 sm:flex-initial sm:w-48 md:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+              <input 
                 type="text" 
-                placeholder="Buscar oportunidade..."
+                placeholder="Buscar..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-slate-200 focus:ring-1 focus:ring-cyan-500 outline-none placeholder:text-slate-600"
-             />
+              />
+            </div>
+            <Button 
+              variant="outline" 
+              size="icon"
+              className="border-slate-700 text-slate-300 hover:bg-slate-800 md:hidden"
+              onClick={() => setIsSettingsModalOpen(true)}
+              disabled={selectedPipelineId === 'all'}
+              title={selectedPipelineId === 'all' ? 'Selecione um pipeline específico' : 'Configurar etapas'}
+            >
+              <Settings className="w-4 h-4" />
+            </Button>
+            <Button 
+              variant="outline" 
+              className="border-slate-700 text-slate-300 hover:bg-slate-800 hidden md:flex"
+              onClick={() => setIsSettingsModalOpen(true)}
+              disabled={selectedPipelineId === 'all'}
+              title={selectedPipelineId === 'all' ? 'Selecione um pipeline específico' : 'Configurar etapas do pipeline'}
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Configurar
+            </Button>
+            <Button 
+              size="icon"
+              className="shadow-lg shadow-cyan-500/20 md:hidden" 
+              onClick={() => setIsCreateModalOpen(true)}
+            >
+              <Plus className="w-4 h-4" />
+            </Button>
+            <Button 
+              className="shadow-lg shadow-cyan-500/20 hidden md:flex" 
+              onClick={() => setIsCreateModalOpen(true)}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Novo Deal
+            </Button>
           </div>
-          <Button 
-            variant="outline" 
-            className="border-slate-700 text-slate-300 hover:bg-slate-800"
-            onClick={() => setIsSettingsModalOpen(true)}
-            disabled={selectedPipelineId === 'all'}
-            title={selectedPipelineId === 'all' ? 'Selecione um pipeline específico' : 'Configurar etapas do pipeline'}
-          >
-            <Settings className="w-4 h-4 mr-2" />
-            Configurar
-          </Button>
-          <Button className="shadow-lg shadow-cyan-500/20" onClick={() => setIsCreateModalOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Novo Deal
-          </Button>
         </div>
       </div>
 

@@ -13,6 +13,7 @@ import Functions from './components/Functions';
 import { CompanySettingsProvider } from './hooks/useCompanySettings';
 import { Toaster } from 'sonner';
 import { OnboardingWizard } from './components/OnboardingWizard';
+import { OnboardingBanner } from './components/OnboardingBanner';
 import { useOnboardingStatus } from './hooks/useOnboardingStatus';
 
 // Componente de Layout que envolve a aplicação principal
@@ -23,7 +24,8 @@ const AppLayout: React.FC = () => {
   // Show wizard automatically on first load if not complete and never seen
   useEffect(() => {
     if (!loading && !isComplete && !hasSeenWizard) {
-      setShowOnboarding(true);
+      // Just mark as seen, don't auto-open the blocking modal
+      // The banner will guide users to open it when ready
     }
   }, [loading, isComplete, hasSeenWizard]);
 
@@ -39,7 +41,12 @@ const AppLayout: React.FC = () => {
         {/* Top Border Gradient */}
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent opacity-50 z-20"></div>
         
-        <div className="flex-1 w-full h-full relative">
+        {/* Onboarding Banner - não-bloqueante */}
+        {!isComplete && !loading && (
+          <OnboardingBanner onOpenWizard={() => setShowOnboarding(true)} />
+        )}
+        
+        <div className="flex-1 w-full h-full relative overflow-hidden">
           <Outlet context={{ showOnboarding, setShowOnboarding }} />
         </div>
       </main>
@@ -51,7 +58,6 @@ const AppLayout: React.FC = () => {
     </div>
   );
 };
-
 const App: React.FC = () => {
   return (
     <CompanySettingsProvider>
