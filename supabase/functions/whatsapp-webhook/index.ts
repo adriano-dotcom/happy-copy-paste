@@ -7,6 +7,78 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Normalize Brazilian phone number to consistent format
+function normalizePhone(phone: string): string {
+  // Remove all non-digits
+  const digits = phone.replace(/\D/g, '');
+  
+  // If starts with 55 (Brazil country code)
+  if (digits.startsWith('55') && digits.length >= 12) {
+    return digits;
+  }
+  
+  // If doesn't have country code, add it
+  if (digits.length >= 10 && digits.length <= 11) {
+    return '55' + digits;
+  }
+  
+  return digits;
+}
+
+// Generate phone variants for flexible search (Brazilian mobile numbers)
+function getPhoneVariants(phone: string): string[] {
+  const normalized = normalizePhone(phone);
+  const variants: string[] = [normalized];
+  
+  // Only process if it looks like a Brazilian number (55 + DDD + number)
+  if (!normalized.startsWith('55') || normalized.length < 12) {
+    return variants;
+  }
+  
+  const ddd = normalized.substring(2, 4);
+  const rest = normalized.substring(4);
+  
+  // If 9 digits after DDD (new mobile format with 9), also try without the 9
+  if (rest.length === 9 && rest.startsWith('9')) {
+    const withoutNine = '55' + ddd + rest.substring(1);
+    variants.push(withoutNine);
+  }
+  
+  // If 8 digits after DDD (old format or landline), also try with 9 prefix
+  if (rest.length === 8) {
+    const withNine = '55' + ddd + '9' + rest;
+    variants.push(withNine);
+  }
+  
+  console.log('[Webhook] Phone variants for', phone, ':', variants);
+  return variants;
+}
+
+// Find contact by phone with flexible matching
+async function findContactByPhone(supabase: any, phoneNumber: string): Promise<any | null> {
+  const variants = getPhoneVariants(phoneNumber);
+  
+  // Try to find contact with any of the phone variants
+  const { data: contacts, error } = await supabase
+    .from('contacts')
+    .select('*')
+    .in('phone_number', variants);
+  
+  if (error) {
+    console.error('[Webhook] Error searching contacts:', error);
+    return null;
+  }
+  
+  if (contacts && contacts.length > 0) {
+    // Return the first match (should usually be just one)
+    const contact = contacts[0];
+    console.log('[Webhook] Found existing contact with phone variant:', contact.phone_number);
+    return contact;
+  }
+  
+  return null;
+}
+
 // Transcribe audio using ElevenLabs Scribe v1
 async function transcribeAudio(
   audioBuffer: ArrayBuffer, 
@@ -312,22 +384,20 @@ async function processIncomingMessage(
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   
-  const phoneNumber = message.from;
-  const whatsappId = contactInfo?.wa_id || phoneNumber;
+  const rawPhoneNumber = message.from;
+  const normalizedPhone = normalizePhone(rawPhoneNumber);
+  const whatsappId = contactInfo?.wa_id || rawPhoneNumber;
   const contactName = contactInfo?.profile?.name || null;
 
-  // 1. Get or create contact
-  let { data: contact } = await supabase
-    .from('contacts')
-    .select('*')
-    .eq('phone_number', phoneNumber)
-    .maybeSingle();
+  // 1. Get or create contact using flexible phone search
+  let contact = await findContactByPhone(supabase, rawPhoneNumber);
 
   if (!contact) {
+    // Create new contact with normalized phone number
     const { data: newContact, error: contactError } = await supabase
       .from('contacts')
       .insert({
-        phone_number: phoneNumber,
+        phone_number: normalizedPhone,
         whatsapp_id: whatsappId,
         name: contactName,
         call_name: contactName?.split(' ')[0] || null
@@ -340,19 +410,28 @@ async function processIncomingMessage(
       throw contactError;
     }
     contact = newContact;
-    console.log('[Webhook] Created new contact:', contact.id);
+    console.log('[Webhook] Created new contact:', contact.id, 'with phone:', normalizedPhone);
   } else {
-    // Update contact name if we have a new one
+    // Update contact info if needed
+    const updates: any = { last_activity: new Date().toISOString() };
+    
+    // Update name if we have a new one
     if (contactName && !contact.name) {
-      await supabase
-        .from('contacts')
-        .update({ 
-          name: contactName, 
-          call_name: contactName.split(' ')[0],
-          last_activity: new Date().toISOString()
-        })
-        .eq('id', contact.id);
+      updates.name = contactName;
+      updates.call_name = contactName.split(' ')[0];
     }
+    
+    // Update whatsapp_id if not set
+    if (!contact.whatsapp_id) {
+      updates.whatsapp_id = whatsappId;
+    }
+    
+    await supabase
+      .from('contacts')
+      .update(updates)
+      .eq('id', contact.id);
+      
+    console.log('[Webhook] Using existing contact:', contact.id, 'found by phone variant');
   }
 
   // 2. Get or create active conversation
@@ -401,7 +480,7 @@ async function processIncomingMessage(
       if (imageMediaId && settings?.whatsapp_access_token) {
         console.log('[Webhook] Processing image message:', imageMediaId);
         const { storageUrl: imageStorageUrl } = await downloadAndStoreMedia(
-          supabase, settings, imageMediaId, phoneNumber, 'image'
+          supabase, settings, imageMediaId, normalizedPhone, 'image'
         );
         if (imageStorageUrl) {
           mediaUrl = imageStorageUrl;
@@ -417,7 +496,7 @@ async function processIncomingMessage(
       if (audioMediaId && settings?.whatsapp_access_token) {
         console.log('[Webhook] Processing audio message:', audioMediaId);
         const { storageUrl, audioBuffer, mimeType: audioMimeType } = await downloadAndStoreMedia(
-          supabase, settings, audioMediaId, phoneNumber, 'audio'
+          supabase, settings, audioMediaId, normalizedPhone, 'audio'
         );
         
         if (storageUrl) {
