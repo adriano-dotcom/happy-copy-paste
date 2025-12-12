@@ -202,6 +202,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
   // WABA registration status
   const [registrationStatus, setRegistrationStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [registrationError, setRegistrationError] = useState('');
+  
+  // Connection test state
+  const [testPhoneNumber, setTestPhoneNumber] = useState('');
+  const [connectionTestStatus, setConnectionTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [connectionTestError, setConnectionTestError] = useState('');
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-webhook`;
 
@@ -230,6 +235,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
       setActiveStep(currentStep);
       setRegistrationStatus('idle');
       setRegistrationError('');
+      setConnectionTestStatus('idle');
+      setConnectionTestError('');
     }
   }, [isOpen, currentStep]);
 
@@ -302,6 +309,44 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
       return false;
     }
   }, [wabaId, accessToken]);
+
+  const testConnection = useCallback(async () => {
+    if (!accessToken || !phoneNumberId || !testPhoneNumber) {
+      toast.error('Preencha as credenciais e o número de teste');
+      return;
+    }
+
+    // Save settings first so edge function can read them
+    await saveSettings();
+
+    setConnectionTestStatus('testing');
+    setConnectionTestError('');
+
+    try {
+      const { data, error } = await supabase.functions.invoke('test-whatsapp-message', {
+        body: {
+          phone_number: testPhoneNumber,
+          message: '🧪 Teste de conexão do WhatsApp - Sistema CRM Jacometo'
+        }
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data?.success) {
+        setConnectionTestStatus('success');
+        toast.success('Mensagem de teste enviada com sucesso!');
+      } else {
+        throw new Error(data?.error || 'Erro desconhecido ao enviar mensagem');
+      }
+    } catch (error: any) {
+      console.error('Error testing connection:', error);
+      setConnectionTestStatus('error');
+      setConnectionTestError(error.message || 'Erro ao testar conexão');
+      toast.error('Falha ao enviar mensagem de teste');
+    }
+  }, [accessToken, phoneNumberId, testPhoneNumber, saveSettings]);
 
   const handleNext = async () => {
     await saveSettings();
@@ -382,13 +427,18 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ isOpen, onCl
             phoneNumberId={phoneNumberId}
             verifyToken={verifyToken}
             wabaId={wabaId}
+            testPhoneNumber={testPhoneNumber}
             onAccessTokenChange={setAccessToken}
             onPhoneNumberIdChange={setPhoneNumberId}
             onVerifyTokenChange={setVerifyToken}
             onWabaIdChange={setWabaId}
+            onTestPhoneNumberChange={setTestPhoneNumber}
+            onTestConnection={testConnection}
             webhookUrl={webhookUrl}
             registrationStatus={registrationStatus}
             registrationError={registrationError}
+            connectionTestStatus={connectionTestStatus}
+            connectionTestError={connectionTestError}
           />
         );
       case 2:
