@@ -21,6 +21,8 @@ interface Agent {
   greeting_message: string | null;
   handoff_message: string | null;
   qualification_questions: Array<{ order: number; question: string }>;
+  audio_response_enabled?: boolean;
+  elevenlabs_voice_id?: string | null;
 }
 
 serve(async (req) => {
@@ -203,17 +205,18 @@ function detectAgent(
 }
 
 // Generate audio using ElevenLabs
-async function generateAudioElevenLabs(settings: any, text: string): Promise<ArrayBuffer | null> {
+async function generateAudioElevenLabs(settings: any, text: string, agent?: Agent | null): Promise<ArrayBuffer | null> {
   if (!settings.elevenlabs_api_key) {
     console.log('[Nina] ElevenLabs API key not configured');
     return null;
   }
 
   try {
-    const voiceId = settings.elevenlabs_voice_id || '9BWtsMINqrJLrRacOk9x';
+    // Priority: agent voice > global voice > fallback
+    const voiceId = agent?.elevenlabs_voice_id || settings.elevenlabs_voice_id || '9BWtsMINqrJLrRacOk9x';
     const model = settings.elevenlabs_model || 'eleven_turbo_v2_5';
 
-    console.log('[Nina] Generating audio with ElevenLabs, voice:', voiceId);
+    console.log(`[Nina] Generating audio with ElevenLabs, voice: ${voiceId}, agent: ${agent?.name || 'global'}`);
 
     const response = await fetch(`${ELEVENLABS_API_URL}/${voiceId}`, {
       method: 'POST',
@@ -885,12 +888,21 @@ async function processQueueItem(
 
     // Check if audio response should be sent
     const incomingWasAudio = message.type === 'audio';
-    const shouldSendAudio = (settings?.audio_response_enabled || incomingWasAudio) && settings?.elevenlabs_api_key;
+    const agentAudioEnabled = agent?.audio_response_enabled ?? false;
+    
+    // Logic: respond with audio IF:
+    // 1. Global audio_response_enabled is ON, OR
+    // 2. Incoming was audio AND agent allows audio response
+    // AND always: ElevenLabs is configured
+    const shouldSendAudio = (
+      settings?.audio_response_enabled || 
+      (incomingWasAudio && agentAudioEnabled)
+    ) && settings?.elevenlabs_api_key;
+
+    console.log(`[Nina] Audio decision - Global: ${settings?.audio_response_enabled}, Agent (${agent?.name}): ${agentAudioEnabled}, Incoming audio: ${incomingWasAudio} -> Send audio: ${shouldSendAudio}`);
 
     if (shouldSendAudio) {
-      console.log(`[Nina] Audio response enabled (global: ${settings?.audio_response_enabled}, incoming was audio: ${incomingWasAudio})`);
-      
-      const audioBuffer = await generateAudioElevenLabs(settings, aiContent);
+      const audioBuffer = await generateAudioElevenLabs(settings, aiContent, agent);
       
       if (audioBuffer) {
         const audioUrl = await uploadAudioToStorage(supabase, audioBuffer, conversation.id);

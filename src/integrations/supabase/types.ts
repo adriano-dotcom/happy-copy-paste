@@ -16,9 +16,11 @@ export type Database = {
     Tables: {
       agents: {
         Row: {
+          audio_response_enabled: boolean | null
           created_at: string | null
           description: string | null
           detection_keywords: string[] | null
+          elevenlabs_voice_id: string | null
           greeting_message: string | null
           handoff_message: string | null
           id: string
@@ -32,9 +34,11 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          audio_response_enabled?: boolean | null
           created_at?: string | null
           description?: string | null
           detection_keywords?: string[] | null
+          elevenlabs_voice_id?: string | null
           greeting_message?: string | null
           handoff_message?: string | null
           id?: string
@@ -48,9 +52,11 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          audio_response_enabled?: boolean | null
           created_at?: string | null
           description?: string | null
           detection_keywords?: string[] | null
+          elevenlabs_voice_id?: string | null
           greeting_message?: string | null
           handoff_message?: string | null
           id?: string

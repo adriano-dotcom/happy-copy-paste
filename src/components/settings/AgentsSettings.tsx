@@ -3,9 +3,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { 
   Bot, Plus, Trash2, Edit2, Check, X, Loader2, 
-  MessageSquare, Sparkles, Star, Users, FlaskConical, ArrowRight
+  MessageSquare, Sparkles, Star, Users, FlaskConical, ArrowRight, Volume2
 } from 'lucide-react';
 import { Button } from '../Button';
+import { Switch } from '../ui/switch';
 
 interface TestResult {
   success: boolean;
@@ -30,6 +31,8 @@ interface Agent {
   greeting_message: string | null;
   handoff_message: string | null;
   qualification_questions: Array<{ order: number; question: string }>;
+  audio_response_enabled: boolean;
+  elevenlabs_voice_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -105,7 +108,9 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
           detection_keywords: editingAgent.detection_keywords,
           greeting_message: editingAgent.greeting_message,
           handoff_message: editingAgent.handoff_message,
-          qualification_questions: editingAgent.qualification_questions
+          qualification_questions: editingAgent.qualification_questions,
+          audio_response_enabled: editingAgent.audio_response_enabled,
+          elevenlabs_voice_id: editingAgent.elevenlabs_voice_id || null
         })
         .eq('id', editingAgent.id);
 
@@ -145,7 +150,9 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
           detection_keywords: editingAgent.detection_keywords,
           greeting_message: editingAgent.greeting_message,
           handoff_message: editingAgent.handoff_message,
-          qualification_questions: editingAgent.qualification_questions
+          qualification_questions: editingAgent.qualification_questions,
+          audio_response_enabled: editingAgent.audio_response_enabled,
+          elevenlabs_voice_id: editingAgent.elevenlabs_voice_id || null
         });
 
       if (error) throw error;
@@ -218,6 +225,8 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
       greeting_message: '',
       handoff_message: '',
       qualification_questions: [],
+      audio_response_enabled: false,
+      elevenlabs_voice_id: null,
       created_at: '',
       updated_at: ''
     });
@@ -434,6 +443,50 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
               placeholder="Mensagem quando recebe transferência de outro agente..."
             />
           </div>
+        </div>
+
+        {/* Audio Response Settings */}
+        <div className="bg-slate-800/30 rounded-lg p-4 space-y-4">
+          <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2">
+            <Volume2 className="w-4 h-4 text-cyan-400" />
+            Resposta em Áudio
+          </h4>
+          
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-white">Responder em áudio quando cliente envia áudio</p>
+              <p className="text-xs text-slate-400">
+                Quando ativado, o agente responderá com áudio se o cliente enviar mensagem de voz
+              </p>
+            </div>
+            <Switch
+              checked={editingAgent.audio_response_enabled}
+              onCheckedChange={(checked) => 
+                setEditingAgent({ ...editingAgent, audio_response_enabled: checked })
+              }
+            />
+          </div>
+          
+          {editingAgent.audio_response_enabled && (
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">
+                Voice ID do ElevenLabs (opcional)
+              </label>
+              <input
+                type="text"
+                value={editingAgent.elevenlabs_voice_id || ''}
+                onChange={(e) => setEditingAgent({ 
+                  ...editingAgent, 
+                  elevenlabs_voice_id: e.target.value || null 
+                })}
+                className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-white"
+                placeholder="Deixe vazio para usar voz padrão do sistema"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                IDs de vozes disponíveis em elevenlabs.io/voices
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Detection Keywords */}
