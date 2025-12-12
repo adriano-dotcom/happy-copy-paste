@@ -453,7 +453,7 @@ export default function FollowupAutomationsSettings() {
                     <SelectValue placeholder="Selecione um template" />
                   </SelectTrigger>
                   <SelectContent>
-                    {templates.map(template => (
+                    {templates.filter(t => t.id && t.id.trim() !== '').map(template => (
                       <SelectItem key={template.id} value={template.id}>
                         {template.name}
                       </SelectItem>
