@@ -15,18 +15,16 @@ verify_jwt = false
 [functions.whatsapp-sender]
 verify_jwt = false
 
-# Funções de teste - públicas para facilitar validação
-[functions.test-qualification-email]
-verify_jwt = false
+# Funções internas - requerem autenticação
+[functions.send-email]
+verify_jwt = true
 
-# Funções de simulação/teste - requerem JWT em produção
 [functions.simulate-webhook]
 verify_jwt = true
 
 [functions.simulate-audio-webhook]
 verify_jwt = true
 
-# Funções internas - requerem autenticação
 [functions.trigger-nina-orchestrator]
 verify_jwt = true
 
@@ -69,8 +67,8 @@ verify_jwt = true
 [functions.test-elevenlabs-tts]
 verify_jwt = true
 
-[functions.send-email]
-verify_jwt = false
-
 [functions.seed-appointments]
+verify_jwt = true
+
+[functions.test-qualification-email]
 verify_jwt = true
