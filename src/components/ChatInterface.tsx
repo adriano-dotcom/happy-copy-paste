@@ -75,7 +75,28 @@ const ChatInterface: React.FC = () => {
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const [audioDurations, setAudioDurations] = useState<Record<string, number>>({});
   const [audioProgress, setAudioProgress] = useState<Record<string, number>>({});
+  const [audioSpeed, setAudioSpeed] = useState<Record<string, number>>({});
   const audioRefs = useRef<Record<string, HTMLAudioElement>>({});
+  
+  // Generate static waveform bars based on message ID for consistency
+  const generateWaveform = (msgId: string, barCount: number = 28): number[] => {
+    const seed = msgId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    return Array.from({ length: barCount }, (_, i) => {
+      const base = Math.sin(seed * 0.1 + i * 0.4) * 35 + 50;
+      const variation = Math.sin(seed * 0.3 + i * 0.7) * 20;
+      return Math.min(100, Math.max(20, base + variation));
+    });
+  };
+  
+  // Cycle through audio speeds: 1x -> 1.5x -> 2x -> 1x
+  const cycleSpeed = (msgId: string) => {
+    const currentSpeed = audioSpeed[msgId] || 1;
+    const nextSpeed = currentSpeed === 1 ? 1.5 : currentSpeed === 1.5 ? 2 : 1;
+    setAudioSpeed(prev => ({ ...prev, [msgId]: nextSpeed }));
+    
+    const audio = audioRefs.current[msgId];
+    if (audio) audio.playbackRate = nextSpeed;
+  };
   
   // WhatsApp window real-time timer state
   const [windowTimeRemaining, setWindowTimeRemaining] = useState<{ isOpen: boolean; hoursRemaining: number | null }>({ isOpen: false, hoursRemaining: null });
@@ -535,7 +556,11 @@ const ChatInterface: React.FC = () => {
       const isPlaying = playingAudioId === msg.id;
       const duration = audioDurations[msg.id] || 0;
       const progress = audioProgress[msg.id] || 0;
+      const speed = audioSpeed[msg.id] || 1;
       const hasTranscription = msg.content && msg.content !== '[áudio]';
+      const isOutgoing = msg.direction === MessageDirection.OUTGOING;
+      const waveformBars = generateWaveform(msg.id);
+      const progressPercent = duration ? (progress / duration) * 100 : 0;
       
       const togglePlay = () => {
         const audio = audioRefs.current[msg.id];
@@ -547,15 +572,24 @@ const ChatInterface: React.FC = () => {
         } else {
           // Pause all other audios
           Object.values(audioRefs.current).forEach(a => a.pause());
+          audio.playbackRate = speed;
           audio.play();
           setPlayingAudioId(msg.id);
         }
+      };
+      
+      const seekAudio = (e: React.MouseEvent<HTMLDivElement>) => {
+        const audio = audioRefs.current[msg.id];
+        if (!audio || !duration) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const percent = (e.clientX - rect.left) / rect.width;
+        audio.currentTime = Math.max(0, Math.min(duration, percent * duration));
       };
 
       return (
         <div className="space-y-2">
           {/* Audio player */}
-          <div className="flex items-center gap-3 min-w-[220px] py-1">
+          <div className="flex items-center gap-2 min-w-[260px] py-1">
             {/* Hidden audio element */}
             {msg.mediaUrl && (
               <audio
@@ -577,62 +611,79 @@ const ChatInterface: React.FC = () => {
             <button 
               onClick={togglePlay}
               disabled={!msg.mediaUrl}
-              className={`flex items-center justify-center w-9 h-9 rounded-full transition-all shadow-md ${
-                msg.direction === MessageDirection.OUTGOING 
+              className={`flex items-center justify-center w-10 h-10 rounded-full transition-all shadow-md shrink-0 ${
+                isOutgoing 
                   ? 'bg-white text-cyan-600 hover:bg-cyan-50 disabled:opacity-50' 
                   : 'bg-cyan-500 text-white hover:bg-cyan-400 disabled:opacity-50'
               }`}
             >
               {isPlaying ? (
-                <Pause className="w-3.5 h-3.5 fill-current" />
+                <Pause className="w-4 h-4 fill-current" />
               ) : (
-                <Play className="w-3.5 h-3.5 ml-0.5 fill-current" />
+                <Play className="w-4 h-4 ml-0.5 fill-current" />
               )}
             </button>
             
-            {/* Progress bar and duration */}
-            <div className="flex-1 flex flex-col gap-1 justify-center h-9">
+            {/* Waveform and duration */}
+            <div className="flex-1 flex flex-col gap-1 justify-center">
+              {/* Waveform visualization */}
               <div 
-                className={`h-1.5 rounded-full overflow-hidden cursor-pointer ${
-                  msg.direction === MessageDirection.OUTGOING ? 'bg-white/30' : 'bg-slate-600'
-                }`}
-                onClick={(e) => {
-                  const audio = audioRefs.current[msg.id];
-                  if (!audio || !duration) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const percent = (e.clientX - rect.left) / rect.width;
-                  audio.currentTime = percent * duration;
-                }}
+                className="flex items-center gap-[2px] h-8 cursor-pointer"
+                onClick={seekAudio}
               >
-                <div 
-                  className={`h-full rounded-full transition-all ${
-                    msg.direction === MessageDirection.OUTGOING ? 'bg-white' : 'bg-cyan-400'
-                  }`}
-                  style={{ width: `${duration ? (progress / duration) * 100 : 0}%` }}
-                />
+                {waveformBars.map((height, i) => {
+                  const barPercent = (i / waveformBars.length) * 100;
+                  const isPlayed = barPercent < progressPercent;
+                  
+                  return (
+                    <div
+                      key={i}
+                      className={`w-[3px] rounded-full transition-colors duration-150 ${
+                        isPlayed 
+                          ? (isOutgoing ? 'bg-white' : 'bg-cyan-400')
+                          : (isOutgoing ? 'bg-white/30' : 'bg-slate-600')
+                      }`}
+                      style={{ height: `${height}%` }}
+                    />
+                  );
+                })}
               </div>
+              
+              {/* Duration */}
               <span className={`text-[10px] font-medium ${
-                msg.direction === MessageDirection.OUTGOING ? 'text-cyan-100' : 'text-slate-400'
+                isOutgoing ? 'text-cyan-100' : 'text-slate-400'
               }`}>
                 {formatAudioTime(progress)} / {formatAudioTime(duration)}
               </span>
             </div>
+            
+            {/* Speed control button */}
+            <button
+              onClick={() => cycleSpeed(msg.id)}
+              className={`text-[10px] font-bold px-2 py-1 rounded-full transition-all shrink-0 ${
+                isOutgoing 
+                  ? 'bg-white/20 text-white hover:bg-white/30'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              {speed}x
+            </button>
           </div>
           
           {/* Transcription indicator */}
           {hasTranscription && (
             <div className={`flex items-start gap-2 pt-2 border-t ${
-              msg.direction === MessageDirection.OUTGOING 
+              isOutgoing 
                 ? 'border-white/20' 
                 : 'border-slate-700/50'
             }`}>
               <Mic className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${
-                msg.direction === MessageDirection.OUTGOING 
+                isOutgoing 
                   ? 'text-cyan-200' 
                   : 'text-cyan-400'
               }`} />
               <p className={`text-sm italic leading-relaxed ${
-                msg.direction === MessageDirection.OUTGOING 
+                isOutgoing 
                   ? 'text-cyan-100/90' 
                   : 'text-slate-300/90'
               }`}>
