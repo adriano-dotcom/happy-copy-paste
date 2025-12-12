@@ -19,6 +19,12 @@ import { OnboardingWizard } from './components/OnboardingWizard';
 import { OnboardingBanner } from './components/OnboardingBanner';
 import { useOnboardingStatus } from './hooks/useOnboardingStatus';
 
+// Mobile redirect component - redirects to /chat on mobile, /dashboard on desktop
+const MobileRedirect: React.FC = () => {
+  const isMobile = window.innerWidth < 768;
+  return <Navigate to={isMobile ? "/chat" : "/dashboard"} replace />;
+};
+
 // Componente de Layout que envolve a aplicação principal
 const AppLayout: React.FC = () => {
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -82,7 +88,7 @@ const App: React.FC = () => {
                 <AppLayout />
               </ProtectedRoute>
             }>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/" element={<MobileRedirect />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/kanban" element={<Kanban />} />
               <Route path="/chat" element={<ChatInterface />} />
