@@ -255,6 +255,7 @@ export interface DBConversation {
   status: ConversationStatus;
   is_active: boolean;
   assigned_user_id: string | null;
+  assigned_user_name: string | null;
   assigned_team: string | null;
   current_agent_id: string | null;
   tags: string[];

@@ -351,6 +351,7 @@ export type Database = {
         Row: {
           assigned_team: Database["public"]["Enums"]["team_assignment"] | null
           assigned_user_id: string | null
+          assigned_user_name: string | null
           contact_id: string
           created_at: string
           current_agent_id: string | null
@@ -368,6 +369,7 @@ export type Database = {
         Insert: {
           assigned_team?: Database["public"]["Enums"]["team_assignment"] | null
           assigned_user_id?: string | null
+          assigned_user_name?: string | null
           contact_id: string
           created_at?: string
           current_agent_id?: string | null
@@ -385,6 +387,7 @@ export type Database = {
         Update: {
           assigned_team?: Database["public"]["Enums"]["team_assignment"] | null
           assigned_user_id?: string | null
+          assigned_user_name?: string | null
           contact_id?: string
           created_at?: string
           current_agent_id?: string | null
