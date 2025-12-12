@@ -406,6 +406,110 @@ async function processQueueItem(
   // Get client memory
   const clientMemory = conversation.contact?.client_memory || {};
 
+  // ===== CNPJ CONFIRMATION RESPONSE DETECTION =====
+  // Check if last assistant message was a CNPJ confirmation request
+  const lastAssistantMessage = (recentMessages || []).find((m: any) => m.from_type === 'nina');
+  const isConfirmationResponse = lastAssistantMessage?.content?.includes('Encontrei:') && 
+                                  lastAssistantMessage?.content?.includes('Está correto?');
+  
+  if (isConfirmationResponse && message.content) {
+    const userResponse = message.content.toLowerCase().trim();
+    
+    // Check for positive confirmation
+    const positiveResponses = ['sim', 'confirmo', 'isso', 'correto', 'certo', 'isso mesmo', 'é isso', 'exato', 'exatamente', 's', 'ss', 'sss', 'simmm', 'simm', 'isso aí', 'isso ai', 'certinho', 'é esse', 'é essa', 'é sim', 'é'];
+    const isPositive = positiveResponses.some(r => userResponse === r || userResponse.startsWith(r + ' ') || userResponse.endsWith(' ' + r));
+    
+    // Check for negative response with company correction
+    const negativeResponses = ['não', 'nao', 'n', 'nn', 'nnn', 'errado', 'incorreto', 'não é', 'nao é', 'não, é', 'nao, é', 'na verdade', 'na vdd'];
+    const isNegative = negativeResponses.some(r => userResponse.startsWith(r));
+    
+    if (isPositive) {
+      console.log(`[Nina] ✅ Client confirmed company name`);
+      
+      // Continue with qualification - let AI continue the conversation
+      // No early return - flow continues to AI processing
+      
+    } else if (isNegative) {
+      console.log(`[Nina] ❌ Client rejected company name, checking for correction...`);
+      
+      // Try to extract the correct company name from the response
+      // Common patterns: "Não, é XYZ", "Na verdade é XYZ", "É [company name]"
+      const correctionPatterns = [
+        /(?:não|nao|na verdade|na vdd)[,\s]+(?:é|e|o nome é|a empresa é|é a|nome é)\s+(.+)/i,
+        /(?:é|o nome é|a empresa é)\s+(.+)/i,
+        /(?:não|nao)[,\s]+(.+)/i
+      ];
+      
+      let correctedName: string | null = null;
+      for (const pattern of correctionPatterns) {
+        const match = userResponse.match(pattern);
+        if (match && match[1]) {
+          const rawName = match[1].trim();
+          // Clean up common trailing words
+          correctedName = rawName.replace(/\s*(mesmo|sim|ok|tá|ta|beleza)$/i, '').trim();
+          break;
+        }
+      }
+      
+      if (correctedName && correctedName.length > 2) {
+        // Update contact with corrected company name
+        await supabase
+          .from('contacts')
+          .update({ 
+            company: correctedName.toUpperCase(),
+            updated_at: new Date().toISOString() 
+          })
+          .eq('id', conversation.contact_id);
+        
+        console.log(`[Nina] 📝 Company name corrected to: ${correctedName.toUpperCase()}`);
+        
+        // Send acknowledgment message
+        const ackMessage = `Anotado: ${correctedName.toUpperCase()}.`;
+        
+        // Calculate delay
+        const delayMin = settings?.response_delay_min || 1000;
+        const delayMax = settings?.response_delay_max || 3000;
+        const delay = Math.random() * (delayMax - delayMin) + delayMin;
+        
+        // Get AI settings for metadata
+        const aiSettings = getModelSettings(settings, conversationHistory, message, conversation.contact, clientMemory);
+        
+        // Queue the acknowledgment message
+        await queueTextResponse(supabase, conversation, message, ackMessage, settings, aiSettings, delay, agent);
+        
+        // Mark message as processed
+        const responseTime = Date.now() - new Date(message.sent_at).getTime();
+        await supabase
+          .from('messages')
+          .update({ 
+            processed_by_nina: true,
+            nina_response_time: responseTime
+          })
+          .eq('id', message.id);
+        
+        // Trigger whatsapp-sender
+        try {
+          const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+          fetch(senderUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`
+            },
+            body: JSON.stringify({ triggered_by: 'nina-orchestrator-cnpj-correction' })
+          }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+        } catch (e) {
+          console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+        }
+        
+        console.log(`[Nina] 📋 Company correction acknowledged`);
+        return; // Return early, next message will continue qualification
+      }
+      // If we couldn't extract a correction, let AI handle the response naturally
+    }
+  }
+  // ===== END CNPJ CONFIRMATION RESPONSE DETECTION =====
+
   // ===== IMMEDIATE CNPJ DETECTION WITH CONFIRMATION =====
   // Detect CNPJ in user message, fetch company data, and ask for confirmation
   if (message.content) {
