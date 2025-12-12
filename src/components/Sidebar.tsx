@@ -5,16 +5,18 @@ import { Sidebar, SidebarBody, SidebarLink, useSidebar } from '@/components/ui/s
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import jacometoLogo from '@/assets/jacometo-logo.png';
+import { useUserRole } from '@/hooks/useUserRole';
+import { useAuth } from '@/hooks/useAuth';
 
-const menuItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'kanban', label: 'Pipeline', icon: Kanban },
-  { id: 'chat', label: 'Chat Ao Vivo', icon: MessageSquare },
-  { id: 'contacts', label: 'Contatos', icon: Users },
-  { id: 'scheduling', label: 'Agendamentos', icon: Calendar },
-  { id: 'team', label: 'Equipe', icon: ShieldCheck },
-  { id: 'functions', label: 'Funções', icon: Code2 },
-  { id: 'settings', label: 'Configurações', icon: SettingsIcon },
+const allMenuItems = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, adminOnly: false },
+  { id: 'kanban', label: 'Pipeline', icon: Kanban, adminOnly: false },
+  { id: 'chat', label: 'Chat Ao Vivo', icon: MessageSquare, adminOnly: false },
+  { id: 'contacts', label: 'Contatos', icon: Users, adminOnly: false },
+  { id: 'scheduling', label: 'Agendamentos', icon: Calendar, adminOnly: false },
+  { id: 'team', label: 'Equipe', icon: ShieldCheck, adminOnly: true },
+  { id: 'functions', label: 'Funções', icon: Code2, adminOnly: true },
+  { id: 'settings', label: 'Configurações', icon: SettingsIcon, adminOnly: true },
 ];
 
 const Logo = () => {
@@ -52,12 +54,30 @@ const SidebarContent = () => {
   const location = useLocation();
   const currentPath = location.pathname.substring(1) || 'dashboard';
   const { open } = useSidebar();
+  const { isAdmin, loading: roleLoading } = useUserRole();
+  const { user, signOut } = useAuth();
+
+  // Filter menu items based on user role
+  const menuItems = allMenuItems.filter(item => !item.adminOnly || isAdmin);
 
   const links = menuItems.map(item => ({
     label: item.label,
     href: `/${item.id}`,
     icon: <item.icon className="h-5 w-5" />,
   }));
+
+  // Get display name from email
+  const displayName = user?.email 
+    ? user.email.split('@')[0].split('.').map(
+        word => word.charAt(0).toUpperCase() + word.slice(1)
+      ).join(' ')
+    : 'Usuário';
+  const displayEmail = user?.email || '';
+  const initials = displayName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+  const handleLogout = async () => {
+    await signOut();
+  };
 
   return (
     <>
@@ -79,9 +99,9 @@ const SidebarContent = () => {
 
       {/* User Footer */}
       <div className="border-t border-slate-800/50 pt-4">
-        <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-800/50 transition-colors cursor-pointer group">
+        <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-800/50 transition-colors group">
           <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-cyan-900 to-slate-800 flex items-center justify-center text-xs font-bold text-cyan-200 border border-slate-700 ring-2 ring-transparent group-hover:ring-cyan-500/20 transition-all flex-shrink-0">
-            AD
+            {initials}
           </div>
           <motion.div
             animate={{
@@ -91,18 +111,21 @@ const SidebarContent = () => {
             transition={{ duration: 0.2 }}
             className="flex-1 overflow-hidden"
           >
-            <p className="text-sm font-medium text-slate-200 group-hover:text-white whitespace-nowrap">Administrador</p>
-            <p className="text-xs text-slate-500 truncate">admin@empresa.com</p>
+            <p className="text-sm font-medium text-slate-200 group-hover:text-white whitespace-nowrap">{displayName}</p>
+            <p className="text-xs text-slate-500 truncate">{displayEmail}</p>
           </motion.div>
-          <motion.div
+          <motion.button
             animate={{
               display: open ? "block" : "none",
               opacity: open ? 1 : 0,
             }}
             transition={{ duration: 0.2 }}
+            onClick={handleLogout}
+            className="p-1.5 rounded-lg hover:bg-slate-700/50 transition-colors"
+            title="Sair"
           >
             <LogOut className="w-4 h-4 text-slate-500 hover:text-red-400 transition-colors" />
-          </motion.div>
+          </motion.button>
         </div>
       </div>
     </>
