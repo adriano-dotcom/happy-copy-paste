@@ -121,18 +121,26 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
               const barPercent = (i / waveformBars.length) * 100;
               const isPlayed = barPercent < progressPercent;
               
-                  return (
-                    <div
-                      key={i}
-                      className={`w-[3px] rounded-full transition-colors duration-150 ${
-                        isPlayed 
-                          ? (isOutgoing ? 'bg-white' : 'bg-cyan-400')
-                          : (isOutgoing ? 'bg-white/30' : 'bg-slate-500')
-                      }`}
-                      style={{ height: `${height}%` }}
-                    />
-                  );
-                })}
+              // Animate bars near the current playback position
+              const distanceFromProgress = Math.abs(barPercent - progressPercent);
+              const isNearProgress = distanceFromProgress < 12;
+              const shouldAnimate = isPlaying && isNearProgress;
+              
+              return (
+                <div
+                  key={i}
+                  className={`w-[3px] rounded-full transition-colors duration-150 origin-center ${
+                    isPlayed 
+                      ? (isOutgoing ? 'bg-white' : 'bg-cyan-400')
+                      : (isOutgoing ? 'bg-white/30' : 'bg-slate-500')
+                  } ${shouldAnimate ? 'animate-waveform-pulse' : ''}`}
+                  style={{ 
+                    height: `${height}%`,
+                    animationDelay: shouldAnimate ? `${(i % 4) * 0.08}s` : undefined
+                  }}
+                />
+              );
+            })}
           </div>
           
           {/* Duration */}
