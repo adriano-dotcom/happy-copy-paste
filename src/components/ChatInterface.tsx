@@ -73,7 +73,66 @@ const ChatInterface: React.FC = () => {
   const [audioProgress, setAudioProgress] = useState<Record<string, number>>({});
   const audioRefs = useRef<Record<string, HTMLAudioElement>>({});
   
+  // WhatsApp window real-time timer state
+  const [windowTimeRemaining, setWindowTimeRemaining] = useState<{ isOpen: boolean; hoursRemaining: number | null }>({ isOpen: false, hoursRemaining: null });
+  
   const activeChat = conversations.find(c => c.id === selectedChatId);
+  
+  // Calculate WhatsApp window remaining time
+  const calculateWindowRemaining = (windowStart: string | null): { isOpen: boolean; hoursRemaining: number | null } => {
+    if (!windowStart) return { isOpen: false, hoursRemaining: null };
+    const start = new Date(windowStart);
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const msRemaining = end.getTime() - now.getTime();
+    if (msRemaining <= 0) return { isOpen: false, hoursRemaining: 0 };
+    return { 
+      isOpen: true, 
+      hoursRemaining: msRemaining / (1000 * 60 * 60) 
+    };
+  };
+  
+  // Real-time timer for WhatsApp window countdown
+  useEffect(() => {
+    if (!activeChat?.whatsappWindowStart) {
+      setWindowTimeRemaining({ isOpen: false, hoursRemaining: null });
+      return;
+    }
+    
+    // Calculate immediately
+    setWindowTimeRemaining(calculateWindowRemaining(activeChat.whatsappWindowStart));
+    
+    // Update every minute
+    const interval = setInterval(() => {
+      setWindowTimeRemaining(calculateWindowRemaining(activeChat.whatsappWindowStart));
+    }, 60000);
+    
+    return () => clearInterval(interval);
+  }, [activeChat?.id, activeChat?.whatsappWindowStart]);
+  
+  // Get badge color based on remaining time
+  const getWindowBadgeStyle = () => {
+    const hours = windowTimeRemaining.hoursRemaining;
+    if (hours === null || !windowTimeRemaining.isOpen) {
+      return 'bg-red-500/20 text-red-400 border-red-500/30';
+    }
+    if (hours > 6) return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+    if (hours > 1) return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+    if (hours > 0.25) return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+    return 'bg-red-500/20 text-red-400 border-red-500/30 animate-pulse';
+  };
+  
+  // Format remaining time for display
+  const formatWindowTime = () => {
+    const hours = windowTimeRemaining.hoursRemaining;
+    if (hours === null) return 'Janela aberta';
+    if (hours >= 1) {
+      const h = Math.floor(hours);
+      const m = Math.floor((hours - h) * 60);
+      return m > 0 ? `${h}h ${m}min` : `${h}h restantes`;
+    }
+    return `${Math.max(1, Math.floor(hours * 60))}min restantes`;
+  };
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Active call state
@@ -242,8 +301,8 @@ const ChatInterface: React.FC = () => {
     e?.preventDefault();
     if (!inputText.trim() || !activeChat) return;
 
-    // Check if WhatsApp window is closed
-    if (!activeChat.isWhatsAppWindowOpen) {
+    // Check if WhatsApp window is closed (using real-time state)
+    if (!windowTimeRemaining.isOpen) {
       toast.error('Janela de 24h expirou. Use um template para reabrir a conversa.');
       return;
     }
@@ -761,16 +820,11 @@ const ChatInterface: React.FC = () => {
                   <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
                     {activeChat.contactName}
                     {renderStatusBadge(activeChat.status)}
-                    {/* WhatsApp Window Badge */}
-                    {activeChat.isWhatsAppWindowOpen ? (
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                    {/* WhatsApp Window Badge - Real-time */}
+                    {windowTimeRemaining.isOpen ? (
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 ${getWindowBadgeStyle()}`}>
                         <Clock className="w-3 h-3" />
-                        {activeChat.windowHoursRemaining !== null && activeChat.windowHoursRemaining > 1 
-                          ? `${Math.floor(activeChat.windowHoursRemaining)}h restantes`
-                          : activeChat.windowHoursRemaining !== null 
-                            ? `${Math.floor(activeChat.windowHoursRemaining * 60)}min restantes`
-                            : 'Janela aberta'
-                        }
+                        {formatWindowTime()}
                       </span>
                     ) : (
                       <span className="px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 bg-red-500/20 text-red-400 border-red-500/30">
@@ -951,8 +1005,8 @@ const ChatInterface: React.FC = () => {
 
             {/* Input Area */}
             <div className="p-4 bg-slate-900/90 border-t border-slate-800 backdrop-blur-sm z-10">
-              {/* Window closed banner */}
-              {!activeChat.isWhatsAppWindowOpen && (
+              {/* Window closed banner - uses real-time state */}
+              {!windowTimeRemaining.isOpen && (
                 <div className="mb-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
                   <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0" />
                   <div className="flex-1">
@@ -972,17 +1026,17 @@ const ChatInterface: React.FC = () => {
               
               <form onSubmit={handleSendMessage} className="flex items-end gap-3 max-w-4xl mx-auto">
                 <div className="flex items-center gap-1">
-                  <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors" disabled={!activeChat.isWhatsAppWindowOpen}>
+                  <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors" disabled={!windowTimeRemaining.isOpen}>
                     <Smile className="w-5 h-5" />
                   </Button>
-                  <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors" disabled={!activeChat.isWhatsAppWindowOpen}>
+                  <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors" disabled={!windowTimeRemaining.isOpen}>
                     <Paperclip className="w-5 h-5" />
                   </Button>
                   <Button 
                     type="button" 
                     variant="ghost" 
                     size="icon" 
-                    className={`rounded-full transition-colors ${!activeChat.isWhatsAppWindowOpen 
+                    className={`rounded-full transition-colors ${!windowTimeRemaining.isOpen 
                       ? 'text-green-400 bg-green-500/20 hover:bg-green-500/30 animate-pulse' 
                       : 'text-slate-400 hover:text-green-400 hover:bg-green-500/10'
                     }`}
@@ -994,7 +1048,7 @@ const ChatInterface: React.FC = () => {
                 </div>
                 
                 <div className={`flex-1 bg-slate-950 rounded-2xl border ${
-                  !activeChat.isWhatsAppWindowOpen 
+                  !windowTimeRemaining.isOpen 
                     ? 'border-red-500/30 opacity-50' 
                     : 'border-slate-800 focus-within:ring-2 focus-within:ring-cyan-500/30 focus-within:border-cyan-500/50'
                 } transition-all shadow-inner`}>
@@ -1008,7 +1062,7 @@ const ChatInterface: React.FC = () => {
                       }
                     }}
                     placeholder={
-                      !activeChat.isWhatsAppWindowOpen 
+                      !windowTimeRemaining.isOpen 
                         ? 'Janela expirada - use template para continuar' 
                         : activeChat.status === 'nina' 
                           ? `${sdrName} está respondendo automaticamente...` 
@@ -1016,16 +1070,16 @@ const ChatInterface: React.FC = () => {
                     }
                     className="w-full bg-transparent border-none p-3.5 max-h-32 min-h-[48px] text-sm text-slate-200 focus:ring-0 resize-none outline-none placeholder:text-slate-600 disabled:cursor-not-allowed"
                     rows={1}
-                    disabled={!activeChat.isWhatsAppWindowOpen}
+                    disabled={!windowTimeRemaining.isOpen}
                   />
                 </div>
 
-                {inputText.trim() && activeChat.isWhatsAppWindowOpen ? (
+                {inputText.trim() && windowTimeRemaining.isOpen ? (
                   <Button type="submit" className="rounded-full w-12 h-12 p-0 shadow-lg shadow-cyan-500/20 hover:scale-105 active:scale-95 transition-all">
                     <Send className="w-5 h-5 ml-0.5" />
                   </Button>
                 ) : (
-                  <Button type="button" variant="secondary" className="rounded-full w-12 h-12 p-0 bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700" disabled={!activeChat.isWhatsAppWindowOpen}>
+                  <Button type="button" variant="secondary" className="rounded-full w-12 h-12 p-0 bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700" disabled={!windowTimeRemaining.isOpen}>
                     <Mic className="w-5 h-5" />
                   </Button>
                 )}
