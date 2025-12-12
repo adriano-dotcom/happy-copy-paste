@@ -15,6 +15,10 @@ verify_jwt = false
 [functions.whatsapp-sender]
 verify_jwt = false
 
+# Funções de teste - públicas para facilitar validação
+[functions.test-qualification-email]
+verify_jwt = false
+
 # Funções de simulação/teste - requerem JWT em produção
 [functions.simulate-webhook]
 verify_jwt = true
