@@ -25,7 +25,6 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -68,24 +67,36 @@ serve(async (req) => {
     const audioBlob = await audioResponse.blob();
     console.log(`[transcribe-call-recording] Áudio baixado: ${audioBlob.size} bytes, tipo: ${audioBlob.type}`);
 
-    // Enviar para Lovable AI Gateway (Whisper)
-    if (!lovableApiKey) {
-      throw new Error('LOVABLE_API_KEY não configurada');
+    // Buscar API key do ElevenLabs (mesmo usado para TTS)
+    const { data: settings } = await supabase
+      .from('nina_settings')
+      .select('elevenlabs_api_key, elevenlabs_key_in_vault')
+      .single();
+
+    let elevenlabsApiKey = settings?.elevenlabs_api_key;
+    
+    // Se a key está no vault, buscar de lá
+    if (settings?.elevenlabs_key_in_vault) {
+      const { data: vaultKey } = await supabase.rpc('get_vault_secret', { secret_name: 'ELEVENLABS_API_KEY' });
+      if (vaultKey) elevenlabsApiKey = vaultKey;
     }
 
-    // Criar FormData para o Whisper
+    if (!elevenlabsApiKey) {
+      throw new Error('ELEVENLABS_API_KEY não configurada');
+    }
+
+    // Criar FormData para ElevenLabs Scribe
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.mp3');
-    formData.append('model', 'whisper-1');
-    formData.append('language', 'pt');
-    formData.append('response_format', 'text');
+    formData.append('model_id', 'scribe_v1');
+    formData.append('language_code', 'por');
 
-    console.log('[transcribe-call-recording] Enviando para Whisper...');
+    console.log('[transcribe-call-recording] Enviando para ElevenLabs Scribe...');
 
-    const whisperResponse = await fetch('https://ai.gateway.lovable.dev/v1/audio/transcriptions', {
+    const whisperResponse = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
+        'xi-api-key': elevenlabsApiKey,
       },
       body: formData,
     });
@@ -103,7 +114,8 @@ serve(async (req) => {
       throw new Error(`Erro na transcrição: ${whisperResponse.status}`);
     }
 
-    const transcription = await whisperResponse.text();
+    const result = await whisperResponse.json();
+    const transcription = result.text || '';
     console.log(`[transcribe-call-recording] Transcrição concluída: ${transcription.substring(0, 100)}...`);
 
     // Salvar transcrição no banco
