@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/audio/transcriptions";
+// Note: Audio transcription requires OpenAI API key (not supported by Lovable AI Gateway)
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -251,43 +251,6 @@ async function downloadAndStoreMedia(
   }
 }
 
-// Transcribe audio using Lovable AI Gateway (Whisper)
-async function transcribeAudio(audioBuffer: ArrayBuffer, lovableApiKey: string): Promise<string | null> {
-  try {
-    console.log('[Webhook] Transcribing audio, size:', audioBuffer.byteLength, 'bytes');
-
-    // Create FormData with the audio file
-    const formData = new FormData();
-    const audioBlob = new Blob([audioBuffer], { type: 'audio/ogg' });
-    formData.append('file', audioBlob, 'audio.ogg');
-    formData.append('model', 'whisper-1');
-    formData.append('language', 'pt');
-
-    const response = await fetch(LOVABLE_AI_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableApiKey}`
-      },
-      body: formData
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[Webhook] Transcription error:', response.status, errorText);
-      return null;
-    }
-
-    const result = await response.json();
-    const transcription = result.text;
-    
-    console.log('[Webhook] Transcription result:', transcription);
-    return transcription || null;
-  } catch (error) {
-    console.error('[Webhook] Error transcribing audio:', error);
-    return null;
-  }
-}
-
 async function processIncomingMessage(
   supabase: any, 
   message: any, 
@@ -399,37 +362,21 @@ async function processIncomingMessage(
     case 'audio':
       messageType = 'audio';
       mediaType = 'audio';
-      // Download, store, and transcribe the audio
+      // Download and store the audio permanently
       const audioMediaId = message.audio?.id;
       if (audioMediaId && settings?.whatsapp_access_token) {
         console.log('[Webhook] Processing audio message:', audioMediaId);
-        const { storageUrl, audioBuffer } = await downloadAndStoreMedia(
+        const { storageUrl } = await downloadAndStoreMedia(
           supabase, settings, audioMediaId, phoneNumber, 'audio'
         );
         
-        // Save the permanent storage URL
         if (storageUrl) {
           mediaUrl = storageUrl;
           console.log('[Webhook] Audio stored at:', storageUrl);
         }
-        
-        // Try to transcribe if we have the audio buffer and API key
-        if (audioBuffer && lovableApiKey) {
-          const transcription = await transcribeAudio(audioBuffer, lovableApiKey);
-          if (transcription) {
-            content = transcription;
-            console.log('[Webhook] Audio transcribed:', transcription.substring(0, 100));
-          } else {
-            content = '[áudio não transcrito]';
-          }
-        } else if (!audioBuffer) {
-          content = '[áudio não baixado]';
-        } else {
-          content = '[áudio]';
-        }
-      } else {
-        content = '[áudio]';
       }
+      // Audio messages show as [áudio] - playback available via media_url
+      content = '[áudio]';
       break;
     case 'video':
       messageType = 'video';
