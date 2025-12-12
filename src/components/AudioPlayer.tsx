@@ -98,19 +98,18 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
         <button 
           onClick={togglePlay}
           disabled={!mediaUrl}
-          className={`flex items-center justify-center w-10 h-10 rounded-full transition-all shadow-md shrink-0 ${
+          className={`flex items-center justify-center rounded-full transition-all shadow-md shrink-0 ${
             isOutgoing 
-              ? 'bg-white text-cyan-600 hover:bg-cyan-50 disabled:opacity-50' 
-              : 'bg-cyan-500 text-white hover:bg-cyan-400 disabled:opacity-50'
+              ? 'w-10 h-10 bg-white text-cyan-600 hover:bg-cyan-50 disabled:opacity-50' 
+              : 'w-12 h-12 bg-cyan-500 text-white hover:bg-cyan-400 disabled:opacity-50 shadow-lg'
           }`}
         >
           {isPlaying ? (
-            <Pause className="w-4 h-4 fill-current" />
+            <Pause className={`fill-current ${isOutgoing ? 'w-4 h-4' : 'w-5 h-5'}`} />
           ) : (
-            <Play className="w-4 h-4 ml-0.5 fill-current" />
+            <Play className={`ml-0.5 fill-current ${isOutgoing ? 'w-4 h-4' : 'w-5 h-5'}`} />
           )}
         </button>
-        
         {/* Waveform and duration */}
         <div className="flex-1 flex flex-col gap-1 justify-center">
           {/* Waveform visualization */}
@@ -122,18 +121,18 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
               const barPercent = (i / waveformBars.length) * 100;
               const isPlayed = barPercent < progressPercent;
               
-              return (
-                <div
-                  key={i}
-                  className={`w-[3px] rounded-full transition-colors duration-150 ${
-                    isPlayed 
-                      ? (isOutgoing ? 'bg-white' : 'bg-cyan-400')
-                      : (isOutgoing ? 'bg-white/30' : 'bg-slate-600')
-                  }`}
-                  style={{ height: `${height}%` }}
-                />
-              );
-            })}
+                  return (
+                    <div
+                      key={i}
+                      className={`w-[3px] rounded-full transition-colors duration-150 ${
+                        isPlayed 
+                          ? (isOutgoing ? 'bg-white' : 'bg-cyan-400')
+                          : (isOutgoing ? 'bg-white/30' : 'bg-slate-500')
+                      }`}
+                      style={{ height: `${height}%` }}
+                    />
+                  );
+                })}
           </div>
           
           {/* Duration */}
@@ -150,7 +149,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
           className={`font-bold rounded-full transition-all shrink-0 ${
             isOutgoing 
               ? 'text-[10px] px-2 py-1 bg-white/20 text-white hover:bg-white/30'
-              : 'text-xs px-3 py-1.5 bg-cyan-600 text-white hover:bg-cyan-500 shadow-md border border-cyan-500'
+              : 'text-sm px-4 py-2 bg-cyan-600 text-white hover:bg-cyan-500 shadow-lg border-2 border-cyan-400'
           }`}
         >
           {speed}x
