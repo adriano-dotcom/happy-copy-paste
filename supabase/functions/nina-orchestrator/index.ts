@@ -406,8 +406,8 @@ async function processQueueItem(
   // Get client memory
   const clientMemory = conversation.contact?.client_memory || {};
 
-  // ===== IMMEDIATE CNPJ DETECTION =====
-  // Detect CNPJ in user message and update contact immediately
+  // ===== IMMEDIATE CNPJ DETECTION WITH CONFIRMATION =====
+  // Detect CNPJ in user message, fetch company data, and ask for confirmation
   if (message.content) {
     const cnpjRegex = /(\d{2}[\.\s]?\d{3}[\.\s]?\d{3}[\/\s]?\d{4}[-\.\s]?\d{2})/g;
     const cnpjMatch = message.content.match(cnpjRegex);
@@ -433,8 +433,7 @@ async function processQueueItem(
                 updated_at: new Date().toISOString() 
               };
               
-              // Only update company if we got data and contact doesn't have one
-              if (companyName && !conversation.contact?.company) {
+              if (companyName) {
                 updateData.company = companyName;
               }
               
@@ -444,6 +443,56 @@ async function processQueueItem(
                 .eq('id', conversation.contact_id);
                 
               console.log(`[Nina] ✅ Contact updated - CNPJ: ${cleanCnpj}, Company: ${companyName || 'N/A'}`);
+              
+              // If we got company name, send confirmation message and return early
+              if (companyName) {
+                const confirmationMessage = `Encontrei: ${companyName.toUpperCase()}. Está correto?`;
+                
+                // Calculate delay
+                const delayMin = settings?.response_delay_min || 1000;
+                const delayMax = settings?.response_delay_max || 3000;
+                const delay = Math.random() * (delayMax - delayMin) + delayMin;
+                
+                // Get AI settings for metadata
+                const aiSettings = getModelSettings(settings, conversationHistory, message, conversation.contact, clientMemory);
+                
+                // Queue the confirmation message
+                await queueTextResponse(supabase, conversation, message, confirmationMessage, settings, aiSettings, delay, agent);
+                
+                // Mark message as processed
+                const responseTime = Date.now() - new Date(message.sent_at).getTime();
+                await supabase
+                  .from('messages')
+                  .update({ 
+                    processed_by_nina: true,
+                    nina_response_time: responseTime
+                  })
+                  .eq('id', message.id);
+                
+                // Trigger whatsapp-sender
+                try {
+                  const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+                  fetch(senderUrl, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${supabaseServiceKey}`
+                    },
+                    body: JSON.stringify({ triggered_by: 'nina-orchestrator-cnpj-confirmation' })
+                  }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+                } catch (e) {
+                  console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+                }
+                
+                console.log(`[Nina] 📋 CNPJ confirmation message queued for ${companyName}`);
+                return new Response(JSON.stringify({ 
+                  success: true, 
+                  action: 'cnpj_confirmation_sent',
+                  company: companyName
+                }), {
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+              }
             } else {
               // BrasilAPI failed but still save the CNPJ
               await supabase
