@@ -20,6 +20,12 @@ export type Database = {
           created_at: string | null
           description: string | null
           detection_keywords: string[] | null
+          elevenlabs_model: string | null
+          elevenlabs_similarity_boost: number | null
+          elevenlabs_speaker_boost: boolean | null
+          elevenlabs_speed: number | null
+          elevenlabs_stability: number | null
+          elevenlabs_style: number | null
           elevenlabs_voice_id: string | null
           greeting_message: string | null
           handoff_message: string | null
@@ -38,6 +44,12 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           detection_keywords?: string[] | null
+          elevenlabs_model?: string | null
+          elevenlabs_similarity_boost?: number | null
+          elevenlabs_speaker_boost?: boolean | null
+          elevenlabs_speed?: number | null
+          elevenlabs_stability?: number | null
+          elevenlabs_style?: number | null
           elevenlabs_voice_id?: string | null
           greeting_message?: string | null
           handoff_message?: string | null
@@ -56,6 +68,12 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           detection_keywords?: string[] | null
+          elevenlabs_model?: string | null
+          elevenlabs_similarity_boost?: number | null
+          elevenlabs_speaker_boost?: boolean | null
+          elevenlabs_speed?: number | null
+          elevenlabs_stability?: number | null
+          elevenlabs_style?: number | null
           elevenlabs_voice_id?: string | null
           greeting_message?: string | null
           handoff_message?: string | null
