@@ -406,6 +406,57 @@ async function processQueueItem(
   // Get client memory
   const clientMemory = conversation.contact?.client_memory || {};
 
+  // Check if this is the first interaction (only 1 user message, no assistant messages yet)
+  const userMessages = conversationHistory.filter((m: any) => m.role === 'user');
+  const assistantMessages = conversationHistory.filter((m: any) => m.role === 'assistant');
+  const isFirstInteraction = userMessages.length === 1 && assistantMessages.length === 0;
+
+  // If first interaction and agent has greeting_message, use it instead of AI
+  if (isFirstInteraction && agent?.greeting_message) {
+    console.log(`[Nina] First interaction - using greeting_message for ${agent.name}`);
+    
+    const greetingContent = processPromptTemplate(agent.greeting_message, conversation.contact);
+    
+    // Calculate delay
+    const delayMin = settings?.response_delay_min || 1000;
+    const delayMax = settings?.response_delay_max || 3000;
+    const delay = Math.random() * (delayMax - delayMin) + delayMin;
+    
+    // Get AI settings for metadata
+    const aiSettings = getModelSettings(settings, conversationHistory, message, conversation.contact, clientMemory);
+    
+    // Queue the greeting message
+    await queueTextResponse(supabase, conversation, message, greetingContent, settings, aiSettings, delay, agent);
+    
+    // Mark message as processed
+    const responseTime = Date.now() - new Date(message.sent_at).getTime();
+    await supabase
+      .from('messages')
+      .update({ 
+        processed_by_nina: true,
+        nina_response_time: responseTime
+      })
+      .eq('id', message.id);
+
+    // Trigger whatsapp-sender
+    try {
+      const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+      fetch(senderUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({ triggered_by: 'nina-orchestrator-greeting' })
+      }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+    } catch (err) {
+      console.error('[Nina] Failed to trigger whatsapp-sender:', err);
+    }
+
+    console.log('[Nina] Greeting message queued, skipping AI call');
+    return;
+  }
+
   // Build system prompt - use agent prompt or fallback to settings/default
   let systemPrompt: string;
   if (agent) {
