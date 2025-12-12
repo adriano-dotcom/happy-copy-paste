@@ -28,6 +28,8 @@ import { CallConfirmationModal } from './CallConfirmationModal';
 import { useActiveCall } from '@/hooks/useActiveCall';
 import { ActiveCallIndicator } from './ActiveCallIndicator';
 import { CallHistoryPanel } from './CallHistoryPanel';
+import { useNinaProcessingStatus } from '@/hooks/useNinaProcessingStatus';
+import { TypingIndicator } from './TypingIndicator';
 import { SendWhatsAppTemplateModal } from './SendWhatsAppTemplateModal';
 
 const ChatInterface: React.FC = () => {
@@ -79,6 +81,9 @@ const ChatInterface: React.FC = () => {
   const [windowTimeRemaining, setWindowTimeRemaining] = useState<{ isOpen: boolean; hoursRemaining: number | null }>({ isOpen: false, hoursRemaining: null });
   
   const activeChat = conversations.find(c => c.id === selectedChatId);
+  
+  // Nina processing status for typing indicator
+  const { isAggregating, isProcessing, agentName } = useNinaProcessingStatus(selectedChatId);
   
   // Calculate WhatsApp window remaining time
   const calculateWindowRemaining = (windowStart: string | null): { isOpen: boolean; hoursRemaining: number | null } => {
@@ -265,6 +270,13 @@ const ChatInterface: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [activeChat?.messages]);
+
+  // Scroll to bottom when typing indicator appears
+  useEffect(() => {
+    if (isAggregating || isProcessing) {
+      scrollToBottom();
+    }
+  }, [isAggregating, isProcessing]);
 
   const handleToggleTag = async (tagKey: string) => {
     if (!activeChat) return;
@@ -1046,6 +1058,15 @@ const ChatInterface: React.FC = () => {
                   })}
                 </>
               )}
+              
+              {/* Typing Indicator - shows when AI is aggregating or processing */}
+              {(isAggregating || isProcessing) && (
+                <TypingIndicator 
+                  agentName={agentName || 'Adri'} 
+                  isAggregating={isAggregating}
+                />
+              )}
+              
               <div ref={messagesEndRef} />
             </div>
 
