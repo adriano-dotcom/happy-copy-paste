@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Clock, Zap, History, Play, BarChart3 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Clock, Zap, History, Play, BarChart3, MessageSquare, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import AutomationsDashboard from './AutomationsDashboard';
@@ -25,8 +25,12 @@ interface Automation {
   name: string;
   description: string | null;
   hours_without_response: number;
+  time_unit: 'hours' | 'minutes';
+  automation_type: 'template' | 'free_text';
   template_id: string | null;
   template_variables: Record<string, string>;
+  free_text_message: string | null;
+  within_window_only: boolean;
   conversation_statuses: string[];
   max_attempts: number;
   cooldown_hours: number;
@@ -63,6 +67,11 @@ const VARIABLE_OPTIONS = [
   { value: 'hours_waiting', label: 'Horas aguardando' },
 ];
 
+const FREE_TEXT_VARIABLES = [
+  { placeholder: '{nome}', description: 'Nome do contato' },
+  { placeholder: '{empresa}', description: 'Empresa do contato' },
+];
+
 export default function FollowupAutomationsSettings() {
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -72,18 +81,21 @@ export default function FollowupAutomationsSettings() {
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState<Automation | null>(null);
   const [isRunning, setIsRunning] = useState(false);
-  const [selectedTemplateVarsCount, setSelectedTemplateVarsCount] = useState(0);
 
   // Form state
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    hours_without_response: 24,
+    hours_without_response: 2,
+    time_unit: 'hours' as 'hours' | 'minutes',
+    automation_type: 'free_text' as 'template' | 'free_text',
     template_id: '',
     template_variables: {} as Record<string, string>,
+    free_text_message: 'Oi {nome}, ainda consegue continuar?',
+    within_window_only: true,
     conversation_statuses: ['nina', 'human'],
-    max_attempts: 1,
-    cooldown_hours: 24,
+    max_attempts: 2,
+    cooldown_hours: 4,
     active_hours_start: '09:00',
     active_hours_end: '18:00',
     active_days: [1, 2, 3, 4, 5],
@@ -104,9 +116,13 @@ export default function FollowupAutomationsSettings() {
       if (automationsRes.error) throw automationsRes.error;
       if (templatesRes.error) throw templatesRes.error;
 
-      const mappedAutomations = (automationsRes.data || []).map(a => ({
+      const mappedAutomations: Automation[] = (automationsRes.data || []).map(a => ({
         ...a,
         template_variables: (a.template_variables as Record<string, string>) || {},
+        time_unit: (a.time_unit || 'hours') as 'hours' | 'minutes',
+        automation_type: (a.automation_type || 'template') as 'template' | 'free_text',
+        free_text_message: a.free_text_message || null,
+        within_window_only: a.within_window_only ?? false,
       }));
 
       setAutomations(mappedAutomations);
@@ -140,12 +156,16 @@ export default function FollowupAutomationsSettings() {
     setFormData({
       name: '',
       description: '',
-      hours_without_response: 24,
+      hours_without_response: 2,
+      time_unit: 'hours',
+      automation_type: 'free_text',
       template_id: '',
       template_variables: {},
+      free_text_message: 'Oi {nome}, ainda consegue continuar?',
+      within_window_only: true,
       conversation_statuses: ['nina', 'human'],
-      max_attempts: 1,
-      cooldown_hours: 24,
+      max_attempts: 2,
+      cooldown_hours: 4,
       active_hours_start: '09:00',
       active_hours_end: '18:00',
       active_days: [1, 2, 3, 4, 5],
@@ -159,8 +179,12 @@ export default function FollowupAutomationsSettings() {
       name: automation.name,
       description: automation.description || '',
       hours_without_response: automation.hours_without_response,
+      time_unit: automation.time_unit || 'hours',
+      automation_type: automation.automation_type || 'template',
       template_id: automation.template_id || '',
       template_variables: automation.template_variables || {},
+      free_text_message: automation.free_text_message || 'Oi {nome}, ainda consegue continuar?',
+      within_window_only: automation.within_window_only ?? false,
       conversation_statuses: automation.conversation_statuses,
       max_attempts: automation.max_attempts,
       cooldown_hours: automation.cooldown_hours,
@@ -177,13 +201,27 @@ export default function FollowupAutomationsSettings() {
       return;
     }
 
+    if (formData.automation_type === 'template' && !formData.template_id) {
+      toast.error('Selecione um template para automações do tipo Template');
+      return;
+    }
+
+    if (formData.automation_type === 'free_text' && !formData.free_text_message?.trim()) {
+      toast.error('Mensagem é obrigatória para automações de texto livre');
+      return;
+    }
+
     try {
       const payload = {
         name: formData.name,
         description: formData.description || null,
         hours_without_response: formData.hours_without_response,
-        template_id: formData.template_id || null,
-        template_variables: formData.template_variables,
+        time_unit: formData.time_unit,
+        automation_type: formData.automation_type,
+        template_id: formData.automation_type === 'template' ? formData.template_id : null,
+        template_variables: formData.automation_type === 'template' ? formData.template_variables : {},
+        free_text_message: formData.automation_type === 'free_text' ? formData.free_text_message : null,
+        within_window_only: formData.within_window_only,
         conversation_statuses: formData.conversation_statuses,
         max_attempts: formData.max_attempts,
         cooldown_hours: formData.cooldown_hours,
@@ -296,6 +334,11 @@ export default function FollowupAutomationsSettings() {
     return templates.find(t => t.id === templateId)?.name || 'Template removido';
   };
 
+  const formatTimeDisplay = (automation: Automation) => {
+    const unit = automation.time_unit === 'minutes' ? 'min' : 'h';
+    return `Após ${automation.hours_without_response}${unit} sem resposta`;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -372,6 +415,22 @@ export default function FollowupAutomationsSettings() {
                   }`}>
                     {automation.is_active ? 'Ativa' : 'Inativa'}
                   </span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                    automation.automation_type === 'free_text' 
+                      ? 'bg-blue-500/20 text-blue-600' 
+                      : 'bg-purple-500/20 text-purple-600'
+                  }`}>
+                    {automation.automation_type === 'free_text' ? (
+                      <><MessageSquare className="h-3 w-3" /> Texto Livre</>
+                    ) : (
+                      <><FileText className="h-3 w-3" /> Template</>
+                    )}
+                  </span>
+                  {automation.within_window_only && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-600">
+                      Janela 24h
+                    </span>
+                  )}
                 </div>
                 {automation.description && (
                   <p className="text-sm text-muted-foreground mb-2">{automation.description}</p>
@@ -379,9 +438,11 @@ export default function FollowupAutomationsSettings() {
                 <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    Após {automation.hours_without_response}h sem resposta
+                    {formatTimeDisplay(automation)}
                   </span>
-                  <span>Template: {getTemplateName(automation.template_id)}</span>
+                  {automation.automation_type === 'template' && (
+                    <span>Template: {getTemplateName(automation.template_id)}</span>
+                  )}
                   <span>Máx: {automation.max_attempts}x</span>
                   <span>Horário: {automation.active_hours_start}-{automation.active_hours_end}</span>
                 </div>
@@ -419,7 +480,7 @@ export default function FollowupAutomationsSettings() {
                 <Input
                   value={formData.name}
                   onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="Ex: Follow-up 24h"
+                  placeholder="Ex: Continuar qualificação (2h)"
                 />
               </div>
 
@@ -433,34 +494,160 @@ export default function FollowupAutomationsSettings() {
                 />
               </div>
 
-              <div>
-                <Label>Horas sem resposta</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={formData.hours_without_response}
-                  onChange={e => setFormData(prev => ({ ...prev, hours_without_response: parseInt(e.target.value) || 24 }))}
-                />
+              {/* Automation Type Toggle */}
+              <div className="col-span-2">
+                <Label>Tipo de automação</Label>
+                <div className="flex gap-2 mt-2">
+                  <Button
+                    type="button"
+                    variant={formData.automation_type === 'free_text' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setFormData(prev => ({ ...prev, automation_type: 'free_text', within_window_only: true }))}
+                    className="flex items-center gap-2"
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    Texto Livre (Janela 24h)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={formData.automation_type === 'template' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setFormData(prev => ({ ...prev, automation_type: 'template' }))}
+                    className="flex items-center gap-2"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Template WhatsApp
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {formData.automation_type === 'free_text' 
+                    ? 'Envia mensagem de texto livre. Funciona apenas dentro da janela de 24h do WhatsApp.' 
+                    : 'Envia template aprovado pelo WhatsApp. Funciona mesmo fora da janela de 24h.'}
+                </p>
               </div>
 
+              {/* Time Configuration */}
               <div>
-                <Label>Template WhatsApp</Label>
-                <Select
-                  value={formData.template_id}
-                  onValueChange={value => setFormData(prev => ({ ...prev, template_id: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione um template" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {templates.filter(t => t.id && t.id.trim() !== '').map(template => (
-                      <SelectItem key={template.id} value={template.id}>
-                        {template.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Tempo sem resposta</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={formData.hours_without_response}
+                    onChange={e => setFormData(prev => ({ ...prev, hours_without_response: parseInt(e.target.value) || 1 }))}
+                    className="flex-1"
+                  />
+                  <Select
+                    value={formData.time_unit}
+                    onValueChange={(value: 'hours' | 'minutes') => setFormData(prev => ({ ...prev, time_unit: value }))}
+                  >
+                    <SelectTrigger className="w-28">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hours">Horas</SelectItem>
+                      <SelectItem value="minutes">Minutos</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
+
+              {/* Within Window Only Checkbox - only for templates */}
+              {formData.automation_type === 'template' && (
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={formData.within_window_only}
+                    onCheckedChange={checked => setFormData(prev => ({ ...prev, within_window_only: checked }))}
+                  />
+                  <Label className="text-sm">Apenas dentro da janela 24h</Label>
+                </div>
+              )}
+
+              {/* Free Text Message */}
+              {formData.automation_type === 'free_text' && (
+                <div className="col-span-2">
+                  <Label>Mensagem *</Label>
+                  <Textarea
+                    value={formData.free_text_message}
+                    onChange={e => setFormData(prev => ({ ...prev, free_text_message: e.target.value }))}
+                    placeholder="Oi {nome}, ainda consegue continuar?"
+                    rows={3}
+                  />
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <span className="text-xs text-muted-foreground">Variáveis disponíveis:</span>
+                    {FREE_TEXT_VARIABLES.map(v => (
+                      <span 
+                        key={v.placeholder} 
+                        className="text-xs px-2 py-0.5 bg-muted rounded cursor-pointer hover:bg-muted/80"
+                        onClick={() => setFormData(prev => ({ 
+                          ...prev, 
+                          free_text_message: prev.free_text_message + ' ' + v.placeholder 
+                        }))}
+                        title={`Clique para inserir: ${v.description}`}
+                      >
+                        {v.placeholder}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Template Selection - only for template type */}
+              {formData.automation_type === 'template' && (
+                <>
+                  <div className="col-span-2">
+                    <Label>Template WhatsApp *</Label>
+                    <Select
+                      value={formData.template_id}
+                      onValueChange={value => setFormData(prev => ({ ...prev, template_id: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione um template" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templates.filter(t => t.id && t.id.trim() !== '').map(template => (
+                          <SelectItem key={template.id} value={template.id}>
+                            {template.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="col-span-2">
+                    <Label>Variáveis do template</Label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Mapeie as variáveis do template para dados do contato
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground w-12">{`{${i}}`}</span>
+                          <Select
+                            value={formData.template_variables[i.toString()] || ''}
+                            onValueChange={value => setFormData(prev => ({
+                              ...prev,
+                              template_variables: { ...prev.template_variables, [i.toString()]: value === '__none__' ? '' : value }
+                            }))}
+                          >
+                            <SelectTrigger className="flex-1">
+                              <SelectValue placeholder="Selecione..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">Não usar</SelectItem>
+                              {VARIABLE_OPTIONS.map(opt => (
+                                <SelectItem key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div>
                 <Label>Máximo de tentativas</Label>
@@ -479,7 +666,7 @@ export default function FollowupAutomationsSettings() {
                   type="number"
                   min={1}
                   value={formData.cooldown_hours}
-                  onChange={e => setFormData(prev => ({ ...prev, cooldown_hours: parseInt(e.target.value) || 24 }))}
+                  onChange={e => setFormData(prev => ({ ...prev, cooldown_hours: parseInt(e.target.value) || 4 }))}
                 />
               </div>
 
@@ -534,39 +721,6 @@ export default function FollowupAutomationsSettings() {
                   ))}
                 </div>
               </div>
-
-              <div className="col-span-2">
-                <Label>Variáveis do template</Label>
-                <p className="text-xs text-muted-foreground mb-2">
-                  Mapeie as variáveis do template para dados do contato
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground w-12">{`{${i}}`}</span>
-                      <Select
-                        value={formData.template_variables[i.toString()] || ''}
-                        onValueChange={value => setFormData(prev => ({
-                          ...prev,
-                          template_variables: { ...prev.template_variables, [i.toString()]: value }
-                        }))}
-                      >
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Selecione..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">Não usar</SelectItem>
-                          {VARIABLE_OPTIONS.map(opt => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
 
@@ -600,7 +754,7 @@ export default function FollowupAutomationsSettings() {
                   className="flex items-center justify-between p-3 border rounded-lg text-sm"
                 >
                   <div>
-                    <span className="font-medium">{log.template_name || 'Template'}</span>
+                    <span className="font-medium">{log.template_name || 'Mensagem'}</span>
                     <span className="text-muted-foreground ml-2">
                       após {log.hours_waited?.toFixed(1)}h
                     </span>

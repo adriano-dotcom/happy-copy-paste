@@ -647,10 +647,12 @@ export type Database = {
           active_days: number[] | null
           active_hours_end: string | null
           active_hours_start: string | null
+          automation_type: string
           conversation_statuses: string[] | null
           cooldown_hours: number | null
           created_at: string | null
           description: string | null
+          free_text_message: string | null
           hours_without_response: number
           id: string
           is_active: boolean | null
@@ -660,16 +662,20 @@ export type Database = {
           tags: string[] | null
           template_id: string | null
           template_variables: Json | null
+          time_unit: string
           updated_at: string | null
+          within_window_only: boolean
         }
         Insert: {
           active_days?: number[] | null
           active_hours_end?: string | null
           active_hours_start?: string | null
+          automation_type?: string
           conversation_statuses?: string[] | null
           cooldown_hours?: number | null
           created_at?: string | null
           description?: string | null
+          free_text_message?: string | null
           hours_without_response?: number
           id?: string
           is_active?: boolean | null
@@ -679,16 +685,20 @@ export type Database = {
           tags?: string[] | null
           template_id?: string | null
           template_variables?: Json | null
+          time_unit?: string
           updated_at?: string | null
+          within_window_only?: boolean
         }
         Update: {
           active_days?: number[] | null
           active_hours_end?: string | null
           active_hours_start?: string | null
+          automation_type?: string
           conversation_statuses?: string[] | null
           cooldown_hours?: number | null
           created_at?: string | null
           description?: string | null
+          free_text_message?: string | null
           hours_without_response?: number
           id?: string
           is_active?: boolean | null
@@ -698,7 +708,9 @@ export type Database = {
           tags?: string[] | null
           template_id?: string | null
           template_variables?: Json | null
+          time_unit?: string
           updated_at?: string | null
+          within_window_only?: boolean
         }
         Relationships: [
           {
