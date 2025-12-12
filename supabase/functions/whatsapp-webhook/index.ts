@@ -564,8 +564,13 @@ async function processIncomingMessage(
     .update({ last_message_at: new Date().toISOString() })
     .eq('id', conversation.id);
 
-  // 6. If conversation is handled by Nina, queue for AI processing
+  // 6. If conversation is handled by Nina, queue for AI processing with debounce delay
   if (conversation.status === 'nina') {
+    // Debounce: schedule processing for 6 seconds in the future
+    // This allows multiple rapid messages to be aggregated
+    const DEBOUNCE_DELAY_MS = 6000;
+    const scheduledFor = new Date(Date.now() + DEBOUNCE_DELAY_MS).toISOString();
+    
     const { error: ninaQueueError } = await supabase
       .from('nina_processing_queue')
       .insert({
@@ -573,35 +578,39 @@ async function processIncomingMessage(
         conversation_id: conversation.id,
         contact_id: contact.id,
         priority: 1,
+        scheduled_for: scheduledFor,
         context_data: {
           phone_number_id: phoneNumberId,
           contact_name: contact.name || contact.call_name,
           message_type: messageType,
-          original_type: message.type
+          original_type: message.type,
+          debounce_scheduled_at: new Date().toISOString()
         }
       });
 
     if (ninaQueueError) {
       console.error('[Webhook] Error queuing for Nina:', ninaQueueError);
     } else {
-      console.log('[Webhook] Message queued for Nina processing');
+      console.log('[Webhook] Message queued for Nina processing (scheduled for:', scheduledFor, ')');
       
-      // Trigger nina-orchestrator directly (cron jobs não funcionam sem pg_net)
-      try {
-        const orchestratorUrl = `${supabaseUrl}/functions/v1/nina-orchestrator`;
-        console.log('[Webhook] Triggering nina-orchestrator at:', orchestratorUrl);
-        
-        fetch(orchestratorUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseServiceKey}`
-          },
-          body: JSON.stringify({ triggered_by: 'whatsapp-webhook' })
-        }).catch(err => console.error('[Webhook] Error triggering nina-orchestrator:', err));
-      } catch (err) {
-        console.error('[Webhook] Failed to trigger nina-orchestrator:', err);
-      }
+      // Trigger nina-orchestrator after debounce delay
+      setTimeout(() => {
+        try {
+          const orchestratorUrl = `${supabaseUrl}/functions/v1/nina-orchestrator`;
+          console.log('[Webhook] Triggering nina-orchestrator after debounce');
+          
+          fetch(orchestratorUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`
+            },
+            body: JSON.stringify({ triggered_by: 'whatsapp-webhook-debounced' })
+          }).catch(err => console.error('[Webhook] Error triggering nina-orchestrator:', err));
+        } catch (err) {
+          console.error('[Webhook] Failed to trigger nina-orchestrator:', err);
+        }
+      }, DEBOUNCE_DELAY_MS + 500); // Small buffer after scheduled time
     }
   }
 }
