@@ -1400,8 +1400,8 @@ export const api = {
           pipelineName: pipeline?.name || null,
           pipelineIcon: pipeline?.icon || null,
           pipelineColor: pipeline?.color || null,
-          // assignedUserName will be null on initial load - populated when operator assumes
-          assignedUserName: null
+          // Read assigned_user_name from database
+          assignedUserName: (conv as any).assigned_user_name || null
         };
 
         return transformDBToUIConversation(
@@ -1500,17 +1500,22 @@ export const api = {
   updateConversationStatus: async (
     conversationId: string, 
     status: 'nina' | 'human' | 'paused',
-    userId?: string
+    userId?: string,
+    userName?: string
   ): Promise<void> => {
     const updateData: any = { status };
     
-    // When switching to human, assign the current user
+    // When switching to human, assign the current user and save their name
     if (status === 'human' && userId) {
       updateData.assigned_user_id = userId;
+      if (userName) {
+        updateData.assigned_user_name = userName;
+      }
     }
     // When switching back to nina, clear the assignment
     if (status === 'nina') {
       updateData.assigned_user_id = null;
+      updateData.assigned_user_name = null;
     }
     
     const { error } = await supabase
