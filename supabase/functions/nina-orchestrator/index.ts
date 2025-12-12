@@ -406,6 +406,75 @@ async function processQueueItem(
   // Get client memory
   const clientMemory = conversation.contact?.client_memory || {};
 
+  // ===== IMMEDIATE CNPJ DETECTION =====
+  // Detect CNPJ in user message and update contact immediately
+  if (message.content) {
+    const cnpjRegex = /(\d{2}[\.\s]?\d{3}[\.\s]?\d{3}[\/\s]?\d{4}[-\.\s]?\d{2})/g;
+    const cnpjMatch = message.content.match(cnpjRegex);
+    
+    if (cnpjMatch) {
+      const cleanCnpj = cnpjMatch[0].replace(/\D/g, '');
+      if (cleanCnpj.length === 14) {
+        console.log(`[Nina] 📋 CNPJ detected in message: ${cleanCnpj}`);
+        
+        // Check if contact already has this CNPJ
+        const existingCnpj = conversation.contact?.cnpj?.replace(/\D/g, '');
+        if (existingCnpj !== cleanCnpj) {
+          // Fetch company data from BrasilAPI
+          try {
+            const brasilApiResponse = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCnpj}`);
+            if (brasilApiResponse.ok) {
+              const cnpjData = await brasilApiResponse.json();
+              const companyName = cnpjData.nome_fantasia || cnpjData.razao_social;
+              
+              // Update contact with CNPJ and company name
+              const updateData: Record<string, any> = { 
+                cnpj: cleanCnpj,
+                updated_at: new Date().toISOString() 
+              };
+              
+              // Only update company if we got data and contact doesn't have one
+              if (companyName && !conversation.contact?.company) {
+                updateData.company = companyName;
+              }
+              
+              await supabase
+                .from('contacts')
+                .update(updateData)
+                .eq('id', conversation.contact_id);
+                
+              console.log(`[Nina] ✅ Contact updated - CNPJ: ${cleanCnpj}, Company: ${companyName || 'N/A'}`);
+            } else {
+              // BrasilAPI failed but still save the CNPJ
+              await supabase
+                .from('contacts')
+                .update({ 
+                  cnpj: cleanCnpj,
+                  updated_at: new Date().toISOString() 
+                })
+                .eq('id', conversation.contact_id);
+                
+              console.log(`[Nina] ⚠️ CNPJ saved (BrasilAPI lookup failed): ${cleanCnpj}`);
+            }
+          } catch (err) {
+            console.log('[Nina] ⚠️ BrasilAPI error, saving CNPJ anyway:', err);
+            // Still save the CNPJ even if BrasilAPI fails
+            await supabase
+              .from('contacts')
+              .update({ 
+                cnpj: cleanCnpj,
+                updated_at: new Date().toISOString() 
+              })
+              .eq('id', conversation.contact_id);
+          }
+        } else {
+          console.log(`[Nina] CNPJ already saved: ${cleanCnpj}`);
+        }
+      }
+    }
+  }
+  // ===== END CNPJ DETECTION =====
+
   // Check if this is the first interaction (only 1 user message, no assistant messages yet)
   const userMessages = conversationHistory.filter((m: any) => m.role === 'user');
   const assistantMessages = conversationHistory.filter((m: any) => m.role === 'assistant');
