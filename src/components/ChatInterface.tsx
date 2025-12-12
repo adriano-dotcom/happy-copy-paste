@@ -520,7 +520,11 @@ const ChatInterface: React.FC = () => {
       );
     }
 
-    if (msg.type === MessageType.AUDIO) {
+    // Detect audio by type OR by media URL extension (fallback)
+    const isAudioMessage = msg.type === MessageType.AUDIO || 
+      (msg.mediaUrl && /\.(ogg|opus|mp3|wav|m4a|oga|aac|webm)(\?|$)/i.test(msg.mediaUrl));
+    
+    if (isAudioMessage) {
       return (
         <AudioPlayer
           messageId={msg.id}
