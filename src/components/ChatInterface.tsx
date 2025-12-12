@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { 
   Search, MoreVertical, Phone, Paperclip, Send, Check, CheckCheck, 
@@ -93,6 +94,16 @@ const ChatInterface: React.FC = () => {
   const handleMobileBack = () => {
     setMobileView('list');
     setSelectedChatId(null);
+  };
+
+  // Swipe gesture for mobile back navigation
+  const dragX = useMotionValue(0);
+  const chatOpacity = useTransform(dragX, [0, 150], [1, 0.5]);
+  
+  const handleDragEnd = (_: any, info: PanInfo) => {
+    if (info.offset.x > 100) {
+      handleMobileBack();
+    }
   };
 
   const activeChat = conversations.find(c => c.id === selectedChatId);
@@ -763,7 +774,14 @@ const ChatInterface: React.FC = () => {
 
       {/* Right Area: Chat Window & Profile */}
       {activeChat ? (
-        <div className={`flex-1 flex overflow-hidden bg-[#0B0E14] ${isMobile && mobileView === 'list' ? 'hidden' : ''}`}>
+        <motion.div 
+          className={`flex-1 flex overflow-hidden bg-[#0B0E14] ${isMobile && mobileView === 'list' ? 'hidden' : ''}`}
+          drag={isMobile ? "x" : false}
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={{ left: 0, right: 0.5 }}
+          style={isMobile ? { x: dragX, opacity: chatOpacity } : undefined}
+          onDragEnd={isMobile ? handleDragEnd : undefined}
+        >
           {/* Main Chat Content */}
           <div className="flex-1 flex flex-col min-w-0 relative">
             <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '30px 30px' }}></div>
@@ -1427,7 +1445,7 @@ const ChatInterface: React.FC = () => {
           </div>
           )}
 
-        </div>
+        </motion.div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center bg-[#0B0E14] relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-b from-slate-900/20 to-transparent"></div>
