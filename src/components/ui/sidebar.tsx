@@ -177,11 +177,21 @@ export const SidebarLink = ({
   onClick?: () => void;
   props?: Omit<LinkProps, 'to'>;
 }) => {
-  const { open, animate } = useSidebar();
+  const { open, animate, setOpen } = useSidebar();
+  
+  // Close mobile sidebar on navigation
+  const handleClick = () => {
+    // Close sidebar on mobile
+    if (window.innerWidth < 768) {
+      setOpen(false);
+    }
+    onClick?.();
+  };
+  
   return (
     <Link
       to={link.href}
-      onClick={onClick}
+      onClick={handleClick}
       className={cn(
         "flex items-center justify-start gap-3 group/sidebar py-3 px-3 rounded-xl transition-all duration-200 relative overflow-hidden",
         isActive
