@@ -74,7 +74,7 @@ serve(async (req) => {
 
     const { data: currentDeal } = await supabase
       .from('deals')
-      .select('id, stage_id, stage')
+      .select('id, stage_id, stage, owner_id')
       .eq('contact_id', contact_id)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -505,7 +505,7 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
     if (stageResult && currentDeal && stageResult.suggested_stage_id !== currentDeal.stage_id && stageResult.confidence > 70) {
       const newStage = stages?.find(s => s.id === stageResult.suggested_stage_id);
       
-      if (newStage) {
+        if (newStage) {
         const { error: updateError } = await supabase
           .from('deals')
           .update({ 
@@ -518,6 +518,148 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
           dealMoved = true;
           console.log(`[Analyze] Deal moved to stage: ${newStage.title} (confidence: ${stageResult.confidence}%)`);
           console.log(`[Analyze] Reasoning: ${stageResult.reasoning}`);
+          
+          // Check if it's a qualification stage and send email notifications
+          const isQualifiedStage = newStage.title.toLowerCase().includes('qualificad');
+          
+          if (isQualifiedStage) {
+            console.log('[Analyze] Lead qualified! Sending email notifications...');
+            
+            try {
+              // Fetch contact data
+              const { data: contactData } = await supabase
+                .from('contacts')
+                .select('name, phone_number, email, company, cnpj')
+                .eq('id', contact_id)
+                .single();
+              
+              // Build recipients list - always include admin
+              const recipients: string[] = ['adriano@jacometo.com.br'];
+              
+              // Fetch owner email if exists
+              if (currentDeal.owner_id) {
+                const { data: owner } = await supabase
+                  .from('team_members')
+                  .select('email, name')
+                  .eq('id', currentDeal.owner_id)
+                  .single();
+                
+                if (owner?.email && !recipients.includes(owner.email)) {
+                  recipients.push(owner.email);
+                }
+              }
+              
+              // Fetch qualification answers from conversation
+              const { data: convData } = await supabase
+                .from('conversations')
+                .select('nina_context')
+                .eq('id', conversation_id)
+                .single();
+              
+              const qualificationAnswers = (convData?.nina_context as any)?.qualification_answers || {};
+              
+              // Format qualification answers for email
+              const formatKey = (key: string) => {
+                const keyMap: Record<string, string> = {
+                  contratacao: 'Tipo de Contratação',
+                  tipo_carga: 'Tipo de Carga',
+                  estados: 'Estados Atendidos',
+                  cnpj: 'CNPJ',
+                  empresa: 'Empresa',
+                  viagens_mes: 'Viagens/Mês',
+                  valor_medio: 'Valor Médio por Carga',
+                  maior_valor: 'Maior Valor Transportado',
+                  tipo_frota: 'Tipo de Frota',
+                  antt: 'ANTT Regularizada',
+                  cte: 'Emite CT-e',
+                  historico_sinistros: 'Histórico de Sinistros',
+                  tipo_plano: 'Tipo de Plano',
+                  quantidade_vidas: 'Quantidade de Vidas',
+                  idades: 'Idades',
+                  cidade_regiao: 'Cidade/Região',
+                  operadora_preferida: 'Operadora Preferida',
+                  necessidades: 'Necessidades Específicas',
+                  condicoes_saude: 'Condições de Saúde',
+                  faixa_valor: 'Faixa de Valor'
+                };
+                return keyMap[key] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+              };
+              
+              const qualificationHtml = Object.entries(qualificationAnswers)
+                .filter(([_, value]) => value)
+                .map(([key, value]) => `<p style="margin: 4px 0;"><strong>${formatKey(key)}:</strong> ${value}</p>`)
+                .join('');
+              
+              // Build email HTML
+              const emailHtml = `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                  <div style="background: #2563eb; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+                    <h1 style="margin: 0; font-size: 24px;">🎯 Novo Lead Qualificado!</h1>
+                  </div>
+                  
+                  <div style="background: #f8fafc; padding: 20px; border: 1px solid #e2e8f0;">
+                    <h2 style="color: #1e293b; margin: 0 0 16px 0; font-size: 18px;">📋 Dados do Lead</h2>
+                    <table style="width: 100%; border-collapse: collapse;">
+                      <tr><td style="padding: 8px 0; color: #64748b;">Nome:</td><td style="padding: 8px 0; color: #1e293b; font-weight: 500;">${contactData?.name || 'Não informado'}</td></tr>
+                      <tr><td style="padding: 8px 0; color: #64748b;">Telefone:</td><td style="padding: 8px 0; color: #1e293b; font-weight: 500;">${contactData?.phone_number || 'Não informado'}</td></tr>
+                      <tr><td style="padding: 8px 0; color: #64748b;">Email:</td><td style="padding: 8px 0; color: #1e293b; font-weight: 500;">${contactData?.email || 'Não informado'}</td></tr>
+                      <tr><td style="padding: 8px 0; color: #64748b;">Empresa:</td><td style="padding: 8px 0; color: #1e293b; font-weight: 500;">${contactData?.company || 'Não informado'}</td></tr>
+                      <tr><td style="padding: 8px 0; color: #64748b;">CNPJ:</td><td style="padding: 8px 0; color: #1e293b; font-weight: 500;">${contactData?.cnpj || 'Não informado'}</td></tr>
+                    </table>
+                  </div>
+                  
+                  <div style="background: #ecfdf5; padding: 20px; border: 1px solid #d1fae5; border-top: none;">
+                    <h2 style="color: #065f46; margin: 0 0 16px 0; font-size: 18px;">✅ Qualificação</h2>
+                    <div style="display: flex; gap: 20px; margin-bottom: 16px;">
+                      <div style="background: white; padding: 12px 20px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 28px; font-weight: bold; color: #059669;">${stageResult.confidence}%</div>
+                        <div style="font-size: 12px; color: #6b7280;">Score</div>
+                      </div>
+                      <div style="background: white; padding: 12px 20px; border-radius: 8px; flex: 1;">
+                        <div style="font-size: 14px; font-weight: 500; color: #1e293b;">${newStage.title}</div>
+                        <div style="font-size: 12px; color: #6b7280;">Estágio Atual</div>
+                      </div>
+                    </div>
+                    ${qualificationHtml ? `
+                    <div style="background: white; padding: 16px; border-radius: 8px;">
+                      <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #374151;">Respostas Coletadas:</h3>
+                      ${qualificationHtml}
+                    </div>
+                    ` : ''}
+                  </div>
+                  
+                  <div style="background: #fef3c7; padding: 16px; border: 1px solid #fcd34d; border-top: none; border-radius: 0 0 8px 8px; text-align: center;">
+                    <p style="margin: 0; color: #92400e; font-size: 14px;">
+                      ⏰ <strong>Ação recomendada:</strong> Entre em contato o mais rápido possível!
+                    </p>
+                  </div>
+                  
+                  <p style="color: #9ca3af; font-size: 11px; text-align: center; margin-top: 20px;">
+                    Este email foi enviado automaticamente pelo sistema Nina - Jacometo Seguros
+                  </p>
+                </div>
+              `;
+              
+              // Send emails to all recipients
+              for (const recipientEmail of recipients) {
+                try {
+                  await supabase.functions.invoke('send-email', {
+                    body: {
+                      to: recipientEmail,
+                      subject: `🎯 Lead Qualificado: ${contactData?.name || contactData?.phone_number || 'Novo Lead'}`,
+                      html: emailHtml
+                    }
+                  });
+                  console.log(`[Analyze] Notification email sent to: ${recipientEmail}`);
+                } catch (emailError) {
+                  console.error(`[Analyze] Error sending email to ${recipientEmail}:`, emailError);
+                }
+              }
+            } catch (notificationError) {
+              console.error('[Analyze] Error sending notification emails:', notificationError);
+              // Don't fail the analysis if email fails
+            }
+          }
         } else {
           console.error('[Analyze] Error moving deal:', updateError);
         }
