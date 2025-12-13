@@ -160,10 +160,12 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
         errors.push('Nome inválido');
       }
 
-      // Check phone
+      // Check phone - aceita 10-11 dígitos (sem país) ou 12-13 dígitos (com 55)
       const phone = row[mapping.phone]?.replace(/\D/g, '');
-      if (!phone || phone.length < 10 || phone.length > 11) {
-        errors.push('Telefone inválido');
+      const isValidLength = phone && phone.length >= 10 && phone.length <= 13;
+      const hasValidCountryCode = phone && phone.length >= 12 ? phone.startsWith('55') : true;
+      if (!phone || !isValidLength || !hasValidCountryCode) {
+        errors.push('Telefone inválido (use formato: 11999999999 ou 5511999999999)');
       }
 
       // Check email (optional)
@@ -221,14 +223,22 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
     }
 
     for (const batch of batches) {
-      const contacts = batch.map(row => ({
-        name: row[mapping.name]?.trim(),
-        phone_number: row[mapping.phone]?.replace(/\D/g, ''),
-        email: mapping.email ? row[mapping.email]?.trim() || null : null,
-        company: mapping.company ? row[mapping.company]?.trim() || null : null,
-        cnpj: mapping.cnpj ? row[mapping.cnpj]?.replace(/\D/g, '') || null : null,
-        lead_source: 'outbound' // Contatos importados são outbound
-      }));
+      const contacts = batch.map(row => {
+        // Normalizar telefone para formato internacional (55...)
+        let phoneNumber = row[mapping.phone]?.replace(/\D/g, '') || '';
+        if (phoneNumber && !phoneNumber.startsWith('55')) {
+          phoneNumber = '55' + phoneNumber;
+        }
+        
+        return {
+          name: row[mapping.name]?.trim(),
+          phone_number: phoneNumber,
+          email: mapping.email ? row[mapping.email]?.trim() || null : null,
+          company: mapping.company ? row[mapping.company]?.trim() || null : null,
+          cnpj: mapping.cnpj ? row[mapping.cnpj]?.replace(/\D/g, '') || null : null,
+          lead_source: 'outbound' // Contatos importados são outbound
+        };
+      });
 
       const { error } = await supabase.from('contacts').insert(contacts);
       
