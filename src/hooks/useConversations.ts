@@ -279,7 +279,7 @@ export function useConversations() {
   // Update conversation status
   const updateStatus = useCallback(async (
     conversationId: string, 
-    status: 'nina' | 'human' | 'paused',
+    status: 'nina' | 'human' | 'paused' | 'closed',
     userId?: string,
     userName?: string
   ) => {
@@ -300,10 +300,11 @@ export function useConversations() {
         });
       });
 
-      const statusLabels = {
+      const statusLabels: Record<string, string> = {
         nina: 'IA ativada',
         human: 'Atendimento humano ativado',
-        paused: 'Conversa pausada'
+        paused: 'Conversa pausada',
+        closed: 'Conversa encerrada'
       };
       toast.success(statusLabels[status]);
     } catch (err) {
