@@ -77,7 +77,7 @@ serve(async (req) => {
     
     // Se a key está no vault, buscar de lá
     if (settings?.elevenlabs_key_in_vault) {
-      const { data: vaultKey } = await supabase.rpc('get_vault_secret', { secret_name: 'ELEVENLABS_API_KEY' });
+      const { data: vaultKey } = await supabase.rpc('get_vault_secret', { secret_name: 'vault_elevenlabs_key' });
       if (vaultKey) elevenlabsApiKey = vaultKey;
     }
 
