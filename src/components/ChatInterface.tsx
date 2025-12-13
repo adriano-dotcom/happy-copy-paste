@@ -44,9 +44,7 @@ import { SendWhatsAppTemplateModal } from './SendWhatsAppTemplateModal';
 import { AudioPlayer } from './AudioPlayer';
 import { QuickQuestionsDropdown } from './QuickQuestionsDropdown';
 import { formatRegionFromPhone } from '@/utils/dddRegionMapper';
-import { LeadScoreBadge } from './chat/LeadScoreBadge';
-import { WaitingTimeBadge } from './chat/WaitingTimeBadge';
-import { HandoffSummaryCard } from './chat/HandoffSummaryCard';
+import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar } from './chat';
 
 interface AgentQuestion {
   order: number;
@@ -1859,6 +1857,17 @@ const ChatInterface: React.FC = () => {
                     </Button>
                   )}
                 </div>
+
+                {/* Quick Actions Bar */}
+                {existingDeal && (
+                  <QuickActionsBar
+                    activeChat={activeChat}
+                    existingDeal={existingDeal}
+                    dealStages={dealStages}
+                    onDealUpdated={setExistingDeal}
+                    onRefetch={refetch}
+                  />
+                )}
 
                 <div className="h-px bg-slate-800/50 w-full"></div>
 
