@@ -232,18 +232,66 @@ export default function Auth() {
             </TabsContent>
             
             <TabsContent value="signup" className="mt-4 sm:mt-6">
-              <SignupForm 
-                email={email}
-                setEmail={setEmail}
-                password={password}
-                setPassword={setPassword}
-                isLoading={isLoading}
-                onSubmit={handleSignUp}
-              />
+              <form onSubmit={handleSignUp} className="space-y-3 sm:space-y-4">
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label htmlFor="signup-email" className="text-white/90 text-xs sm:text-sm font-medium">
+                    Email
+                  </Label>
+                  <Input
+                    id="signup-email"
+                    type="email"
+                    placeholder="seu@email.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={isLoading}
+                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all h-10 sm:h-11 text-sm sm:text-base"
+                  />
+                </div>
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label htmlFor="signup-password" className="text-white/90 text-xs sm:text-sm font-medium">
+                    Senha
+                  </Label>
+                  <Input
+                    id="signup-password"
+                    type="password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={isLoading}
+                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all h-10 sm:h-11 text-sm sm:text-base"
+                  />
+                  {password && (
+                    <div className="mt-2 space-y-1 text-xs">
+                      {(() => {
+                        const checks = validatePassword(password);
+                        return (
+                          <>
+                            <div className={`flex items-center gap-1.5 ${checks.minLength ? 'text-green-400' : 'text-white/50'}`}>
+                              {checks.minLength ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                              Mínimo 8 caracteres
+                            </div>
+                            <div className={`flex items-center gap-1.5 ${checks.hasUppercase ? 'text-green-400' : 'text-white/50'}`}>
+                              {checks.hasUppercase ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                              Letra maiúscula
+                            </div>
+                            <div className={`flex items-center gap-1.5 ${checks.hasNumber ? 'text-green-400' : 'text-white/50'}`}>
+                              {checks.hasNumber ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                              Número
+                            </div>
+                            <div className={`flex items-center gap-1.5 ${checks.hasSpecial ? 'text-green-400' : 'text-white/50'}`}>
+                              {checks.hasSpecial ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                              Caractere especial
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
                 <Button 
                   type="submit" 
                   className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/25 border-0 transition-all duration-300 h-10 sm:h-11 text-sm sm:text-base mt-1 sm:mt-2" 
-                  disabled={isLoading}
+                  disabled={isLoading || !isPasswordValid(password)}
                 >
                   {isLoading ? (
                     <>
