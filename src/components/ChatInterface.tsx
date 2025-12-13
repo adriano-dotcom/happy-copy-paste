@@ -43,6 +43,7 @@ import { TypingIndicator } from './TypingIndicator';
 import { SendWhatsAppTemplateModal } from './SendWhatsAppTemplateModal';
 import { AudioPlayer } from './AudioPlayer';
 import { QuickQuestionsDropdown } from './QuickQuestionsDropdown';
+import { formatRegionFromPhone } from '@/utils/dddRegionMapper';
 
 interface AgentQuestion {
   order: number;
@@ -1684,6 +1685,19 @@ const ChatInterface: React.FC = () => {
                       <span className="text-slate-200 font-medium">{activeChat.contactPhone}</span>
                     </div>
                   </div>
+
+                  {/* Region (derived from DDD) */}
+                  {formatRegionFromPhone(activeChat.contactPhone) && (
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 text-slate-400">
+                        <MapPin className="w-4 h-4" />
+                      </div>
+                      <div className="flex flex-col flex-1">
+                        <span className="text-xs text-slate-500">Região</span>
+                        <span className="text-slate-200 font-medium">{formatRegionFromPhone(activeChat.contactPhone)}</span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Email */}
                   <div className="flex items-center gap-3 text-sm">
