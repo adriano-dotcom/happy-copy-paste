@@ -71,6 +71,7 @@ const ChatInterface: React.FC = () => {
   const [pipelines, setPipelines] = useState<{ id: string; name: string; icon: string; color: string }[]>([]);
   const [viewingArchived, setViewingArchived] = useState(false);
   const [archivedCount, setArchivedCount] = useState(0);
+  const [showClosedConversations, setShowClosedConversations] = useState(false);
   
   // Editable contact fields
   const [isEditingContact, setIsEditingContact] = useState(false);
@@ -858,6 +859,11 @@ const ChatInterface: React.FC = () => {
 
   const filteredConversations = conversations
     .filter(chat => {
+      // Hide closed conversations by default (unless toggle is on)
+      if (!showClosedConversations && chat.status === 'closed') {
+        return false;
+      }
+      
       // Pipeline filter
       if (selectedPipelineFilter === 'no-pipeline') {
         // Show only conversations WITHOUT pipeline
@@ -1074,16 +1080,32 @@ const ChatInterface: React.FC = () => {
             </button>
           </div>
           
-          <div className="relative group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 group-focus-within:text-cyan-400 transition-colors" />
-            <input 
-              ref={searchInputRef}
-              type="text" 
-              placeholder="Buscar conversa... (pressione /)"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 bg-slate-950/50 border border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 outline-none text-slate-200 placeholder:text-slate-600 transition-all"
-            />
+          {/* Search and closed filter */}
+          <div className="flex items-center gap-2">
+            <div className="relative group flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 group-focus-within:text-cyan-400 transition-colors" />
+              <input 
+                ref={searchInputRef}
+                type="text" 
+                placeholder="Buscar conversa... (pressione /)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-950/50 border border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 outline-none text-slate-200 placeholder:text-slate-600 transition-all"
+              />
+            </div>
+            {!viewingArchived && (
+              <button
+                onClick={() => setShowClosedConversations(!showClosedConversations)}
+                title={showClosedConversations ? 'Ocultar encerradas' : 'Mostrar encerradas'}
+                className={`p-2.5 rounded-xl border transition-all shrink-0 ${
+                  showClosedConversations
+                    ? 'bg-slate-500/20 text-slate-300 border-slate-500/40'
+                    : 'bg-slate-950/50 text-slate-500 border-slate-800 hover:text-slate-400'
+                }`}
+              >
+                <XCircle className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 
