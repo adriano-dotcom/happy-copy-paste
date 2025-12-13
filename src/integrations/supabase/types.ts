@@ -1300,6 +1300,7 @@ export type Database = {
           pipeline_id: string | null
           pipeline_name: string | null
           prompt_suggestions: string | null
+          prospecting_metrics: Json | null
           qualification_effectiveness: number | null
           recommended_actions: Json | null
           report_type: string
@@ -1331,6 +1332,7 @@ export type Database = {
           pipeline_id?: string | null
           pipeline_name?: string | null
           prompt_suggestions?: string | null
+          prospecting_metrics?: Json | null
           qualification_effectiveness?: number | null
           recommended_actions?: Json | null
           report_type?: string
@@ -1362,6 +1364,7 @@ export type Database = {
           pipeline_id?: string | null
           pipeline_name?: string | null
           prompt_suggestions?: string | null
+          prospecting_metrics?: Json | null
           qualification_effectiveness?: number | null
           recommended_actions?: Json | null
           report_type?: string
