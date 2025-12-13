@@ -10,7 +10,7 @@ import {
   MessageType
 } from '@/types';
 import { toast } from 'sonner';
-import { playNotificationSound } from '@/utils/notificationSound';
+import { playNotificationSound, playQualifiedLeadSound } from '@/utils/notificationSound';
 
 export function useConversations() {
   const [conversations, setConversations] = useState<UIConversation[]>([]);
@@ -155,6 +155,18 @@ export function useConversations() {
             setConversations(prev => {
               return prev.map(conv => {
                 if (conv.id === updated.id) {
+                  // Check if lead just became qualified (score crossed 70 threshold)
+                  const oldScore = conv.ninaContext?.qualification_score as number | undefined;
+                  const newScore = updated.nina_context?.qualification_score as number | undefined;
+                  
+                  if (newScore && newScore >= 70 && (!oldScore || oldScore < 70)) {
+                    console.log('[Realtime] Lead qualified! Score:', newScore);
+                    playQualifiedLeadSound();
+                    toast.success(`🔥 Lead Qualificado: ${conv.contactName}`, {
+                      description: `Score: ${newScore}%`
+                    });
+                  }
+
                   // Recalculate window status if whatsapp_window_start changed
                   const windowStart = updated.whatsapp_window_start ? new Date(updated.whatsapp_window_start) : null;
                   const now = new Date();
