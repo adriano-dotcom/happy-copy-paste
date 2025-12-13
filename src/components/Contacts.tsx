@@ -52,6 +52,7 @@ const Contacts: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
   const [activeTab, setActiveTab] = useState<'inbound' | 'outbound'>('inbound');
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
 
   const handleConverse = async (contactId: string) => {
     try {
@@ -148,20 +149,42 @@ const Contacts: React.FC = () => {
     contact.lead_source === 'outbound' && !contact.whatsapp_id
   );
 
-  // Filtrar pela aba ativa + termo de busca
+  // Filtrar pela aba ativa + termo de busca + status
   const getFilteredContacts = () => {
     const baseContacts = activeTab === 'inbound' ? inboundContacts : outboundContacts;
     
-    if (!searchTerm) return baseContacts;
+    let filtered = baseContacts;
     
-    const search = searchTerm.toLowerCase();
-    return baseContacts.filter(contact => 
-      contact.name.toLowerCase().includes(search) ||
-      contact.email?.toLowerCase().includes(search) ||
-      contact.phone?.includes(search) ||
-      contact.company?.toLowerCase().includes(search) ||
-      contact.cnpj?.includes(search)
+    // Filtrar por status selecionados
+    if (selectedStatuses.length > 0) {
+      filtered = filtered.filter(contact => selectedStatuses.includes(contact.status));
+    }
+    
+    // Filtrar por termo de busca
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      filtered = filtered.filter(contact => 
+        contact.name.toLowerCase().includes(search) ||
+        contact.email?.toLowerCase().includes(search) ||
+        contact.phone?.includes(search) ||
+        contact.company?.toLowerCase().includes(search) ||
+        contact.cnpj?.includes(search)
+      );
+    }
+    
+    return filtered;
+  };
+
+  const toggleStatusFilter = (status: string) => {
+    setSelectedStatuses(prev => 
+      prev.includes(status) 
+        ? prev.filter(s => s !== status)
+        : [...prev, status]
     );
+  };
+
+  const clearStatusFilters = () => {
+    setSelectedStatuses([]);
   };
 
   const filteredContacts = getFilteredContacts();
@@ -369,10 +392,47 @@ const Contacts: React.FC = () => {
               className="w-full pl-9 pr-4 py-2.5 rounded-lg bg-slate-950 border border-slate-800 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 placeholder:text-slate-600 transition-all"
             />
           </div>
-          <Button variant="outline" className="w-full sm:w-auto bg-slate-950 border-slate-800 text-slate-300 hover:text-white">
-            <Filter className="w-4 h-4 mr-2" />
-            Filtros Avançados
-          </Button>
+          
+          {/* Status Filter Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="outline" 
+                className={`w-full sm:w-auto bg-slate-950 border-slate-800 text-slate-300 hover:text-white ${selectedStatuses.length > 0 ? 'border-cyan-500/50 text-cyan-400' : ''}`}
+              >
+                <Filter className="w-4 h-4 mr-2" />
+                Status {selectedStatuses.length > 0 && `(${selectedStatuses.length})`}
+                <ChevronDown className="w-4 h-4 ml-2" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="bg-slate-900 border-slate-700 min-w-[200px]">
+              {statusOptions.map(option => (
+                <DropdownMenuItem 
+                  key={option.value}
+                  onClick={() => toggleStatusFilter(option.value)}
+                  className="cursor-pointer hover:bg-slate-800 focus:bg-slate-800 flex items-center justify-between"
+                >
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium border ${option.color}`}>
+                    {option.label}
+                  </span>
+                  {selectedStatuses.includes(option.value) && (
+                    <span className="text-cyan-400 text-xs">✓</span>
+                  )}
+                </DropdownMenuItem>
+              ))}
+              {selectedStatuses.length > 0 && (
+                <>
+                  <div className="border-t border-slate-700 my-1" />
+                  <DropdownMenuItem 
+                    onClick={clearStatusFilters}
+                    className="cursor-pointer hover:bg-slate-800 focus:bg-slate-800 text-slate-400 text-xs"
+                  >
+                    Limpar filtros
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         <TabsContent value="inbound" className="mt-0">
