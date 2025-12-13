@@ -1,43 +1,35 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+interface PipedriveSettings {
+  pipedrive_api_token: string | null;
+  pipedrive_domain: string | null;
+  pipedrive_enabled: boolean | null;
+  pipedrive_token_in_vault: boolean | null;
+  pipedrive_field_mappings: {
+    person_fields?: Record<string, string>;
+  } | null;
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface PipedriveSettings {
-  pipedrive_enabled: boolean;
-  pipedrive_api_token: string;
-  pipedrive_domain: string;
-  pipedrive_default_pipeline_id: string;
-  pipedrive_field_mappings: {
-    person_fields: Record<string, string>;
-    deal_fields: Record<string, string>;
-    custom_fields: any[];
-  };
-}
-
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { dealId } = await req.json();
+    const { contactId, dealId } = await req.json();
     
-    if (!dealId) {
-      console.error('[sync-pipedrive] Missing dealId');
-      return new Response(
-        JSON.stringify({ error: 'dealId is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (!contactId) {
+      throw new Error('contactId is required');
     }
 
-    console.log(`[sync-pipedrive] Starting sync for deal: ${dealId}`);
+    console.log('[sync-pipedrive] Starting sync for contact:', contactId);
 
-    // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -45,399 +37,207 @@ serve(async (req) => {
     // Fetch Pipedrive settings
     const { data: settings, error: settingsError } = await supabase
       .from('nina_settings')
-      .select('pipedrive_enabled, pipedrive_api_token, pipedrive_domain, pipedrive_default_pipeline_id, pipedrive_field_mappings, pipedrive_token_in_vault')
+      .select('pipedrive_api_token, pipedrive_domain, pipedrive_enabled, pipedrive_token_in_vault, pipedrive_field_mappings')
       .single();
 
     if (settingsError) {
       console.error('[sync-pipedrive] Error fetching settings:', settingsError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to fetch settings', details: settingsError.message }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      throw new Error('Failed to fetch Pipedrive settings');
     }
 
-    // Check if Pipedrive is enabled
-    if (!settings.pipedrive_enabled) {
-      console.log('[sync-pipedrive] Pipedrive integration is disabled');
-      return new Response(
-        JSON.stringify({ success: false, message: 'Pipedrive integration is disabled' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const pipedriveSettings = settings as PipedriveSettings;
+
+    if (!pipedriveSettings.pipedrive_enabled) {
+      throw new Error('Pipedrive integration is not enabled');
     }
 
-    // Get API token from Vault or fallback to table
-    let apiToken = settings.pipedrive_api_token;
-    if (settings.pipedrive_token_in_vault) {
-      try {
-        const { data: vaultToken } = await supabase.rpc('get_vault_secret', { 
-          secret_name: 'vault_pipedrive_token' 
-        });
-        if (vaultToken) {
-          apiToken = vaultToken;
-          console.log('[sync-pipedrive] Using Pipedrive token from Vault');
-        }
-      } catch (e) {
-        console.log('[sync-pipedrive] Vault lookup failed, using table fallback');
+    // Get API token (from vault or settings)
+    let apiToken = pipedriveSettings.pipedrive_api_token;
+    
+    if (pipedriveSettings.pipedrive_token_in_vault) {
+      const { data: vaultToken } = await supabase.rpc('get_vault_secret', {
+        secret_name: 'PIPEDRIVE_API_TOKEN'
+      });
+      if (vaultToken) {
+        apiToken = vaultToken;
       }
     }
 
-    // Validate Pipedrive credentials
-    if (!apiToken || !settings.pipedrive_domain) {
-      console.error('[sync-pipedrive] Missing Pipedrive credentials');
-      return new Response(
-        JSON.stringify({ error: 'Pipedrive API token and domain are required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (!apiToken || !pipedriveSettings.pipedrive_domain) {
+      throw new Error('Pipedrive API token or domain not configured');
     }
 
-    const pipedriveSettings = {
-      ...settings,
-      pipedrive_api_token: apiToken
-    } as PipedriveSettings;
+    const pipedriveBaseUrl = `https://${pipedriveSettings.pipedrive_domain}.pipedrive.com/api/v1`;
 
-    // Fetch deal with contact data
-    const { data: deal, error: dealError } = await supabase
-      .from('deals')
-      .select(`
-        *,
-        contact:contacts(*)
-      `)
-      .eq('id', dealId)
+    // Fetch contact data
+    const { data: contact, error: contactError } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('id', contactId)
       .single();
 
-    if (dealError || !deal) {
-      console.error('[sync-pipedrive] Error fetching deal:', dealError);
-      return new Response(
-        JSON.stringify({ error: 'Deal not found', details: dealError?.message }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (contactError || !contact) {
+      console.error('[sync-pipedrive] Error fetching contact:', contactError);
+      throw new Error('Contact not found');
     }
 
-    // Check if deal is already synced
-    if (deal.pipedrive_deal_id) {
-      console.log(`[sync-pipedrive] Deal already synced with Pipedrive ID: ${deal.pipedrive_deal_id}`);
-      return new Response(
-        JSON.stringify({ success: true, message: 'Deal already synced', pipedrive_deal_id: deal.pipedrive_deal_id }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    console.log('[sync-pipedrive] Contact data:', contact.name, contact.phone_number);
+
+    // Fetch deal owner if dealId provided
+    let ownerName: string | null = null;
+    if (dealId) {
+      const { data: deal } = await supabase
+        .from('deals')
+        .select('owner_id, owner:team_members!deals_owner_id_fkey(name)')
+        .eq('id', dealId)
+        .single();
+      
+      if (deal?.owner) {
+        ownerName = (deal.owner as any).name;
+        console.log('[sync-pipedrive] Deal owner:', ownerName);
+      }
     }
 
-    const contact = deal.contact;
-    const fieldMappings = pipedriveSettings.pipedrive_field_mappings || {
-      person_fields: { name: 'name', phone_number: 'phone', email: 'email', company: 'org_name' },
-      deal_fields: { title: 'title', value: 'value', notes: 'notes' },
-      custom_fields: []
+    // Build person data with field mappings
+    const fieldMappings = pipedriveSettings.pipedrive_field_mappings?.person_fields || {};
+    
+    const personData: Record<string, any> = {
+      name: contact.name || contact.call_name || 'Sem nome',
+      phone: [{ value: contact.phone_number, primary: true }],
     };
 
-    const domain = pipedriveSettings.pipedrive_domain;
-    const baseUrl = `https://${domain}.pipedrive.com/api/v1`;
+    if (contact.email) {
+      personData.email = [{ value: contact.email, primary: true }];
+    }
 
-    let pipedrivePersonId = contact?.pipedrive_person_id;
+    // Map system fields to Pipedrive custom fields
+    const systemFieldValues: Record<string, any> = {
+      company: contact.company,
+      cnpj: contact.cnpj,
+      tags: contact.tags?.join(', '),
+      owner: ownerName,
+      city: contact.city,
+      state: contact.state,
+      address: [contact.street, contact.number, contact.complement, contact.neighborhood]
+        .filter(Boolean).join(', '),
+      cep: contact.cep,
+      notes: contact.notes,
+    };
 
-    // Create or find person in Pipedrive
-    if (!pipedrivePersonId && contact) {
-      console.log('[sync-pipedrive] Creating person in Pipedrive...');
-      
-      // Build basic person data (always works)
-      const basicPersonData: Record<string, any> = {};
-      
-      // Map standard fields
-      if (contact.name || contact.call_name) {
-        basicPersonData.name = contact.name || contact.call_name || 'Sem nome';
-      } else {
-        basicPersonData.name = 'Sem nome';
+    // Apply field mappings
+    for (const [systemField, pipedriveField] of Object.entries(fieldMappings)) {
+      if (pipedriveField && systemFieldValues[systemField]) {
+        personData[pipedriveField] = systemFieldValues[systemField];
       }
-      
-      if (contact.phone_number) {
-        basicPersonData.phone = [{ value: contact.phone_number, primary: true }];
-      }
-      
-      if (contact.email) {
-        basicPersonData.email = [{ value: contact.email, primary: true }];
-      }
+    }
 
-      // Build custom fields data separately
-      const customFieldsData: Record<string, any> = {};
+    console.log('[sync-pipedrive] Person data to send:', JSON.stringify(personData));
+
+    // Check if person already exists
+    if (contact.pipedrive_person_id) {
+      // Update existing person
+      console.log('[sync-pipedrive] Updating existing person:', contact.pipedrive_person_id);
       
-      // Map CNPJ
-      if (fieldMappings.person_fields?.cnpj && contact.cnpj) {
-        const cnpjFieldKey = fieldMappings.person_fields.cnpj;
-        customFieldsData[cnpjFieldKey] = contact.cnpj;
-        console.log(`[sync-pipedrive] Will try mapping CNPJ ${contact.cnpj} to field ${cnpjFieldKey}`);
-      }
+      const updateResponse = await fetch(
+        `${pipedriveBaseUrl}/persons/${contact.pipedrive_person_id}?api_token=${apiToken}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(personData),
+        }
+      );
+
+      const updateResult = await updateResponse.json();
       
-      // Map CEP
-      if (fieldMappings.person_fields?.cep && contact.cep) {
-        customFieldsData[fieldMappings.person_fields.cep] = contact.cep;
-        console.log(`[sync-pipedrive] Will try mapping CEP ${contact.cep}`);
-      }
-      
-      // Map full address (street + number + complement)
-      if (fieldMappings.person_fields?.street && contact.street) {
-        const fullAddress = [
-          contact.street,
-          contact.number ? `, ${contact.number}` : '',
-          contact.complement ? ` - ${contact.complement}` : ''
-        ].join('');
-        customFieldsData[fieldMappings.person_fields.street] = fullAddress;
-        console.log(`[sync-pipedrive] Will try mapping address: ${fullAddress}`);
-      }
-      
-      // Map neighborhood
-      if (fieldMappings.person_fields?.neighborhood && contact.neighborhood) {
-        customFieldsData[fieldMappings.person_fields.neighborhood] = contact.neighborhood;
-        console.log(`[sync-pipedrive] Will try mapping neighborhood: ${contact.neighborhood}`);
-      }
-      
-      // Map city
-      if (fieldMappings.person_fields?.city && contact.city) {
-        customFieldsData[fieldMappings.person_fields.city] = contact.city;
-        console.log(`[sync-pipedrive] Will try mapping city: ${contact.city}`);
-      }
-      
-      // Map state
-      if (fieldMappings.person_fields?.state && contact.state) {
-        customFieldsData[fieldMappings.person_fields.state] = contact.state;
-        console.log(`[sync-pipedrive] Will try mapping state: ${contact.state}`);
+      if (!updateResult.success) {
+        console.error('[sync-pipedrive] Error updating person:', updateResult);
+        throw new Error(`Failed to update person: ${updateResult.error || 'Unknown error'}`);
       }
 
-      // First attempt: try with custom fields
-      const hasCustomFields = Object.keys(customFieldsData).length > 0;
-      let personDataToSend = hasCustomFields 
-        ? { ...basicPersonData, ...customFieldsData }
-        : basicPersonData;
+      console.log('[sync-pipedrive] Person updated successfully');
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'Contato atualizado no Pipedrive',
+          personId: contact.pipedrive_person_id 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-      console.log('[sync-pipedrive] Person data (attempt 1):', JSON.stringify(personDataToSend));
-
-      let personResponse = await fetch(`${baseUrl}/persons?api_token=${apiToken}`, {
+    // Create new person
+    console.log('[sync-pipedrive] Creating new person in Pipedrive');
+    
+    const createResponse = await fetch(
+      `${pipedriveBaseUrl}/persons?api_token=${apiToken}`,
+      {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(personDataToSend)
-      });
+        body: JSON.stringify(personData),
+      }
+    );
 
-      let personResult = await personResponse.json();
+    const createResult = await createResponse.json();
+
+    if (!createResult.success) {
+      console.error('[sync-pipedrive] Error creating person:', createResult);
       
-      // If failed due to invalid custom fields, retry without them
-      if (!personResult.success && personResult.error?.includes('Invalid field') && hasCustomFields) {
-        console.warn('[sync-pipedrive] Custom field invalid, retrying without custom fields...');
-        console.warn('[sync-pipedrive] Original error:', personResult.error);
+      // Retry without custom fields if they caused the error
+      if (createResult.error?.includes('field')) {
+        console.log('[sync-pipedrive] Retrying with basic fields only');
         
-        personResponse = await fetch(`${baseUrl}/persons?api_token=${apiToken}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(basicPersonData)
-        });
-        
-        personResult = await personResponse.json();
-        
-        if (personResult.success) {
-          console.warn('[sync-pipedrive] Person created WITHOUT custom fields (CNPJ not mapped). Please verify the custom field exists in Pipedrive.');
-        }
-      }
-      
-      if (!personResponse.ok || !personResult.success) {
-        console.error('[sync-pipedrive] Error creating person:', personResult);
-        return new Response(
-          JSON.stringify({ error: 'Failed to create person in Pipedrive', details: personResult }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+        const basicPersonData = {
+          name: personData.name,
+          phone: personData.phone,
+          email: personData.email,
+        };
 
-      pipedrivePersonId = personResult.data.id.toString();
-      console.log(`[sync-pipedrive] Person created with ID: ${pipedrivePersonId}`);
-
-      // Update contact with Pipedrive person ID
-      if (contact?.id) {
-        await supabase
-          .from('contacts')
-          .update({ pipedrive_person_id: pipedrivePersonId })
-          .eq('id', contact.id);
-      }
-    }
-
-    // Create deal in Pipedrive
-    console.log('[sync-pipedrive] Creating deal in Pipedrive...');
-    
-    const dealData: Record<string, any> = {
-      title: deal.title || 'Novo Negócio',
-      person_id: pipedrivePersonId ? parseInt(pipedrivePersonId) : undefined,
-    };
-
-    // Add value if present
-    if (deal.value) {
-      dealData.value = deal.value;
-      dealData.currency = 'BRL';
-    }
-
-    // Add pipeline if configured
-    if (pipedriveSettings.pipedrive_default_pipeline_id) {
-      dealData.pipeline_id = parseInt(pipedriveSettings.pipedrive_default_pipeline_id);
-    }
-
-    console.log('[sync-pipedrive] Deal data:', JSON.stringify(dealData));
-
-    const dealResponse = await fetch(`${baseUrl}/deals?api_token=${apiToken}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(dealData)
-    });
-
-    const dealResult = await dealResponse.json();
-
-    if (!dealResponse.ok || !dealResult.success) {
-      console.error('[sync-pipedrive] Error creating deal:', dealResult);
-      return new Response(
-        JSON.stringify({ error: 'Failed to create deal in Pipedrive', details: dealResult }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const pipedriveDealId = dealResult.data.id.toString();
-    console.log(`[sync-pipedrive] Deal created with ID: ${pipedriveDealId}`);
-
-    // Update deal with Pipedrive ID
-    await supabase
-      .from('deals')
-      .update({ pipedrive_deal_id: pipedriveDealId })
-      .eq('id', dealId);
-
-    // Add note with qualification data if available
-    if (contact?.client_memory) {
-      const memory = contact.client_memory;
-      let noteContent = '📋 **Dados de Qualificação (Nina AI)**\n\n';
-      
-      if (memory.lead_profile) {
-        const profile = memory.lead_profile;
-        if (profile.qualification_score) noteContent += `🎯 Score: ${profile.qualification_score}/100\n`;
-        if (profile.lead_stage) noteContent += `📊 Estágio: ${profile.lead_stage}\n`;
-        if (profile.interests?.length) noteContent += `💡 Interesses: ${profile.interests.join(', ')}\n`;
-        if (profile.products_discussed?.length) noteContent += `📦 Produtos: ${profile.products_discussed.join(', ')}\n`;
-      }
-      
-      if (memory.sales_intelligence) {
-        const sales = memory.sales_intelligence;
-        if (sales.pain_points?.length) noteContent += `⚠️ Objeções: ${sales.pain_points.join(', ')}\n`;
-        if (sales.budget_indication !== 'unknown') noteContent += `💰 Budget: ${sales.budget_indication}\n`;
-      }
-
-      if (noteContent.length > 50) {
-        await fetch(`${baseUrl}/notes?api_token=${apiToken}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            deal_id: parseInt(pipedriveDealId),
-            content: noteContent
-          })
-        });
-        console.log('[sync-pipedrive] Added qualification note to deal');
-      }
-    }
-
-    // Fetch conversation history and add as note
-    if (contact?.id) {
-      console.log('[sync-pipedrive] Fetching conversation history...');
-      
-      // Get the most recent conversation for this contact
-      const { data: conversation } = await supabase
-        .from('conversations')
-        .select('id, current_agent_id')
-        .eq('contact_id', contact.id)
-        .order('last_message_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (conversation) {
-        // Fetch all messages from this conversation (limit to last 100)
-        const { data: messages } = await supabase
-          .from('messages')
-          .select('content, from_type, sent_at, type')
-          .eq('conversation_id', conversation.id)
-          .order('sent_at', { ascending: true })
-          .limit(100);
-
-        if (messages && messages.length > 0) {
-          const contactName = contact.name || contact.call_name || 'Cliente';
-          
-          // Format conversation history
-          let historyNote = `💬 **Histórico da Conversa**\n`;
-          historyNote += `👤 ${contactName}\n`;
-          historyNote += `📅 ${new Date().toLocaleDateString('pt-BR')}\n`;
-          historyNote += `📊 Total: ${messages.length} mensagens\n`;
-          historyNote += `─────────────────────────\n\n`;
-          
-          for (const msg of messages) {
-            const time = new Date(msg.sent_at).toLocaleString('pt-BR', { 
-              day: '2-digit',
-              month: '2-digit',
-              hour: '2-digit', 
-              minute: '2-digit' 
-            });
-            
-            let sender = '';
-            if (msg.from_type === 'user') {
-              sender = `👤 ${contactName}`;
-            } else if (msg.from_type === 'nina') {
-              sender = '🤖 Adri';
-            } else {
-              sender = '👨‍💼 Humano';
-            }
-            
-            // Handle different message types
-            let content = msg.content || '';
-            if (msg.type === 'audio') {
-              content = content || '[Áudio]';
-            } else if (msg.type === 'image') {
-              content = content || '[Imagem]';
-            } else if (msg.type === 'document') {
-              content = content || '[Documento]';
-            } else if (msg.type === 'video') {
-              content = content || '[Vídeo]';
-            }
-            
-            // Truncate very long messages
-            if (content.length > 500) {
-              content = content.substring(0, 500) + '...';
-            }
-            
-            historyNote += `[${time}] ${sender}:\n${content}\n\n`;
-          }
-
-          // Create note with conversation history
-          const noteResponse = await fetch(`${baseUrl}/notes?api_token=${apiToken}`, {
+        const retryResponse = await fetch(
+          `${pipedriveBaseUrl}/persons?api_token=${apiToken}`,
+          {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              deal_id: parseInt(pipedriveDealId),
-              content: historyNote
-            })
-          });
-
-          if (noteResponse.ok) {
-            console.log(`[sync-pipedrive] Added conversation history note (${messages.length} messages)`);
-          } else {
-            console.error('[sync-pipedrive] Failed to add conversation history note');
+            body: JSON.stringify(basicPersonData),
           }
+        );
+
+        const retryResult = await retryResponse.json();
+        
+        if (!retryResult.success) {
+          throw new Error(`Failed to create person: ${retryResult.error || 'Unknown error'}`);
         }
+
+        createResult.data = retryResult.data;
+        console.log('[sync-pipedrive] Person created with basic fields (custom fields skipped)');
+      } else {
+        throw new Error(`Failed to create person: ${createResult.error || 'Unknown error'}`);
       }
     }
 
-    console.log(`[sync-pipedrive] Successfully synced deal ${dealId} -> Pipedrive ${pipedriveDealId}`);
+    const personId = createResult.data.id;
+    console.log('[sync-pipedrive] Person created with ID:', personId);
+
+    // Save Pipedrive person ID to contact
+    await supabase
+      .from('contacts')
+      .update({ pipedrive_person_id: String(personId) })
+      .eq('id', contactId);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'Deal synced successfully',
-        pipedrive_deal_id: pipedriveDealId,
-        pipedrive_person_id: pipedrivePersonId
+        message: 'Contato enviado para Pipedrive',
+        personId 
       }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[sync-pipedrive] Unexpected error:', error);
+    console.error('[sync-pipedrive] Error:', error);
     return new Response(
-      JSON.stringify({ error: 'Internal server error', details: errorMessage }),
+      JSON.stringify({ success: false, error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

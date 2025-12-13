@@ -90,29 +90,32 @@ export function QuickActionsBar({
   };
 
   const handleSyncPipedrive = async () => {
-    if (!existingDeal) {
-      toast.error('Nenhum deal encontrado');
+    if (!activeChat.contactId) {
+      toast.error('Contato não encontrado');
       return;
     }
 
     setIsSyncingPipedrive(true);
     try {
       const { data, error } = await supabase.functions.invoke('sync-pipedrive', {
-        body: { dealId: existingDeal.id }
+        body: { 
+          contactId: activeChat.contactId,
+          dealId: existingDeal?.id // Para buscar responsável
+        }
       });
 
       if (error) throw error;
 
       if (data?.success) {
-        toast.success('Sincronizado com Pipedrive!', {
-          description: data.message || 'Lead enviado com sucesso'
+        toast.success('Contato enviado para Pipedrive!', {
+          description: data.message
         });
       } else {
         throw new Error(data?.error || 'Erro desconhecido');
       }
     } catch (error: any) {
       console.error('Error syncing to Pipedrive:', error);
-      toast.error('Erro ao sincronizar', {
+      toast.error('Erro ao enviar contato', {
         description: error.message || 'Verifique as configurações do Pipedrive'
       });
     } finally {
@@ -160,7 +163,7 @@ export function QuickActionsBar({
             Callback
           </Button>
 
-          {/* Enviar Pipedrive */}
+          {/* Enviar Contato Pipedrive */}
           <Button
             size="sm"
             variant="outline"
@@ -173,7 +176,7 @@ export function QuickActionsBar({
             ) : (
               <Send className="w-3 h-3 mr-1" />
             )}
-            Pipedrive
+            Contato
           </Button>
         </div>
       </div>

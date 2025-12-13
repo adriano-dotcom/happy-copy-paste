@@ -17,8 +17,6 @@ export interface PipedriveSettingsRef {
 
 interface FieldMapping {
   person_fields: Record<string, string>;
-  deal_fields: Record<string, string>;
-  custom_fields: Array<{ system_field: string; pipedrive_key: string; pipedrive_label: string }>;
 }
 
 interface PipedriveSettings {
@@ -37,18 +35,13 @@ const defaultFieldMappings: FieldMapping = {
     email: 'email',
     company: 'org_name',
     cnpj: '',
+    tags: '',
+    owner: '',
     cep: '',
-    street: '',
-    neighborhood: '',
+    address: '',
     city: '',
     state: ''
-  },
-  deal_fields: {
-    title: 'title',
-    value: 'value',
-    notes: 'notes'
-  },
-  custom_fields: []
+  }
 };
 
 const SYSTEM_PERSON_FIELDS = [
@@ -57,17 +50,12 @@ const SYSTEM_PERSON_FIELDS = [
   { key: 'email', label: 'Email', description: 'Campo padrão: email' },
   { key: 'company', label: 'Empresa', description: 'Campo padrão: org_name' },
   { key: 'cnpj', label: 'CNPJ', description: 'Campo customizado - use o ID do Pipedrive' },
+  { key: 'tags', label: 'Etiquetas', description: 'Tags do contato' },
+  { key: 'owner', label: 'Responsável', description: 'Dono do negócio vinculado' },
   { key: 'cep', label: 'CEP', description: 'Campo customizado - use o ID do Pipedrive' },
-  { key: 'street', label: 'Endereço Completo', description: 'Logradouro + Número + Complemento' },
-  { key: 'neighborhood', label: 'Bairro', description: 'Campo customizado - use o ID do Pipedrive' },
+  { key: 'address', label: 'Endereço Completo', description: 'Logradouro + Número + Complemento + Bairro' },
   { key: 'city', label: 'Cidade', description: 'Campo customizado - use o ID do Pipedrive' },
   { key: 'state', label: 'Estado', description: 'Campo customizado - use o ID do Pipedrive' }
-];
-
-const SYSTEM_DEAL_FIELDS = [
-  { key: 'title', label: 'Título', description: 'Campo padrão: title' },
-  { key: 'value', label: 'Valor', description: 'Campo padrão: value' },
-  { key: 'notes', label: 'Notas', description: 'Campo padrão: notes' }
 ];
 
 const PipedriveSettings = forwardRef<PipedriveSettingsRef>((_, ref) => {
@@ -203,13 +191,13 @@ const PipedriveSettings = forwardRef<PipedriveSettingsRef>((_, ref) => {
     }
   };
 
-  const updateFieldMapping = (type: 'person' | 'deal', systemField: string, pipedriveField: string) => {
+  const updateFieldMapping = (systemField: string, pipedriveField: string) => {
     setSettings(prev => ({
       ...prev,
       pipedrive_field_mappings: {
         ...prev.pipedrive_field_mappings!,
-        [`${type}_fields`]: {
-          ...prev.pipedrive_field_mappings![`${type}_fields`],
+        person_fields: {
+          ...prev.pipedrive_field_mappings!.person_fields,
           [systemField]: pipedriveField
         }
       }
@@ -387,8 +375,8 @@ const PipedriveSettings = forwardRef<PipedriveSettingsRef>((_, ref) => {
                       <td className="px-4 py-2">
                         <Input
                           value={settings.pipedrive_field_mappings?.person_fields?.[field.key] || ''}
-                          onChange={(e) => updateFieldMapping('person', field.key, e.target.value)}
-                          placeholder={field.key === 'cnpj' || field.key === 'cep' || field.key === 'street' || field.key === 'neighborhood' || field.key === 'city' || field.key === 'state' ? 'ID do campo customizado' : 'nome_campo_pipedrive'}
+                          onChange={(e) => updateFieldMapping(field.key, e.target.value)}
+                          placeholder={['cnpj', 'cep', 'address', 'city', 'state', 'tags', 'owner'].includes(field.key) ? 'ID do campo customizado' : 'nome_campo_pipedrive'}
                           className="bg-slate-700 border-slate-600 text-white text-sm h-8"
                         />
                       </td>
@@ -399,42 +387,6 @@ const PipedriveSettings = forwardRef<PipedriveSettingsRef>((_, ref) => {
             </div>
           </div>
 
-          {/* Campos de Deal */}
-          <div>
-            <h4 className="text-sm font-medium text-slate-400 mb-3">Campos de Negócio (Deal)</h4>
-            <div className="bg-slate-800/50 rounded-lg overflow-hidden">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-700">
-                    <th className="text-left text-xs text-slate-400 px-4 py-2">Campo do Sistema</th>
-                    <th className="text-center text-xs text-slate-400 px-4 py-2">→</th>
-                    <th className="text-left text-xs text-slate-400 px-4 py-2">Campo no Pipedrive</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {SYSTEM_DEAL_FIELDS.map(field => (
-                    <tr key={field.key} className="border-b border-slate-700/50 last:border-0">
-                      <td className="px-4 py-2">
-                        <div>
-                          <span className="text-slate-300">{field.label}</span>
-                          <p className="text-xs text-slate-500">{field.description}</p>
-                        </div>
-                      </td>
-                      <td className="px-4 py-2 text-center text-slate-500">→</td>
-                      <td className="px-4 py-2">
-                        <Input
-                          value={settings.pipedrive_field_mappings?.deal_fields?.[field.key] || ''}
-                          onChange={(e) => updateFieldMapping('deal', field.key, e.target.value)}
-                          placeholder="nome_campo_pipedrive"
-                          className="bg-slate-700 border-slate-600 text-white text-sm h-8"
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
 
           <p className="text-xs text-slate-500">
             Para campos customizados do Pipedrive, use o identificador do campo (ex: "12345abcd" para um campo personalizado).
