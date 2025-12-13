@@ -37,6 +37,12 @@ import { useNinaProcessingStatus } from '@/hooks/useNinaProcessingStatus';
 import { TypingIndicator } from './TypingIndicator';
 import { SendWhatsAppTemplateModal } from './SendWhatsAppTemplateModal';
 import { AudioPlayer } from './AudioPlayer';
+import { QuickQuestionsDropdown } from './QuickQuestionsDropdown';
+
+interface AgentQuestion {
+  order: number;
+  question: string;
+}
 
 const ChatInterface: React.FC = () => {
   const navigate = useNavigate();
@@ -86,6 +92,12 @@ const ChatInterface: React.FC = () => {
   // Keyboard shortcuts help state
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   
+  // Quick questions state (for / command)
+  const [agentQuestions, setAgentQuestions] = useState<AgentQuestion[]>([]);
+  const [showQuickQuestions, setShowQuickQuestions] = useState(false);
+  const [quickQuestionsFilter, setQuickQuestionsFilter] = useState('');
+  const [selectedQuestionIndex, setSelectedQuestionIndex] = useState(0);
+  
   // Input refs for keyboard shortcuts
   const searchInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
@@ -120,6 +132,93 @@ const ChatInterface: React.FC = () => {
   
   // Nina processing status for typing indicator
   const { isAggregating, isProcessing, agentName } = useNinaProcessingStatus(selectedChatId);
+  
+  // Load agent qualification questions when agent changes
+  useEffect(() => {
+    const loadAgentQuestions = async () => {
+      if (activeChat?.agentId) {
+        const { data: agent } = await supabase
+          .from('agents')
+          .select('qualification_questions')
+          .eq('id', activeChat.agentId)
+          .maybeSingle();
+        
+        if (agent?.qualification_questions && Array.isArray(agent.qualification_questions)) {
+          const normalized = agent.qualification_questions.map((q: any, idx: number) => ({
+            order: q.order || idx + 1,
+            question: typeof q === 'string' ? q : q.question
+          }));
+          setAgentQuestions(normalized);
+        } else {
+          setAgentQuestions([]);
+        }
+      } else {
+        setAgentQuestions([]);
+      }
+    };
+    loadAgentQuestions();
+  }, [activeChat?.agentId]);
+  
+  // Handle input change with / command detection
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setInputText(value);
+    
+    // Detect / command for quick questions (only when human is in control)
+    if (activeChat?.status === 'human' && (value === '/' || value.startsWith('/'))) {
+      setShowQuickQuestions(true);
+      setQuickQuestionsFilter(value.slice(1));
+      setSelectedQuestionIndex(0);
+    } else {
+      setShowQuickQuestions(false);
+      setQuickQuestionsFilter('');
+    }
+  };
+  
+  // Handle quick question selection
+  const handleQuickQuestionSelect = (question: string) => {
+    setInputText(question);
+    setShowQuickQuestions(false);
+    setQuickQuestionsFilter('');
+    messageInputRef.current?.focus();
+  };
+  
+  // Handle keyboard navigation in quick questions
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showQuickQuestions) {
+      const filteredQuestions = agentQuestions.filter(q => 
+        q.question.toLowerCase().includes(quickQuestionsFilter.toLowerCase())
+      );
+      
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedQuestionIndex(prev => Math.min(prev + 1, filteredQuestions.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedQuestionIndex(prev => Math.max(prev - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' && filteredQuestions.length > 0) {
+        e.preventDefault();
+        handleQuickQuestionSelect(filteredQuestions[selectedQuestionIndex].question);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowQuickQuestions(false);
+        setInputText('');
+        return;
+      }
+    }
+    
+    // Normal Enter to send
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
   
   // Calculate WhatsApp window remaining time
   const calculateWindowRemaining = (windowStart: string | null): { isOpen: boolean; hoursRemaining: number | null } => {
@@ -1147,27 +1246,36 @@ const ChatInterface: React.FC = () => {
                   </Button>
                 </div>
                 
+                {/* Quick Questions Dropdown */}
+                {showQuickQuestions && agentQuestions.length > 0 && activeChat.status === 'human' && (
+                  <QuickQuestionsDropdown
+                    questions={agentQuestions}
+                    filter={quickQuestionsFilter}
+                    selectedIndex={selectedQuestionIndex}
+                    agentName={activeChat.agentName || 'Qualificação'}
+                    onSelect={handleQuickQuestionSelect}
+                    onClose={() => setShowQuickQuestions(false)}
+                  />
+                )}
+                
                 <div className={`flex-1 bg-slate-950 rounded-2xl border ${
                   !windowTimeRemaining.isOpen 
                     ? 'border-red-500/30 opacity-50' 
                     : 'border-slate-800 focus-within:ring-2 focus-within:ring-cyan-500/30 focus-within:border-cyan-500/50'
-                } transition-all shadow-inner`}>
+                } transition-all shadow-inner relative`}>
                   <textarea
                     ref={messageInputRef}
                     value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
+                    onChange={handleInputChange}
+                    onKeyDown={handleInputKeyDown}
                     placeholder={
                       !windowTimeRemaining.isOpen 
                         ? 'Janela expirada - use template' 
                         : activeChat.status === 'nina' 
                           ? `${sdrName} respondendo...` 
-                          : 'Digite sua mensagem... (pressione M)'
+                          : activeChat.status === 'human'
+                            ? 'Digite / para perguntas rápidas...'
+                            : 'Digite sua mensagem...'
                     }
                     className={`w-full bg-transparent border-none ${isMobile ? 'p-3 min-h-[44px] text-base' : 'p-3.5 min-h-[48px] text-sm'} max-h-32 text-slate-200 focus:ring-0 resize-none outline-none placeholder:text-slate-600 disabled:cursor-not-allowed`}
                     rows={1}
