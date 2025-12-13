@@ -6,7 +6,7 @@ import {
   Smile, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
   Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
   Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle,
-  ArrowLeft, Keyboard
+  ArrowLeft, Keyboard, XCircle
 } from 'lucide-react';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
@@ -869,7 +869,7 @@ const ChatInterface: React.FC = () => {
       nina: { label: sdrName, icon: Bot, color: 'bg-violet-500/20 text-violet-400 border-violet-500/30' },
       human: { label: operatorName || 'Humano', icon: User, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
       paused: { label: 'Pausado', icon: Pause, color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
-      closed: { label: 'Encerrado', icon: Pause, color: 'bg-slate-500/20 text-slate-400 border-slate-500/30' }
+      closed: { label: 'Encerrado', icon: XCircle, color: 'bg-slate-500/20 text-slate-400 border-slate-500/30' }
     };
     const statusConfig = config[status];
     if (!statusConfig) return null;
