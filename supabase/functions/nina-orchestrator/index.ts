@@ -197,7 +197,17 @@ function detectAgent(
 ): { agent: Agent | null; isHandoff: boolean } {
   const content = messageContent.toLowerCase();
   
-  // SEMPRE verificar keywords primeiro para permitir handoffs pós-triagem
+  // PRIORIDADE 1: Se conversa é de prospecção ativa, usar Leonardo
+  const conversationMetadata = conversation.metadata || {};
+  if (conversationMetadata.origin === 'prospeccao') {
+    const leonardoAgent = agents.find(a => a.slug === 'leonardo');
+    if (leonardoAgent) {
+      console.log(`[Nina] Prospecting conversation - using Leonardo agent`);
+      return { agent: leonardoAgent, isHandoff: false };
+    }
+  }
+  
+  // PRIORIDADE 2: Verificar keywords para permitir handoffs pós-triagem
   for (const agent of agents) {
     if (agent.is_default) continue;
     
@@ -223,6 +233,30 @@ function detectAgent(
   
   // Return default agent
   return { agent: defaultAgent || null, isHandoff: false };
+}
+
+// Check if message is a prospecting rejection
+function isProspectingRejection(messageContent: string): boolean {
+  const content = messageContent.toLowerCase().trim();
+  const rejectionPhrases = [
+    'não sou da empresa', 'nao sou da empresa',
+    'não trabalho', 'nao trabalho',
+    'número errado', 'numero errado',
+    'não é comigo', 'nao e comigo',
+    'não tenho interesse', 'nao tenho interesse',
+    'não quero', 'nao quero',
+    'sem interesse',
+    'errou o número', 'errou o numero',
+    'ligou errado',
+    'não conheço', 'nao conheco',
+    'empresa errada',
+    'pare de', 'para de',
+    'não me ligue', 'nao me ligue',
+    'não mande', 'nao mande',
+    'remove', 'remova'
+  ];
+  
+  return rejectionPhrases.some(phrase => content.includes(phrase));
 }
 
 // Note: WhatsApp only supports audio/ogg; codecs=opus, audio/mpeg, audio/amr, audio/mp4, audio/aac
@@ -581,6 +615,121 @@ async function processQueueItem(
     console.log(`[Nina] Using agent: ${agent.name} (handoff: ${isHandoff})`);
   }
 
+  // ===== PROSPECTING REJECTION DETECTION =====
+  // Check if this is a prospecting conversation and message is a rejection
+  const conversationMetadata = conversation.metadata || {};
+  if (conversationMetadata.origin === 'prospeccao' && message.content && isProspectingRejection(message.content)) {
+    console.log(`[Nina] 🚫 Prospecting rejection detected: "${message.content}"`);
+    
+    // Use agent's handoff_message (graceful exit message)
+    const rejectionResponse = agent?.handoff_message || 'Obrigado pelo retorno! Desculpe o contato.';
+    
+    // Calculate delay
+    const delayMin = settings?.response_delay_min || 1000;
+    const delayMax = settings?.response_delay_max || 3000;
+    const delay = Math.random() * (delayMax - delayMin) + delayMin;
+    
+    // Get AI settings for metadata
+    const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+    
+    // Queue the rejection response
+    await queueTextResponse(supabase, conversation, message, rejectionResponse, settings, aiSettings, delay, agent);
+    
+    // Mark message as processed
+    const responseTime = Date.now() - new Date(message.sent_at).getTime();
+    await supabase
+      .from('messages')
+      .update({ 
+        processed_by_nina: true,
+        nina_response_time: responseTime
+      })
+      .eq('id', message.id);
+    
+    // Move deal to "Perdido" stage
+    const { data: prospectingPipeline } = await supabase
+      .from('pipelines')
+      .select('id')
+      .eq('slug', 'prospeccao')
+      .single();
+    
+    if (prospectingPipeline) {
+      const { data: lostStage } = await supabase
+        .from('pipeline_stages')
+        .select('id')
+        .eq('pipeline_id', prospectingPipeline.id)
+        .eq('title', 'Perdido')
+        .single();
+      
+      if (lostStage) {
+        await supabase
+          .from('deals')
+          .update({ 
+            stage_id: lostStage.id,
+            lost_at: new Date().toISOString(),
+            lost_reason: 'Lead rejeitou prospecção'
+          })
+          .eq('contact_id', conversation.contact_id);
+        
+        console.log(`[Nina] 📉 Deal moved to Perdido stage`);
+      }
+    }
+    
+    // Pause conversation (end prospecting)
+    await supabase
+      .from('conversations')
+      .update({ status: 'paused' })
+      .eq('id', conversation.id);
+    
+    // Trigger whatsapp-sender
+    try {
+      const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+      fetch(senderUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({ triggered_by: 'nina-orchestrator-prospecting-rejection' })
+      }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+    } catch (e) {
+      console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+    }
+    
+    console.log(`[Nina] ✅ Prospecting rejection handled, conversation paused`);
+    return;
+  }
+  // ===== END PROSPECTING REJECTION DETECTION =====
+
+  // ===== PROSPECTING: MOVE TO "EM QUALIFICAÇÃO" WHEN LEAD RESPONDS =====
+  // If this is a prospecting conversation and lead responded (not rejection), move to Em Qualificação
+  if (conversationMetadata.origin === 'prospeccao' && message.content) {
+    const { data: prospectingPipeline } = await supabase
+      .from('pipelines')
+      .select('id')
+      .eq('slug', 'prospeccao')
+      .single();
+    
+    if (prospectingPipeline) {
+      const { data: qualifyingStage } = await supabase
+        .from('pipeline_stages')
+        .select('id')
+        .eq('pipeline_id', prospectingPipeline.id)
+        .eq('title', 'Em Qualificação')
+        .single();
+      
+      if (qualifyingStage) {
+        await supabase
+          .from('deals')
+          .update({ stage_id: qualifyingStage.id })
+          .eq('contact_id', conversation.contact_id)
+          .eq('pipeline_id', prospectingPipeline.id);
+        
+        console.log(`[Nina] 📊 Prospecting deal moved to Em Qualificação`);
+      }
+    }
+  }
+  // ===== END PROSPECTING STAGE UPDATE =====
+
   // Update conversation with current agent if changed
   if (agent && conversation.current_agent_id !== agent.id) {
     await supabase
@@ -613,7 +762,7 @@ async function processQueueItem(
             .from('deals')
             .update({ 
               pipeline_id: agentPipeline.id,
-              stage_id: firstStage.id 
+              stage_id: firstStage.id
             })
             .eq('contact_id', conversation.contact_id);
           

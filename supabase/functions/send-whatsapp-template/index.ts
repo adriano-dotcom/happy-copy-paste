@@ -13,6 +13,7 @@ interface SendTemplateRequest {
   language?: string;
   variables?: string[]; // Variables for body component
   header_variables?: string[]; // Variables for header (if any)
+  is_prospecting?: boolean; // Flag to mark as active prospecting
 }
 
 serve(async (req) => {
@@ -26,9 +27,9 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body: SendTemplateRequest = await req.json();
-    const { contact_id, conversation_id, template_name, language = 'pt_BR', variables = [], header_variables = [] } = body;
+    const { contact_id, conversation_id, template_name, language = 'pt_BR', variables = [], header_variables = [], is_prospecting = false } = body;
 
-    console.log(`Sending template ${template_name} to contact ${contact_id}`);
+    console.log(`Sending template ${template_name} to contact ${contact_id} (prospecting: ${is_prospecting})`);
 
     // Get WhatsApp settings
     const { data: settings, error: settingsError } = await supabase
@@ -178,7 +179,8 @@ serve(async (req) => {
           is_template: true,
           template_name,
           template_language: language,
-          variables
+          variables,
+          is_prospecting
         }
       })
       .select()
@@ -187,6 +189,79 @@ serve(async (req) => {
     if (messageError) {
       console.error('Error recording message:', messageError);
       // Don't fail the request, message was sent
+    }
+
+    // If this is a prospecting template, mark conversation and create/update deal
+    if (is_prospecting) {
+      console.log('Marking conversation as prospecting...');
+      
+      // Get Leonardo agent
+      const { data: leonardoAgent } = await supabase
+        .from('agents')
+        .select('id')
+        .eq('slug', 'leonardo')
+        .single();
+
+      // Get prospecting pipeline and "Aguardando Resposta" stage
+      const { data: prospectingPipeline } = await supabase
+        .from('pipelines')
+        .select('id')
+        .eq('slug', 'prospeccao')
+        .single();
+
+      if (prospectingPipeline) {
+        const { data: awaitingStage } = await supabase
+          .from('pipeline_stages')
+          .select('id')
+          .eq('pipeline_id', prospectingPipeline.id)
+          .eq('title', 'Aguardando Resposta')
+          .single();
+
+        // Update conversation with prospecting metadata and Leonardo agent
+        await supabase
+          .from('conversations')
+          .update({
+            current_agent_id: leonardoAgent?.id || null,
+            metadata: {
+              origin: 'prospeccao',
+              agent_slug: 'leonardo',
+              template_sent: template_name,
+              template_sent_at: new Date().toISOString()
+            }
+          })
+          .eq('id', conversation_id);
+
+        // Check if deal exists for this contact, if not create one
+        const { data: existingDeal } = await supabase
+          .from('deals')
+          .select('id')
+          .eq('contact_id', contact_id)
+          .maybeSingle();
+
+        if (!existingDeal && awaitingStage) {
+          // Create new deal in prospecting pipeline
+          await supabase
+            .from('deals')
+            .insert({
+              contact_id,
+              title: contact.name || 'Lead Prospecção',
+              stage_id: awaitingStage.id,
+              pipeline_id: prospectingPipeline.id,
+              priority: 'medium'
+            });
+          console.log('Created deal in Prospecção pipeline');
+        } else if (existingDeal && awaitingStage) {
+          // Update existing deal to prospecting pipeline
+          await supabase
+            .from('deals')
+            .update({
+              stage_id: awaitingStage.id,
+              pipeline_id: prospectingPipeline.id
+            })
+            .eq('id', existingDeal.id);
+          console.log('Updated deal to Prospecção pipeline');
+        }
+      }
     }
 
     return new Response(

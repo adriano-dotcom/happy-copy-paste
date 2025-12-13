@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Send, Loader2, MessageSquare, AlertCircle } from 'lucide-react';
+import { X, Send, Loader2, MessageSquare, AlertCircle, Phone } from 'lucide-react';
 import { Button } from './Button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Switch } from './ui/switch';
 import {
   Select,
   SelectContent,
@@ -49,6 +50,7 @@ export const SendWhatsAppTemplateModal: React.FC<SendWhatsAppTemplateModalProps>
   const [selectedTemplate, setSelectedTemplate] = useState<WhatsAppTemplate | null>(null);
   const [headerVariables, setHeaderVariables] = useState<string[]>([]);
   const [bodyVariables, setBodyVariables] = useState<string[]>([]);
+  const [isProspecting, setIsProspecting] = useState(false);
 
   // Count variables in a text by finding {{N}} patterns
   const countVariables = (text: string | undefined): number => {
@@ -147,6 +149,7 @@ export const SendWhatsAppTemplateModal: React.FC<SendWhatsAppTemplateModalProps>
           language: selectedTemplate.language,
           variables: bodyVariables.map(v => v.trim()),
           header_variables: headerVariables.map(v => v.trim()),
+          is_prospecting: isProspecting,
         },
       });
 
@@ -262,6 +265,21 @@ export const SendWhatsAppTemplateModal: React.FC<SendWhatsAppTemplateModalProps>
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Prospecting Toggle */}
+              <div className="flex items-center justify-between p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                <div className="flex items-center gap-3">
+                  <Phone className="w-5 h-5 text-amber-400" />
+                  <div>
+                    <p className="text-sm font-medium text-white">Prospecção Ativa</p>
+                    <p className="text-xs text-slate-400">Ativar agente Leonardo para qualificação</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={isProspecting}
+                  onCheckedChange={setIsProspecting}
+                />
               </div>
 
               {/* Header Variables */}
