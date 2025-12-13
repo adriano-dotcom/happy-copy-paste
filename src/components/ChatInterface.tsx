@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -6,8 +6,10 @@ import {
   Smile, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
   Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
   Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle,
-  ArrowLeft
+  ArrowLeft, Keyboard
 } from 'lucide-react';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
   DropdownMenu,
@@ -81,6 +83,12 @@ const ChatInterface: React.FC = () => {
   // WhatsApp template modal state
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   
+  // Keyboard shortcuts help state
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  
+  // Input refs for keyboard shortcuts
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
   
   // WhatsApp window real-time timer state
   const [windowTimeRemaining, setWindowTimeRemaining] = useState<{ isOpen: boolean; hoursRemaining: number | null }>({ isOpen: false, hoursRemaining: null });
@@ -172,7 +180,7 @@ const ChatInterface: React.FC = () => {
   
   // Active call state
   const { activeCall, callHistory, loading: callHistoryLoading, dismissActiveCall } = useActiveCall(selectedChatId);
-  
+
 
   // Load tag definitions, team members, and pipelines
   useEffect(() => {
@@ -548,6 +556,39 @@ const ChatInterface: React.FC = () => {
       return timeB - timeA;
     });
 
+  // Keyboard shortcuts handlers
+  const handleNextConversation = useCallback(() => {
+    const currentIndex = filteredConversations.findIndex(c => c.id === selectedChatId);
+    const nextIndex = Math.min(currentIndex + 1, filteredConversations.length - 1);
+    if (nextIndex !== currentIndex && nextIndex >= 0) {
+      setSelectedChatId(filteredConversations[nextIndex].id);
+    }
+  }, [filteredConversations, selectedChatId]);
+
+  const handlePrevConversation = useCallback(() => {
+    const currentIndex = filteredConversations.findIndex(c => c.id === selectedChatId);
+    const prevIndex = Math.max(currentIndex - 1, 0);
+    if (prevIndex !== currentIndex && currentIndex > 0) {
+      setSelectedChatId(filteredConversations[prevIndex].id);
+    }
+  }, [filteredConversations, selectedChatId]);
+
+  // Keyboard shortcuts integration
+  useKeyboardShortcuts({
+    onNextConversation: handleNextConversation,
+    onPrevConversation: handlePrevConversation,
+    onFocusSearch: () => searchInputRef.current?.focus(),
+    onFocusMessage: () => messageInputRef.current?.focus(),
+    onSetStatusNina: () => activeChat && handleStatusChange('nina'),
+    onSetStatusHuman: () => activeChat && handleStatusChange('human'),
+    onSetStatusPaused: () => activeChat && handleStatusChange('paused'),
+    onToggleInfo: () => setShowProfileInfo(prev => !prev),
+    onCall: () => activeChat && setShowCallModal(true),
+    onTemplate: () => activeChat && setShowTemplateModal(true),
+    onArchive: () => activeChat && archiveConversation(activeChat.id),
+    onShowHelp: () => setShowShortcutsHelp(prev => !prev),
+  }, !showCallModal && !showTemplateModal && !showShortcutsHelp);
+
   const renderStatusBadge = (status: ConversationStatus, operatorName?: string | null) => {
     const config = {
       nina: { label: sdrName, icon: Bot, color: 'bg-violet-500/20 text-violet-400 border-violet-500/30' },
@@ -703,8 +744,9 @@ const ChatInterface: React.FC = () => {
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 group-focus-within:text-cyan-400 transition-colors" />
             <input 
+              ref={searchInputRef}
               type="text" 
-              placeholder="Buscar conversa..."
+              placeholder="Buscar conversa... (pressione /)"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-4 py-2.5 bg-slate-950/50 border border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 outline-none text-slate-200 placeholder:text-slate-600 transition-all"
@@ -1111,6 +1153,7 @@ const ChatInterface: React.FC = () => {
                     : 'border-slate-800 focus-within:ring-2 focus-within:ring-cyan-500/30 focus-within:border-cyan-500/50'
                 } transition-all shadow-inner`}>
                   <textarea
+                    ref={messageInputRef}
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     onKeyDown={(e) => {
@@ -1124,7 +1167,7 @@ const ChatInterface: React.FC = () => {
                         ? 'Janela expirada - use template' 
                         : activeChat.status === 'nina' 
                           ? `${sdrName} respondendo...` 
-                          : 'Digite sua mensagem...'
+                          : 'Digite sua mensagem... (pressione M)'
                     }
                     className={`w-full bg-transparent border-none ${isMobile ? 'p-3 min-h-[44px] text-base' : 'p-3.5 min-h-[48px] text-sm'} max-h-32 text-slate-200 focus:ring-0 resize-none outline-none placeholder:text-slate-600 disabled:cursor-not-allowed`}
                     rows={1}
@@ -1554,6 +1597,23 @@ const ChatInterface: React.FC = () => {
           contactCompany={activeChat.contactCompany}
           onSent={() => setShowTemplateModal(false)}
         />
+      )}
+
+      {/* Keyboard Shortcuts Help Modal */}
+      <KeyboardShortcutsHelp 
+        isOpen={showShortcutsHelp} 
+        onClose={() => setShowShortcutsHelp(false)} 
+      />
+
+      {/* Keyboard Shortcuts Hint Button */}
+      {!isMobile && (
+        <button
+          onClick={() => setShowShortcutsHelp(true)}
+          className="fixed bottom-4 right-4 p-2.5 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-400 hover:text-white transition-all shadow-lg backdrop-blur-sm z-40"
+          title="Atalhos de teclado (?)"
+        >
+          <Keyboard className="w-4 h-4" />
+        </button>
       )}
     </div>
   );
