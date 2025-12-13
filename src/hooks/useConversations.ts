@@ -90,6 +90,8 @@ export function useConversations() {
                   messages: [...conv.messages, uiMessage],
                   lastMessage: newMessage.content || '',
                   lastMessageTime: 'Agora',
+                  lastMessageAt: newMessage.sent_at,
+                  lastMessageFromUser: newMessage.from_type === 'user',
                   // Increment unread if it's from user and play notification
                   unreadCount: newMessage.from_type === 'user' 
                     ? (playNotificationSound(), conv.unreadCount + 1)
@@ -168,9 +170,11 @@ export function useConversations() {
                     assignedTeam: updated.assigned_team,
                     assignedUserId: updated.assigned_user_id ?? conv.assignedUserId,
                     assignedUserName: updated.assigned_user_name ?? conv.assignedUserName,
+                    ninaContext: updated.nina_context ?? conv.ninaContext,
                     whatsappWindowStart: updated.whatsapp_window_start || conv.whatsappWindowStart,
                     isWhatsAppWindowOpen: updated.whatsapp_window_start !== undefined ? isWindowOpen : conv.isWhatsAppWindowOpen,
-                    windowHoursRemaining: updated.whatsapp_window_start !== undefined ? hoursRemaining : conv.windowHoursRemaining
+                    windowHoursRemaining: updated.whatsapp_window_start !== undefined ? hoursRemaining : conv.windowHoursRemaining,
+                    lastMessageAt: updated.last_message_at || conv.lastMessageAt
                   };
                 }
                 return conv;
