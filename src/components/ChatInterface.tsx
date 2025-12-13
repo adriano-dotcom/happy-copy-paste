@@ -6,7 +6,7 @@ import {
   Smile, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
   Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
   Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle,
-  ArrowLeft, Keyboard, XCircle
+  ArrowLeft, Keyboard, XCircle, PlayCircle
 } from 'lucide-react';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
@@ -111,6 +111,7 @@ const ChatInterface: React.FC = () => {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closeReason, setCloseReason] = useState('');
   const [isClosingConversation, setIsClosingConversation] = useState(false);
+  const [isReopeningConversation, setIsReopeningConversation] = useState(false);
   
   // Input refs for keyboard shortcuts
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -579,6 +580,60 @@ const ChatInterface: React.FC = () => {
       toast.error('Erro ao encerrar atendimento');
     } finally {
       setIsClosingConversation(false);
+    }
+  };
+
+  // Handle reopen conversation (bring back from closed)
+  const handleReopenConversation = async () => {
+    if (!activeChat || isReopeningConversation) return;
+    
+    // Check if 24-hour WhatsApp window is expired
+    const windowStart = activeChat.whatsappWindowStart 
+      ? new Date(activeChat.whatsappWindowStart) 
+      : null;
+    const now = new Date();
+    const windowExpired = !windowStart || 
+      (now.getTime() - windowStart.getTime() > 24 * 60 * 60 * 1000);
+    
+    if (windowExpired) {
+      // Window expired - need to use Meta template
+      setShowTemplateModal(true);
+      toast.info('Janela de 24h expirada. Selecione um template para reabrir o contato.');
+      return;
+    }
+    
+    // Window still open - can reactivate directly
+    setIsReopeningConversation(true);
+    try {
+      // 1. Reactivate conversation
+      const { error: convError } = await supabase
+        .from('conversations')
+        .update({ 
+          status: 'nina' as any,
+          is_active: true
+        })
+        .eq('id', activeChat.id);
+      
+      if (convError) throw convError;
+      
+      // 2. Clear lost_at and lost_reason from deal
+      if (existingDeal) {
+        await supabase
+          .from('deals')
+          .update({
+            lost_at: null,
+            lost_reason: null
+          })
+          .eq('id', existingDeal.id);
+      }
+      
+      toast.success('Atendimento reaberto - conversa voltou para IA');
+      await refetch();
+    } catch (error) {
+      console.error('Error reopening conversation:', error);
+      toast.error('Erro ao reabrir atendimento');
+    } finally {
+      setIsReopeningConversation(false);
     }
   };
 
@@ -1340,13 +1395,24 @@ const ChatInterface: React.FC = () => {
                       </DropdownMenuItem>
                     ) : (
                       <>
-                        <DropdownMenuItem 
-                          onClick={() => setShowCloseModal(true)}
-                          className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 cursor-pointer"
-                        >
-                          <X className="w-4 h-4 mr-2" />
-                          Encerrar Atendimento
-                        </DropdownMenuItem>
+                        {activeChat.status === 'closed' ? (
+                          <DropdownMenuItem 
+                            onClick={handleReopenConversation}
+                            disabled={isReopeningConversation}
+                            className="text-green-400 hover:text-green-300 hover:bg-green-500/10 cursor-pointer"
+                          >
+                            <PlayCircle className="w-4 h-4 mr-2" />
+                            {isReopeningConversation ? 'Reabrindo...' : 'Reabrir Atendimento'}
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem 
+                            onClick={() => setShowCloseModal(true)}
+                            className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 cursor-pointer"
+                          >
+                            <X className="w-4 h-4 mr-2" />
+                            Encerrar Atendimento
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuSeparator className="bg-slate-700" />
                         <DropdownMenuItem 
                           onClick={async () => {
