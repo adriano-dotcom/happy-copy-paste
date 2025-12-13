@@ -322,11 +322,26 @@ export const api = {
       city: (c as any).city || undefined,
       state: (c as any).state || undefined,
       notes: c.notes || undefined,
-      status: 'lead' as const,
+      status: ((c as any).lead_status || 'new') as 'new' | 'lead' | 'qualified' | 'customer' | 'churned',
       lastContact: new Date(c.last_activity).toLocaleDateString('pt-BR'),
       lead_source: (c as any).lead_source || 'inbound',
       whatsapp_id: c.whatsapp_id || undefined
     }));
+  },
+
+  /**
+   * Update contact lead status
+   */
+  updateContactStatus: async (id: string, status: string): Promise<void> => {
+    const { error } = await supabase
+      .from('contacts')
+      .update({ lead_status: status })
+      .eq('id', id);
+
+    if (error) {
+      console.error('[API] Error updating contact status:', error);
+      throw error;
+    }
   },
 
   /**

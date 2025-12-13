@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2 } from 'lucide-react';
+import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown } from 'lucide-react';
 import { Button } from './ui/button';
 import { api } from '../services/api';
 import { Contact } from '../types';
@@ -12,6 +12,15 @@ import { displayPhoneInternational } from '@/utils/phoneFormatter';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+
+const statusOptions = [
+  { value: 'new', label: 'Novo Lead', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+  { value: 'lead', label: 'Em Qualificação', color: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' },
+  { value: 'qualified', label: 'Qualificado', color: 'bg-green-500/10 text-green-400 border-green-500/20' },
+  { value: 'customer', label: 'Cliente Ativo', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+  { value: 'churned', label: 'Perdido', color: 'bg-slate-800 text-slate-400 border-slate-700' }
+];
 
 interface ExtendedContact extends Contact {
   company?: string;
@@ -110,11 +119,23 @@ const Contacts: React.FC = () => {
   }, []);
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'customer': return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-      case 'lead': return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
-      case 'churned': return 'bg-slate-800 text-slate-400 border-slate-700';
-      default: return 'bg-slate-800 text-slate-400';
+    const option = statusOptions.find(o => o.value === status);
+    return option?.color || 'bg-slate-800 text-slate-400 border-slate-700';
+  };
+
+  const getStatusLabel = (status: string) => {
+    const option = statusOptions.find(o => o.value === status);
+    return option?.label || 'Novo Lead';
+  };
+
+  const handleStatusChange = async (contactId: string, newStatus: string) => {
+    try {
+      await api.updateContactStatus(contactId, newStatus);
+      toast.success('Status atualizado');
+      loadContacts();
+    } catch (error) {
+      console.error('Erro ao atualizar status:', error);
+      toast.error('Erro ao atualizar status');
     }
   };
 
@@ -198,9 +219,27 @@ const Contacts: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 rounded-md text-xs font-semibold border ${getStatusColor(contact.status)}`}>
-                      {contact.status === 'customer' ? 'Cliente Ativo' : contact.status === 'lead' ? 'Lead Qualificado' : 'Churned'}
-                    </span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className={`px-2.5 py-1 rounded-md text-xs font-semibold border inline-flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity ${getStatusColor(contact.status)}`}>
+                          {getStatusLabel(contact.status)}
+                          <ChevronDown className="w-3 h-3" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="bg-slate-900 border-slate-700 min-w-[160px]">
+                        {statusOptions.map(option => (
+                          <DropdownMenuItem 
+                            key={option.value}
+                            onClick={() => handleStatusChange(contact.id, option.value)}
+                            className="cursor-pointer hover:bg-slate-800 focus:bg-slate-800"
+                          >
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium border ${option.color}`}>
+                              {option.label}
+                            </span>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col gap-1">
