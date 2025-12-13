@@ -200,10 +200,11 @@ export function useConversations() {
               if (conv.contactId === updated.id) {
                 return {
                   ...conv,
+                  contactName: updated.name || updated.call_name || conv.contactName,
+                  contactPhone: updated.phone_number || conv.contactPhone,
                   contactEmail: updated.email || null,
                   contactCnpj: updated.cnpj || null,
                   contactCompany: updated.company || null,
-                  contactName: updated.name || updated.call_name || conv.contactName,
                   notes: updated.notes || null,
                   clientMemory: updated.client_memory || conv.clientMemory,
                   tags: updated.tags || []
