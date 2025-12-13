@@ -20,6 +20,7 @@ interface Agent {
   detection_keywords: string[];
   greeting_message: string | null;
   handoff_message: string | null;
+  cargo_focused_greeting: string | null;
   qualification_questions: Array<{ order: number; question: string }>;
   audio_response_enabled?: boolean;
   elevenlabs_voice_id?: string | null;
@@ -29,6 +30,22 @@ interface Agent {
   elevenlabs_style?: number | null;
   elevenlabs_speed?: number | null;
   elevenlabs_speaker_boost?: boolean | null;
+}
+
+// Keywords que indicam interesse explícito em seguro de cargas (para campanhas)
+const CARGO_INSURANCE_KEYWORDS = [
+  'seguro de carga', 'seguro de cargas', 'seguro da carga', 'seguro cargas',
+  'rctr', 'rctr-c', 'rc-dc', 'roubo de carga', 'roubo carga',
+  'seguro pra transportadora', 'seguro para transportadora',
+  'seguro transporte', 'seguro de frete', 'seguro frete',
+  'seguro para caminhão', 'seguro caminhoneiro', 'seguro caminhão',
+  'transporte de carga', 'transporto carga', 'minha transportadora',
+  'seguro pra frota', 'seguro para frota', 'seguro da frota'
+];
+
+function hasExplicitCargoInterest(messageContent: string): boolean {
+  const lowerContent = messageContent.toLowerCase();
+  return CARGO_INSURANCE_KEYWORDS.some(keyword => lowerContent.includes(keyword));
 }
 
 serve(async (req) => {
@@ -1054,9 +1071,21 @@ async function processQueueItem(
 
   // If first interaction and agent has greeting_message, use it instead of AI
   if (isFirstInteraction && agent?.greeting_message) {
-    console.log(`[Nina] First interaction - using greeting_message for ${agent.name}`);
+    // Check if lead already mentioned cargo insurance (from campaigns)
+    const firstUserMessage = userMessages[0]?.content || '';
+    const hasCargoInterest = agent.slug === 'adri' && hasExplicitCargoInterest(firstUserMessage);
     
-    const greetingContent = processPromptTemplate(agent.greeting_message, conversation.contact);
+    let greetingContent: string;
+    
+    if (hasCargoInterest && agent.cargo_focused_greeting) {
+      // Lead from cargo campaign - use focused greeting that starts with cargo type question
+      console.log(`[Nina] 🚛 Lead from cargo campaign detected - using cargo_focused_greeting for ${agent.name}`);
+      greetingContent = processPromptTemplate(agent.cargo_focused_greeting, conversation.contact);
+    } else {
+      // Normal greeting
+      console.log(`[Nina] First interaction - using greeting_message for ${agent.name}`);
+      greetingContent = processPromptTemplate(agent.greeting_message, conversation.contact);
+    }
     
     // Calculate delay
     const delayMin = settings?.response_delay_min || 1000;
