@@ -356,6 +356,51 @@ async function generateAudioElevenLabs(supabase: any, settings: any, text: strin
   }
 }
 
+// ===== REAL-TIME QUALIFICATION EXTRACTION FUNCTION =====
+// Extract qualification answers from user messages for immediate saving
+function extractQualificationFromMessages(userMessages: string[]): { [key: string]: string | null } {
+  const extracted: { [key: string]: string | null } = {};
+  const allText = userMessages.join(' ').toLowerCase();
+  
+  // Patterns for qualification fields
+  const patterns: { [key: string]: RegExp } = {
+    contratacao: /\b(direto|subcontratado|ambos|contratado direto|subcontrata|sub-contratado)\b/i,
+    tipo_carga: /\b(alumínio|aluminio|ferro|grão|grãos|graos|grao|alimento|alimentos|químico|quimicos|químicos|madeira|cimento|frigorific|refrigerad|seca|geral|carga geral|paletizada|granel|container|containers|bebidas?|perecíveis|pereciveis|eletrônicos|eletronicos|máquinas|maquinas|equipamentos?)\b/i,
+    tipo_frota: /\b(própria|propria|próprio|proprio|agregado|agregados|terceiro|terceiros|frota própria|frota propria|mista)\b/i,
+    antt: /\b(regularizada|pessoa física|pessoa fisica|ativa|não tenho antt|nao tenho antt|em processo|sim tenho|tenho sim|antt ok|antt ativa)\b/i,
+    cte: /\b(sim|não|nao|emito|emite|vou começar|vou comecar|já emito|ja emito|emitimos|não emito|nao emito|emissão|emissao)\b/i,
+  };
+  
+  // Extract estados (can be multiple)
+  const estadosRegex = /(SP|PR|MG|MT|MS|GO|RS|SC|RJ|BA|ES|DF|TO|PA|AM|CE|PE|MA|PI|RN|PB|AL|SE|RO|RR|AP|AC|São Paulo|Paraná|Minas|Mato Grosso|Goiás|Rio Grande|Santa Catarina|Rio de Janeiro|Bahia|Ceará|Pernambuco)/gi;
+  const estadosMatches = allText.match(estadosRegex);
+  if (estadosMatches && estadosMatches.length > 0) {
+    extracted.estados = [...new Set(estadosMatches.map(s => s.toUpperCase()))].join(', ');
+  }
+  
+  // Extract other fields
+  for (const [field, regex] of Object.entries(patterns)) {
+    const match = allText.match(regex);
+    if (match) {
+      extracted[field] = match[0];
+    }
+  }
+  
+  // Extract viagens/mes (numeric pattern)
+  const viagensMatch = allText.match(/(\d+)\s*(?:viagens?|vezes?|por mês|ao mês|por mes|mensal|mensais)/i);
+  if (viagensMatch) {
+    extracted.viagens_mes = viagensMatch[1];
+  }
+  
+  // Extract valor médio (currency pattern)
+  const valorMatch = allText.match(/(?:R\$|reais)\s*(\d+(?:\.\d{3})*(?:,\d{2})?)|(\d+(?:\.\d{3})*(?:,\d{2})?)\s*(?:mil|reais)/gi);
+  if (valorMatch && valorMatch.length > 0) {
+    extracted.valor_medio = valorMatch[0];
+  }
+  
+  return extracted;
+}
+
 // Sanitize text for TTS - simplify URLs for natural speech
 function sanitizeTextForAudio(text: string): string {
   let sanitized = text;
@@ -1064,6 +1109,48 @@ async function processQueueItem(
   }
   // ===== END EMAIL DETECTION =====
 
+  // ===== REAL-TIME QUALIFICATION EXTRACTION =====
+  // Extract qualification answers from user messages immediately and save to nina_context
+  const userMessagesContent = (recentMessages || [])
+    .filter((m: any) => m.from_type === 'user' && m.content)
+    .map((m: any) => m.content);
+  
+  const extractedQA = extractQualificationFromMessages(userMessagesContent);
+  const existingQA = conversation.nina_context?.qualification_answers || {};
+  const mergedQA: { [key: string]: string } = { ...existingQA };
+  
+  // Merge only new non-empty values (don't overwrite existing)
+  let hasNewData = false;
+  for (const [key, value] of Object.entries(extractedQA)) {
+    if (value && !mergedQA[key]) {
+      mergedQA[key] = value;
+      hasNewData = true;
+    }
+  }
+  
+  // Save if there are new answers
+  if (hasNewData) {
+    await supabase
+      .from('conversations')
+      .update({
+        nina_context: {
+          ...conversation.nina_context,
+          qualification_answers: mergedQA,
+          last_extraction: new Date().toISOString()
+        }
+      })
+      .eq('id', conversation.id);
+    
+    // Update local reference for buildEnhancedPrompt
+    conversation.nina_context = {
+      ...conversation.nina_context,
+      qualification_answers: mergedQA
+    };
+    
+    console.log(`[Nina] 📝 Qualification answers extracted in real-time:`, mergedQA);
+  }
+  // ===== END REAL-TIME QUALIFICATION EXTRACTION =====
+
   // Check if this is the first interaction (only 1 user message, no assistant messages yet)
   const userMessages = conversationHistory.filter((m: any) => m.role === 'user');
   const assistantMessages = conversationHistory.filter((m: any) => m.role === 'assistant');
@@ -1136,12 +1223,19 @@ async function processQueueItem(
   }
 
   // Build enhanced system prompt with context (including qualification answers from nina_context)
+  // Also pass recent user messages for history verification
+  const recentUserMsgs = (recentMessages || [])
+    .filter((m: any) => m.from_type === 'user' && m.content)
+    .slice(-8)
+    .map((m: any) => m.content);
+  
   const enhancedSystemPrompt = buildEnhancedPrompt(
     systemPrompt, 
     conversation.contact, 
     clientMemory,
     agent,
-    conversation.nina_context
+    conversation.nina_context,
+    recentUserMsgs
   );
 
   // Process template variables
@@ -1488,7 +1582,8 @@ function buildEnhancedPrompt(
   contact: any, 
   memory: any,
   agent?: Agent | null,
-  ninaContext?: any
+  ninaContext?: any,
+  recentUserMessages?: string[]
 ): string {
   let contextInfo = '';
 
@@ -1557,18 +1652,45 @@ function buildEnhancedPrompt(
     }
   }
 
-  // ===== ANTI-ECHO RULE =====
-  contextInfo += `\n\n## REGRA ANTI-ECO (CRÍTICO):
+  // ===== ÚLTIMAS RESPOSTAS DO CLIENTE - REFERÊNCIA PARA VERIFICAR HISTÓRICO =====
+  if (recentUserMessages && recentUserMessages.length > 0) {
+    contextInfo += `\n\n## ÚLTIMAS RESPOSTAS DO CLIENTE (VERIFIQUE ANTES DE PERGUNTAR):`;
+    for (const msg of recentUserMessages) {
+      contextInfo += `\n- "${msg}"`;
+    }
+  }
+
+  // ===== ANTI-ECO + VERIFICAÇÃO DE HISTÓRICO =====
+  contextInfo += `\n\n## REGRAS CRÍTICAS DE COMUNICAÇÃO:
+
+### REGRA ANTI-ECO:
 - NUNCA repita ou resuma o que o cliente acabou de dizer
 - Vá DIRETO para a próxima pergunta ou ação
 - NÃO use frases como "Entendi que você...", "Então você transporta...", "Certo, [resposta]..."
-- Não confirme informações já dadas - apenas prossiga
 
 ERRADO: "Entendi, alimentos. Quais estados atende?"
 CORRETO: "Quais estados atende?"
 
-ERRADO: "Certo, SP, PR e MT. Qual o CNPJ?"
-CORRETO: "Qual o CNPJ?"`;
+### REGRA VERIFICAR HISTÓRICO (CRÍTICO):
+Antes de fazer QUALQUER pergunta:
+1. LEIA as "ÚLTIMAS RESPOSTAS DO CLIENTE" acima
+2. VERIFIQUE as "INFORMAÇÕES JÁ COLETADAS" acima
+3. Se o dado já foi informado, PULE para a próxima pergunta
+
+### Se cliente disser "já respondi" ou "já informei":
+- NUNCA peça para repetir
+- Consulte o histórico e reconheça o dado que está lá
+- Responda: "Vi aqui. Sobre [próxima pergunta pendente]?"
+- Continue para o próximo item pendente
+
+### Lista de verificação antes de perguntar:
+- Tipo de contratação (direto/subcontratado) - já informou?
+- Tipo de carga - já mencionou no histórico?
+- Estados/regiões - já apareceu nas mensagens?
+- CNPJ - já está no contexto do cliente?
+- Tipo de frota - própria/agregado/terceiro definido?
+- ANTT - já falou sobre regularização?
+- CT-e - já confirmou se emite ou não?`;
 
   return basePrompt + contextInfo;
 }
