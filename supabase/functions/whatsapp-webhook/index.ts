@@ -400,7 +400,8 @@ async function processIncomingMessage(
         phone_number: normalizedPhone,
         whatsapp_id: whatsappId,
         name: contactName,
-        call_name: contactName?.split(' ')[0] || null
+        call_name: contactName?.split(' ')[0] || null,
+        lead_source: 'inbound' // Contatos via WhatsApp são inbound
       })
       .select()
       .single();

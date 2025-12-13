@@ -323,7 +323,9 @@ export const api = {
       state: (c as any).state || undefined,
       notes: c.notes || undefined,
       status: 'lead' as const,
-      lastContact: new Date(c.last_activity).toLocaleDateString('pt-BR')
+      lastContact: new Date(c.last_activity).toLocaleDateString('pt-BR'),
+      lead_source: (c as any).lead_source || 'inbound',
+      whatsapp_id: c.whatsapp_id || undefined
     }));
   },
 

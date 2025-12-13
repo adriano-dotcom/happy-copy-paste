@@ -226,7 +226,8 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
         phone_number: row[mapping.phone]?.replace(/\D/g, ''),
         email: mapping.email ? row[mapping.email]?.trim() || null : null,
         company: mapping.company ? row[mapping.company]?.trim() || null : null,
-        cnpj: mapping.cnpj ? row[mapping.cnpj]?.replace(/\D/g, '') || null : null
+        cnpj: mapping.cnpj ? row[mapping.cnpj]?.replace(/\D/g, '') || null : null,
+        lead_source: 'outbound' // Contatos importados são outbound
       }));
 
       const { error } = await supabase.from('contacts').insert(contacts);
