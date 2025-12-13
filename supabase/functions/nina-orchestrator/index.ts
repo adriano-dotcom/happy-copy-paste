@@ -1066,10 +1066,10 @@ async function processQueueItem(
         .maybeSingle();
       
       if (deal && emailContent) {
-        // Calculate scheduled date (15 days before renewal)
+        // Calculate scheduled date (60 days before renewal)
         const renewalDateObj = new Date(renewalDate);
         const scheduledDate = new Date(renewalDateObj);
-        scheduledDate.setDate(scheduledDate.getDate() - 15);
+        scheduledDate.setDate(scheduledDate.getDate() - 60);
         
         // If scheduled date is in the past, schedule for 3 days from now
         const now = new Date();
@@ -1087,7 +1087,7 @@ async function processQueueItem(
             subject: emailContent.subject,
             body_html: emailContent.body_html,
             scheduled_for: scheduledDate.toISOString().split('T')[0],
-            days_before_due: 15,
+            days_before_due: 60,
             generated_by: 'ai'
           });
         
@@ -1100,7 +1100,7 @@ async function processQueueItem(
             deal_id: deal.id,
             type: 'task',
             title: 'Follow-up Renovação',
-            description: `Lead rejeitou por já ter corretor.\nData de renovação: ${new Date(renewalDate).toLocaleDateString('pt-BR')}\nEmail agendado para: ${finalEmail}\n\nAgendar recontato próximo da data de vencimento.`,
+            description: `Lead rejeitou por já ter corretor.\nData de renovação: ${new Date(renewalDate).toLocaleDateString('pt-BR')}\nEmail agendado para 60 dias antes: ${finalEmail}\n\nAgendar recontato próximo da data de vencimento.`,
             scheduled_at: scheduledDate.toISOString(),
             is_completed: false
           });
