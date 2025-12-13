@@ -336,6 +336,296 @@ function isSoftRejection(messageContent: string): boolean {
   return softRejectionPhrases.some(phrase => content.includes(phrase));
 }
 
+// ===== CALLBACK DETECTION PATTERNS =====
+interface CallbackIntent {
+  hasIntent: boolean;
+  suggestedDate?: Date;
+  suggestedTime?: string;
+  rawText?: string;
+}
+
+function detectCallbackIntent(messageContent: string): CallbackIntent {
+  const content = messageContent.toLowerCase().trim();
+  
+  // Patterns that indicate the lead wants to be called back later
+  const callbackPhrases = [
+    // Time-based
+    'falar depois', 'fala depois', 'ligar depois', 'liga depois',
+    'retornar depois', 'retorna depois', 'me liga mais tarde',
+    'outra hora', 'outro horário', 'outro horario', 'outro momento',
+    // Day-based
+    'segunda', 'terça', 'terca', 'quarta', 'quinta', 'sexta', 'sábado', 'sabado', 'domingo',
+    'amanhã', 'amanha', 'depois de amanhã', 'depois de amanha',
+    'semana que vem', 'próxima semana', 'proxima semana',
+    // Busy signals
+    'agora não posso', 'agora nao posso', 'agora não dá', 'agora nao da',
+    'ocupado', 'ocupada', 'em reunião', 'em reuniao', 'dirigindo',
+    'trabalhando', 'no trabalho', 'no serviço', 'no servico',
+    'estou na rua', 'estou no carro', 'estou no caminhão', 'estou no caminhao',
+    'estou viajando', 'to na estrada', 'na estrada',
+    // Commercial hours
+    'horário comercial', 'horario comercial', 'no comercial',
+    'das 8', 'das 9', 'das 10', 'depois das', 'antes das',
+    'após o almoço', 'apos o almoco', 'depois do almoço', 'depois do almoco',
+    // Explicit requests
+    'pode me ligar', 'podem me ligar', 'liga pra mim',
+    'me retorna', 'me retorne', 'retorne minha ligação', 'retorne minha ligacao',
+    'vamos conversar', 'podemos conversar', 'quer conversar'
+  ];
+  
+  const hasIntent = callbackPhrases.some(phrase => content.includes(phrase));
+  
+  if (!hasIntent) {
+    return { hasIntent: false };
+  }
+  
+  let suggestedDate: Date | undefined;
+  let suggestedTime: string | undefined;
+  
+  // Try to extract specific time
+  const timeMatch = content.match(/(\d{1,2})[:\s]?(?:h(?:oras?)?|:(\d{2}))/i);
+  if (timeMatch) {
+    const hour = parseInt(timeMatch[1]);
+    const minutes = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+    if (hour >= 7 && hour <= 19) {
+      suggestedTime = `${hour.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    }
+  }
+  
+  // Try to extract specific day
+  const now = new Date();
+  const daysOfWeek: Record<string, number> = {
+    'domingo': 0, 'segunda': 1, 'terça': 2, 'terca': 2, 
+    'quarta': 3, 'quinta': 4, 'sexta': 5, 'sábado': 6, 'sabado': 6
+  };
+  
+  for (const [day, num] of Object.entries(daysOfWeek)) {
+    if (content.includes(day)) {
+      const date = new Date(now);
+      const currentDay = date.getDay();
+      let daysToAdd = num - currentDay;
+      if (daysToAdd <= 0) daysToAdd += 7; // Next week
+      date.setDate(date.getDate() + daysToAdd);
+      suggestedDate = date;
+      break;
+    }
+  }
+  
+  // Tomorrow
+  if (content.includes('amanhã') || content.includes('amanha')) {
+    suggestedDate = new Date(now);
+    suggestedDate.setDate(suggestedDate.getDate() + 1);
+  }
+  
+  // Next week
+  if (content.includes('semana que vem') || content.includes('próxima semana') || content.includes('proxima semana')) {
+    suggestedDate = new Date(now);
+    suggestedDate.setDate(suggestedDate.getDate() + 7);
+  }
+  
+  return {
+    hasIntent: true,
+    suggestedDate,
+    suggestedTime,
+    rawText: content
+  };
+}
+
+// Calculate next business hour for callback scheduling
+function calculateNextBusinessHour(suggestedDate?: Date, suggestedTime?: string): Date {
+  const now = new Date();
+  let targetDate = suggestedDate ? new Date(suggestedDate) : new Date(now);
+  
+  // Set the time
+  if (suggestedTime) {
+    const [hours, minutes] = suggestedTime.split(':').map(Number);
+    targetDate.setHours(hours, minutes, 0, 0);
+  } else {
+    // Default to next available business hour
+    const currentHour = now.getHours();
+    
+    if (targetDate.toDateString() === now.toDateString()) {
+      // Same day - find next available hour
+      if (currentHour < 9) {
+        targetDate.setHours(9, 0, 0, 0);
+      } else if (currentHour < 14) {
+        targetDate.setHours(14, 0, 0, 0); // After lunch
+      } else if (currentHour < 17) {
+        targetDate.setHours(currentHour + 1, 0, 0, 0);
+      } else {
+        // Next business day
+        targetDate.setDate(targetDate.getDate() + 1);
+        targetDate.setHours(9, 0, 0, 0);
+      }
+    } else {
+      targetDate.setHours(9, 0, 0, 0); // 9 AM on suggested day
+    }
+  }
+  
+  // Skip weekends
+  while (targetDate.getDay() === 0 || targetDate.getDay() === 6) {
+    targetDate.setDate(targetDate.getDate() + 1);
+    targetDate.setHours(9, 0, 0, 0);
+  }
+  
+  // Ensure it's in the future
+  if (targetDate <= now) {
+    targetDate = new Date(now);
+    targetDate.setMinutes(targetDate.getMinutes() + 30);
+  }
+  
+  return targetDate;
+}
+
+// Get next assignee using weighted round-robin
+async function getNextAssignee(
+  supabase: any, 
+  pipelineId: string
+): Promise<{ id: string; name: string; email: string } | null> {
+  try {
+    // 1. Find team for this pipeline
+    const { data: team } = await supabase
+      .from('teams')
+      .select('id')
+      .eq('pipeline_id', pipelineId)
+      .eq('is_active', true)
+      .maybeSingle();
+    
+    if (!team) {
+      console.log('[Callback] No team found for pipeline, will not assign');
+      return null;
+    }
+    
+    // 2. Get active team members with weight
+    const { data: members } = await supabase
+      .from('team_members')
+      .select('id, name, email, weight')
+      .eq('team_id', team.id)
+      .eq('status', 'active')
+      .order('weight', { ascending: false });
+    
+    if (!members || members.length === 0) {
+      console.log('[Callback] No active team members found');
+      return null;
+    }
+    
+    // 3. Get last assignment for this pipeline
+    const { data: lastAssignment } = await supabase
+      .from('callback_assignments')
+      .select('last_assigned_member_id, assignment_count')
+      .eq('pipeline_id', pipelineId)
+      .maybeSingle();
+    
+    // 4. Round-robin: find next member
+    let nextMember: typeof members[0];
+    
+    if (!lastAssignment?.last_assigned_member_id) {
+      // First assignment - pick first (highest weight)
+      nextMember = members[0];
+    } else {
+      // Find current member's index and go to next
+      const lastIndex = members.findIndex((m: any) => m.id === lastAssignment.last_assigned_member_id);
+      const nextIndex = (lastIndex + 1) % members.length;
+      nextMember = members[nextIndex];
+    }
+    
+    // 5. Update assignment tracking
+    await supabase
+      .from('callback_assignments')
+      .upsert({
+        pipeline_id: pipelineId,
+        team_id: team.id,
+        last_assigned_member_id: nextMember.id,
+        assignment_count: (lastAssignment?.assignment_count || 0) + 1,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'team_id,pipeline_id'
+      });
+    
+    console.log(`[Callback] 🔄 Assigned to: ${nextMember.name} (round-robin)`);
+    
+    return {
+      id: nextMember.id,
+      name: nextMember.name,
+      email: nextMember.email
+    };
+  } catch (error) {
+    console.error('[Callback] Error getting next assignee:', error);
+    return null;
+  }
+}
+
+// Create callback activity in deal
+async function createCallbackActivity(
+  supabase: any,
+  contactId: string,
+  pipelineId: string,
+  scheduledAt: Date,
+  messageContent: string,
+  assignee: { id: string; name: string } | null
+): Promise<boolean> {
+  try {
+    // Get deal for this contact
+    const { data: deal } = await supabase
+      .from('deals')
+      .select('id, title, pipeline_id')
+      .eq('contact_id', contactId)
+      .eq('pipeline_id', pipelineId)
+      .maybeSingle();
+    
+    if (!deal) {
+      // Try any deal for this contact
+      const { data: anyDeal } = await supabase
+        .from('deals')
+        .select('id, title, pipeline_id')
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (!anyDeal) {
+        console.log('[Callback] No deal found for contact');
+        return false;
+      }
+    }
+    
+    const targetDeal = deal || null;
+    if (!targetDeal) return false;
+    
+    // Create the callback activity
+    const { error } = await supabase
+      .from('deal_activities')
+      .insert({
+        deal_id: targetDeal.id,
+        type: 'call',
+        title: 'Retornar ligação (solicitado pelo lead)',
+        description: `Lead pediu para retornar.\nMensagem: "${messageContent}"\nAgendado para: ${scheduledAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`,
+        scheduled_at: scheduledAt.toISOString(),
+        created_by: assignee?.id || null,
+        is_completed: false
+      });
+    
+    if (error) {
+      console.error('[Callback] Error creating activity:', error);
+      return false;
+    }
+    
+    // Update deal owner if we have an assignee
+    if (assignee) {
+      await supabase
+        .from('deals')
+        .update({ owner_id: assignee.id })
+        .eq('id', targetDeal.id);
+    }
+    
+    console.log(`[Callback] ✅ Callback activity created for ${scheduledAt.toISOString()}`);
+    return true;
+  } catch (error) {
+    console.error('[Callback] Error creating callback activity:', error);
+    return false;
+  }
+}
+
 // Parse renewal date from user message (e.g., "março", "15/03", "daqui 3 meses")
 function parseRenewalDate(text: string): string | null {
   const content = text.toLowerCase().trim();
@@ -1394,7 +1684,109 @@ async function processQueueItem(
   }
   // ===== END SOFT REJECTION STEP 1 =====
 
-  // ===== PROSPECTING: MOVE TO "EM QUALIFICAÇÃO" WHEN LEAD RESPONDS =====
+  // ===== CALLBACK REQUEST DETECTION =====
+  // Detect when lead wants to be called back at a specific time
+  if (message.content) {
+    const callbackIntent = detectCallbackIntent(message.content);
+    
+    if (callbackIntent.hasIntent) {
+      console.log(`[Nina] 📞 Callback intent detected: "${message.content}"`);
+      
+      // Get the pipeline for this conversation's deal
+      const { data: deal } = await supabase
+        .from('deals')
+        .select('id, pipeline_id')
+        .eq('contact_id', conversation.contact_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (deal) {
+        // Calculate the scheduled callback time
+        const scheduledAt = calculateNextBusinessHour(callbackIntent.suggestedDate, callbackIntent.suggestedTime);
+        
+        // Get next assignee using round-robin
+        const assignee = await getNextAssignee(supabase, deal.pipeline_id);
+        
+        // Create the callback activity
+        const created = await createCallbackActivity(
+          supabase,
+          conversation.contact_id,
+          deal.pipeline_id,
+          scheduledAt,
+          message.content,
+          assignee
+        );
+        
+        if (created) {
+          // Generate response with scheduled time and assignee name
+          const formattedDate = scheduledAt.toLocaleDateString('pt-BR', { 
+            weekday: 'long', 
+            day: '2-digit', 
+            month: 'long',
+            timeZone: 'America/Sao_Paulo'
+          });
+          const formattedTime = scheduledAt.toLocaleTimeString('pt-BR', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            timeZone: 'America/Sao_Paulo'
+          });
+          
+          const contactName = conversation.contact?.call_name || conversation.contact?.name || 'você';
+          let responseText = `Perfeito, ${contactName}! `;
+          
+          if (assignee) {
+            responseText += `${assignee.name} vai entrar em contato ${formattedDate} às ${formattedTime}.`;
+          } else {
+            responseText += `Vamos entrar em contato ${formattedDate} às ${formattedTime}.`;
+          }
+          
+          // Calculate delay
+          const delayMin = settings?.response_delay_min || 1000;
+          const delayMax = settings?.response_delay_max || 3000;
+          const delay = Math.random() * (delayMax - delayMin) + delayMin;
+          
+          // Get AI settings for metadata
+          const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+          
+          // Queue the confirmation response
+          await queueTextResponse(supabase, conversation, message, responseText, settings, aiSettings, delay, agent);
+          
+          // Mark message as processed
+          const responseTime = Date.now() - new Date(message.sent_at).getTime();
+          await supabase
+            .from('messages')
+            .update({ 
+              processed_by_nina: true,
+              nina_response_time: responseTime
+            })
+            .eq('id', message.id);
+          
+          // Trigger whatsapp-sender
+          try {
+            const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+            fetch(senderUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${supabaseServiceKey}`
+              },
+              body: JSON.stringify({ triggered_by: 'nina-orchestrator-callback-scheduled' })
+            }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+          } catch (e) {
+            console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+          }
+          
+          console.log(`[Nina] ✅ Callback scheduled for ${scheduledAt.toISOString()}, assigned to ${assignee?.name || 'unassigned'}`);
+          return;
+        }
+      }
+      // If we couldn't create the callback, continue with normal processing
+      console.log('[Nina] Could not create callback activity, continuing with normal flow');
+    }
+  }
+  // ===== END CALLBACK REQUEST DETECTION =====
+
   // If this is a prospecting conversation and lead responded (not rejection), move to Em Qualificação
   if (conversationMetadata.origin === 'prospeccao' && message.content) {
     const { data: prospectingPipeline } = await supabase
