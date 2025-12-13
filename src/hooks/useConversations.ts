@@ -166,6 +166,8 @@ export function useConversations() {
                     status: updated.status,
                     isActive: updated.is_active,
                     assignedTeam: updated.assigned_team,
+                    assignedUserId: updated.assigned_user_id ?? conv.assignedUserId,
+                    assignedUserName: updated.assigned_user_name ?? conv.assignedUserName,
                     whatsappWindowStart: updated.whatsapp_window_start || conv.whatsappWindowStart,
                     isWhatsAppWindowOpen: updated.whatsapp_window_start !== undefined ? isWindowOpen : conv.isWhatsAppWindowOpen,
                     windowHoursRemaining: updated.whatsapp_window_start !== undefined ? hoursRemaining : conv.windowHoursRemaining
@@ -203,7 +205,8 @@ export function useConversations() {
                   contactCompany: updated.company || null,
                   contactName: updated.name || updated.call_name || conv.contactName,
                   notes: updated.notes || null,
-                  clientMemory: updated.client_memory || conv.clientMemory
+                  clientMemory: updated.client_memory || conv.clientMemory,
+                  tags: updated.tags || []
                 };
               }
               return conv;
