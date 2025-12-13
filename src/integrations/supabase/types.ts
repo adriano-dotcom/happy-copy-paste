@@ -240,6 +240,58 @@ export type Database = {
           },
         ]
       }
+      callback_assignments: {
+        Row: {
+          assignment_count: number | null
+          created_at: string | null
+          id: string
+          last_assigned_member_id: string | null
+          pipeline_id: string | null
+          team_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          assignment_count?: number | null
+          created_at?: string | null
+          id?: string
+          last_assigned_member_id?: string | null
+          pipeline_id?: string | null
+          team_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          assignment_count?: number | null
+          created_at?: string | null
+          id?: string
+          last_assigned_member_id?: string | null
+          pipeline_id?: string | null
+          team_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "callback_assignments_last_assigned_member_id_fkey"
+            columns: ["last_assigned_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "callback_assignments_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "callback_assignments_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           blocked_at: string | null

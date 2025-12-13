@@ -87,3 +87,6 @@ verify_jwt = false
 
 [functions.process-scheduled-emails]
 verify_jwt = true
+
+[functions.send-daily-callbacks]
+verify_jwt = false
