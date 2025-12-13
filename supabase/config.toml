@@ -81,3 +81,6 @@ verify_jwt = true
 
 [functions.send-invite-email]
 verify_jwt = true
+
+[functions.test-prospecting-flow]
+verify_jwt = false
