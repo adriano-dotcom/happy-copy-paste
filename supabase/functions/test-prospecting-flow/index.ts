@@ -137,13 +137,14 @@ serve(async (req) => {
 
     if (existingConv) {
       conversationId = existingConv.id;
-      // Update to use this agent
+      // Update to use this agent with prospecting origin
       await supabase
         .from('conversations')
         .update({ 
           current_agent_id: agent.id,
           status: 'nina',
-          whatsapp_window_start: new Date().toISOString()
+          whatsapp_window_start: new Date().toISOString(),
+          metadata: { origin: 'prospeccao' }
         })
         .eq('id', conversationId);
     } else {
@@ -153,7 +154,8 @@ serve(async (req) => {
           contact_id: contactId,
           current_agent_id: agent.id,
           status: 'nina',
-          whatsapp_window_start: new Date().toISOString()
+          whatsapp_window_start: new Date().toISOString(),
+          metadata: { origin: 'prospeccao' }
         })
         .select('id')
         .single();
