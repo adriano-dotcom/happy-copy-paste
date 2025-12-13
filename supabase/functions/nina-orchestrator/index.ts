@@ -252,9 +252,15 @@ function detectAgent(
   return { agent: defaultAgent || null, isHandoff: false };
 }
 
-// Check if message is a prospecting rejection
+// Check if message is a prospecting rejection (hard rejection - wrong number, no interest, etc.)
 function isProspectingRejection(messageContent: string): boolean {
   const content = messageContent.toLowerCase().trim();
+  
+  // First check if it's a soft rejection - those should be handled differently
+  if (isSoftRejection(content)) {
+    return false;
+  }
+  
   const rejectionPhrases = [
     'não sou da empresa', 'nao sou da empresa',
     'não trabalho', 'nao trabalho',
@@ -279,10 +285,55 @@ function isProspectingRejection(messageContent: string): boolean {
     'número particular', 'numero particular',
     'celular pessoal', 'meu pessoal',
     'não é comercial', 'nao e comercial',
-    'pessoal esse número', 'pessoal esse numero'
+    'pessoal esse número', 'pessoal esse numero',
+    // Recusas agressivas
+    'sai fora', 'me deixa', 'para com isso',
+    'perturbando', 'encher o saco', 'chato',
+    // Contexto transportadora
+    'não sou transportadora', 'nao sou transportadora',
+    'não tenho caminhão', 'nao tenho caminhao',
+    'não faço transporte', 'nao faco transporte',
+    'vendi a empresa', 'fechou a empresa', 'empresa fechada',
+    // Pedidos para parar
+    'não me mande mais', 'nao me mande mais',
+    'não envie mais', 'nao envie mais',
+    'bloquear', 'denunciar', 'spam',
+    // Número/contato incorreto
+    'não é aqui', 'nao e aqui',
+    'mandou errado', 'trocou de número', 'trocou de numero',
+    'esse whatsapp não é', 'esse whatsapp nao e',
+    'esse zap não é', 'esse zap nao e',
+    'não sou eu', 'nao sou eu',
+    'sou outra pessoa', 'não é meu', 'nao e meu',
+    'número antigo', 'numero antigo', 'mudou de dono'
   ];
   
   return rejectionPhrases.some(phrase => content.includes(phrase));
+}
+
+// Check if message is a soft rejection (has broker, satisfied, not now - can nurture later)
+function isSoftRejection(messageContent: string): boolean {
+  const content = typeof messageContent === 'string' ? messageContent.toLowerCase().trim() : '';
+  const softRejectionPhrases = [
+    'já tenho corretor', 'ja tenho corretor',
+    'tenho meu corretor', 'tenho corretor',
+    'meu corretor', 'corretor de confiança', 'corretor de confianca',
+    'já tenho seguro', 'ja tenho seguro',
+    'estou satisfeito', 'satisfeito com',
+    'não preciso agora', 'nao preciso agora',
+    'no momento não', 'no momento nao',
+    'por enquanto não', 'por enquanto nao',
+    'já tenho', 'ja tenho',
+    'estou bem servido', 'bem atendido',
+    'renova automático', 'renova automatico',
+    'renovação automática', 'renovacao automatica',
+    'não é o momento', 'nao e o momento',
+    'talvez depois', 'talvez mais tarde',
+    'agora não dá', 'agora nao da',
+    'outro momento', 'mais pra frente'
+  ];
+  
+  return softRejectionPhrases.some(phrase => content.includes(phrase));
 }
 
 // Note: WhatsApp only supports audio/ogg; codecs=opus, audio/mpeg, audio/amr, audio/mp4, audio/aac
@@ -770,6 +821,92 @@ async function processQueueItem(
     return;
   }
   // ===== END PROSPECTING REJECTION DETECTION =====
+
+  // ===== SOFT REJECTION DETECTION (já tenho corretor, já tenho seguro, etc.) =====
+  // Check if this is a prospecting conversation and message is a soft rejection
+  if (conversationMetadata.origin === 'prospeccao' && message.content && isSoftRejection(message.content)) {
+    console.log(`[Nina] 💛 Soft rejection detected: "${message.content}"`);
+    
+    // Soft rejection response - polite and leaves door open for future
+    const softRejectionResponse = 'Entendido! Fico à disposição quando precisar de uma cotação ou renovar. Qualquer dúvida é só chamar. Bom trabalho!';
+    
+    // Calculate delay
+    const delayMin = settings?.response_delay_min || 1000;
+    const delayMax = settings?.response_delay_max || 3000;
+    const delay = Math.random() * (delayMax - delayMin) + delayMin;
+    
+    // Get AI settings for metadata
+    const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+    
+    // Queue the soft rejection response
+    await queueTextResponse(supabase, conversation, message, softRejectionResponse, settings, aiSettings, delay, agent);
+    
+    // Mark message as processed
+    const responseTime = Date.now() - new Date(message.sent_at).getTime();
+    await supabase
+      .from('messages')
+      .update({ 
+        processed_by_nina: true,
+        nina_response_time: responseTime
+      })
+      .eq('id', message.id);
+    
+    // Move deal to "Nurture" stage (not Perdido - can follow up later)
+    const { data: prospectingPipeline } = await supabase
+      .from('pipelines')
+      .select('id')
+      .eq('slug', 'prospeccao')
+      .maybeSingle();
+    
+    if (prospectingPipeline) {
+      const { data: nurtureStage } = await supabase
+        .from('pipeline_stages')
+        .select('id')
+        .eq('pipeline_id', prospectingPipeline.id)
+        .eq('title', 'Nurture')
+        .maybeSingle();
+      
+      if (nurtureStage) {
+        await supabase
+          .from('deals')
+          .update({ 
+            stage_id: nurtureStage.id,
+            notes: (await supabase.from('deals').select('notes').eq('contact_id', conversation.contact_id).eq('pipeline_id', prospectingPipeline.id).maybeSingle())?.data?.notes 
+              ? `${(await supabase.from('deals').select('notes').eq('contact_id', conversation.contact_id).eq('pipeline_id', prospectingPipeline.id).maybeSingle())?.data?.notes}\n\n[${new Date().toLocaleDateString('pt-BR')}] Soft rejection: ${message.content}`
+              : `[${new Date().toLocaleDateString('pt-BR')}] Soft rejection: ${message.content}`
+          })
+          .eq('contact_id', conversation.contact_id)
+          .eq('pipeline_id', prospectingPipeline.id);
+        
+        console.log(`[Nina] 🌱 Deal moved to Nurture stage for future follow-up`);
+      }
+    }
+    
+    // Pause conversation (end prospecting for now)
+    await supabase
+      .from('conversations')
+      .update({ status: 'paused' })
+      .eq('id', conversation.id);
+    
+    // Trigger whatsapp-sender
+    try {
+      const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+      fetch(senderUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({ triggered_by: 'nina-orchestrator-soft-rejection' })
+      }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+    } catch (e) {
+      console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+    }
+    
+    console.log(`[Nina] ✅ Soft rejection handled, deal in Nurture for future follow-up`);
+    return;
+  }
+  // ===== END SOFT REJECTION DETECTION =====
 
   // ===== PROSPECTING: MOVE TO "EM QUALIFICAÇÃO" WHEN LEAD RESPONDS =====
   // If this is a prospecting conversation and lead responded (not rejection), move to Em Qualificação
