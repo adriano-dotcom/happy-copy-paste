@@ -18,7 +18,11 @@ import {
   Clock,
   Users,
   Mail,
-  Building2
+  Building2,
+  Phone,
+  MessageSquare,
+  UserCheck,
+  UserX
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -51,6 +55,20 @@ interface ExampleItem {
   better_response?: string;
 }
 
+interface ProspectingMetrics {
+  templates_sent: number;
+  responses_received: number;
+  positive_responses: number;
+  rejections: number;
+  response_rate: number;
+  rejection_rate: number;
+  positive_rate: number;
+  conversion_rate: number;
+  deals_qualified: number;
+  deals_in_qualification: number;
+  deals_lost: number;
+}
+
 interface CoachingReport {
   id: string;
   agent_id: string | null;
@@ -75,11 +93,13 @@ interface CoachingReport {
   is_applied: boolean;
   alert_sent: boolean;
   created_at: string;
+  prospecting_metrics: ProspectingMetrics | null;
 }
 
 interface Agent {
   id: string;
   name: string;
+  specialty: string | null;
 }
 
 interface Pipeline {
@@ -109,7 +129,7 @@ export default function SalesCoachingSettings() {
   const fetchAgents = async () => {
     const { data } = await supabase
       .from('agents')
-      .select('id, name')
+      .select('id, name, specialty')
       .eq('is_active', true);
     setAgents(data || []);
   };
@@ -150,6 +170,7 @@ export default function SalesCoachingSettings() {
         recommended_actions: (r.recommended_actions || []) as unknown as ActionItem[],
         good_examples: (r.good_examples || []) as unknown as ExampleItem[],
         bad_examples: (r.bad_examples || []) as unknown as ExampleItem[],
+        prospecting_metrics: (r.prospecting_metrics || null) as unknown as ProspectingMetrics | null,
       }));
       setReports(typedReports);
     }
@@ -297,6 +318,47 @@ export default function SalesCoachingSettings() {
                     </p>
                   </div>
                 </div>
+
+                {/* Prospecting Metrics for Leonardo */}
+                {agent.specialty === 'prospeccao_ativa' && latestReport.prospecting_metrics && (
+                  <div className="mt-3 pt-3 border-t">
+                    <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                      <Phone className="h-3 w-3" />
+                      Métricas de Prospecção
+                    </p>
+                    <div className="grid grid-cols-4 gap-1 text-center">
+                      <div className="p-1.5 bg-muted rounded">
+                        <p className="text-[10px] text-muted-foreground">Templates</p>
+                        <p className="font-bold text-sm">{latestReport.prospecting_metrics.templates_sent}</p>
+                      </div>
+                      <div className="p-1.5 bg-blue-500/10 rounded">
+                        <p className="text-[10px] text-muted-foreground">Respostas</p>
+                        <p className="font-bold text-sm text-blue-500">
+                          {latestReport.prospecting_metrics.response_rate.toFixed(0)}%
+                        </p>
+                      </div>
+                      <div className="p-1.5 bg-red-500/10 rounded">
+                        <p className="text-[10px] text-muted-foreground">Rejeições</p>
+                        <p className="font-bold text-sm text-red-500">
+                          {latestReport.prospecting_metrics.rejection_rate.toFixed(0)}%
+                        </p>
+                      </div>
+                      <div className={`p-1.5 rounded ${
+                        latestReport.prospecting_metrics.conversion_rate >= 15 ? 'bg-green-500/10' :
+                        latestReport.prospecting_metrics.conversion_rate >= 10 ? 'bg-yellow-500/10' : 'bg-red-500/10'
+                      }`}>
+                        <p className="text-[10px] text-muted-foreground">Conversão</p>
+                        <p className={`font-bold text-sm ${
+                          latestReport.prospecting_metrics.conversion_rate >= 15 ? 'text-green-500' :
+                          latestReport.prospecting_metrics.conversion_rate >= 10 ? 'text-yellow-500' : 'text-red-500'
+                        }`}>
+                          {latestReport.prospecting_metrics.conversion_rate.toFixed(0)}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between mt-3 pt-3 border-t text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
@@ -481,6 +543,93 @@ export default function SalesCoachingSettings() {
                     <ScoreCard label="Objeções" score={report.objection_handling_score} />
                     <ScoreCard label="Fechamento" score={report.closing_skills_score} />
                   </div>
+
+                  {/* Prospecting Funnel - Only for prospecting agents */}
+                  {report.prospecting_metrics && report.prospecting_metrics.templates_sent > 0 && (
+                    <div className="p-4 bg-muted/50 rounded-lg border">
+                      <h5 className="font-medium flex items-center gap-2 mb-4">
+                        <Phone className="h-4 w-4 text-primary" />
+                        Funil de Prospecção
+                      </h5>
+                      
+                      {/* Funnel Visualization */}
+                      <div className="space-y-2">
+                        {[
+                          { label: 'Templates Enviados', value: report.prospecting_metrics.templates_sent, icon: MessageSquare, color: 'bg-slate-500' },
+                          { label: 'Respostas', value: report.prospecting_metrics.responses_received, icon: MessageSquare, color: 'bg-blue-500', pct: report.prospecting_metrics.response_rate },
+                          { label: 'Respostas Positivas', value: report.prospecting_metrics.positive_responses, icon: UserCheck, color: 'bg-green-500', pct: report.prospecting_metrics.positive_rate },
+                          { label: 'Em Qualificação', value: report.prospecting_metrics.deals_in_qualification, icon: Target, color: 'bg-yellow-500' },
+                          { label: 'Qualificados', value: report.prospecting_metrics.deals_qualified, icon: CheckCircle, color: 'bg-emerald-500', pct: report.prospecting_metrics.conversion_rate },
+                        ].map((step, idx) => (
+                          <div key={idx} className="flex items-center gap-3">
+                            <step.icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <div className="flex-1">
+                              <div className="flex justify-between text-sm mb-1">
+                                <span>{step.label}</span>
+                                <span className="font-medium">
+                                  {step.value}
+                                  {step.pct !== undefined && (
+                                    <span className="text-muted-foreground ml-1">({step.pct.toFixed(1)}%)</span>
+                                  )}
+                                </span>
+                              </div>
+                              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full ${step.color} transition-all`}
+                                  style={{ 
+                                    width: `${report.prospecting_metrics.templates_sent > 0 
+                                      ? (step.value / report.prospecting_metrics.templates_sent) * 100 
+                                      : 0}%` 
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        
+                        {/* Rejections */}
+                        <div className="flex items-center gap-3 mt-2 pt-2 border-t">
+                          <UserX className="h-4 w-4 text-red-500 shrink-0" />
+                          <div className="flex-1">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-red-500">Rejeições</span>
+                              <span className="font-medium text-red-500">
+                                {report.prospecting_metrics.rejections}
+                                <span className="text-muted-foreground ml-1">
+                                  ({report.prospecting_metrics.rejection_rate.toFixed(1)}%)
+                                </span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* KPI Summary */}
+                      <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t">
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-blue-500">
+                            {report.prospecting_metrics.response_rate.toFixed(1)}%
+                          </p>
+                          <p className="text-xs text-muted-foreground">Taxa de Resposta</p>
+                        </div>
+                        <div className="text-center">
+                          <p className={`text-2xl font-bold ${
+                            report.prospecting_metrics.conversion_rate >= 15 ? 'text-green-500' :
+                            report.prospecting_metrics.conversion_rate >= 10 ? 'text-yellow-500' : 'text-red-500'
+                          }`}>
+                            {report.prospecting_metrics.conversion_rate.toFixed(1)}%
+                          </p>
+                          <p className="text-xs text-muted-foreground">Taxa de Conversão</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-red-500">
+                            {report.prospecting_metrics.rejection_rate.toFixed(1)}%
+                          </p>
+                          <p className="text-xs text-muted-foreground">Taxa de Rejeição</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Strengths */}
                   {report.strengths?.length > 0 && (

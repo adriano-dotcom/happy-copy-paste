@@ -64,6 +64,47 @@ Responda APENAS com um JSON válido no formato:
   ]
 }`;
 
+const PROSPECTING_MANAGER_PROMPT = `# PAPEL
+Você é um Gerente de Prospecção especialista em outbound sales e cold outreach B2B.
+Você tem profundo conhecimento em:
+- Técnicas de prospecção ativa via WhatsApp
+- Qualificação consultiva de leads
+- Identificação de decisores vs. colaboradores
+- Mercado de seguros de transporte
+
+# OBJETIVO
+Analisar as interações de prospecção ativa do agente Leonardo para:
+1. Avaliar taxa de resposta aos templates de abertura
+2. Medir qualidade da abordagem inicial
+3. Verificar rapidez na detecção de rejeição vs interesse
+4. Analisar efetividade do fluxo de qualificação
+5. Identificar padrões de sucesso e fracasso
+
+# CRITÉRIOS ESPECÍFICOS DE PROSPECÇÃO
+- Abertura: O template gera curiosidade e resposta?
+- Detecção: Identifica rapidamente rejeição explícita ("não tenho interesse")?
+- Qualificação: Segue fluxo responsável → operação → carga → frota?
+- Encerramento: Sabe quando parar e quando insistir?
+- Handoff: Passa leads qualificados corretamente?
+
+# MÉTRICAS DE PROSPECÇÃO
+{prospecting_metrics}
+
+# OUTPUT
+Responda APENAS com um JSON válido no formato:
+{
+  "overall_score": <0-100>,
+  "qualification_effectiveness": <0-100>,
+  "objection_handling_score": <0-100>,
+  "closing_skills_score": <0-100>,
+  "strengths": [{"title": "...", "description": "...", "example": "..."}],
+  "improvement_areas": [{"title": "...", "description": "...", "example": "...", "suggestion": "..."}],
+  "recommended_actions": [{"priority": <1-5>, "action": "...", "impact": "...", "category": "prompt|training|process"}],
+  "prompt_suggestions": "Texto com sugestões específicas de ajuste no prompt do agente",
+  "good_examples": [{"conversation_id": "...", "excerpt": "...", "why_good": "..."}],
+  "bad_examples": [{"conversation_id": "...", "excerpt": "...", "why_bad": "...", "better_response": "..."}]
+}`;
+
 const ALERT_THRESHOLD = 70;
 const DEFAULT_ALERT_RECIPIENTS = ["adriano@jacometo.com.br"];
 
@@ -77,7 +118,119 @@ interface Agent {
 interface Pipeline {
   id: string;
   name: string;
+  slug: string;
   agent_id: string | null;
+}
+
+interface ProspectingMetrics {
+  templates_sent: number;
+  responses_received: number;
+  positive_responses: number;
+  rejections: number;
+  response_rate: number;
+  rejection_rate: number;
+  positive_rate: number;
+  conversion_rate: number;
+  deals_qualified: number;
+  deals_in_qualification: number;
+  deals_lost: number;
+}
+
+async function calculateProspectingMetrics(
+  supabase: any,
+  agentId: string,
+  pipelineId: string | null,
+  periodStart: Date,
+  periodEnd: Date
+): Promise<ProspectingMetrics> {
+  console.log('[sales-coaching] Calculating prospecting metrics...');
+  
+  // 1. Templates sent (messages with is_prospecting = true)
+  const { data: templateMessages } = await supabase
+    .from('messages')
+    .select('id, conversation_id, metadata')
+    .eq('from_type', 'nina')
+    .gte('sent_at', periodStart.toISOString())
+    .lte('sent_at', periodEnd.toISOString());
+  
+  const prospectingTemplates = (templateMessages || []).filter(
+    (m: any) => m.metadata?.is_prospecting === true
+  );
+  const templatesSent = prospectingTemplates.length;
+  
+  // 2. Conversations with prospecting origin that received responses
+  const { data: prospectingConversations } = await supabase
+    .from('conversations')
+    .select('id, status, metadata')
+    .eq('current_agent_id', agentId)
+    .gte('created_at', periodStart.toISOString());
+  
+  const prospectingConvs = (prospectingConversations || []).filter(
+    (c: any) => c.metadata?.origin === 'prospeccao'
+  );
+  
+  // Count conversations with user responses
+  let responsesReceived = 0;
+  for (const conv of prospectingConvs) {
+    const { count } = await supabase
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('conversation_id', conv.id)
+      .eq('from_type', 'user');
+    if (count && count > 0) responsesReceived++;
+  }
+  
+  // 3. Deals in prospecting pipeline
+  let dealsQuery = supabase
+    .from('deals')
+    .select(`
+      id, 
+      stage_id, 
+      lost_reason,
+      pipeline_stages!inner (title, pipeline_id)
+    `)
+    .gte('created_at', periodStart.toISOString());
+  
+  if (pipelineId) {
+    dealsQuery = dealsQuery.eq('pipeline_stages.pipeline_id', pipelineId);
+  }
+  
+  const { data: deals } = await dealsQuery;
+  
+  const rejections = (deals || []).filter(
+    (d: any) => d.lost_reason === 'Lead rejeitou prospecção'
+  ).length;
+  
+  const qualified = (deals || []).filter(
+    (d: any) => d.pipeline_stages?.title === 'Qualificado'
+  ).length;
+  
+  const inQualification = (deals || []).filter(
+    (d: any) => d.pipeline_stages?.title === 'Em Qualificação'
+  ).length;
+  
+  const lost = (deals || []).filter(
+    (d: any) => d.pipeline_stages?.title === 'Perdido'
+  ).length;
+  
+  const positiveResponses = responsesReceived - rejections;
+  
+  const metrics: ProspectingMetrics = {
+    templates_sent: templatesSent,
+    responses_received: responsesReceived,
+    positive_responses: Math.max(0, positiveResponses),
+    rejections,
+    response_rate: templatesSent > 0 ? (responsesReceived / templatesSent) * 100 : 0,
+    rejection_rate: templatesSent > 0 ? (rejections / templatesSent) * 100 : 0,
+    positive_rate: templatesSent > 0 ? (positiveResponses / templatesSent) * 100 : 0,
+    conversion_rate: templatesSent > 0 ? (qualified / templatesSent) * 100 : 0,
+    deals_qualified: qualified,
+    deals_in_qualification: inQualification,
+    deals_lost: lost
+  };
+  
+  console.log('[sales-coaching] Prospecting metrics:', metrics);
+  return metrics;
 }
 
 async function sendAlertEmail(
@@ -274,6 +427,16 @@ async function generateReportForAgent(
   const humanMessages = messages.filter(m => m.from_type === 'human').length;
   const userMessages = messages.filter(m => m.from_type === 'user').length;
 
+  // Calculate prospecting metrics if this is a prospecting agent
+  const isProspectingAgent = agent.specialty === 'prospeccao_ativa';
+  let prospectingMetrics: ProspectingMetrics | null = null;
+  
+  if (isProspectingAgent) {
+    prospectingMetrics = await calculateProspectingMetrics(
+      supabase, agent.id, pipeline?.id || null, periodStart, periodEnd
+    );
+  }
+
   // Prepare analysis data
   const analysisData = {
     period: {
@@ -300,8 +463,17 @@ async function generateReportForAgent(
     }))
   };
 
+  // Choose prompt based on agent specialty
+  let systemPrompt = SALES_MANAGER_PROMPT;
+  if (isProspectingAgent && prospectingMetrics) {
+    systemPrompt = PROSPECTING_MANAGER_PROMPT.replace(
+      '{prospecting_metrics}',
+      JSON.stringify(prospectingMetrics, null, 2)
+    );
+  }
+
   // Call AI for analysis
-  console.log(`[sales-coaching] Calling AI for analysis of ${agent.name}...`);
+  console.log(`[sales-coaching] Calling AI for analysis of ${agent.name} (prospecting: ${isProspectingAgent})...`);
   
   const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
@@ -312,10 +484,10 @@ async function generateReportForAgent(
     body: JSON.stringify({
       model: 'google/gemini-2.5-flash',
       messages: [
-        { role: 'system', content: SALES_MANAGER_PROMPT },
+        { role: 'system', content: systemPrompt },
         { 
           role: 'user', 
-          content: `Analise os dados de vendas abaixo e gere um relatório de coaching:\n\n${JSON.stringify(analysisData, null, 2)}`
+          content: `Analise os dados de ${isProspectingAgent ? 'prospecção' : 'vendas'} abaixo e gere um relatório de coaching:\n\n${JSON.stringify(analysisData, null, 2)}`
         }
       ],
       max_tokens: 4000
@@ -380,7 +552,8 @@ async function generateReportForAgent(
       overall_score: report.overall_score,
       qualification_effectiveness: report.qualification_effectiveness,
       objection_handling_score: report.objection_handling_score,
-      closing_skills_score: report.closing_skills_score
+      closing_skills_score: report.closing_skills_score,
+      prospecting_metrics: prospectingMetrics || {}
     })
     .select()
     .single();
@@ -437,7 +610,7 @@ serve(async (req) => {
     // Fetch pipelines
     const { data: pipelines, error: pipelinesError } = await supabase
       .from('pipelines')
-      .select('id, name, agent_id')
+      .select('id, name, slug, agent_id')
       .eq('is_active', true);
 
     if (pipelinesError) throw pipelinesError;
