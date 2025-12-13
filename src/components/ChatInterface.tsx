@@ -71,6 +71,8 @@ const ChatInterface: React.FC = () => {
   const [existingDeal, setExistingDeal] = useState<any>(null);
   const [isCheckingDeal, setIsCheckingDeal] = useState(false);
   const [isCreatingDeal, setIsCreatingDeal] = useState(false);
+  const [dealStages, setDealStages] = useState<any[]>([]);
+  const [isChangingStage, setIsChangingStage] = useState(false);
   
   // Call modal state
   const [showCallModal, setShowCallModal] = useState(false);
@@ -254,21 +256,48 @@ const ChatInterface: React.FC = () => {
     const checkDeal = async () => {
       if (!activeChat?.contactId) {
         setExistingDeal(null);
+        setDealStages([]);
         return;
       }
       setIsCheckingDeal(true);
       try {
         const deal = await api.getDealByContactId(activeChat.contactId);
         setExistingDeal(deal);
+        
+        // Load stages for the deal's pipeline
+        if (deal?.pipelineId) {
+          const stages = await api.fetchPipelineStages(deal.pipelineId);
+          setDealStages(stages);
+        } else {
+          setDealStages([]);
+        }
       } catch (error) {
         console.error('Error checking deal:', error);
         setExistingDeal(null);
+        setDealStages([]);
       } finally {
         setIsCheckingDeal(false);
       }
     };
     checkDeal();
   }, [activeChat?.contactId]);
+
+  // Handle stage change
+  const handleStageChange = async (newStageId: string) => {
+    if (!existingDeal || isChangingStage || newStageId === existingDeal.stageId) return;
+    setIsChangingStage(true);
+    try {
+      await api.moveDealStage(existingDeal.id, newStageId);
+      const newStage = dealStages.find(s => s.id === newStageId);
+      setExistingDeal({ ...existingDeal, stageId: newStageId, stage: newStage?.title });
+      toast.success(`Estágio atualizado para "${newStage?.title || 'Novo estágio'}"`);
+    } catch (error) {
+      console.error('Error changing stage:', error);
+      toast.error('Erro ao atualizar estágio');
+    } finally {
+      setIsChangingStage(false);
+    }
+  };
 
   // Mark as read when selecting conversation
   useEffect(() => {
@@ -1270,7 +1299,29 @@ const ChatInterface: React.FC = () => {
                   )}
                 </div>
 
-                {/* Convert to Deal Button */}
+                {/* Pipeline Stage Selector */}
+                {existingDeal && dealStages.length > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                      <Briefcase className="w-4 h-4" />
+                      Estágio do Negócio
+                    </h4>
+                    <select
+                      value={existingDeal.stageId || ''}
+                      onChange={(e) => handleStageChange(e.target.value)}
+                      disabled={isChangingStage}
+                      className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-3 text-sm text-slate-300 focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/50 outline-none transition-all disabled:opacity-50 disabled:cursor-wait"
+                    >
+                      {dealStages.map(stage => (
+                        <option key={stage.id} value={stage.id}>
+                          {stage.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Convert to Deal / View Deal Button */}
                 <div className="pt-2">
                   {isCheckingDeal ? (
                     <div className="flex items-center justify-center py-3">
