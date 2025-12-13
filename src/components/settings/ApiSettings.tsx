@@ -1,5 +1,5 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
-import { Save, MessageSquare, Mic, Eye, EyeOff, Copy, Check, Loader2, Send, ChevronDown, Volume2, Download, Upload, FileAudio, Mail, Phone } from 'lucide-react';
+import { Save, MessageSquare, Mic, Eye, EyeOff, Copy, Check, Loader2, Send, ChevronDown, Volume2, Download, Upload, FileAudio, Mail, Phone, Bot } from 'lucide-react';
 import { Button } from '../Button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -25,6 +25,7 @@ interface NinaSettings {
   api4com_api_token: string | null;
   api4com_default_extension: string | null;
   api4com_enabled: boolean;
+  openai_api_key: string | null;
 }
 
 const VOICE_OPTIONS = [
@@ -121,6 +122,7 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
     api4com_api_token: null,
     api4com_default_extension: '1000',
     api4com_enabled: false,
+    openai_api_key: null,
   });
   
   // API4Com states
@@ -128,6 +130,10 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
   const [api4comSectionOpen, setApi4comSectionOpen] = useState(false);
   const [copiedApi4comWebhook, setCopiedApi4comWebhook] = useState(false);
   const [testingApi4com, setTestingApi4com] = useState(false);
+  
+  // OpenAI states
+  const [showOpenAIKey, setShowOpenAIKey] = useState(false);
+  const [openaiSectionOpen, setOpenaiSectionOpen] = useState(false);
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-webhook`;
 
@@ -185,6 +191,7 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
             api4com_api_token: (newData as any).api4com_api_token || null,
             api4com_default_extension: (newData as any).api4com_default_extension || '1000',
             api4com_enabled: (newData as any).api4com_enabled || false,
+            openai_api_key: newData.openai_api_key || null,
           });
         }
       } else {
@@ -206,6 +213,7 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
           api4com_api_token: (data as any).api4com_api_token || null,
           api4com_default_extension: (data as any).api4com_default_extension || '1000',
           api4com_enabled: (data as any).api4com_enabled || false,
+          openai_api_key: data.openai_api_key || null,
         });
       }
     } catch (error) {
@@ -243,6 +251,7 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
           api4com_api_token: settings.api4com_api_token,
           api4com_default_extension: settings.api4com_default_extension,
           api4com_enabled: settings.api4com_enabled,
+          openai_api_key: settings.openai_api_key,
           updated_at: new Date().toISOString(),
         })
         .eq('id', settings.id);
@@ -1312,6 +1321,76 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
           </Collapsible.Root>
         </div>
       </div>
+
+      {/* OpenAI / GPT */}
+      <Collapsible.Root open={openaiSectionOpen} onOpenChange={setOpenaiSectionOpen}>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+          <Collapsible.Trigger asChild>
+            <button className="flex items-center justify-between w-full p-4 hover:bg-slate-800/50 transition-colors">
+              <div className="flex items-center gap-3">
+                <Bot className="w-5 h-5 text-emerald-400" />
+                <div className="text-left">
+                  <h3 className="font-semibold text-white">OpenAI / GPT</h3>
+                  <p className="text-xs text-slate-400">API Key própria (opcional)</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium ${
+                  settings.openai_api_key 
+                    ? 'bg-emerald-500/10 text-emerald-400' 
+                    : 'bg-slate-500/10 text-slate-400'
+                }`}>
+                  <span className={`h-2 w-2 rounded-full ${settings.openai_api_key ? 'bg-emerald-500' : 'bg-slate-500'}`}></span>
+                  {settings.openai_api_key ? 'Configurado' : 'Usando Lovable AI'}
+                </div>
+                <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${openaiSectionOpen ? 'rotate-180' : ''}`} />
+              </div>
+            </button>
+          </Collapsible.Trigger>
+
+          <Collapsible.Content className="border-t border-slate-800">
+            <div className="p-4 space-y-4">
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                <p className="text-sm text-emerald-300">
+                  <strong>ℹ️ Lovable AI Gateway:</strong> O sistema usa Lovable AI por padrão, 
+                  que não requer API key própria.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-slate-400 mb-1.5 block">API Key (opcional)</label>
+                <div className="relative">
+                  <input
+                    type={showOpenAIKey ? "text" : "password"}
+                    value={settings.openai_api_key || ''}
+                    onChange={(e) => setSettings({ ...settings, openai_api_key: e.target.value || null })}
+                    placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx"
+                    className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 pr-10 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowOpenAIKey(!showOpenAIKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  >
+                    {showOpenAIKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-800/50 border border-slate-700 rounded-lg">
+                <p className="text-xs text-slate-400 mb-2">
+                  <strong className="text-slate-300">💡 Use sua própria key para:</strong>
+                </p>
+                <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
+                  <li>Modelos específicos (GPT-4 Turbo, GPT-4o, etc.)</li>
+                  <li>Limites de rate mais altos</li>
+                  <li>Controle de custos separado</li>
+                </ul>
+              </div>
+            </div>
+          </Collapsible.Content>
+        </div>
+      </Collapsible.Root>
     </div>
   );
 });
