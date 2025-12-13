@@ -1399,6 +1399,79 @@ export type Database = {
           },
         ]
       }
+      scheduled_emails: {
+        Row: {
+          body_html: string
+          contact_id: string | null
+          created_at: string | null
+          days_before_due: number | null
+          deal_id: string | null
+          error_message: string | null
+          generated_by: string | null
+          id: string
+          scheduled_for: string
+          sent_at: string | null
+          status: string | null
+          subject: string
+          to_email: string
+          updated_at: string | null
+        }
+        Insert: {
+          body_html: string
+          contact_id?: string | null
+          created_at?: string | null
+          days_before_due?: number | null
+          deal_id?: string | null
+          error_message?: string | null
+          generated_by?: string | null
+          id?: string
+          scheduled_for: string
+          sent_at?: string | null
+          status?: string | null
+          subject: string
+          to_email: string
+          updated_at?: string | null
+        }
+        Update: {
+          body_html?: string
+          contact_id?: string | null
+          created_at?: string | null
+          days_before_due?: number | null
+          deal_id?: string | null
+          error_message?: string | null
+          generated_by?: string | null
+          id?: string
+          scheduled_for?: string
+          sent_at?: string | null
+          status?: string | null
+          subject?: string
+          to_email?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_emails_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_emails_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_emails_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       send_queue: {
         Row: {
           contact_id: string
