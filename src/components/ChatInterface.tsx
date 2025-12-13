@@ -1046,22 +1046,36 @@ const ChatInterface: React.FC = () => {
                 key={chat.id}
                 onClick={() => setSelectedChatId(chat.id)}
                 className={`flex items-center p-4 cursor-pointer transition-all duration-200 border-b border-slate-800/30 hover:bg-slate-800/50 ${
+                  chat.status === 'closed' ? 'opacity-60' : ''
+                } ${
                   selectedChatId === chat.id 
                     ? 'bg-slate-800/80 border-l-2 border-l-cyan-500' 
                     : chat.unreadCount > 0
                       ? 'bg-cyan-950/20 border-l-2 border-l-cyan-500/50'
-                      : 'border-l-2 border-l-transparent'
+                      : chat.status === 'closed'
+                        ? 'border-l-2 border-l-slate-600'
+                        : 'border-l-2 border-l-transparent'
                 }`}
               >
                 <div className="relative">
-                  <div className={`w-12 h-12 rounded-full p-0.5 ${chat.unreadCount > 0 ? 'bg-gradient-to-tr from-cyan-600 to-teal-600' : 'bg-gradient-to-tr from-slate-700 to-slate-900'}`}>
+                  <div className={`w-12 h-12 rounded-full p-0.5 ${
+                    chat.status === 'closed' 
+                      ? 'bg-gradient-to-tr from-slate-600 to-slate-700' 
+                      : chat.unreadCount > 0 
+                        ? 'bg-gradient-to-tr from-cyan-600 to-teal-600' 
+                        : 'bg-gradient-to-tr from-slate-700 to-slate-900'
+                  }`}>
                     <img 
                       src={chat.contactAvatar} 
                       alt={chat.contactName} 
                       className="w-full h-full rounded-full object-cover border border-slate-800" 
                     />
                   </div>
-                  {chat.unreadCount > 0 ? (
+                  {chat.status === 'closed' ? (
+                    <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-slate-500 border-2 border-slate-900 rounded-full flex items-center justify-center">
+                      <XCircle className="w-2.5 h-2.5 text-slate-900" />
+                    </span>
+                  ) : chat.unreadCount > 0 ? (
                     <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-cyan-500 border-2 border-slate-900 rounded-full animate-pulse"></span>
                   ) : (
                     <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-slate-600 border-2 border-slate-900 rounded-full"></span>

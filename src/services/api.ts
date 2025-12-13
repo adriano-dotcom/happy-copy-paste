@@ -1549,7 +1549,7 @@ export const api = {
    */
   updateConversationStatus: async (
     conversationId: string, 
-    status: 'nina' | 'human' | 'paused',
+    status: 'nina' | 'human' | 'paused' | 'closed',
     userId?: string,
     userName?: string
   ): Promise<void> => {

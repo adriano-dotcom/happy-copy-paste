@@ -193,7 +193,7 @@ export interface TagDefinition {
 }
 
 // ============= Database Types (Real Supabase Schema) =============
-export type ConversationStatus = 'nina' | 'human' | 'paused';
+export type ConversationStatus = 'nina' | 'human' | 'paused' | 'closed';
 export type MessageFromType = 'user' | 'nina' | 'human';
 export type DBMessageStatus = 'sent' | 'delivered' | 'read' | 'failed' | 'processing';
 export type DBMessageType = 'text' | 'audio' | 'image' | 'document' | 'video';
