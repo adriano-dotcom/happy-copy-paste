@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown } from 'lucide-react';
+import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { api } from '../services/api';
 import { Contact } from '../types';
@@ -434,6 +434,32 @@ const Contacts: React.FC = () => {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+
+        {/* Active Filter Chips */}
+        {selectedStatuses.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <span className="text-xs text-muted-foreground">Filtros ativos:</span>
+            {selectedStatuses.map(status => {
+              const option = statusOptions.find(o => o.value === status);
+              return (
+                <button
+                  key={status}
+                  onClick={() => toggleStatusFilter(status)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${option?.color} hover:opacity-80 transition-opacity group`}
+                >
+                  {option?.label}
+                  <X className="w-3 h-3 opacity-60 group-hover:opacity-100" />
+                </button>
+              );
+            })}
+            <button
+              onClick={clearStatusFilters}
+              className="text-xs text-muted-foreground hover:text-foreground underline ml-2"
+            >
+              Limpar todos
+            </button>
+          </div>
+        )}
 
         <TabsContent value="inbound" className="mt-0">
           <ContactsTable contacts={filteredContacts} />
