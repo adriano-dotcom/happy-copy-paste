@@ -832,12 +832,15 @@ const ChatInterface: React.FC = () => {
   }, !showCallModal && !showTemplateModal && !showShortcutsHelp);
 
   const renderStatusBadge = (status: ConversationStatus, operatorName?: string | null) => {
-    const config = {
+    const config: Record<string, { label: string; icon: typeof Bot; color: string }> = {
       nina: { label: sdrName, icon: Bot, color: 'bg-violet-500/20 text-violet-400 border-violet-500/30' },
       human: { label: operatorName || 'Humano', icon: User, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
-      paused: { label: 'Pausado', icon: Pause, color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' }
+      paused: { label: 'Pausado', icon: Pause, color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
+      closed: { label: 'Encerrado', icon: Pause, color: 'bg-slate-500/20 text-slate-400 border-slate-500/30' }
     };
-    const { label, icon: Icon, color } = config[status];
+    const statusConfig = config[status];
+    if (!statusConfig) return null;
+    const { label, icon: Icon, color } = statusConfig;
     return (
       <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 ${color}`}>
         <Icon className="w-3 h-3" />
