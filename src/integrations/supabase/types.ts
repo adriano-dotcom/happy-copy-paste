@@ -17,6 +17,7 @@ export type Database = {
       agents: {
         Row: {
           audio_response_enabled: boolean | null
+          cargo_focused_greeting: string | null
           created_at: string | null
           description: string | null
           detection_keywords: string[] | null
@@ -41,6 +42,7 @@ export type Database = {
         }
         Insert: {
           audio_response_enabled?: boolean | null
+          cargo_focused_greeting?: string | null
           created_at?: string | null
           description?: string | null
           detection_keywords?: string[] | null
@@ -65,6 +67,7 @@ export type Database = {
         }
         Update: {
           audio_response_enabled?: boolean | null
+          cargo_focused_greeting?: string | null
           created_at?: string | null
           description?: string | null
           detection_keywords?: string[] | null

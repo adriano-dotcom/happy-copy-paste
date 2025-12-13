@@ -39,6 +39,7 @@ interface Agent {
   detection_keywords: string[];
   greeting_message: string | null;
   handoff_message: string | null;
+  cargo_focused_greeting: string | null;
   qualification_questions: Array<{ order: number; question: string }>;
   audio_response_enabled: boolean;
   elevenlabs_voice_id: string | null;
@@ -296,6 +297,7 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
       detection_keywords: [],
       greeting_message: '',
       handoff_message: '',
+      cargo_focused_greeting: '',
       qualification_questions: [],
       audio_response_enabled: false,
       elevenlabs_voice_id: 'FGY2WhTYpPnrIDTdsKH5', // Laura default
