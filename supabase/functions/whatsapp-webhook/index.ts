@@ -7,6 +7,51 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Mapeamento de DDDs brasileiros para estados e cidades
+const dddMap: Record<string, { city: string; state: string }> = {
+  '11': { city: 'São Paulo', state: 'SP' }, '12': { city: 'São José dos Campos', state: 'SP' },
+  '13': { city: 'Santos', state: 'SP' }, '14': { city: 'Bauru', state: 'SP' },
+  '15': { city: 'Sorocaba', state: 'SP' }, '16': { city: 'Ribeirão Preto', state: 'SP' },
+  '17': { city: 'São José do Rio Preto', state: 'SP' }, '18': { city: 'Presidente Prudente', state: 'SP' },
+  '19': { city: 'Campinas', state: 'SP' }, '21': { city: 'Rio de Janeiro', state: 'RJ' },
+  '22': { city: 'Campos dos Goytacazes', state: 'RJ' }, '24': { city: 'Petrópolis', state: 'RJ' },
+  '27': { city: 'Vitória', state: 'ES' }, '28': { city: 'Cachoeiro de Itapemirim', state: 'ES' },
+  '31': { city: 'Belo Horizonte', state: 'MG' }, '32': { city: 'Juiz de Fora', state: 'MG' },
+  '33': { city: 'Governador Valadares', state: 'MG' }, '34': { city: 'Uberlândia', state: 'MG' },
+  '35': { city: 'Poços de Caldas', state: 'MG' }, '37': { city: 'Divinópolis', state: 'MG' },
+  '38': { city: 'Montes Claros', state: 'MG' }, '41': { city: 'Curitiba', state: 'PR' },
+  '42': { city: 'Ponta Grossa', state: 'PR' }, '43': { city: 'Londrina', state: 'PR' },
+  '44': { city: 'Maringá', state: 'PR' }, '45': { city: 'Cascavel', state: 'PR' },
+  '46': { city: 'Francisco Beltrão', state: 'PR' }, '47': { city: 'Joinville', state: 'SC' },
+  '48': { city: 'Florianópolis', state: 'SC' }, '49': { city: 'Chapecó', state: 'SC' },
+  '51': { city: 'Porto Alegre', state: 'RS' }, '53': { city: 'Pelotas', state: 'RS' },
+  '54': { city: 'Caxias do Sul', state: 'RS' }, '55': { city: 'Santa Maria', state: 'RS' },
+  '61': { city: 'Brasília', state: 'DF' }, '62': { city: 'Goiânia', state: 'GO' },
+  '64': { city: 'Rio Verde', state: 'GO' }, '63': { city: 'Palmas', state: 'TO' },
+  '65': { city: 'Cuiabá', state: 'MT' }, '66': { city: 'Rondonópolis', state: 'MT' },
+  '67': { city: 'Campo Grande', state: 'MS' }, '68': { city: 'Rio Branco', state: 'AC' },
+  '69': { city: 'Porto Velho', state: 'RO' }, '71': { city: 'Salvador', state: 'BA' },
+  '73': { city: 'Ilhéus', state: 'BA' }, '74': { city: 'Juazeiro', state: 'BA' },
+  '75': { city: 'Feira de Santana', state: 'BA' }, '77': { city: 'Vitória da Conquista', state: 'BA' },
+  '79': { city: 'Aracaju', state: 'SE' }, '81': { city: 'Recife', state: 'PE' },
+  '87': { city: 'Petrolina', state: 'PE' }, '82': { city: 'Maceió', state: 'AL' },
+  '83': { city: 'João Pessoa', state: 'PB' }, '84': { city: 'Natal', state: 'RN' },
+  '85': { city: 'Fortaleza', state: 'CE' }, '88': { city: 'Juazeiro do Norte', state: 'CE' },
+  '86': { city: 'Teresina', state: 'PI' }, '89': { city: 'Picos', state: 'PI' },
+  '98': { city: 'São Luís', state: 'MA' }, '99': { city: 'Imperatriz', state: 'MA' },
+  '91': { city: 'Belém', state: 'PA' }, '93': { city: 'Santarém', state: 'PA' },
+  '94': { city: 'Marabá', state: 'PA' }, '92': { city: 'Manaus', state: 'AM' },
+  '97': { city: 'Parintins', state: 'AM' }, '95': { city: 'Boa Vista', state: 'RR' },
+  '96': { city: 'Macapá', state: 'AP' },
+};
+
+function getRegionFromDDD(phoneNumber: string): { city: string; state: string } | null {
+  const digits = phoneNumber.replace(/\D/g, '');
+  if (digits.length < 10) return null;
+  const ddd = digits.startsWith('55') && digits.length >= 12 ? digits.substring(2, 4) : digits.substring(0, 2);
+  return dddMap[ddd] || null;
+}
+
 // Normalize Brazilian phone number to consistent format
 function normalizePhone(phone: string): string {
   // Remove all non-digits
@@ -393,6 +438,9 @@ async function processIncomingMessage(
   let contact = await findContactByPhone(supabase, rawPhoneNumber);
 
   if (!contact) {
+    // Extrair cidade/estado do DDD
+    const region = getRegionFromDDD(normalizedPhone);
+    
     // Create new contact with normalized phone number
     const { data: newContact, error: contactError } = await supabase
       .from('contacts')
@@ -401,7 +449,9 @@ async function processIncomingMessage(
         whatsapp_id: whatsappId,
         name: contactName,
         call_name: contactName?.split(' ')[0] || null,
-        lead_source: 'inbound' // Contatos via WhatsApp são inbound
+        lead_source: 'inbound', // Contatos via WhatsApp são inbound
+        city: region?.city || null,
+        state: region?.state || null
       })
       .select()
       .single();
@@ -411,7 +461,7 @@ async function processIncomingMessage(
       throw contactError;
     }
     contact = newContact;
-    console.log('[Webhook] Created new contact:', contact.id, 'with phone:', normalizedPhone);
+    console.log('[Webhook] Created new contact:', contact.id, 'with phone:', normalizedPhone, region ? `(${region.city} - ${region.state})` : '');
   } else {
     // Update contact info if needed
     const updates: any = { last_activity: new Date().toISOString() };
