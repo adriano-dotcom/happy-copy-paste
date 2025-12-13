@@ -2000,7 +2000,7 @@ export type Database = {
     Enums: {
       app_role: "admin" | "operator" | "viewer"
       appointment_type: "demo" | "meeting" | "support" | "followup"
-      conversation_status: "nina" | "human" | "paused"
+      conversation_status: "nina" | "human" | "paused" | "closed"
       member_role: "admin" | "manager" | "agent"
       member_status: "active" | "invited" | "disabled"
       message_from: "user" | "nina" | "human"
@@ -2137,7 +2137,7 @@ export const Constants = {
     Enums: {
       app_role: ["admin", "operator", "viewer"],
       appointment_type: ["demo", "meeting", "support", "followup"],
-      conversation_status: ["nina", "human", "paused"],
+      conversation_status: ["nina", "human", "paused", "closed"],
       member_role: ["admin", "manager", "agent"],
       member_status: ["active", "invited", "disabled"],
       message_from: ["user", "nina", "human"],

@@ -336,6 +336,52 @@ function isSoftRejection(messageContent: string): boolean {
   return softRejectionPhrases.some(phrase => content.includes(phrase));
 }
 
+// Patterns that indicate the AGENT closed the conversation (farewell messages)
+const AGENT_CLOSURE_PATTERNS = [
+  /tenha.*(um|ótimo|bom).*(dia|tarde|noite)/i,
+  /qualquer.*(dúvida|pergunta|coisa).*(procure|contate|fale|estamos|aqui)/i,
+  /se.*(precisar|quiser).*(voltar|retornar|falar)/i,
+  /obrigad.*pelo.*(contato|interesse|retorno)/i,
+  /boa.*sorte/i,
+  /desculpe.*contato/i,
+  /agradeço.*atenção/i,
+  /fico.*à.*disposição/i,
+  /estamos.*à.*disposição/i,
+  /conte.*conosco/i,
+  /até.*próxima/i,
+];
+
+// Patterns for minimalist client responses confirming closure
+const CLIENT_CLOSURE_PATTERNS = [
+  /^(ok|ok\.|okay|certo|blz|vlw|valeu|obrigad)\.?$/i,
+  /^(entendi|beleza|tá\s*bom|ta\s*bom|combinado)\.?$/i,
+  /^(pode\s*ser|tranquilo|de\s*boa|suave)\.?$/i,
+  /^(brigad|obg|grato|grata)\.?$/i,
+  /^👍$/,
+];
+
+// Detect if conversation should be closed based on agent's last message and client's response
+function detectConversationClosure(
+  agentLastMessage: string | null, 
+  clientMessage: string
+): { isClosed: boolean; reason: string } {
+  if (!agentLastMessage || !clientMessage) {
+    return { isClosed: false, reason: '' };
+  }
+  
+  // Check if agent sent a closure message
+  const agentClosed = AGENT_CLOSURE_PATTERNS.some(p => p.test(agentLastMessage));
+  
+  // Check if client confirmed with a short acknowledgment
+  const clientConfirmed = CLIENT_CLOSURE_PATTERNS.some(p => p.test(clientMessage.trim()));
+  
+  if (agentClosed && clientConfirmed) {
+    return { isClosed: true, reason: 'Lead desqualificado/encerrado pelo agente' };
+  }
+  
+  return { isClosed: false, reason: '' };
+}
+
 // ===== CALLBACK DETECTION PATTERNS =====
 interface CallbackIntent {
   hasIntent: boolean;
@@ -1209,9 +1255,80 @@ async function processQueueItem(
     console.log(`[Nina] Using agent: ${agent.name} (handoff: ${isHandoff})`);
   }
 
+  // ===== AUTOMATIC CONVERSATION CLOSURE DETECTION =====
+  // Check if agent sent a farewell message and client confirmed
+  const conversationMetadata = conversation.metadata || {};
+  if (message.content) {
+    // Get last agent message before this client message
+    const { data: lastAgentMessages } = await supabase
+      .from('messages')
+      .select('content')
+      .eq('conversation_id', conversation.id)
+      .in('from_type', ['nina', 'human'])
+      .lt('sent_at', message.sent_at)
+      .order('sent_at', { ascending: false })
+      .limit(1);
+    
+    const lastAgentMessage = lastAgentMessages?.[0]?.content || null;
+    const closureDetected = detectConversationClosure(lastAgentMessage, message.content);
+    
+    if (closureDetected.isClosed) {
+      console.log(`[Nina] 🔒 Conversation closure detected: ${closureDetected.reason}`);
+      
+      // Mark message as processed
+      await supabase
+        .from('messages')
+        .update({ processed_by_nina: true })
+        .eq('id', message.id);
+      
+      // Mark conversation as closed
+      await supabase
+        .from('conversations')
+        .update({ 
+          status: 'paused',
+          is_active: false
+        })
+        .eq('id', conversation.id);
+      
+      // Find deal and move to "Perdido" stage
+      const { data: deal } = await supabase
+        .from('deals')
+        .select('id, pipeline_id')
+        .eq('contact_id', conversation.contact_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (deal) {
+        const { data: lostStage } = await supabase
+          .from('pipeline_stages')
+          .select('id')
+          .eq('pipeline_id', deal.pipeline_id)
+          .eq('title', 'Perdido')
+          .maybeSingle();
+        
+        if (lostStage) {
+          await supabase
+            .from('deals')
+            .update({
+              stage_id: lostStage.id,
+              lost_at: new Date().toISOString(),
+              lost_reason: closureDetected.reason
+            })
+            .eq('id', deal.id);
+          
+          console.log(`[Nina] 📉 Deal moved to Perdido stage automatically`);
+        }
+      }
+      
+      console.log(`[Nina] ✅ Conversation auto-closed, no response needed`);
+      return;
+    }
+  }
+  // ===== END AUTOMATIC CONVERSATION CLOSURE DETECTION =====
+
   // ===== PROSPECTING REJECTION DETECTION =====
   // Check if this is a prospecting conversation and message is a rejection
-  const conversationMetadata = conversation.metadata || {};
   if (conversationMetadata.origin === 'prospeccao' && message.content && isProspectingRejection(message.content)) {
     console.log(`[Nina] 🚫 Prospecting rejection detected: "${message.content}"`);
     

@@ -107,6 +107,11 @@ const ChatInterface: React.FC = () => {
   const [availableAgents, setAvailableAgents] = useState<{id: string; name: string; slug: string}[]>([]);
   const [isChangingAgent, setIsChangingAgent] = useState(false);
   
+  // Close conversation state
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [closeReason, setCloseReason] = useState('');
+  const [isClosingConversation, setIsClosingConversation] = useState(false);
+  
   // Input refs for keyboard shortcuts
   const searchInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
@@ -478,6 +483,69 @@ const ChatInterface: React.FC = () => {
       toast.error('Erro ao alterar agente');
     } finally {
       setIsChangingAgent(false);
+    }
+  };
+
+  // Handle close conversation (mark as lost)
+  const handleCloseConversation = async () => {
+    if (!activeChat || isClosingConversation) return;
+    setIsClosingConversation(true);
+    
+    try {
+      // 1. Mark conversation as closed and inactive
+      const { error: convError } = await supabase
+        .from('conversations')
+        .update({ 
+          status: 'closed' as any,
+          is_active: false
+        })
+        .eq('id', activeChat.id);
+      
+      if (convError) throw convError;
+      
+      // 2. Find deal and move to "Perdido" stage
+      const { data: deal } = await supabase
+        .from('deals')
+        .select('id, pipeline_id')
+        .eq('contact_id', activeChat.contactId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (deal) {
+        // Find "Perdido" stage for this pipeline
+        const { data: lostStage } = await supabase
+          .from('pipeline_stages')
+          .select('id')
+          .eq('pipeline_id', deal.pipeline_id)
+          .eq('title', 'Perdido')
+          .maybeSingle();
+        
+        if (lostStage) {
+          await supabase
+            .from('deals')
+            .update({
+              stage_id: lostStage.id,
+              lost_at: new Date().toISOString(),
+              lost_reason: closeReason || 'Lead desqualificado/encerrado'
+            })
+            .eq('id', deal.id);
+        }
+      }
+      
+      toast.success('Atendimento encerrado', {
+        description: 'Lead movido para Perdido e automações desativadas'
+      });
+      
+      setShowCloseModal(false);
+      setCloseReason('');
+      setSelectedChatId(null);
+      refetch();
+    } catch (error) {
+      console.error('Error closing conversation:', error);
+      toast.error('Erro ao encerrar atendimento');
+    } finally {
+      setIsClosingConversation(false);
     }
   };
 
@@ -1221,25 +1289,35 @@ const ChatInterface: React.FC = () => {
                         Restaurar conversa
                       </DropdownMenuItem>
                     ) : (
-                      <DropdownMenuItem 
-                        onClick={async () => {
-                          if (!activeChat) return;
-                          try {
-                            await archiveConversation(activeChat.id);
-                            setSelectedChatId(null);
-                            setArchivedCount(prev => prev + 1);
-                            toast.success('Conversa arquivada', {
-                              description: `${activeChat.contactName} foi removido da fila de atendimento`
-                            });
-                          } catch (error) {
-                            toast.error('Erro ao arquivar conversa');
-                          }
-                        }}
-                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer"
-                      >
-                        <Archive className="w-4 h-4 mr-2" />
-                        Arquivar conversa
-                      </DropdownMenuItem>
+                      <>
+                        <DropdownMenuItem 
+                          onClick={() => setShowCloseModal(true)}
+                          className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 cursor-pointer"
+                        >
+                          <X className="w-4 h-4 mr-2" />
+                          Encerrar Atendimento
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="bg-slate-700" />
+                        <DropdownMenuItem 
+                          onClick={async () => {
+                            if (!activeChat) return;
+                            try {
+                              await archiveConversation(activeChat.id);
+                              setSelectedChatId(null);
+                              setArchivedCount(prev => prev + 1);
+                              toast.success('Conversa arquivada', {
+                                description: `${activeChat.contactName} foi removido da fila de atendimento`
+                              });
+                            } catch (error) {
+                              toast.error('Erro ao arquivar conversa');
+                            }
+                          }}
+                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer"
+                        >
+                          <Archive className="w-4 h-4 mr-2" />
+                          Arquivar conversa
+                        </DropdownMenuItem>
+                      </>
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -1829,6 +1907,82 @@ const ChatInterface: React.FC = () => {
         isOpen={showShortcutsHelp} 
         onClose={() => setShowShortcutsHelp(false)} 
       />
+
+      {/* Close Conversation Modal */}
+      {showCloseModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md">
+            <div className="p-6 border-b border-slate-700">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <X className="w-5 h-5 text-orange-400" />
+                Encerrar Atendimento
+              </h3>
+              <p className="text-sm text-slate-400 mt-1">
+                O lead será marcado como "Perdido" e não receberá mais automações.
+              </p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-sm font-medium text-slate-300 mb-2 block">
+                  Motivo do encerramento
+                </label>
+                <select
+                  value={closeReason}
+                  onChange={(e) => setCloseReason(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 outline-none"
+                >
+                  <option value="">Selecione um motivo...</option>
+                  <option value="Lead desqualificado">Lead desqualificado</option>
+                  <option value="Fora do perfil">Fora do perfil</option>
+                  <option value="Não tem interesse">Não tem interesse</option>
+                  <option value="Número errado/inválido">Número errado/inválido</option>
+                  <option value="Já tem corretor">Já tem corretor</option>
+                  <option value="Sem resposta">Sem resposta</option>
+                  <option value="Outro">Outro</option>
+                </select>
+              </div>
+              {closeReason === 'Outro' && (
+                <div>
+                  <label className="text-sm font-medium text-slate-300 mb-2 block">
+                    Especifique o motivo
+                  </label>
+                  <input
+                    type="text"
+                    value=""
+                    onChange={(e) => setCloseReason(e.target.value)}
+                    placeholder="Descreva o motivo..."
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 outline-none"
+                  />
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-slate-700 flex gap-3 justify-end">
+              <ShadcnButton
+                variant="ghost"
+                onClick={() => {
+                  setShowCloseModal(false);
+                  setCloseReason('');
+                }}
+                className="text-slate-400 hover:text-white"
+              >
+                Cancelar
+              </ShadcnButton>
+              <ShadcnButton
+                onClick={handleCloseConversation}
+                disabled={isClosingConversation}
+                className="bg-orange-600 hover:bg-orange-700 text-white"
+              >
+                {isClosingConversation ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : (
+                  <X className="w-4 h-4 mr-2" />
+                )}
+                Encerrar
+              </ShadcnButton>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Keyboard Shortcuts Hint Button */}
       {!isMobile && (

@@ -241,6 +241,26 @@ serve(async (req) => {
           pipeline_id: null,
         };
 
+        // Check if deal is lost (skip if lost_at is set or in "Perdido" stage)
+        const { data: deal } = await supabase
+          .from('deals')
+          .select(`
+            id,
+            lost_at,
+            stage_id,
+            pipeline_stages!inner(title)
+          `)
+          .eq('contact_id', conv.contact_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (deal?.lost_at || (deal?.pipeline_stages as any)?.title === 'Perdido') {
+          console.log(`[process-followups] Deal is lost for conversation ${conv.id}, skipping`);
+          skipped++;
+          continue;
+        }
+
         // Check within_window_only constraint
         if (automation.within_window_only) {
           if (!isWindowOpen(conv.whatsapp_window_start)) {
@@ -563,18 +583,33 @@ async function processWindowExpiringAutomation(
   for (const convRaw of conversationsRaw) {
     // Try to get agent from conversation or via pipeline through deal
     let agentId = convRaw.current_agent_id;
+    let pipelineIdFromDeal: string | null = null;
+    let isDealLost = false;
+    
+    // Check deal status and get agent via pipeline if needed
+    const { data: deal } = await supabase
+      .from('deals')
+      .select(`
+        pipeline_id,
+        lost_at,
+        pipeline_stages!inner(title)
+      `)
+      .eq('contact_id', convRaw.contact_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    
+    // Skip if deal is lost
+    if (deal?.lost_at || (deal?.pipeline_stages as any)?.title === 'Perdido') {
+      console.log(`[process-followups] Deal is lost for conversation ${convRaw.id}, skipping window expiry`);
+      skipped++;
+      continue;
+    }
     
     // If no agent on conversation, try to find via deal -> pipeline -> agent
-    if (!agentId) {
-      const { data: deal } = await supabase
-        .from('deals')
-        .select('pipeline_id')
-        .eq('contact_id', convRaw.contact_id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      if (deal?.pipeline_id && pipelineAgentMap[deal.pipeline_id]) {
+    if (!agentId && deal?.pipeline_id) {
+      pipelineIdFromDeal = deal.pipeline_id;
+      if (pipelineAgentMap[deal.pipeline_id]) {
         agentId = pipelineAgentMap[deal.pipeline_id];
       }
     }
@@ -590,7 +625,7 @@ async function processWindowExpiringAutomation(
       contact_company: (convRaw.contacts as any)?.company,
       contact_phone: (convRaw.contacts as any)?.phone_number,
       current_agent_id: agentId,
-      pipeline_id: null,
+      pipeline_id: pipelineIdFromDeal,
     };
 
     // Check if window is expiring within the configured margin
