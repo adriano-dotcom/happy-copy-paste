@@ -83,6 +83,7 @@ export interface Contact {
   cnpj?: string;
   status: 'lead' | 'customer' | 'churned';
   lastContact: string;
+  lead_source?: 'inbound' | 'outbound';
 }
 
 export interface StatMetric {
