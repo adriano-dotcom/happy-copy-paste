@@ -338,14 +338,14 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                         {REQUIRED_FIELDS.includes(field) && <span className="text-red-400 ml-1">*</span>}
                       </Label>
                       <Select
-                        value={mapping[field]}
-                        onValueChange={(value) => setMapping(prev => ({ ...prev, [field]: value }))}
+                        value={mapping[field] || '__none__'}
+                        onValueChange={(value) => setMapping(prev => ({ ...prev, [field]: value === '__none__' ? '' : value }))}
                       >
                         <SelectTrigger className="bg-slate-950 border-slate-800 text-slate-200">
                           <SelectValue placeholder="Selecione a coluna" />
                         </SelectTrigger>
                         <SelectContent className="bg-slate-900 border-slate-800">
-                          <SelectItem value="" className="text-slate-400">Não mapear</SelectItem>
+                          <SelectItem value="__none__" className="text-slate-400">Não mapear</SelectItem>
                           {headers.map(header => (
                             <SelectItem key={header} value={header} className="text-slate-200">
                               {header}
