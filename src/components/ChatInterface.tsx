@@ -17,6 +17,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
+import { 
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from './ui/dropdown-menu';
+import { ChevronDown } from 'lucide-react';
 import { MessageDirection, MessageType, UIConversation, UIMessage, ConversationStatus, TagDefinition } from '../types';
 import { Button } from './Button';
 import { Button as ShadcnButton } from './ui/button';
@@ -97,6 +102,10 @@ const ChatInterface: React.FC = () => {
   const [showQuickQuestions, setShowQuickQuestions] = useState(false);
   const [quickQuestionsFilter, setQuickQuestionsFilter] = useState('');
   const [selectedQuestionIndex, setSelectedQuestionIndex] = useState(0);
+  
+  // Agent selector state
+  const [availableAgents, setAvailableAgents] = useState<{id: string; name: string; slug: string}[]>([]);
+  const [isChangingAgent, setIsChangingAgent] = useState(false);
   
   // Input refs for keyboard shortcuts
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -315,6 +324,16 @@ const ChatInterface: React.FC = () => {
           setDefaultExtension(data.api4com_default_extension);
         }
       });
+
+    // Fetch available agents
+    supabase
+      .from('agents')
+      .select('id, name, slug')
+      .eq('is_active', true)
+      .order('name')
+      .then(({ data }) => {
+        if (data) setAvailableAgents(data);
+      });
   }, []);
 
   // Auto-select first conversation or from URL param (only on initial load)
@@ -403,6 +422,62 @@ const ChatInterface: React.FC = () => {
       toast.error('Erro ao atualizar estágio');
     } finally {
       setIsChangingStage(false);
+    }
+  };
+
+  // Handle agent change
+  const handleChangeAgent = async (agentId: string) => {
+    if (!activeChat || isChangingAgent || agentId === activeChat.agentId) return;
+    setIsChangingAgent(true);
+    
+    try {
+      const selectedAgent = availableAgents.find(a => a.id === agentId);
+      
+      // Update conversation with new agent
+      const { error } = await supabase
+        .from('conversations')
+        .update({ current_agent_id: agentId })
+        .eq('id', activeChat.id);
+      
+      if (error) throw error;
+      
+      // Update deal pipeline if exists
+      if (existingDeal) {
+        const { data: pipeline } = await supabase
+          .from('pipelines')
+          .select('id')
+          .eq('agent_id', agentId)
+          .eq('is_active', true)
+          .maybeSingle();
+        
+        if (pipeline) {
+          const { data: firstStage } = await supabase
+            .from('pipeline_stages')
+            .select('id')
+            .eq('pipeline_id', pipeline.id)
+            .order('position')
+            .limit(1)
+            .single();
+          
+          if (firstStage) {
+            await supabase
+              .from('deals')
+              .update({ 
+                pipeline_id: pipeline.id,
+                stage_id: firstStage.id 
+              })
+              .eq('id', existingDeal.id);
+          }
+        }
+      }
+      
+      toast.success(`Agente alterado para ${selectedAgent?.name}`);
+      refetch();
+    } catch (error) {
+      console.error('Error changing agent:', error);
+      toast.error('Erro ao alterar agente');
+    } finally {
+      setIsChangingAgent(false);
     }
   };
 
@@ -983,6 +1058,48 @@ const ChatInterface: React.FC = () => {
                     <h2 className={`${isMobile ? 'text-sm' : 'text-sm'} font-bold text-slate-100 flex items-center gap-2 flex-wrap`}>
                       <span className="truncate max-w-[120px] md:max-w-none">{activeChat.contactName}</span>
                       {!isMobile && renderStatusBadge(activeChat.status, activeChat.assignedUserName)}
+                      {/* Agent Selector Dropdown */}
+                      {!isMobile && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button 
+                              className="px-2 py-0.5 bg-violet-500/20 text-violet-400 border border-violet-500/30 text-[10px] rounded font-medium flex items-center gap-1 hover:bg-violet-500/30 transition-colors cursor-pointer disabled:opacity-50"
+                              disabled={isChangingAgent}
+                            >
+                              <Bot className="w-3 h-3" />
+                              {isChangingAgent ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                activeChat.agentName || 'Sem agente'
+                              )}
+                              <ChevronDown className="w-3 h-3 opacity-60" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="bg-slate-800 border-slate-700">
+                            <DropdownMenuLabel className="text-xs text-slate-400">
+                              Trocar agente
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator className="bg-slate-700" />
+                            {availableAgents.map(agent => (
+                              <DropdownMenuItem
+                                key={agent.id}
+                                onClick={() => handleChangeAgent(agent.id)}
+                                className={`cursor-pointer ${
+                                  activeChat.agentId === agent.id 
+                                    ? 'bg-violet-500/20 text-violet-300' 
+                                    : 'text-slate-200'
+                                }`}
+                              >
+                                <Bot className="w-4 h-4 mr-2" />
+                                {agent.name}
+                                {activeChat.agentId === agent.id && (
+                                  <Check className="w-4 h-4 ml-auto text-violet-400" />
+                                )}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                       {/* WhatsApp Window Badge - Real-time (hidden on mobile) */}
                       {!isMobile && windowTimeRemaining.isOpen ? (
                         <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 ${getWindowBadgeStyle()}`}>
