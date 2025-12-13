@@ -17,6 +17,7 @@ import {
 } from './ui/select';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { getRegionFromPhone } from '@/utils/dddRegionMapper';
 
 interface ImportContactsModalProps {
   open: boolean;
@@ -230,13 +231,18 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
           phoneNumber = '55' + phoneNumber;
         }
         
+        // Extrair cidade/estado do DDD
+        const region = getRegionFromPhone(phoneNumber);
+        
         return {
           name: row[mapping.name]?.trim(),
           phone_number: phoneNumber,
           email: mapping.email ? row[mapping.email]?.trim() || null : null,
           company: mapping.company ? row[mapping.company]?.trim() || null : null,
           cnpj: mapping.cnpj ? row[mapping.cnpj]?.replace(/\D/g, '') || null : null,
-          lead_source: 'outbound' // Contatos importados são outbound
+          lead_source: 'outbound', // Contatos importados são outbound
+          city: region?.city || null,
+          state: region?.stateCode || null
         };
       });
 
