@@ -166,6 +166,41 @@ serve(async (req) => {
 
     console.log(`💬 Conversation ID: ${conversationId}`);
 
+    // Move deal to Prospecção pipeline for proper soft rejection handling
+    const { data: prospectPipeline } = await supabase
+      .from('pipelines')
+      .select('id')
+      .eq('slug', 'prospeccao')
+      .maybeSingle();
+
+    if (prospectPipeline) {
+      const { data: firstStage } = await supabase
+        .from('pipeline_stages')
+        .select('id')
+        .eq('pipeline_id', prospectPipeline.id)
+        .order('position', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (firstStage) {
+        const { error: dealUpdateError } = await supabase
+          .from('deals')
+          .update({
+            pipeline_id: prospectPipeline.id,
+            stage_id: firstStage.id,
+            lost_reason: null,
+            lost_at: null
+          })
+          .eq('contact_id', contactId);
+
+        if (dealUpdateError) {
+          console.log('⚠️ Could not move deal to Prospecção:', dealUpdateError.message);
+        } else {
+          console.log('✅ Deal moved to Prospecção pipeline');
+        }
+      }
+    }
+
     const conversationLog: Array<{ role: string; content: string; timestamp: string }> = [];
 
     // Process each message sequentially
