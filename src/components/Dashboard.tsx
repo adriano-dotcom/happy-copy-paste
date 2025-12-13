@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, DollarSign, MessageSquare, Users, Loader2, TrendingUp, TrendingDown, ArrowUpRight } from 'lucide-react';
+import { Activity, DollarSign, MessageSquare, Users, Loader2, TrendingUp, TrendingDown, ArrowUpRight, Bot, Phone, Briefcase, Layers, Zap, MessageCircle, Clock } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { StatMetric } from '../types';
 import { api } from '../services/api';
 import { OnboardingBanner } from './OnboardingBanner';
 import { useOutletContext } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
 
 interface OutletContext {
   showOnboarding: boolean;
@@ -25,12 +26,105 @@ const periodDays: Record<PeriodFilter, number> = {
   '30days': 30
 };
 
+interface SystemMetrics {
+  totalMessages: number;
+  aiMessages: number;
+  clientMessages: number;
+  avgResponseTime: number;
+  totalContacts: number;
+  totalDeals: number;
+  totalConversations: number;
+  totalCalls: number;
+  totalAgents: number;
+  totalPipelines: number;
+  totalStages: number;
+  activeAutomations: number;
+  approvedTemplates: number;
+  integrations: {
+    whatsapp: boolean;
+    elevenlabs: boolean;
+    resend: boolean;
+    api4com: boolean;
+    pipedrive: boolean;
+  };
+  systemStartDate: string | null;
+}
+
 const Dashboard: React.FC = () => {
   const [metrics, setMetrics] = useState<StatMetric[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodFilter>('today');
+  const [systemMetrics, setSystemMetrics] = useState<SystemMetrics | null>(null);
   const { setShowOnboarding } = useOutletContext<OutletContext>();
+
+  const fetchSystemMetrics = async () => {
+    try {
+      const [
+        { count: totalMessages },
+        { count: aiMessages },
+        { count: clientMessages },
+        { data: avgTimeData },
+        { count: totalContacts },
+        { count: totalDeals },
+        { count: totalConversations },
+        { count: totalCalls },
+        { count: totalAgents },
+        { count: totalPipelines },
+        { count: totalStages },
+        { count: activeAutomations },
+        { count: approvedTemplates },
+        { data: settingsData },
+        { data: firstConversation }
+      ] = await Promise.all([
+        supabase.from('messages').select('*', { count: 'exact', head: true }),
+        supabase.from('messages').select('*', { count: 'exact', head: true }).eq('from_type', 'nina'),
+        supabase.from('messages').select('*', { count: 'exact', head: true }).eq('from_type', 'user'),
+        supabase.from('messages').select('nina_response_time').not('nina_response_time', 'is', null),
+        supabase.from('contacts').select('*', { count: 'exact', head: true }),
+        supabase.from('deals').select('*', { count: 'exact', head: true }),
+        supabase.from('conversations').select('*', { count: 'exact', head: true }),
+        supabase.from('call_logs').select('*', { count: 'exact', head: true }),
+        supabase.from('agents').select('*', { count: 'exact', head: true }).eq('is_active', true),
+        supabase.from('pipelines').select('*', { count: 'exact', head: true }).eq('is_active', true),
+        supabase.from('pipeline_stages').select('*', { count: 'exact', head: true }).eq('is_active', true),
+        supabase.from('followup_automations').select('*', { count: 'exact', head: true }).eq('is_active', true),
+        supabase.from('whatsapp_templates').select('*', { count: 'exact', head: true }).eq('status', 'APPROVED'),
+        supabase.from('nina_settings').select('whatsapp_phone_number_id, elevenlabs_api_key, api4com_enabled, pipedrive_enabled, elevenlabs_key_in_vault, api4com_token_in_vault, pipedrive_token_in_vault').limit(1).maybeSingle(),
+        supabase.from('conversations').select('created_at').order('created_at', { ascending: true }).limit(1).maybeSingle()
+      ]);
+
+      const avgResponseTime = avgTimeData && avgTimeData.length > 0
+        ? Math.round(avgTimeData.reduce((sum, m) => sum + (m.nina_response_time || 0), 0) / avgTimeData.length)
+        : 0;
+
+      setSystemMetrics({
+        totalMessages: totalMessages || 0,
+        aiMessages: aiMessages || 0,
+        clientMessages: clientMessages || 0,
+        avgResponseTime,
+        totalContacts: totalContacts || 0,
+        totalDeals: totalDeals || 0,
+        totalConversations: totalConversations || 0,
+        totalCalls: totalCalls || 0,
+        totalAgents: totalAgents || 0,
+        totalPipelines: totalPipelines || 0,
+        totalStages: totalStages || 0,
+        activeAutomations: activeAutomations || 0,
+        approvedTemplates: approvedTemplates || 0,
+        integrations: {
+          whatsapp: !!settingsData?.whatsapp_phone_number_id,
+          elevenlabs: !!settingsData?.elevenlabs_api_key || !!settingsData?.elevenlabs_key_in_vault,
+          resend: true, // Resend is configured via edge function secrets
+          api4com: !!settingsData?.api4com_enabled || !!settingsData?.api4com_token_in_vault,
+          pipedrive: !!settingsData?.pipedrive_enabled || !!settingsData?.pipedrive_token_in_vault
+        },
+        systemStartDate: firstConversation?.created_at || null
+      });
+    } catch (error) {
+      console.error('Erro ao carregar métricas do sistema:', error);
+    }
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -39,7 +133,8 @@ const Dashboard: React.FC = () => {
         const days = periodDays[period];
         const [metricsData, chartDataResponse] = await Promise.all([
           api.fetchDashboardMetrics(days),
-          api.fetchChartData(days)
+          api.fetchChartData(days),
+          fetchSystemMetrics()
         ]);
         setMetrics(metricsData);
         setChartData(chartDataResponse);
@@ -238,6 +333,170 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* System Metrics Section */}
+      {systemMetrics && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-700 to-transparent"></div>
+            <h3 className="text-lg font-semibold text-slate-300 flex items-center gap-2">
+              <Activity className="w-5 h-5 text-cyan-400" />
+              Métricas do Sistema
+            </h3>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-700 to-transparent"></div>
+          </div>
+
+          {/* Communication Metrics */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-cyan-400 uppercase tracking-wider">Comunicação</h4>
+            <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+              <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <MessageSquare className="w-4 h-4 text-cyan-400" />
+                  <span className="text-xs text-slate-400">Mensagens</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{systemMetrics.totalMessages}</p>
+              </div>
+              <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Bot className="w-4 h-4 text-cyan-400" />
+                  <span className="text-xs text-slate-400">Respostas IA</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{systemMetrics.aiMessages}</p>
+                <p className="text-xs text-cyan-400/80 mt-1">
+                  {systemMetrics.totalMessages > 0 ? Math.round((systemMetrics.aiMessages / systemMetrics.totalMessages) * 100) : 0}% do total
+                </p>
+              </div>
+              <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Users className="w-4 h-4 text-cyan-400" />
+                  <span className="text-xs text-slate-400">Clientes</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{systemMetrics.clientMessages}</p>
+              </div>
+              <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="w-4 h-4 text-cyan-400" />
+                  <span className="text-xs text-slate-400">Tempo IA</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{systemMetrics.avgResponseTime}s</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Operations Metrics */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-violet-400 uppercase tracking-wider">Operações</h4>
+            <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+              <div className="rounded-xl border border-violet-500/20 bg-gradient-to-br from-violet-500/10 to-violet-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Users className="w-4 h-4 text-violet-400" />
+                  <span className="text-xs text-slate-400">Contatos</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{systemMetrics.totalContacts}</p>
+              </div>
+              <div className="rounded-xl border border-violet-500/20 bg-gradient-to-br from-violet-500/10 to-violet-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Briefcase className="w-4 h-4 text-violet-400" />
+                  <span className="text-xs text-slate-400">Negócios</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{systemMetrics.totalDeals}</p>
+              </div>
+              <div className="rounded-xl border border-violet-500/20 bg-gradient-to-br from-violet-500/10 to-violet-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <MessageCircle className="w-4 h-4 text-violet-400" />
+                  <span className="text-xs text-slate-400">Conversas</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{systemMetrics.totalConversations}</p>
+              </div>
+              <div className="rounded-xl border border-violet-500/20 bg-gradient-to-br from-violet-500/10 to-violet-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Phone className="w-4 h-4 text-violet-400" />
+                  <span className="text-xs text-slate-400">Chamadas</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{systemMetrics.totalCalls}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Infrastructure Metrics */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-emerald-400 uppercase tracking-wider">Infraestrutura</h4>
+            <div className="grid gap-4 grid-cols-2 md:grid-cols-5">
+              <div className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Bot className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs text-slate-400">Agentes IA</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{systemMetrics.totalAgents}</p>
+              </div>
+              <div className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Layers className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs text-slate-400">Pipelines</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{systemMetrics.totalPipelines}</p>
+              </div>
+              <div className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Activity className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs text-slate-400">Estágios</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{systemMetrics.totalStages}</p>
+              </div>
+              <div className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Zap className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs text-slate-400">Automações</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{systemMetrics.activeAutomations}</p>
+              </div>
+              <div className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <MessageSquare className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs text-slate-400">Templates</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{systemMetrics.approvedTemplates}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Active Integrations */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-rose-400 uppercase tracking-wider">Integrações Ativas</h4>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+              <div className="flex flex-wrap gap-3">
+                {[
+                  { name: 'WhatsApp', active: systemMetrics.integrations.whatsapp },
+                  { name: 'ElevenLabs', active: systemMetrics.integrations.elevenlabs },
+                  { name: 'Resend', active: systemMetrics.integrations.resend },
+                  { name: 'API4Com', active: systemMetrics.integrations.api4com },
+                  { name: 'Pipedrive', active: systemMetrics.integrations.pipedrive }
+                ].map((integration) => (
+                  <div
+                    key={integration.name}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                      integration.active
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                        : 'bg-slate-800/50 border-slate-700 text-slate-500'
+                    }`}
+                  >
+                    <div className={`w-2 h-2 rounded-full ${integration.active ? 'bg-emerald-400' : 'bg-slate-600'}`}></div>
+                    <span className="text-sm font-medium">{integration.name}</span>
+                  </div>
+                ))}
+              </div>
+              {systemMetrics.systemStartDate && (
+                <div className="mt-4 pt-3 border-t border-slate-800">
+                  <p className="text-xs text-slate-500">
+                    Sistema iniciado em: {new Date(systemMetrics.systemStartDate).toLocaleDateString('pt-BR')}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
