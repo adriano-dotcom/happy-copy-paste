@@ -259,6 +259,7 @@ export type Database = {
           is_business: boolean | null
           last_activity: string
           lead_source: string | null
+          lead_status: string | null
           name: string | null
           neighborhood: string | null
           notes: string | null
@@ -290,6 +291,7 @@ export type Database = {
           is_business?: boolean | null
           last_activity?: string
           lead_source?: string | null
+          lead_status?: string | null
           name?: string | null
           neighborhood?: string | null
           notes?: string | null
@@ -321,6 +323,7 @@ export type Database = {
           is_business?: boolean | null
           last_activity?: string
           lead_source?: string | null
+          lead_status?: string | null
           name?: string | null
           neighborhood?: string | null
           notes?: string | null
