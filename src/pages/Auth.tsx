@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -7,8 +7,22 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Loader2, LogIn, UserPlus } from "lucide-react";
+import { Loader2, LogIn, UserPlus, Check, X } from "lucide-react";
 import logo from "@/assets/jacometo-logo.png";
+
+const validatePassword = (password: string) => {
+  return {
+    minLength: password.length >= 8,
+    hasUppercase: /[A-Z]/.test(password),
+    hasNumber: /[0-9]/.test(password),
+    hasSpecial: /[^A-Za-z0-9]/.test(password),
+  };
+};
+
+const isPasswordValid = (password: string) => {
+  const checks = validatePassword(password);
+  return checks.minLength && checks.hasUppercase && checks.hasNumber && checks.hasSpecial;
+};
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -73,8 +87,8 @@ export default function Auth() {
       return;
     }
 
-    if (password.length < 6) {
-      toast.error("A senha deve ter pelo menos 6 caracteres");
+    if (!isPasswordValid(password)) {
+      toast.error("A senha não atende aos requisitos de segurança");
       return;
     }
 
@@ -218,35 +232,14 @@ export default function Auth() {
             </TabsContent>
             
             <TabsContent value="signup" className="mt-4 sm:mt-6">
-              <form onSubmit={handleSignUp} className="space-y-3 sm:space-y-4">
-                <div className="space-y-1.5 sm:space-y-2">
-                  <Label htmlFor="signup-email" className="text-white/90 text-xs sm:text-sm font-medium">
-                    Email
-                  </Label>
-                  <Input
-                    id="signup-email"
-                    type="email"
-                    placeholder="seu@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={isLoading}
-                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all h-10 sm:h-11 text-sm sm:text-base"
-                  />
-                </div>
-                <div className="space-y-1.5 sm:space-y-2">
-                  <Label htmlFor="signup-password" className="text-white/90 text-xs sm:text-sm font-medium">
-                    Senha
-                  </Label>
-                  <Input
-                    id="signup-password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={isLoading}
-                    className="bg-white/10 border-white/20 text-white placeholder:text-white/40 focus:bg-white/15 focus:border-cyan-400/50 focus:ring-cyan-400/20 transition-all h-10 sm:h-11 text-sm sm:text-base"
-                  />
-                </div>
+              <SignupForm 
+                email={email}
+                setEmail={setEmail}
+                password={password}
+                setPassword={setPassword}
+                isLoading={isLoading}
+                onSubmit={handleSignUp}
+              />
                 <Button 
                   type="submit" 
                   className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/25 border-0 transition-all duration-300 h-10 sm:h-11 text-sm sm:text-base mt-1 sm:mt-2" 
