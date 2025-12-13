@@ -418,10 +418,43 @@ const ChatInterface: React.FC = () => {
     if (!existingDeal || isChangingStage || newStageId === existingDeal.stageId) return;
     setIsChangingStage(true);
     try {
-      await api.moveDealStage(existingDeal.id, newStageId);
       const newStage = dealStages.find(s => s.id === newStageId);
-      setExistingDeal({ ...existingDeal, stageId: newStageId, stage: newStage?.title });
-      toast.success(`Estágio atualizado para "${newStage?.title || 'Novo estágio'}"`);
+      
+      // Se for estágio "Perdido", encerrar conversa automaticamente
+      if (newStage?.title.toLowerCase() === 'perdido') {
+        // 1. Atualizar deal com lost_at e lost_reason
+        const { error: dealError } = await supabase
+          .from('deals')
+          .update({
+            stage_id: newStageId,
+            lost_at: new Date().toISOString(),
+            lost_reason: 'Movido manualmente para Perdido'
+          })
+          .eq('id', existingDeal.id);
+        
+        if (dealError) throw dealError;
+        
+        // 2. Encerrar a conversa
+        if (activeChat) {
+          const { error: convError } = await supabase
+            .from('conversations')
+            .update({
+              status: 'closed',
+              is_active: false
+            })
+            .eq('id', activeChat.id);
+          
+          if (convError) throw convError;
+        }
+        
+        setExistingDeal({ ...existingDeal, stageId: newStageId, stage: newStage.title });
+        toast.success('Negócio marcado como Perdido e conversa encerrada');
+      } else {
+        // Comportamento normal para outros estágios
+        await api.moveDealStage(existingDeal.id, newStageId);
+        setExistingDeal({ ...existingDeal, stageId: newStageId, stage: newStage?.title });
+        toast.success(`Estágio atualizado para "${newStage?.title || 'Novo estágio'}"`);
+      }
     } catch (error) {
       console.error('Error changing stage:', error);
       toast.error('Erro ao atualizar estágio');
