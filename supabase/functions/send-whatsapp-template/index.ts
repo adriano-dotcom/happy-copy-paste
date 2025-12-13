@@ -218,9 +218,11 @@ serve(async (req) => {
           .single();
 
         // Update conversation with prospecting metadata and Leonardo agent
+        // CRITICAL: Set status to 'nina' to keep AI agent active (not open to human)
         await supabase
           .from('conversations')
           .update({
+            status: 'nina',
             current_agent_id: leonardoAgent?.id || null,
             metadata: {
               origin: 'prospeccao',
