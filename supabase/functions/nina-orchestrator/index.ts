@@ -409,6 +409,115 @@ function parseRenewalDate(text: string): string | null {
   return null;
 }
 
+// Generate personalized renewal email using AI
+async function generateRenewalEmail(
+  lovableApiKey: string,
+  contact: any,
+  renewalDate: string
+): Promise<{ subject: string; body_html: string } | null> {
+  try {
+    const contactName = contact?.name || contact?.call_name || 'Cliente';
+    const companyName = contact?.company || 'sua empresa';
+    const formattedDate = new Date(renewalDate).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric'
+    });
+
+    const prompt = `Gere um email profissional de follow-up de renovação de seguro de cargas.
+
+Dados do lead:
+- Nome: ${contactName}
+- Empresa: ${companyName}
+- Data de renovação: ${formattedDate}
+
+Contexto: O lead disse que já tem corretor, mas informou quando vence o seguro atual. Queremos oferecer uma cotação competitiva para renovação.
+
+Tom: Profissional mas cordial, sem ser invasivo. Mencionar que é sem compromisso.
+
+IMPORTANTE: 
+- Não use markdown, apenas HTML simples
+- Seja breve (máximo 3 parágrafos)
+- Inclua CTA claro (responder email ou WhatsApp)
+
+Responda APENAS no formato JSON (sem markdown code blocks):
+{"subject": "assunto do email", "body_html": "<div>HTML do corpo do email</div>"}`;
+
+    const response = await fetch(LOVABLE_AI_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        max_tokens: 1000
+      })
+    });
+
+    if (!response.ok) {
+      console.error('[Nina] AI error generating email:', response.status);
+      return getDefaultRenewalEmail(contactName, companyName, formattedDate);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+
+    if (!content) {
+      console.error('[Nina] Empty AI response for email');
+      return getDefaultRenewalEmail(contactName, companyName, formattedDate);
+    }
+
+    // Parse JSON response (handle markdown code blocks if present)
+    let jsonContent = content.trim();
+    if (jsonContent.startsWith('```')) {
+      jsonContent = jsonContent.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+    }
+
+    const parsed = JSON.parse(jsonContent);
+    console.log('[Nina] 📧 AI generated email content');
+
+    return {
+      subject: parsed.subject || `Renovação do seu seguro de cargas - ${formattedDate}`,
+      body_html: parsed.body_html || parsed.body || getDefaultRenewalEmail(contactName, companyName, formattedDate).body_html
+    };
+
+  } catch (error) {
+    console.error('[Nina] Error generating renewal email:', error);
+    const contactName = contact?.name || 'Cliente';
+    const companyName = contact?.company || 'sua empresa';
+    const formattedDate = new Date(renewalDate).toLocaleDateString('pt-BR');
+    return getDefaultRenewalEmail(contactName, companyName, formattedDate);
+  }
+}
+
+// Default email template if AI fails
+function getDefaultRenewalEmail(
+  contactName: string,
+  companyName: string,
+  formattedDate: string
+): { subject: string; body_html: string } {
+  return {
+    subject: `Renovação do seu seguro de cargas - ${formattedDate}`,
+    body_html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #333;">Olá ${contactName}!</h2>
+        <p>Espero que esteja tudo bem com você e com a ${companyName}.</p>
+        <p>Estamos entrando em contato porque você mencionou que seu seguro de cargas vence em <strong>${formattedDate}</strong>.</p>
+        <p>Gostaríamos de apresentar uma cotação competitiva para a renovação. Trabalhamos com as melhores seguradoras do mercado e podemos oferecer condições diferenciadas.</p>
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+          <p style="margin: 0;"><strong>📞 WhatsApp:</strong> (43) 9143-4002</p>
+          <p style="margin: 10px 0 0;"><strong>🌐 Site:</strong> jacometoseguros.com.br</p>
+        </div>
+        <p>Responda este email ou envie uma mensagem no WhatsApp - fazemos uma proposta sem compromisso!</p>
+        <p style="margin-top: 30px;">Atenciosamente,<br><strong>Equipe Jacometo Seguros</strong></p>
+      </div>
+    `
+  };
+}
+
 // Note: WhatsApp only supports audio/ogg; codecs=opus, audio/mpeg, audio/amr, audio/mp4, audio/aac
 // WAV is NOT supported. We use MP3 directly from ElevenLabs.
 
@@ -895,9 +1004,200 @@ async function processQueueItem(
   }
   // ===== END PROSPECTING REJECTION DETECTION =====
 
+  // ===== SOFT REJECTION STEP 3: CAPTURE EMAIL AND FINALIZE =====
+  // Check if we're awaiting email after getting renewal date
+  const ninaContext = conversation.nina_context || {};
+  if (conversationMetadata.origin === 'prospeccao' && 
+      (ninaContext.awaiting_email === true || ninaContext.awaiting_email_confirmation === true) && 
+      message.content) {
+    console.log(`[Nina] 📧 Awaiting email, received: "${message.content}"`);
+    
+    // Calculate delay
+    const delayMin = settings?.response_delay_min || 1000;
+    const delayMax = settings?.response_delay_max || 3000;
+    const delay = Math.random() * (delayMax - delayMin) + delayMin;
+    
+    // Get AI settings for metadata
+    const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+    
+    // Try to extract email from message
+    const emailMatch = message.content.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
+    const isConfirmation = /sim|pode|isso|tá certo|correto|esse mesmo|esse aí|esse ai|pode ser|ok|blz|beleza/i.test(message.content);
+    
+    let finalEmail: string | null = null;
+    
+    if (emailMatch) {
+      finalEmail = emailMatch[0].toLowerCase();
+      // Save new email to contact
+      await supabase
+        .from('contacts')
+        .update({ email: finalEmail })
+        .eq('id', conversation.contact_id);
+      console.log(`[Nina] 📧 New email captured and saved: ${finalEmail}`);
+    } else if (isConfirmation && conversation.contact?.email) {
+      finalEmail = conversation.contact.email;
+      console.log(`[Nina] 📧 Email confirmed: ${finalEmail}`);
+    }
+    
+    // Get prospecting pipeline and nurture stage
+    const { data: prospectingPipeline } = await supabase
+      .from('pipelines')
+      .select('id')
+      .eq('slug', 'prospeccao')
+      .maybeSingle();
+    
+    const renewalDate = ninaContext.renewal_date;
+    let responseText: string;
+    
+    if (finalEmail && renewalDate && prospectingPipeline) {
+      // Generate personalized email using AI
+      const emailContent = await generateRenewalEmail(
+        lovableApiKey,
+        conversation.contact,
+        renewalDate
+      );
+      
+      // Get deal for scheduled email
+      const { data: deal } = await supabase
+        .from('deals')
+        .select('id, title')
+        .eq('contact_id', conversation.contact_id)
+        .eq('pipeline_id', prospectingPipeline.id)
+        .maybeSingle();
+      
+      if (deal && emailContent) {
+        // Calculate scheduled date (15 days before renewal)
+        const renewalDateObj = new Date(renewalDate);
+        const scheduledDate = new Date(renewalDateObj);
+        scheduledDate.setDate(scheduledDate.getDate() - 15);
+        
+        // If scheduled date is in the past, schedule for 3 days from now
+        const now = new Date();
+        if (scheduledDate <= now) {
+          scheduledDate.setTime(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+        }
+        
+        // Insert scheduled email
+        await supabase
+          .from('scheduled_emails')
+          .insert({
+            deal_id: deal.id,
+            contact_id: conversation.contact_id,
+            to_email: finalEmail,
+            subject: emailContent.subject,
+            body_html: emailContent.body_html,
+            scheduled_for: scheduledDate.toISOString().split('T')[0],
+            days_before_due: 15,
+            generated_by: 'ai'
+          });
+        
+        console.log(`[Nina] 📧 Renewal email scheduled for ${scheduledDate.toISOString().split('T')[0]}`);
+        
+        // Create follow-up task for operator
+        await supabase
+          .from('deal_activities')
+          .insert({
+            deal_id: deal.id,
+            type: 'task',
+            title: 'Follow-up Renovação',
+            description: `Lead rejeitou por já ter corretor.\nData de renovação: ${new Date(renewalDate).toLocaleDateString('pt-BR')}\nEmail agendado para: ${finalEmail}\n\nAgendar recontato próximo da data de vencimento.`,
+            scheduled_at: scheduledDate.toISOString(),
+            is_completed: false
+          });
+        
+        console.log(`[Nina] 📋 Follow-up task created for operator`);
+      }
+      
+      responseText = 'Tudo certo! Vou enviar um lembrete próximo da renovação. Bom trabalho!';
+    } else if (!finalEmail) {
+      // Could not get email - graceful exit
+      responseText = 'Sem problema! Quando precisar de uma cotação é só chamar. Bom trabalho!';
+    } else {
+      responseText = 'Perfeito! Entro em contato próximo da renovação. Bom trabalho!';
+    }
+    
+    // Queue the response
+    await queueTextResponse(supabase, conversation, message, responseText, settings, aiSettings, delay, agent);
+    
+    // Mark message as processed
+    const responseTime = Date.now() - new Date(message.sent_at).getTime();
+    await supabase
+      .from('messages')
+      .update({ 
+        processed_by_nina: true,
+        nina_response_time: responseTime
+      })
+      .eq('id', message.id);
+    
+    // Move deal to Nurture stage
+    if (prospectingPipeline) {
+      const { data: nurtureStage } = await supabase
+        .from('pipeline_stages')
+        .select('id')
+        .eq('pipeline_id', prospectingPipeline.id)
+        .eq('title', 'Nurture')
+        .maybeSingle();
+      
+      if (nurtureStage) {
+        const { data: existingDeal } = await supabase
+          .from('deals')
+          .select('notes')
+          .eq('contact_id', conversation.contact_id)
+          .eq('pipeline_id', prospectingPipeline.id)
+          .maybeSingle();
+        
+        const existingNotes = existingDeal?.notes || '';
+        const newNote = `[${new Date().toLocaleDateString('pt-BR')}] Soft rejection - Renovação: ${renewalDate ? new Date(renewalDate).toLocaleDateString('pt-BR') : 'N/A'} - Email: ${finalEmail || 'N/A'}`;
+        
+        await supabase
+          .from('deals')
+          .update({ 
+            stage_id: nurtureStage.id,
+            notes: existingNotes ? `${existingNotes}\n\n${newNote}` : newNote
+          })
+          .eq('contact_id', conversation.contact_id)
+          .eq('pipeline_id', prospectingPipeline.id);
+        
+        console.log(`[Nina] 🌱 Deal moved to Nurture stage`);
+      }
+    }
+    
+    // Clear awaiting flags and pause conversation
+    await supabase
+      .from('conversations')
+      .update({ 
+        status: 'paused',
+        nina_context: { 
+          ...ninaContext, 
+          awaiting_email: false, 
+          awaiting_email_confirmation: false,
+          awaiting_renewal_date: false 
+        }
+      })
+      .eq('id', conversation.id);
+    
+    // Trigger whatsapp-sender
+    try {
+      const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+      fetch(senderUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({ triggered_by: 'nina-orchestrator-email-capture' })
+      }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+    } catch (e) {
+      console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+    }
+    
+    console.log(`[Nina] ✅ Email flow completed, deal in Nurture for follow-up`);
+    return;
+  }
+  // ===== END SOFT REJECTION STEP 3 =====
+
   // ===== SOFT REJECTION STEP 2: CAPTURE RENEWAL DATE =====
   // Check if we're awaiting renewal date from a previous soft rejection
-  const ninaContext = conversation.nina_context || {};
   if (conversationMetadata.origin === 'prospeccao' && ninaContext.awaiting_renewal_date === true && message.content) {
     console.log(`[Nina] 📅 Awaiting renewal date, received: "${message.content}"`);
     
@@ -937,10 +1237,66 @@ async function processQueueItem(
         console.log(`[Nina] 📅 Due date saved: ${renewalDate}`);
       }
       
-      responseText = 'Perfeito! Entro em contato próximo da renovação. Bom trabalho!';
+      // Check if contact already has email
+      if (conversation.contact?.email) {
+        // Email exists - confirm it
+        responseText = `Posso enviar informações no email ${conversation.contact.email}? Se preferir outro, me passa!`;
+        await supabase
+          .from('conversations')
+          .update({ 
+            nina_context: { 
+              ...ninaContext, 
+              awaiting_renewal_date: false,
+              awaiting_email_confirmation: true, 
+              renewal_date: renewalDate 
+            }
+          })
+          .eq('id', conversation.id);
+      } else {
+        // No email - ask for it
+        responseText = 'Perfeito! Pra enviar informações na época da renovação, qual seu melhor email?';
+        await supabase
+          .from('conversations')
+          .update({ 
+            nina_context: { 
+              ...ninaContext, 
+              awaiting_renewal_date: false,
+              awaiting_email: true, 
+              renewal_date: renewalDate 
+            }
+          })
+          .eq('id', conversation.id);
+      }
     } else {
       console.log(`[Nina] 📅 Could not parse date from: "${message.content}"`);
       responseText = 'Sem problema! Quando precisar de uma cotação é só chamar. Bom trabalho!';
+      
+      // Clear flag and move to Nurture without email
+      await supabase
+        .from('conversations')
+        .update({ 
+          status: 'paused',
+          nina_context: { ...ninaContext, awaiting_renewal_date: false }
+        })
+        .eq('id', conversation.id);
+      
+      // Move deal to Nurture
+      if (prospectingPipeline) {
+        const { data: nurtureStage } = await supabase
+          .from('pipeline_stages')
+          .select('id')
+          .eq('pipeline_id', prospectingPipeline.id)
+          .eq('title', 'Nurture')
+          .maybeSingle();
+        
+        if (nurtureStage) {
+          await supabase
+            .from('deals')
+            .update({ stage_id: nurtureStage.id })
+            .eq('contact_id', conversation.contact_id)
+            .eq('pipeline_id', prospectingPipeline.id);
+        }
+      }
     }
     
     // Queue the response
@@ -955,50 +1311,6 @@ async function processQueueItem(
         nina_response_time: responseTime
       })
       .eq('id', message.id);
-    
-    // Move deal to Nurture stage
-    if (prospectingPipeline) {
-      const { data: nurtureStage } = await supabase
-        .from('pipeline_stages')
-        .select('id')
-        .eq('pipeline_id', prospectingPipeline.id)
-        .eq('title', 'Nurture')
-        .maybeSingle();
-      
-      if (nurtureStage) {
-        const { data: existingDeal } = await supabase
-          .from('deals')
-          .select('notes')
-          .eq('contact_id', conversation.contact_id)
-          .eq('pipeline_id', prospectingPipeline.id)
-          .maybeSingle();
-        
-        const existingNotes = existingDeal?.notes || '';
-        const newNote = renewalDate 
-          ? `[${new Date().toLocaleDateString('pt-BR')}] Soft rejection - Data de renovação: ${new Date(renewalDate).toLocaleDateString('pt-BR')}`
-          : `[${new Date().toLocaleDateString('pt-BR')}] Soft rejection - Sem data de renovação`;
-        
-        await supabase
-          .from('deals')
-          .update({ 
-            stage_id: nurtureStage.id,
-            notes: existingNotes ? `${existingNotes}\n\n${newNote}` : newNote
-          })
-          .eq('contact_id', conversation.contact_id)
-          .eq('pipeline_id', prospectingPipeline.id);
-        
-        console.log(`[Nina] 🌱 Deal moved to Nurture stage`);
-      }
-    }
-    
-    // Clear awaiting flag and pause conversation
-    await supabase
-      .from('conversations')
-      .update({ 
-        status: 'paused',
-        nina_context: { ...ninaContext, awaiting_renewal_date: false }
-      })
-      .eq('id', conversation.id);
     
     // Trigger whatsapp-sender
     try {
@@ -1015,7 +1327,7 @@ async function processQueueItem(
       console.error('[Nina] Failed to trigger whatsapp-sender:', e);
     }
     
-    console.log(`[Nina] ✅ Renewal date captured, deal in Nurture for follow-up`);
+    console.log(`[Nina] ✅ Renewal date step completed`);
     return;
   }
   // ===== END SOFT REJECTION STEP 2 =====
