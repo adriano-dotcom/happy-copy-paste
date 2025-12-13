@@ -270,7 +270,16 @@ function isProspectingRejection(messageContent: string): boolean {
     'pare de', 'para de',
     'não me ligue', 'nao me ligue',
     'não mande', 'nao mande',
-    'remove', 'remova'
+    'remove', 'remova',
+    // Novas frases de rejeição
+    'esse número não é', 'esse numero nao e',
+    'não é da empresa', 'nao e da empresa',
+    'esse telefone não é', 'esse telefone nao e',
+    'engano',
+    'número particular', 'numero particular',
+    'celular pessoal', 'meu pessoal',
+    'não é comercial', 'nao e comercial',
+    'pessoal esse número', 'pessoal esse numero'
   ];
   
   return rejectionPhrases.some(phrase => content.includes(phrase));
