@@ -336,6 +336,79 @@ function isSoftRejection(messageContent: string): boolean {
   return softRejectionPhrases.some(phrase => content.includes(phrase));
 }
 
+// Parse renewal date from user message (e.g., "março", "15/03", "daqui 3 meses")
+function parseRenewalDate(text: string): string | null {
+  const content = text.toLowerCase().trim();
+  
+  // Month names in Portuguese
+  const months: Record<string, number> = {
+    'janeiro': 1, 'fevereiro': 2, 'março': 3, 'marco': 3,
+    'abril': 4, 'maio': 5, 'junho': 6, 'julho': 7,
+    'agosto': 8, 'setembro': 9, 'outubro': 10,
+    'novembro': 11, 'dezembro': 12
+  };
+  
+  // Try to match month name: "março", "em maio", "mês de junho"
+  for (const [month, num] of Object.entries(months)) {
+    if (content.includes(month)) {
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1;
+      // If month is in the past this year, assume next year
+      const year = num >= currentMonth ? now.getFullYear() : now.getFullYear() + 1;
+      return `${year}-${String(num).padStart(2, '0')}-15`;
+    }
+  }
+  
+  // Try to match date format: "15/03", "15/03/25", "15-03-2025"
+  const dateRegex = /(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/;
+  const match = content.match(dateRegex);
+  if (match) {
+    const [, day, month, year] = match;
+    const now = new Date();
+    let fullYear: string;
+    if (year) {
+      fullYear = year.length === 2 ? `20${year}` : year;
+    } else {
+      // No year specified - assume current year, or next year if date is in the past
+      const monthNum = parseInt(month);
+      const currentMonth = now.getMonth() + 1;
+      fullYear = String(monthNum >= currentMonth ? now.getFullYear() : now.getFullYear() + 1);
+    }
+    return `${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+  
+  // Try to match relative: "daqui 3 meses", "em 2 meses", "próximo mês"
+  const relativeRegex = /(\d+)\s*m[eê]s/;
+  const relMatch = content.match(relativeRegex);
+  if (relMatch) {
+    const monthsAhead = parseInt(relMatch[1]);
+    const date = new Date();
+    date.setMonth(date.getMonth() + monthsAhead);
+    return date.toISOString().split('T')[0];
+  }
+  
+  // "próximo mês" / "mês que vem"
+  if (content.includes('próximo mês') || content.includes('proximo mes') || content.includes('mês que vem') || content.includes('mes que vem')) {
+    const date = new Date();
+    date.setMonth(date.getMonth() + 1);
+    return date.toISOString().split('T')[0];
+  }
+  
+  // "fim do ano" / "final do ano"
+  if (content.includes('fim do ano') || content.includes('final do ano')) {
+    const year = new Date().getFullYear();
+    return `${year}-12-31`;
+  }
+  
+  // "início do ano" / "começo do ano" (next year)
+  if (content.includes('início do ano') || content.includes('inicio do ano') || content.includes('começo do ano') || content.includes('comeco do ano')) {
+    const year = new Date().getFullYear() + 1;
+    return `${year}-01-15`;
+  }
+  
+  return null;
+}
+
 // Note: WhatsApp only supports audio/ogg; codecs=opus, audio/mpeg, audio/amr, audio/mp4, audio/aac
 // WAV is NOT supported. We use MP3 directly from ElevenLabs.
 
@@ -822,13 +895,13 @@ async function processQueueItem(
   }
   // ===== END PROSPECTING REJECTION DETECTION =====
 
-  // ===== SOFT REJECTION DETECTION (já tenho corretor, já tenho seguro, etc.) =====
-  // Check if this is a prospecting conversation and message is a soft rejection
-  if (conversationMetadata.origin === 'prospeccao' && message.content && isSoftRejection(message.content)) {
-    console.log(`[Nina] 💛 Soft rejection detected: "${message.content}"`);
+  // ===== SOFT REJECTION STEP 2: CAPTURE RENEWAL DATE =====
+  // Check if we're awaiting renewal date from a previous soft rejection
+  const ninaContext = conversation.nina_context || {};
+  if (conversationMetadata.origin === 'prospeccao' && ninaContext.awaiting_renewal_date === true && message.content) {
+    console.log(`[Nina] 📅 Awaiting renewal date, received: "${message.content}"`);
     
-    // Soft rejection response - polite and leaves door open for future
-    const softRejectionResponse = 'Entendido! Fico à disposição quando precisar de uma cotação ou renovar. Qualquer dúvida é só chamar. Bom trabalho!';
+    const renewalDate = parseRenewalDate(message.content);
     
     // Calculate delay
     const delayMin = settings?.response_delay_min || 1000;
@@ -838,8 +911,40 @@ async function processQueueItem(
     // Get AI settings for metadata
     const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
     
-    // Queue the soft rejection response
-    await queueTextResponse(supabase, conversation, message, softRejectionResponse, settings, aiSettings, delay, agent);
+    // Get prospecting pipeline and nurture stage
+    const { data: prospectingPipeline } = await supabase
+      .from('pipelines')
+      .select('id')
+      .eq('slug', 'prospeccao')
+      .maybeSingle();
+    
+    let responseText: string;
+    
+    if (renewalDate) {
+      console.log(`[Nina] 📅 Parsed renewal date: ${renewalDate}`);
+      
+      // Save renewal date to deal.due_date
+      if (prospectingPipeline) {
+        await supabase
+          .from('deals')
+          .update({ 
+            due_date: renewalDate,
+            notes: `Data de renovação informada: ${new Date(renewalDate).toLocaleDateString('pt-BR')}`
+          })
+          .eq('contact_id', conversation.contact_id)
+          .eq('pipeline_id', prospectingPipeline.id);
+        
+        console.log(`[Nina] 📅 Due date saved: ${renewalDate}`);
+      }
+      
+      responseText = 'Perfeito! Entro em contato próximo da renovação. Bom trabalho!';
+    } else {
+      console.log(`[Nina] 📅 Could not parse date from: "${message.content}"`);
+      responseText = 'Sem problema! Quando precisar de uma cotação é só chamar. Bom trabalho!';
+    }
+    
+    // Queue the response
+    await queueTextResponse(supabase, conversation, message, responseText, settings, aiSettings, delay, agent);
     
     // Mark message as processed
     const responseTime = Date.now() - new Date(message.sent_at).getTime();
@@ -851,13 +956,7 @@ async function processQueueItem(
       })
       .eq('id', message.id);
     
-    // Move deal to "Nurture" stage (not Perdido - can follow up later)
-    const { data: prospectingPipeline } = await supabase
-      .from('pipelines')
-      .select('id')
-      .eq('slug', 'prospeccao')
-      .maybeSingle();
-    
+    // Move deal to Nurture stage
     if (prospectingPipeline) {
       const { data: nurtureStage } = await supabase
         .from('pipeline_stages')
@@ -867,25 +966,38 @@ async function processQueueItem(
         .maybeSingle();
       
       if (nurtureStage) {
+        const { data: existingDeal } = await supabase
+          .from('deals')
+          .select('notes')
+          .eq('contact_id', conversation.contact_id)
+          .eq('pipeline_id', prospectingPipeline.id)
+          .maybeSingle();
+        
+        const existingNotes = existingDeal?.notes || '';
+        const newNote = renewalDate 
+          ? `[${new Date().toLocaleDateString('pt-BR')}] Soft rejection - Data de renovação: ${new Date(renewalDate).toLocaleDateString('pt-BR')}`
+          : `[${new Date().toLocaleDateString('pt-BR')}] Soft rejection - Sem data de renovação`;
+        
         await supabase
           .from('deals')
           .update({ 
             stage_id: nurtureStage.id,
-            notes: (await supabase.from('deals').select('notes').eq('contact_id', conversation.contact_id).eq('pipeline_id', prospectingPipeline.id).maybeSingle())?.data?.notes 
-              ? `${(await supabase.from('deals').select('notes').eq('contact_id', conversation.contact_id).eq('pipeline_id', prospectingPipeline.id).maybeSingle())?.data?.notes}\n\n[${new Date().toLocaleDateString('pt-BR')}] Soft rejection: ${message.content}`
-              : `[${new Date().toLocaleDateString('pt-BR')}] Soft rejection: ${message.content}`
+            notes: existingNotes ? `${existingNotes}\n\n${newNote}` : newNote
           })
           .eq('contact_id', conversation.contact_id)
           .eq('pipeline_id', prospectingPipeline.id);
         
-        console.log(`[Nina] 🌱 Deal moved to Nurture stage for future follow-up`);
+        console.log(`[Nina] 🌱 Deal moved to Nurture stage`);
       }
     }
     
-    // Pause conversation (end prospecting for now)
+    // Clear awaiting flag and pause conversation
     await supabase
       .from('conversations')
-      .update({ status: 'paused' })
+      .update({ 
+        status: 'paused',
+        nina_context: { ...ninaContext, awaiting_renewal_date: false }
+      })
       .eq('id', conversation.id);
     
     // Trigger whatsapp-sender
@@ -897,16 +1009,78 @@ async function processQueueItem(
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${supabaseServiceKey}`
         },
-        body: JSON.stringify({ triggered_by: 'nina-orchestrator-soft-rejection' })
+        body: JSON.stringify({ triggered_by: 'nina-orchestrator-renewal-date-capture' })
       }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
     } catch (e) {
       console.error('[Nina] Failed to trigger whatsapp-sender:', e);
     }
     
-    console.log(`[Nina] ✅ Soft rejection handled, deal in Nurture for future follow-up`);
+    console.log(`[Nina] ✅ Renewal date captured, deal in Nurture for follow-up`);
     return;
   }
-  // ===== END SOFT REJECTION DETECTION =====
+  // ===== END SOFT REJECTION STEP 2 =====
+
+  // ===== SOFT REJECTION STEP 1: ASK FOR RENEWAL DATE =====
+  // Check if this is a prospecting conversation and message is a soft rejection
+  if (conversationMetadata.origin === 'prospeccao' && message.content && isSoftRejection(message.content)) {
+    console.log(`[Nina] 💛 Soft rejection detected: "${message.content}"`);
+    
+    // Ask for renewal date instead of immediate closure
+    const askRenewalResponse = 'Entendido! Quando vence seu seguro atual? Assim posso entrar em contato na época da renovação.';
+    
+    // Calculate delay
+    const delayMin = settings?.response_delay_min || 1000;
+    const delayMax = settings?.response_delay_max || 3000;
+    const delay = Math.random() * (delayMax - delayMin) + delayMin;
+    
+    // Get AI settings for metadata
+    const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+    
+    // Queue the renewal date question
+    await queueTextResponse(supabase, conversation, message, askRenewalResponse, settings, aiSettings, delay, agent);
+    
+    // Mark message as processed
+    const responseTime = Date.now() - new Date(message.sent_at).getTime();
+    await supabase
+      .from('messages')
+      .update({ 
+        processed_by_nina: true,
+        nina_response_time: responseTime
+      })
+      .eq('id', message.id);
+    
+    // Set awaiting_renewal_date flag (but don't move to Nurture yet)
+    await supabase
+      .from('conversations')
+      .update({ 
+        nina_context: { 
+          ...ninaContext, 
+          awaiting_renewal_date: true,
+          soft_rejection_at: new Date().toISOString(),
+          soft_rejection_reason: message.content
+        }
+      })
+      .eq('id', conversation.id);
+    
+    // Trigger whatsapp-sender
+    try {
+      const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+      fetch(senderUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({ triggered_by: 'nina-orchestrator-soft-rejection-ask-date' })
+      }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+    } catch (e) {
+      console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+    }
+    
+    console.log(`[Nina] ✅ Soft rejection detected, asking for renewal date`);
+    return;
+  }
+  // ===== END SOFT REJECTION STEP 1 =====
 
   // ===== PROSPECTING: MOVE TO "EM QUALIFICAÇÃO" WHEN LEAD RESPONDS =====
   // If this is a prospecting conversation and lead responded (not rejection), move to Em Qualificação
