@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
+import ProspectingDashboard from './components/ProspectingDashboard';
 import ChatInterface from './components/ChatInterface';
 import Contacts from './components/Contacts';
 import Settings from './components/Settings';
@@ -99,6 +100,7 @@ const App: React.FC = () => {
               <Route path="/scheduling" element={<Scheduling />} />
               <Route path="/team" element={<AdminRoute><Team /></AdminRoute>} />
               <Route path="/functions" element={<AdminRoute><Functions /></AdminRoute>} />
+              <Route path="/prospecting" element={<AdminRoute><ProspectingDashboard /></AdminRoute>} />
               <Route path="/settings" element={<AdminRoute><Settings /></AdminRoute>} />
             </Route>
           </Routes>
