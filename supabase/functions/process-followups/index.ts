@@ -359,6 +359,23 @@ serve(async (req) => {
             });
 
             console.log(`[process-followups] Queued free text follow-up for conversation ${conv.id}`);
+            
+            // Trigger whatsapp-sender to process the queue immediately
+            try {
+              const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+              fetch(senderUrl, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${supabaseServiceKey}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ triggered_by: 'process-followups' })
+              }).catch(err => console.error('[process-followups] Error triggering whatsapp-sender:', err));
+              console.log(`[process-followups] Triggered whatsapp-sender for queued message`);
+            } catch (e) {
+              console.error('[process-followups] Failed to trigger whatsapp-sender:', e);
+            }
+            
             sent++;
             totalProcessed++;
 
