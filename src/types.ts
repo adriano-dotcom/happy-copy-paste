@@ -317,10 +317,13 @@ export interface UIConversation {
   assignedUserName: string | null;
   lastMessage: string;
   lastMessageTime: string;
+  lastMessageAt: string; // ISO timestamp for waiting time calculation
+  lastMessageFromUser: boolean; // Whether last message was from client
   unreadCount: number;
   tags: string[];
   messages: UIMessage[];
   clientMemory: ClientMemory;
+  ninaContext: Record<string, any> | null; // Qualification answers and AI context
   notes: string | null;
   agentId: string | null;
   agentName: string | null;
@@ -360,6 +363,9 @@ export function transformDBToUIConversation(
   const unreadCount = messages.filter(
     m => m.from_type === 'user' && m.status !== 'read'
   ).length;
+  
+  // Determine if last message was from user (client)
+  const lastMessageFromUser = lastMsg?.from_type === 'user';
 
   // Calculate WhatsApp window status
   const windowStart = conv.whatsapp_window_start ? new Date(conv.whatsapp_window_start) : null;
@@ -383,10 +389,13 @@ export function transformDBToUIConversation(
     assignedUserName: conv.assignedUserName || null,
     lastMessage: lastMsg?.content || '',
     lastMessageTime: formatRelativeTime(conv.last_message_at),
+    lastMessageAt: conv.last_message_at,
+    lastMessageFromUser,
     unreadCount,
     tags: [...(conv.tags || []), ...(conv.contact?.tags || [])],
     messages: sortedMessages.map(transformDBToUIMessage),
     clientMemory: conv.contact?.client_memory || getDefaultClientMemory(),
+    ninaContext: conv.nina_context || null,
     notes: conv.contact?.notes || null,
     contactCnpj: conv.contact?.cnpj || null,
     contactCompany: conv.contact?.company || null,

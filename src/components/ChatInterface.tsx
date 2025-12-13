@@ -44,6 +44,9 @@ import { SendWhatsAppTemplateModal } from './SendWhatsAppTemplateModal';
 import { AudioPlayer } from './AudioPlayer';
 import { QuickQuestionsDropdown } from './QuickQuestionsDropdown';
 import { formatRegionFromPhone } from '@/utils/dddRegionMapper';
+import { LeadScoreBadge } from './chat/LeadScoreBadge';
+import { WaitingTimeBadge } from './chat/WaitingTimeBadge';
+import { HandoffSummaryCard } from './chat/HandoffSummaryCard';
 
 interface AgentQuestion {
   order: number;
@@ -1194,8 +1197,14 @@ const ChatInterface: React.FC = () => {
                      chat.lastMessage || 'Sem mensagens'}
                   </p>
                   
-                  <div className="flex items-center mt-2 gap-1.5">
+                  <div className="flex items-center mt-2 gap-1.5 flex-wrap">
                     {renderStatusBadge(chat.status, chat.assignedUserName)}
+                    <LeadScoreBadge clientMemory={chat.clientMemory} compact />
+                    <WaitingTimeBadge 
+                      lastMessageAt={chat.lastMessageAt} 
+                      lastMessageFromUser={chat.lastMessageFromUser} 
+                      compact 
+                    />
                     {chat.tags.slice(0, 1).map(tag => (
                       <span key={tag} className="px-2 py-0.5 bg-slate-800/80 border border-slate-700 text-slate-400 text-[10px] rounded-md font-medium">
                         {tag}
@@ -1850,6 +1859,20 @@ const ChatInterface: React.FC = () => {
                     </Button>
                   )}
                 </div>
+
+                <div className="h-px bg-slate-800/50 w-full"></div>
+
+                {/* Lead Score Display */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Lead Score</h4>
+                  <LeadScoreBadge clientMemory={activeChat.clientMemory} />
+                </div>
+
+                {/* Handoff Summary Card - Qualification Answers */}
+                <HandoffSummaryCard 
+                  ninaContext={activeChat.ninaContext} 
+                  agentSlug={activeChat.agentSlug}
+                />
 
                 <div className="h-px bg-slate-800/50 w-full"></div>
 
