@@ -96,3 +96,6 @@ verify_jwt = true
 
 [functions.generate-summary]
 verify_jwt = true
+
+[functions.generate-email-copy]
+verify_jwt = true

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Eye, Code, Variable, Loader2 } from 'lucide-react';
+import { X, Eye, Code, Variable, Loader2, Sparkles, Truck, HeartPulse, Phone } from 'lucide-react';
 import { Button } from '../Button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from '../ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface EmailTemplate {
   id: string;
@@ -45,6 +47,20 @@ const DEFAULT_HTML = `<div style="font-family: Arial, sans-serif; max-width: 600
   </p>
 </div>`;
 
+const VERTICALS = [
+  { value: 'transporte', label: 'Transporte', icon: Truck, color: 'text-amber-400' },
+  { value: 'saude', label: 'Saúde', icon: HeartPulse, color: 'text-rose-400' },
+  { value: 'prospeccao', label: 'Prospecção', icon: Phone, color: 'text-cyan-400' },
+];
+
+const EMAIL_TYPES = [
+  { value: 'follow-up', label: '📬 Follow-up' },
+  { value: 'proposta', label: '📋 Proposta' },
+  { value: 'boas-vindas', label: '🎉 Boas-vindas' },
+  { value: 'renewal', label: '🔄 Renovação' },
+  { value: 'cotacao', label: '💰 Cotação' },
+];
+
 const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
   isOpen,
   onClose,
@@ -58,6 +74,12 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [activeView, setActiveView] = useState<'code' | 'preview'>('code');
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // AI Copywriting states
+  const [selectedVertical, setSelectedVertical] = useState<string>('transporte');
+  const [selectedEmailType, setSelectedEmailType] = useState<string>('follow-up');
+  const [briefing, setBriefing] = useState('');
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     if (template) {
@@ -113,6 +135,49 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
     setBodyHtml((prev) => prev + variable);
   };
 
+  const handleGenerateWithAI = async () => {
+    setGenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-email-copy', {
+        body: {
+          vertical: selectedVertical,
+          emailType: selectedEmailType,
+          briefing: briefing.trim() || undefined,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.subject) {
+        setSubject(data.subject);
+      }
+      if (data?.body_html) {
+        setBodyHtml(data.body_html);
+      }
+
+      // Auto-set category based on email type
+      if (selectedEmailType === 'follow-up') setCategory('follow-up');
+      else if (selectedEmailType === 'proposta' || selectedEmailType === 'cotacao') setCategory('proposal');
+      else if (selectedEmailType === 'boas-vindas') setCategory('welcome');
+      else setCategory('general');
+
+      // Auto-generate name if empty
+      if (!name.trim()) {
+        const verticalLabel = VERTICALS.find(v => v.value === selectedVertical)?.label || selectedVertical;
+        const typeLabel = EMAIL_TYPES.find(t => t.value === selectedEmailType)?.label.replace(/[^\w\s]/g, '').trim() || selectedEmailType;
+        setName(`${typeLabel} - ${verticalLabel}`);
+      }
+
+      toast.success('Email gerado com sucesso!');
+      setActiveView('preview');
+    } catch (error: any) {
+      console.error('Erro ao gerar email:', error);
+      toast.error(error.message || 'Erro ao gerar email com IA');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!name.trim()) {
       return;
@@ -133,14 +198,103 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl h-[85vh] flex flex-col bg-slate-900 border-slate-700 p-0">
+      <DialogContent className="max-w-5xl h-[90vh] flex flex-col bg-slate-900 border-slate-700 p-0">
         <DialogHeader className="px-6 py-4 border-b border-slate-700">
           <DialogTitle className="text-white flex items-center gap-2">
             {template ? '✏️ Editar Template' : '➕ Novo Template'}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden flex flex-col px-6 py-4 gap-4">
+        <div className="flex-1 overflow-y-auto flex flex-col px-6 py-4 gap-4">
+          {/* AI Copywriting Assistant */}
+          <div className="p-4 rounded-xl bg-gradient-to-r from-violet-500/10 via-fuchsia-500/10 to-cyan-500/10 border border-violet-500/20">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="w-5 h-5 text-violet-400" />
+              <h3 className="font-semibold text-white">Assistente de Copywriting</h3>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 mb-3">
+              {/* Vertical Selection */}
+              <div>
+                <Label className="text-slate-400 text-xs mb-2 block">Vertical</Label>
+                <div className="flex gap-2">
+                  {VERTICALS.map((vertical) => {
+                    const Icon = vertical.icon;
+                    const isSelected = selectedVertical === vertical.value;
+                    return (
+                      <button
+                        key={vertical.value}
+                        onClick={() => setSelectedVertical(vertical.value)}
+                        className={`flex-1 flex flex-col items-center gap-1 p-2 rounded-lg border transition-all ${
+                          isSelected
+                            ? 'bg-slate-800 border-violet-500/50 ring-1 ring-violet-500/30'
+                            : 'bg-slate-800/50 border-slate-700 hover:border-slate-600'
+                        }`}
+                      >
+                        <Icon className={`w-4 h-4 ${isSelected ? vertical.color : 'text-slate-400'}`} />
+                        <span className={`text-xs ${isSelected ? 'text-white' : 'text-slate-400'}`}>
+                          {vertical.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Email Type */}
+              <div>
+                <Label className="text-slate-400 text-xs mb-2 block">Tipo de Email</Label>
+                <Select value={selectedEmailType} onValueChange={setSelectedEmailType}>
+                  <SelectTrigger className="bg-slate-800/50 border-slate-700">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EMAIL_TYPES.map((type) => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Generate Button */}
+              <div className="flex items-end">
+                <Button
+                  variant="primary"
+                  onClick={handleGenerateWithAI}
+                  disabled={generating}
+                  className="w-full gap-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500"
+                >
+                  {generating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Gerando...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Gerar Email
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {/* Briefing */}
+            <div>
+              <Label className="text-slate-400 text-xs mb-1 block">
+                Briefing (opcional) - Descreva o contexto ou objetivo específico
+              </Label>
+              <Input
+                value={briefing}
+                onChange={(e) => setBriefing(e.target.value)}
+                placeholder="Ex: Email para transportador que pediu cotação de RCTR-C para cargas de grãos..."
+                className="bg-slate-800/50 border-slate-700 text-sm"
+              />
+            </div>
+          </div>
+
           {/* Basic Info */}
           <div className="grid grid-cols-3 gap-4">
             <div className="col-span-2">
@@ -212,13 +366,13 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
                 <Textarea
                   value={bodyHtml}
                   onChange={(e) => setBodyHtml(e.target.value)}
-                  className="h-full min-h-[300px] font-mono text-sm bg-slate-800/50 border-slate-700 resize-none"
+                  className="h-full min-h-[250px] font-mono text-sm bg-slate-800/50 border-slate-700 resize-none"
                   placeholder="Digite o HTML do email..."
                 />
               </TabsContent>
 
               <TabsContent value="preview" className="flex-1 m-0">
-                <div className="h-full min-h-[300px] rounded-lg border border-slate-700 bg-white overflow-hidden">
+                <div className="h-full min-h-[250px] rounded-lg border border-slate-700 bg-white overflow-hidden">
                   <iframe
                     ref={iframeRef}
                     title="Email Preview"
