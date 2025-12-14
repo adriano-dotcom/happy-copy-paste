@@ -174,6 +174,7 @@ export function QuickActionsBar({
           tags: activeChat.tags
         }}
         dealId={existingDeal?.id}
+        conversationId={activeChat.id}
         onSent={onRefetch}
       />
     </>

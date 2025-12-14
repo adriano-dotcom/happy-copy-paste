@@ -24,6 +24,7 @@ interface SendToPipedriveModalProps {
   onOpenChange: (open: boolean) => void;
   contact: Contact;
   dealId?: string;
+  conversationId?: string;
   onSent?: () => void;
 }
 
@@ -32,6 +33,7 @@ export function SendToPipedriveModal({
   onOpenChange,
   contact,
   dealId,
+  conversationId,
   onSent
 }: SendToPipedriveModalProps) {
   const [notes, setNotes] = useState('');
@@ -50,6 +52,7 @@ export function SendToPipedriveModal({
         body: { 
           contactId: contact.id, 
           dealId,
+          conversationId,
           notes: notes.trim() || undefined,
           pipedriveTag: selectedTag || undefined
         }
