@@ -176,6 +176,7 @@ export function QuickActionsBar({
         dealId={existingDeal?.id}
         conversationId={activeChat.id}
         onSent={onRefetch}
+        initialNotes={activeChat.notes}
       />
     </>
   );
