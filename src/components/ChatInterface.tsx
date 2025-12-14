@@ -2361,6 +2361,14 @@ const ChatInterface: React.FC = () => {
           contactName={activeChat.contactName}
           company={activeChat.contactCompany || ''}
           value={existingDeal?.value || 0}
+          ninaContext={activeChat.ninaContext as Record<string, any> | null}
+          clientMemory={activeChat.clientMemory}
+          agentSlug={activeChat.agentSlug}
+          contactPhone={activeChat.contactPhone}
+          contactCnpj={activeChat.contactCnpj}
+          conversationHistory={activeChat.messages?.slice(-10).map(m => 
+            `${m.direction === 'incoming' ? 'Lead' : 'Agente'}: ${m.content}`
+          ).join('\n')}
           onEmailSent={() => {
             toast.success('Email enviado com sucesso!');
             setShowEmailModal(false);
