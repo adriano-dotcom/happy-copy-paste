@@ -12,13 +12,6 @@ import GeneralSettings from './settings/GeneralSettings';
 import SalesCoachingSettings from './settings/SalesCoachingSettings';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { Button } from './Button';
-import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
-import { useOutletContext } from 'react-router-dom';
-
-interface OutletContext {
-  showOnboarding: boolean;
-  setShowOnboarding: (show: boolean) => void;
-}
 
 const Settings: React.FC = () => {
   const { companyName } = useCompanySettings();
@@ -27,13 +20,6 @@ const Settings: React.FC = () => {
   const agentsRef = useRef<AgentsSettingsRef>(null);
   const pipedriveRef = useRef<PipedriveSettingsRef>(null);
   const [activeTab, setActiveTab] = useState('general');
-  const { resetWizard } = useOnboardingStatus();
-  const { setShowOnboarding } = useOutletContext<OutletContext>();
-
-  const handleReopenOnboarding = () => {
-    resetWizard();
-    setShowOnboarding(true);
-  };
 
   const handleSave = async () => {
     if (activeTab === 'agent') {
@@ -79,15 +65,6 @@ const Settings: React.FC = () => {
           <p className="text-sm text-slate-400 mt-1">Central de controle da sua instância {companyName}.</p>
         </div>
         <div className="flex gap-2 items-center">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleReopenOnboarding}
-            className="text-slate-400 hover:text-white gap-2"
-          >
-            <RotateCcw className="w-4 h-4" />
-            Refazer Onboarding
-          </Button>
           <span className="px-3 py-1 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs rounded-full font-mono flex items-center">
             <Shield className="w-3 h-3 mr-1" /> Ambiente Seguro
           </span>
