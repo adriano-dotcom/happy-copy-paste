@@ -131,11 +131,11 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
       const parsed = (data || []).map(agent => ({
         ...agent,
         qualification_questions: Array.isArray(agent.qualification_questions) 
-          ? agent.qualification_questions 
+          ? (agent.qualification_questions as Array<{ order: number; question: string }>)
           : []
-      }));
+      })) as Agent[];
       
-      setAgents(parsed as Agent[]);
+      setAgents(parsed);
     } catch (error) {
       console.error('Erro ao carregar agentes:', error);
       toast.error('Erro ao carregar agentes');

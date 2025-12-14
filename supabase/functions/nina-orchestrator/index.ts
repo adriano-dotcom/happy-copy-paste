@@ -2050,15 +2050,21 @@ async function processQueueItem(
           .maybeSingle();
 
         if (firstStage) {
+          // Get next owner based on agent distribution (round_robin or fixed)
+          const { data: nextOwnerId } = await supabase.rpc('get_next_deal_owner', { 
+            p_agent_id: agent.id 
+          });
+          
           await supabase
             .from('deals')
             .update({ 
               pipeline_id: agentPipeline.id,
-              stage_id: firstStage.id
+              stage_id: firstStage.id,
+              owner_id: nextOwnerId || null
             })
             .eq('contact_id', conversation.contact_id);
           
-          console.log(`[Nina] Deal movido para pipeline: ${agentPipeline.name}`);
+          console.log(`[Nina] Deal movido para pipeline: ${agentPipeline.name}, owner: ${nextOwnerId || 'not assigned'}`);
         }
       }
     }
