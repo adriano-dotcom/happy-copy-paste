@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, AlertTriangle } from 'lucide-react';
+import { Hourglass, Timer, BellRing } from 'lucide-react';
 
 interface WaitingTimeBadgeProps {
   lastMessageAt: string;
@@ -37,25 +37,38 @@ export const WaitingTimeBadge: React.FC<WaitingTimeBadgeProps> = ({
     return null;
   }
 
+  // iOS 18 style urgency configuration
   const getUrgencyStyle = () => {
     if (waitingMinutes >= 30) {
       return {
-        color: 'bg-red-500/20 text-red-400 border-red-500/30',
+        gradient: 'bg-gradient-to-r from-red-500/25 to-rose-500/25',
+        iconColor: 'text-red-400',
+        textColor: 'text-red-300',
+        borderColor: 'border-red-500/40',
+        glow: 'shadow-lg shadow-red-500/20',
         pulse: true,
-        icon: AlertTriangle
+        icon: BellRing
       };
     }
     if (waitingMinutes >= 10) {
       return {
-        color: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+        gradient: 'bg-gradient-to-r from-amber-500/25 to-orange-500/25',
+        iconColor: 'text-amber-400',
+        textColor: 'text-amber-300',
+        borderColor: 'border-amber-500/40',
+        glow: 'shadow-lg shadow-amber-500/20',
         pulse: false,
-        icon: Clock
+        icon: Timer
       };
     }
     return {
-      color: 'bg-slate-700/50 text-slate-400 border-slate-600/30',
+      gradient: 'bg-gradient-to-r from-slate-600/25 to-slate-500/25',
+      iconColor: 'text-slate-400',
+      textColor: 'text-slate-300',
+      borderColor: 'border-slate-500/40',
+      glow: '',
       pulse: false,
-      icon: Clock
+      icon: Hourglass
     };
   };
 
@@ -63,9 +76,9 @@ export const WaitingTimeBadge: React.FC<WaitingTimeBadgeProps> = ({
     if (waitingMinutes >= 60) {
       const hours = Math.floor(waitingMinutes / 60);
       const mins = waitingMinutes % 60;
-      return mins > 0 ? `${hours}h ${mins}min` : `${hours}h`;
+      return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
     }
-    return `${waitingMinutes}min`;
+    return `${waitingMinutes}m`;
   };
 
   const urgency = getUrgencyStyle();
@@ -74,21 +87,21 @@ export const WaitingTimeBadge: React.FC<WaitingTimeBadgeProps> = ({
   if (compact) {
     return (
       <span 
-        className={`px-1.5 py-0.5 rounded text-[9px] font-medium flex items-center gap-0.5 border ${urgency.color} ${urgency.pulse ? 'animate-pulse' : ''}`}
+        className={`px-1.5 py-0.5 rounded-full text-[9px] font-medium flex items-center gap-1 border backdrop-blur-sm ${urgency.gradient} ${urgency.borderColor} ${urgency.pulse ? 'animate-pulse' : ''}`}
         title={`Aguardando resposta há ${formatWaitingTime()}`}
       >
-        <Icon className="w-2.5 h-2.5" />
-        {formatWaitingTime()}
+        <Icon className={`w-2.5 h-2.5 ${urgency.iconColor}`} />
+        <span className={urgency.textColor}>{formatWaitingTime()}</span>
       </span>
     );
   }
 
   return (
-    <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border ${urgency.color} ${urgency.pulse ? 'animate-pulse' : ''}`}>
-      <Icon className="w-4 h-4" />
+    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border backdrop-blur-sm ${urgency.gradient} ${urgency.borderColor} ${urgency.glow} ${urgency.pulse ? 'animate-pulse' : ''}`}>
+      <Icon className={`w-4 h-4 ${urgency.iconColor}`} />
       <div className="flex flex-col">
-        <span className="text-xs font-medium">Aguardando</span>
-        <span className="text-[10px] opacity-70">{formatWaitingTime()}</span>
+        <span className={`text-xs font-medium ${urgency.textColor}`}>Aguardando</span>
+        <span className="text-[10px] text-slate-400">{formatWaitingTime()}</span>
       </div>
     </div>
   );
