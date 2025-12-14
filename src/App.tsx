@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -17,10 +17,6 @@ import { AuthProvider } from './hooks/useAuth';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { Toaster } from 'sonner';
-import { OnboardingWizard } from './components/OnboardingWizard';
-import { OnboardingBanner } from './components/OnboardingBanner';
-import { useOnboardingStatus } from './hooks/useOnboardingStatus';
-import { useUserRole } from './hooks/useUserRole';
 
 // Mobile redirect component - redirects to /chat on mobile, /dashboard on desktop
 const MobileRedirect: React.FC = () => {
@@ -30,18 +26,6 @@ const MobileRedirect: React.FC = () => {
 
 // Componente de Layout que envolve a aplicação principal
 const AppLayout: React.FC = () => {
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const { isComplete, hasSeenWizard, loading } = useOnboardingStatus();
-  const { isAdmin, loading: roleLoading } = useUserRole();
-
-  // Show wizard automatically on first load if not complete and never seen
-  useEffect(() => {
-    if (!loading && !isComplete && !hasSeenWizard) {
-      // Just mark as seen, don't auto-open the blocking modal
-      // The banner will guide users to open it when ready
-    }
-  }, [loading, isComplete, hasSeenWizard]);
-
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-slate-950 text-slate-50 overflow-hidden">
       {/* Background Ambient Glows */}
@@ -54,22 +38,10 @@ const AppLayout: React.FC = () => {
         {/* Top Border Gradient */}
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent opacity-50 z-20"></div>
         
-        {/* Onboarding Banner - only for admins, hidden on mobile */}
-        {isAdmin && !isComplete && !loading && !roleLoading && (
-          <div className="hidden md:block">
-            <OnboardingBanner onOpenWizard={() => setShowOnboarding(true)} />
-          </div>
-        )}
-        
         <div className="flex-1 w-full h-full relative overflow-hidden">
-          <Outlet context={{ showOnboarding, setShowOnboarding }} />
+          <Outlet />
         </div>
       </main>
-
-      <OnboardingWizard 
-        isOpen={showOnboarding} 
-        onClose={() => setShowOnboarding(false)} 
-      />
     </div>
   );
 };
