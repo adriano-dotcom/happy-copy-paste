@@ -926,7 +926,8 @@ export const api = {
       isActive: stage.is_active,
       isAiManaged: stage.is_ai_managed || false,
       aiTriggerCriteria: stage.ai_trigger_criteria,
-      pipelineId: stage.pipeline_id
+      pipelineId: stage.pipeline_id,
+      syncToPipedrive: stage.sync_to_pipedrive || false
     }));
   },
 
@@ -982,6 +983,7 @@ export const api = {
     if (updates.isActive !== undefined) dbUpdates.is_active = updates.isActive;
     if (updates.isAiManaged !== undefined) dbUpdates.is_ai_managed = updates.isAiManaged;
     if (updates.aiTriggerCriteria !== undefined) dbUpdates.ai_trigger_criteria = updates.aiTriggerCriteria;
+    if (updates.syncToPipedrive !== undefined) dbUpdates.sync_to_pipedrive = updates.syncToPipedrive;
 
     const { error } = await supabase
       .from('pipeline_stages')
@@ -1167,7 +1169,7 @@ export const api = {
     // First, get the stage info to check if it's a Pipedrive sync stage
     const { data: stage } = await supabase
       .from('pipeline_stages')
-      .select('title')
+      .select('title, sync_to_pipedrive')
       .eq('id', newStageId)
       .single();
 
@@ -1182,17 +1184,26 @@ export const api = {
       throw error;
     }
 
-    // Check if this is a Pipedrive sync stage
-    const stageName = stage?.title?.toLowerCase() || '';
-    const isPipedriveStage = stageName.includes('pipedrive') || 
-                             stageName.includes('enviado') || 
-                             stageName.includes('enviar');
+    // Check if this stage has Pipedrive sync enabled (explicit configuration)
+    const isPipedriveStage = stage?.sync_to_pipedrive === true;
 
     if (isPipedriveStage) {
-      console.log('[API] Pipedrive stage detected, triggering sync...');
+      console.log('[API] Pipedrive sync stage detected, triggering sync...');
       try {
+        // Get contactId from the deal
+        const { data: deal } = await supabase
+          .from('deals')
+          .select('contact_id')
+          .eq('id', id)
+          .single();
+
+        if (!deal?.contact_id) {
+          console.log('[API] No contact_id found for deal, skipping Pipedrive sync');
+          return { synced: false, error: 'Deal sem contato associado' };
+        }
+
         const { data, error: syncError } = await supabase.functions.invoke('sync-pipedrive', {
-          body: { dealId: id }
+          body: { contactId: deal.contact_id, dealId: id }
         });
 
         if (syncError) {
