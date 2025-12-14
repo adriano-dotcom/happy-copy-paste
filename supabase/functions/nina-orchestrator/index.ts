@@ -1995,10 +1995,17 @@ async function processQueueItem(
   const clientMemory = conversation.contact?.client_memory || {};
 
   // ===== CNPJ CONFIRMATION RESPONSE DETECTION =====
-  // Check if last assistant message was a CNPJ confirmation request
-  const lastAssistantMessage = (recentMessages || []).find((m: any) => m.from_type === 'nina');
-  const isConfirmationResponse = lastAssistantMessage?.content?.includes('Encontrei:') && 
-                                  lastAssistantMessage?.content?.includes('Está correto?');
+  // Check if IMMEDIATELY PREVIOUS assistant message was a CNPJ confirmation request
+  // recentMessages is in DESC order (newest first), so:
+  // 1. Find the current message index
+  // 2. Get the next nina message after it (which is the one immediately before in time)
+  const currentMessageIndex = (recentMessages || []).findIndex((m: any) => m.id === message.id);
+  const immediatelyPreviousNinaMessage = currentMessageIndex >= 0 
+    ? (recentMessages || []).slice(currentMessageIndex + 1).find((m: any) => m.from_type === 'nina')
+    : null;
+  
+  const isConfirmationResponse = immediatelyPreviousNinaMessage?.content?.includes('Encontrei:') && 
+                                  immediatelyPreviousNinaMessage?.content?.includes('Está correto?');
   
   if (isConfirmationResponse && message.content) {
     const userResponse = message.content.toLowerCase().trim();
