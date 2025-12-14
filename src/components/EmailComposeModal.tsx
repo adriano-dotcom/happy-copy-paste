@@ -257,7 +257,25 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
     }
   };
 
+  // Remove assinaturas genéricas embutidas nos templates antes de adicionar a personalizada
+  const cleanGenericSignature = (html: string): string => {
+    return html
+      // Remove "Atenciosamente, Equipe Jacometo Seguros"
+      .replace(/Atenciosamente[,.]?\s*<br\s*\/?>\s*<strong>Equipe Jacometo.*?<\/strong>/gi, '')
+      // Remove "Com carinho, Equipe Jacometo Seguros"
+      .replace(/Com carinho[,.]?\s*<br\s*\/?>\s*<strong>Equipe Jacometo.*?<\/strong>/gi, '')
+      // Remove "<p>Equipe Jacometo Seguros</p>"
+      .replace(/<p[^>]*>Equipe Jacometo Seguros<\/p>/gi, '')
+      // Remove "Equipe Jacometo" genérico em tags strong
+      .replace(/<strong>Equipe Jacometo[^<]*<\/strong>/gi, '')
+      // Remove linhas vazias extras no final
+      .replace(/(<br\s*\/?>\s*)+$/gi, '');
+  };
+
   const addSignature = (htmlBody: string): string => {
+    // Primeiro limpa assinaturas genéricas existentes
+    const cleanedBody = cleanGenericSignature(htmlBody);
+    
     const signature = `
       <br/><br/>
       <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #64748b;">
@@ -267,7 +285,7 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
         <a href="https://jacometoseguros.com.br" style="color: #8b5cf6; text-decoration: none; font-size: 13px;">jacometoseguros.com.br</a>
       </div>
     `;
-    return htmlBody + signature;
+    return cleanedBody + signature;
   };
 
   const handleSend = async () => {
