@@ -4,9 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Search, MoreVertical, Phone, Paperclip, Send, Check, CheckCheck, 
   Smile, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
-  Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
+  Tag, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
   Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle,
-  ArrowLeft, Keyboard, XCircle, PlayCircle, Pin
+  ArrowLeft, Keyboard, XCircle, PlayCircle, Pin, Sparkles, UserCheck, PauseCircle, Bot
 } from 'lucide-react';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
@@ -961,19 +961,47 @@ const ChatInterface: React.FC = () => {
   }, !showCallModal && !showTemplateModal && !showShortcutsHelp);
 
   const renderStatusBadge = (status: ConversationStatus, operatorName?: string | null) => {
-    const config: Record<string, { label: string; icon: typeof Bot; color: string }> = {
-      nina: { label: sdrName, icon: Bot, color: 'bg-violet-500/20 text-violet-400 border-violet-500/30' },
-      human: { label: operatorName || 'Humano', icon: User, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
-      paused: { label: 'Pausado', icon: Pause, color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
-      closed: { label: 'Encerrado', icon: XCircle, color: 'bg-slate-500/20 text-slate-400 border-slate-500/30' }
+    // iOS 18 style status badges with gradients and glow
+    const config: Record<string, { label: string; icon: typeof Sparkles; gradient: string; iconColor: string; borderColor: string; glow?: string }> = {
+      nina: { 
+        label: sdrName, 
+        icon: Sparkles, 
+        gradient: 'bg-gradient-to-r from-violet-500/25 to-purple-500/25',
+        iconColor: 'text-violet-400',
+        borderColor: 'border-violet-500/40',
+        glow: 'shadow-lg shadow-violet-500/15'
+      },
+      human: { 
+        label: operatorName || 'Humano', 
+        icon: UserCheck, 
+        gradient: 'bg-gradient-to-r from-emerald-500/25 to-teal-500/25',
+        iconColor: 'text-emerald-400',
+        borderColor: 'border-emerald-500/40',
+        glow: 'shadow-lg shadow-emerald-500/15'
+      },
+      paused: { 
+        label: 'Pausado', 
+        icon: PauseCircle, 
+        gradient: 'bg-gradient-to-r from-amber-500/25 to-orange-500/25',
+        iconColor: 'text-amber-400',
+        borderColor: 'border-amber-500/40',
+        glow: 'shadow-lg shadow-amber-500/15'
+      },
+      closed: { 
+        label: 'Encerrado', 
+        icon: XCircle, 
+        gradient: 'bg-gradient-to-r from-slate-600/25 to-slate-500/25',
+        iconColor: 'text-slate-400',
+        borderColor: 'border-slate-500/40'
+      }
     };
     const statusConfig = config[status];
     if (!statusConfig) return null;
-    const { label, icon: Icon, color } = statusConfig;
+    const { label, icon: Icon, gradient, iconColor, borderColor, glow } = statusConfig;
     return (
-      <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 ${color}`}>
-        <Icon className="w-3 h-3" />
-        {label}
+      <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border backdrop-blur-sm flex items-center gap-1 ${gradient} ${borderColor} ${glow || ''}`}>
+        <Icon className={`w-3 h-3 ${iconColor}`} />
+        <span className={iconColor}>{label}</span>
       </span>
     );
   };
@@ -1271,18 +1299,19 @@ const ChatInterface: React.FC = () => {
                         {chat.contactName}
                       </h3>
                       {chat.agentName && (
-                        <span className="px-1.5 py-0.5 bg-violet-500/20 text-violet-400 border border-violet-500/30 text-[9px] rounded font-medium flex items-center gap-1 shrink-0">
-                          <Bot className="w-2.5 h-2.5" />
+                        <span className="px-2 py-0.5 bg-gradient-to-r from-violet-500/20 to-purple-500/20 backdrop-blur-sm text-violet-300 border border-violet-400/30 text-[9px] rounded-full font-medium flex items-center gap-1 shrink-0 shadow-lg shadow-violet-500/10">
+                          <Sparkles className="w-2.5 h-2.5" />
                           {chat.agentName}
                         </span>
                       )}
                       {chat.pipelineName && (
                         <span 
-                          className="px-1.5 py-0.5 text-[9px] rounded font-medium flex items-center gap-1 shrink-0 border"
+                          className="px-2 py-0.5 text-[9px] rounded-full font-medium flex items-center gap-1 shrink-0 border backdrop-blur-sm shadow-lg"
                           style={{ 
-                            backgroundColor: `${chat.pipelineColor}20`,
+                            background: `linear-gradient(to right, ${chat.pipelineColor}20, ${chat.pipelineColor}15)`,
                             color: chat.pipelineColor || '#3b82f6',
-                            borderColor: `${chat.pipelineColor}50`
+                            borderColor: `${chat.pipelineColor}40`,
+                            boxShadow: `0 4px 14px -3px ${chat.pipelineColor}20`
                           }}
                         >
                           <span className="text-[10px]">{chat.pipelineIcon}</span>
@@ -1369,10 +1398,10 @@ const ChatInterface: React.FC = () => {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button 
-                              className="px-2 py-0.5 bg-violet-500/20 text-violet-400 border border-violet-500/30 text-[10px] rounded font-medium flex items-center gap-1 hover:bg-violet-500/30 transition-colors cursor-pointer disabled:opacity-50"
+                              className="px-2.5 py-1 bg-gradient-to-r from-violet-500/20 to-purple-500/20 backdrop-blur-sm text-violet-300 border border-violet-400/30 text-[10px] rounded-full font-medium flex items-center gap-1.5 hover:from-violet-500/30 hover:to-purple-500/30 transition-all cursor-pointer disabled:opacity-50 shadow-lg shadow-violet-500/10"
                               disabled={isChangingAgent}
                             >
-                              <Bot className="w-3 h-3" />
+                              <Sparkles className="w-3 h-3" />
                               {isChangingAgent ? (
                                 <Loader2 className="w-3 h-3 animate-spin" />
                               ) : (

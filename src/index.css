@@ -121,3 +121,22 @@ input[type="number"] {
 input {
   overscroll-behavior: contain;
 }
+
+/* iOS 18 style glass effect utilities */
+.glass-effect {
+  @apply backdrop-blur-sm bg-opacity-80;
+}
+
+/* Glow animation for important badges */
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 15px 0 rgba(var(--glow-color), 0.3);
+  }
+  50% {
+    box-shadow: 0 0 25px 5px rgba(var(--glow-color), 0.4);
+  }
+}
+
+.glow-animate {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
