@@ -83,9 +83,15 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
     if (isOpen) {
       loadTemplates();
       setTo(contactEmail);
-      loadSenderName();
     }
   }, [isOpen, contactEmail]);
+
+  // Carregar nome do operador quando user estiver disponível
+  useEffect(() => {
+    if (isOpen && user?.email) {
+      loadSenderName();
+    }
+  }, [isOpen, user?.email]);
 
   const loadSenderName = async () => {
     if (!user?.email) return;
