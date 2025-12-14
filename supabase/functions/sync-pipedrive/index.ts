@@ -11,10 +11,95 @@ interface PipedriveSettings {
   } | null;
 }
 
+interface Message {
+  content: string | null;
+  from_type: string;
+  sent_at: string;
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Generate summary using Lovable AI Gateway
+async function generateSummary(
+  messages: Message[], 
+  contactName: string | null, 
+  agentName: string | null
+): Promise<string> {
+  const apiKey = Deno.env.get('LOVABLE_API_KEY');
+  if (!apiKey) {
+    console.log('[sync-pipedrive] No LOVABLE_API_KEY, skipping auto-summary');
+    return '';
+  }
+
+  const conversationText = messages
+    .filter(m => m.content)
+    .map(m => {
+      const role = m.from_type === 'user' ? (contactName || 'Cliente') : 
+                   m.from_type === 'nina' ? (agentName || 'Agente') : 'Operador';
+      return `${role}: ${m.content}`;
+    })
+    .join('\n');
+
+  if (!conversationText.trim()) {
+    return '';
+  }
+
+  const systemPrompt = `Você é um assistente que gera resumos de conversas de vendas B2B.
+
+REGRAS:
+1. Seja CONCISO - máximo 150 palavras total
+2. Use formato estruturado com seções
+3. Foque em informações actionables para vendas
+4. Não invente informações não mencionadas
+
+FORMATO DO RESUMO:
+📌 SITUAÇÃO
+[Contexto geral do lead - quem é, o que busca - 1-2 linhas]
+
+🎯 NECESSIDADES  
+[O que o cliente precisa/quer - 1-2 linhas]
+
+📋 DADOS COLETADOS
+[Lista de informações já obtidas: CNPJ, carga, estados, etc]
+
+⏭️ PRÓXIMOS PASSOS
+[O que precisa ser feito - 1-2 linhas]
+
+💡 OBSERVAÇÕES
+[Detalhes relevantes, tom do cliente, urgência - se houver]`;
+
+  try {
+    const response = await fetch('https://api.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Gere um resumo desta conversa entre ${agentName || 'Agente'} e ${contactName || 'Cliente'}:\n\n${conversationText}` }
+        ],
+        max_tokens: 500
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('[sync-pipedrive] AI API error:', await response.text());
+      return '';
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || '';
+  } catch (error) {
+    console.error('[sync-pipedrive] Error generating summary:', error);
+    return '';
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -22,7 +107,7 @@ serve(async (req) => {
   }
 
   try {
-    const { contactId, dealId, notes, pipedriveTag } = await req.json();
+    const { contactId, dealId, notes, pipedriveTag, conversationId } = await req.json();
     
     if (!contactId) {
       throw new Error('contactId is required');
@@ -83,6 +168,49 @@ serve(async (req) => {
 
     console.log('[sync-pipedrive] Contact data:', contact.name, contact.phone_number);
 
+    // Generate summary if contact has no notes and we have a conversation
+    let contactNotes = contact.notes;
+    
+    if (!contactNotes && conversationId) {
+      console.log('[sync-pipedrive] No notes found, generating summary automatically...');
+      
+      // Fetch conversation to get agent name
+      const { data: conversation } = await supabase
+        .from('conversations')
+        .select('current_agent_id, agents:current_agent_id(name)')
+        .eq('id', conversationId)
+        .single();
+      
+      const agentName = (conversation?.agents as any)?.name || 'Agente';
+      
+      // Fetch messages
+      const { data: messages } = await supabase
+        .from('messages')
+        .select('content, from_type, sent_at')
+        .eq('conversation_id', conversationId)
+        .order('sent_at', { ascending: true })
+        .limit(50);
+      
+      if (messages && messages.length > 0) {
+        const generatedSummary = await generateSummary(
+          messages as Message[], 
+          contact.name || contact.call_name, 
+          agentName
+        );
+        
+        if (generatedSummary) {
+          console.log('[sync-pipedrive] Summary generated successfully');
+          contactNotes = generatedSummary;
+          
+          // Save to contact for caching
+          await supabase
+            .from('contacts')
+            .update({ notes: generatedSummary })
+            .eq('id', contactId);
+        }
+      }
+    }
+
     // Fetch deal owner if dealId provided
     let ownerName: string | null = null;
     if (dealId) {
@@ -110,10 +238,10 @@ serve(async (req) => {
       personData.email = [{ value: contact.email, primary: true }];
     }
 
-    // Build combined notes (operator notes + contact notes)
+    // Build combined notes (operator notes + contact/generated notes)
     const combinedNotes = [
       notes,
-      contact.notes ? `--- Notas do Contato ---\n${contact.notes}` : null
+      contactNotes ? `--- Resumo da Conversa ---\n${contactNotes}` : null
     ].filter(Boolean).join('\n\n');
 
     // Map system fields to Pipedrive custom fields
