@@ -1180,6 +1180,49 @@ async function markAggregatedQueueItemsCompleted(
   }
 }
 
+// ===== CONVERSATION LOCK: Prevent parallel processing of same conversation =====
+async function waitForConversationLock(
+  supabase: any,
+  conversationId: string,
+  currentItemId: string,
+  currentCreatedAt: string,
+  maxWaitMs: number = 30000
+): Promise<boolean> {
+  const checkInterval = 1000;
+  const startTime = Date.now();
+  
+  while (Date.now() - startTime < maxWaitMs) {
+    // Check for OTHER items with status='processing' in the same conversation
+    const { data: processingItems } = await supabase
+      .from('nina_processing_queue')
+      .select('id, created_at')
+      .eq('conversation_id', conversationId)
+      .eq('status', 'processing')
+      .neq('id', currentItemId);
+    
+    if (!processingItems || processingItems.length === 0) {
+      // No other items processing - we can proceed
+      console.log(`[Nina] 🔓 Conversa ${conversationId} livre para processamento`);
+      return true;
+    }
+    
+    // Check if any processing items are OLDER than us (started before us)
+    const olderItems = processingItems.filter((p: any) => p.created_at < currentCreatedAt);
+    
+    if (olderItems.length > 0) {
+      console.log(`[Nina] 🔒 Conversa ${conversationId} em processamento por outro orchestrator (${olderItems.length} item(s) mais antigo(s)), aguardando...`);
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    } else {
+      // We're the oldest - proceed
+      console.log(`[Nina] 🔓 Somos o item mais antigo, prosseguindo`);
+      return true;
+    }
+  }
+  
+  console.log(`[Nina] ⚠️ Timeout aguardando lock da conversa ${conversationId}, continuando mesmo assim`);
+  return false;
+}
+
 async function processQueueItem(
   supabase: any,
   lovableApiKey: string,
@@ -1192,6 +1235,10 @@ async function processQueueItem(
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   
   console.log(`[Nina] Processing queue item: ${item.id}`);
+
+  // 🆕 CONVERSATION LOCK: Wait if another orchestrator is processing this conversation
+  // This ensures only one orchestrator processes messages at a time, enabling proper aggregation
+  await waitForConversationLock(supabase, item.conversation_id, item.id, item.created_at);
 
   // 🆕 LOOK-AHEAD: Wait briefly if there are more messages arriving soon from the same conversation
   // This prevents processing the first message before subsequent messages are ready for aggregation
