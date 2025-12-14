@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2, User, Phone, Mail, Building2, Tag } from 'lucide-react';
+import { api } from '@/services/api';
+import type { TagDefinition } from '@/types';
 
 interface Contact {
   id: string;
@@ -33,6 +36,12 @@ export function SendToPipedriveModal({
 }: SendToPipedriveModalProps) {
   const [notes, setNotes] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [selectedTag, setSelectedTag] = useState<string>('');
+  const [availableTags, setAvailableTags] = useState<TagDefinition[]>([]);
+
+  useEffect(() => {
+    api.fetchTagDefinitions().then(setAvailableTags).catch(console.error);
+  }, []);
 
   const handleSend = async () => {
     setIsSending(true);
@@ -41,7 +50,8 @@ export function SendToPipedriveModal({
         body: { 
           contactId: contact.id, 
           dealId,
-          notes: notes.trim() || undefined
+          notes: notes.trim() || undefined,
+          pipedriveTag: selectedTag || undefined
         }
       });
 
@@ -49,6 +59,7 @@ export function SendToPipedriveModal({
 
       toast.success('Contato enviado para Pipedrive!');
       setNotes('');
+      setSelectedTag('');
       onOpenChange(false);
       onSent?.();
     } catch (error) {
@@ -108,6 +119,29 @@ export function SendToPipedriveModal({
             )}
           </div>
 
+          {/* Tag Selector */}
+          <div className="space-y-2">
+            <Label>Etiqueta Pipedrive (opcional)</Label>
+            <Select value={selectedTag} onValueChange={setSelectedTag}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione uma etiqueta..." />
+              </SelectTrigger>
+              <SelectContent>
+                {availableTags.map(tag => (
+                  <SelectItem key={tag.id} value={tag.label}>
+                    <div className="flex items-center gap-2">
+                      <span 
+                        className="w-3 h-3 rounded-full flex-shrink-0" 
+                        style={{ backgroundColor: tag.color }} 
+                      />
+                      {tag.label}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Notes Field */}
           <div className="space-y-2">
             <Label htmlFor="pipedrive-notes">Observações (opcional)</Label>
@@ -116,7 +150,7 @@ export function SendToPipedriveModal({
               placeholder="Adicione observações sobre este contato..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              rows={4}
+              rows={3}
               className="resize-none"
             />
           </div>
