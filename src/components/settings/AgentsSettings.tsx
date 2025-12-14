@@ -4,8 +4,9 @@ import { toast } from 'sonner';
 import { 
   Bot, Plus, Trash2, Edit2, Check, X, Loader2, 
   MessageSquare, Sparkles, Star, Users, FlaskConical, ArrowRight, Volume2,
-  ChevronDown, ChevronUp, Play, Settings2
+  ChevronDown, ChevronUp, Play, Settings2, UserCheck, RefreshCw
 } from 'lucide-react';
+import { Checkbox } from '../ui/checkbox';
 import { Button } from '../Button';
 import { Switch } from '../ui/switch';
 import { Slider } from '../ui/slider';
@@ -49,8 +50,18 @@ interface Agent {
   elevenlabs_style: number | null;
   elevenlabs_speed: number | null;
   elevenlabs_speaker_boost: boolean | null;
+  owner_distribution_type: 'fixed' | 'round_robin' | null;
+  default_owner_id: string | null;
+  owner_rotation_ids: string[];
   created_at: string;
   updated_at: string;
+}
+
+interface TeamMember {
+  id: string;
+  name: string;
+  email: string;
+  status: string;
 }
 
 export interface AgentsSettingsRef {
@@ -93,6 +104,7 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [newKeyword, setNewKeyword] = useState('');
@@ -104,6 +116,7 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
   // Voice settings UI state
   const [showAdvancedVoice, setShowAdvancedVoice] = useState(false);
   const [showAudioTest, setShowAudioTest] = useState(false);
+  const [showDistribution, setShowDistribution] = useState(false);
   const [audioTestText, setAudioTestText] = useState('Olá! Sou a assistente virtual da Jacometo Seguros. Como posso ajudar?');
   const [generatingAudio, setGeneratingAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -116,7 +129,23 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
 
   useEffect(() => {
     loadAgents();
+    loadTeamMembers();
   }, []);
+
+  const loadTeamMembers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('team_members')
+        .select('id, name, email, status')
+        .eq('status', 'active')
+        .order('name');
+      
+      if (error) throw error;
+      setTeamMembers(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar membros da equipe:', error);
+    }
+  };
 
   const loadAgents = async () => {
     try {
@@ -169,7 +198,10 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
           elevenlabs_similarity_boost: editingAgent.elevenlabs_similarity_boost,
           elevenlabs_style: editingAgent.elevenlabs_style,
           elevenlabs_speed: editingAgent.elevenlabs_speed,
-          elevenlabs_speaker_boost: editingAgent.elevenlabs_speaker_boost
+          elevenlabs_speaker_boost: editingAgent.elevenlabs_speaker_boost,
+          owner_distribution_type: editingAgent.owner_distribution_type,
+          default_owner_id: editingAgent.default_owner_id,
+          owner_rotation_ids: editingAgent.owner_rotation_ids
         })
         .eq('id', editingAgent.id);
 
@@ -223,7 +255,10 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
           elevenlabs_similarity_boost: editingAgent.elevenlabs_similarity_boost,
           elevenlabs_style: editingAgent.elevenlabs_style,
           elevenlabs_speed: editingAgent.elevenlabs_speed,
-          elevenlabs_speaker_boost: editingAgent.elevenlabs_speaker_boost
+          elevenlabs_speaker_boost: editingAgent.elevenlabs_speaker_boost,
+          owner_distribution_type: editingAgent.owner_distribution_type,
+          default_owner_id: editingAgent.default_owner_id,
+          owner_rotation_ids: editingAgent.owner_rotation_ids
         });
 
       if (error) throw error;
@@ -307,6 +342,9 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
       elevenlabs_style: 0.30,
       elevenlabs_speed: 1.0,
       elevenlabs_speaker_boost: true,
+      owner_distribution_type: 'fixed',
+      default_owner_id: null,
+      owner_rotation_ids: [],
       created_at: '',
       updated_at: ''
     });
@@ -456,6 +494,34 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
     if (!voiceId) return 'Voz do Sistema';
     const voice = VOICES.find(v => v.id === voiceId);
     return voice ? `${voice.name} (${voice.gender})` : voiceId;
+  };
+
+  const getDistributionBadge = (agent: Agent) => {
+    if (agent.owner_distribution_type === 'round_robin' && agent.owner_rotation_ids?.length > 0) {
+      const names = agent.owner_rotation_ids
+        .map(id => teamMembers.find(m => m.id === id)?.name)
+        .filter(Boolean)
+        .slice(0, 2);
+      const extra = agent.owner_rotation_ids.length - 2;
+      return (
+        <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-xs rounded-full flex items-center gap-1">
+          <RefreshCw className="w-3 h-3" />
+          {names.join(', ')}{extra > 0 ? ` +${extra}` : ''}
+        </span>
+      );
+    }
+    if (agent.owner_distribution_type === 'fixed' && agent.default_owner_id) {
+      const owner = teamMembers.find(m => m.id === agent.default_owner_id);
+      if (owner) {
+        return (
+          <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-xs rounded-full flex items-center gap-1">
+            <UserCheck className="w-3 h-3" />
+            {owner.name}
+          </span>
+        );
+      }
+    }
+    return null;
   };
 
   if (loading) {
@@ -849,6 +915,143 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
             </Button>
           </div>
         </div>
+
+        {/* Lead Distribution Settings */}
+        <div className="bg-slate-800/30 rounded-lg p-4 space-y-4">
+          <button
+            type="button"
+            onClick={() => setShowDistribution(!showDistribution)}
+            className="flex items-center justify-between w-full text-sm font-medium text-slate-300 hover:text-white transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-cyan-400" />
+              Distribuição de Responsáveis
+            </span>
+            {showDistribution ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+
+          {showDistribution && (
+            <div className="space-y-4 pt-2">
+              {/* Distribution Type */}
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-2">
+                  Tipo de Distribuição
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="distribution_type"
+                      checked={editingAgent.owner_distribution_type === 'fixed' || !editingAgent.owner_distribution_type}
+                      onChange={() => setEditingAgent({ 
+                        ...editingAgent, 
+                        owner_distribution_type: 'fixed',
+                        owner_rotation_ids: []
+                      })}
+                      className="text-cyan-500"
+                    />
+                    <span className="text-sm text-slate-300 flex items-center gap-1">
+                      <UserCheck className="w-4 h-4" /> Fixo
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="distribution_type"
+                      checked={editingAgent.owner_distribution_type === 'round_robin'}
+                      onChange={() => setEditingAgent({ 
+                        ...editingAgent, 
+                        owner_distribution_type: 'round_robin',
+                        default_owner_id: null
+                      })}
+                      className="text-cyan-500"
+                    />
+                    <span className="text-sm text-slate-300 flex items-center gap-1">
+                      <RefreshCw className="w-4 h-4" /> Rodízio
+                    </span>
+                  </label>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  {editingAgent.owner_distribution_type === 'round_robin' 
+                    ? 'Leads são distribuídos alternadamente entre os responsáveis selecionados'
+                    : 'Todos os leads são atribuídos ao mesmo responsável'}
+                </p>
+              </div>
+
+              {/* Fixed Owner Selector */}
+              {(editingAgent.owner_distribution_type === 'fixed' || !editingAgent.owner_distribution_type) && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                    Responsável Padrão
+                  </label>
+                  <Select
+                    value={editingAgent.default_owner_id || ''}
+                    onValueChange={(value) => setEditingAgent({ 
+                      ...editingAgent, 
+                      default_owner_id: value || null 
+                    })}
+                  >
+                    <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
+                      <SelectValue placeholder="Selecione um responsável" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-slate-600">
+                      {teamMembers.map((member) => (
+                        <SelectItem 
+                          key={member.id} 
+                          value={member.id} 
+                          className="text-white hover:bg-slate-700"
+                        >
+                          {member.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Round Robin Selector */}
+              {editingAgent.owner_distribution_type === 'round_robin' && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-2">
+                    Responsáveis para Rotação
+                  </label>
+                  <div className="space-y-2 max-h-48 overflow-y-auto bg-slate-800/50 rounded-lg p-3">
+                    {teamMembers.length === 0 ? (
+                      <p className="text-xs text-slate-500">Nenhum membro da equipe ativo</p>
+                    ) : (
+                      teamMembers.map((member) => {
+                        const isSelected = editingAgent.owner_rotation_ids?.includes(member.id);
+                        return (
+                          <label
+                            key={member.id}
+                            className="flex items-center gap-3 p-2 rounded hover:bg-slate-700/50 cursor-pointer"
+                          >
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={(checked) => {
+                                const newIds = checked
+                                  ? [...(editingAgent.owner_rotation_ids || []), member.id]
+                                  : (editingAgent.owner_rotation_ids || []).filter(id => id !== member.id);
+                                setEditingAgent({ ...editingAgent, owner_rotation_ids: newIds });
+                              }}
+                            />
+                            <span className="text-sm text-slate-300">{member.name}</span>
+                            <span className="text-xs text-slate-500">{member.email}</span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                  {editingAgent.owner_rotation_ids?.length > 0 && (
+                    <p className="text-xs text-cyan-400 mt-2">
+                      {editingAgent.owner_rotation_ids.length} responsável(eis) selecionado(s)
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -976,6 +1179,7 @@ const AgentsSettings = forwardRef<AgentsSettingsRef>((_, ref) => {
                         <Volume2 className="w-3 h-3" /> {getVoiceName(agent.elevenlabs_voice_id)}
                       </span>
                     )}
+                    {getDistributionBadge(agent as Agent)}
                   </div>
                   <p className="text-sm text-slate-400">{agent.description || agent.specialty}</p>
                   {agent.detection_keywords.length > 0 && (
