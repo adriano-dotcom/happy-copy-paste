@@ -45,6 +45,7 @@ import { AudioPlayer } from './AudioPlayer';
 import { QuickQuestionsDropdown } from './QuickQuestionsDropdown';
 import { formatRegionFromPhone } from '@/utils/dddRegionMapper';
 import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, MessageToneAssistant, ConversationSummaryNotes } from './chat';
+import { EmailComposeModal } from './EmailComposeModal';
 
 interface AgentQuestion {
   order: number;
@@ -103,6 +104,9 @@ const ChatInterface: React.FC = () => {
   
   // WhatsApp template modal state
   const [showTemplateModal, setShowTemplateModal] = useState(false);
+  
+  // Email modal state
+  const [showEmailModal, setShowEmailModal] = useState(false);
   
   // Keyboard shortcuts help state
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
@@ -1883,10 +1887,17 @@ const ChatInterface: React.FC = () => {
                           placeholder="email@empresa.com"
                           className="h-8 text-sm bg-slate-950/50 border-slate-700"
                         />
+                      ) : activeChat.contactEmail ? (
+                        <button
+                          onClick={() => setShowEmailModal(true)}
+                          className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors text-left flex items-center gap-2 group"
+                          title="Clique para enviar email"
+                        >
+                          {activeChat.contactEmail}
+                          <Send className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </button>
                       ) : (
-                        <span className="text-slate-200 font-medium">
-                          {activeChat.contactEmail || <span className="text-slate-500 italic">Não informado</span>}
-                        </span>
+                        <span className="text-slate-500 italic">Não informado</span>
                       )}
                     </div>
                   </div>
@@ -2338,6 +2349,23 @@ const ChatInterface: React.FC = () => {
         >
           <Keyboard className="w-4 h-4" />
         </button>
+      )}
+
+      {/* Email Compose Modal */}
+      {activeChat && showEmailModal && (
+        <EmailComposeModal
+          isOpen={showEmailModal}
+          onClose={() => setShowEmailModal(false)}
+          dealId={existingDeal?.id || ''}
+          contactEmail={activeChat.contactEmail || ''}
+          contactName={activeChat.contactName}
+          company={activeChat.contactCompany || ''}
+          value={existingDeal?.value || 0}
+          onEmailSent={() => {
+            toast.success('Email enviado com sucesso!');
+            setShowEmailModal(false);
+          }}
+        />
       )}
     </div>
   );
