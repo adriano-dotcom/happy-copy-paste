@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { UIConversation } from '@/types';
 import { ScheduleCallbackModal } from './ScheduleCallbackModal';
+import { SendToPipedriveModal } from './SendToPipedriveModal';
 
 interface QuickActionsBarProps {
   activeChat: UIConversation;
@@ -22,8 +23,8 @@ export function QuickActionsBar({
   onRefetch
 }: QuickActionsBarProps) {
   const [isQualifying, setIsQualifying] = useState(false);
-  const [isSyncingPipedrive, setIsSyncingPipedrive] = useState(false);
   const [showCallbackModal, setShowCallbackModal] = useState(false);
+  const [showPipedriveModal, setShowPipedriveModal] = useState(false);
 
   // Find "Qualificado pela IA" stage
   const qualifiedStage = dealStages.find(
@@ -89,38 +90,12 @@ export function QuickActionsBar({
     }
   };
 
-  const handleSyncPipedrive = async () => {
+  const handleOpenPipedriveModal = () => {
     if (!activeChat.contactId) {
       toast.error('Contato não encontrado');
       return;
     }
-
-    setIsSyncingPipedrive(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('sync-pipedrive', {
-        body: { 
-          contactId: activeChat.contactId,
-          dealId: existingDeal?.id // Para buscar responsável
-        }
-      });
-
-      if (error) throw error;
-
-      if (data?.success) {
-        toast.success('Contato enviado para Pipedrive!', {
-          description: data.message
-        });
-      } else {
-        throw new Error(data?.error || 'Erro desconhecido');
-      }
-    } catch (error: any) {
-      console.error('Error syncing to Pipedrive:', error);
-      toast.error('Erro ao enviar contato', {
-        description: error.message || 'Verifique as configurações do Pipedrive'
-      });
-    } finally {
-      setIsSyncingPipedrive(false);
-    }
+    setShowPipedriveModal(true);
   };
 
   if (!existingDeal) return null;
@@ -167,15 +142,10 @@ export function QuickActionsBar({
           <Button
             size="sm"
             variant="outline"
-            onClick={handleSyncPipedrive}
-            disabled={isSyncingPipedrive}
+            onClick={handleOpenPipedriveModal}
             className="flex-1 text-xs border-purple-500/30 text-purple-400 hover:bg-purple-500/10 hover:border-purple-500/50"
           >
-            {isSyncingPipedrive ? (
-              <Loader2 className="w-3 h-3 animate-spin mr-1" />
-            ) : (
-              <Send className="w-3 h-3 mr-1" />
-            )}
+            <Send className="w-3 h-3 mr-1" />
             Contato
           </Button>
         </div>
@@ -190,6 +160,21 @@ export function QuickActionsBar({
           setShowCallbackModal(false);
           onRefetch();
         }}
+      />
+
+      <SendToPipedriveModal
+        open={showPipedriveModal}
+        onOpenChange={setShowPipedriveModal}
+        contact={{
+          id: activeChat.contactId,
+          name: activeChat.contactName,
+          phone_number: activeChat.contactPhone,
+          email: activeChat.contactEmail,
+          company: activeChat.contactCompany,
+          tags: activeChat.tags
+        }}
+        dealId={existingDeal?.id}
+        onSent={onRefetch}
       />
     </>
   );

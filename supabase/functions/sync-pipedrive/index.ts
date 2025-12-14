@@ -22,7 +22,7 @@ serve(async (req) => {
   }
 
   try {
-    const { contactId, dealId } = await req.json();
+    const { contactId, dealId, notes } = await req.json();
     
     if (!contactId) {
       throw new Error('contactId is required');
@@ -110,6 +110,12 @@ serve(async (req) => {
       personData.email = [{ value: contact.email, primary: true }];
     }
 
+    // Build combined notes (operator notes + contact notes)
+    const combinedNotes = [
+      notes,
+      contact.notes ? `--- Notas do Contato ---\n${contact.notes}` : null
+    ].filter(Boolean).join('\n\n');
+
     // Map system fields to Pipedrive custom fields
     const systemFieldValues: Record<string, any> = {
       company: contact.company,
@@ -121,7 +127,7 @@ serve(async (req) => {
       address: [contact.street, contact.number, contact.complement, contact.neighborhood]
         .filter(Boolean).join(', '),
       cep: contact.cep,
-      notes: contact.notes,
+      notes: combinedNotes || null,
     };
 
     // Apply field mappings
