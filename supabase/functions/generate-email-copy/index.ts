@@ -157,7 +157,7 @@ REGRAS CRÍTICAS:
 4. Parágrafos curtos (máx 3 linhas)
 5. Assunto máximo 60 caracteres
 6. Tom profissional e brasileiro
-7. Sempre termine com assinatura "Equipe Jacometo Seguros"
+7. NÃO inclua assinatura no final - ela será adicionada automaticamente pelo sistema com o nome do operador
 
 FORMATO DE RESPOSTA (JSON):
 {
