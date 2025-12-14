@@ -77,6 +77,9 @@ const ChatInterface: React.FC = () => {
   const [pipelines, setPipelines] = useState<{ id: string; name: string; icon: string; color: string }[]>([]);
   const [viewingArchived, setViewingArchived] = useState(false);
   const [archivedCount, setArchivedCount] = useState(0);
+  
+  // Status filter state
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<ConversationStatus | null>(null);
   const [showClosedConversations, setShowClosedConversations] = useState(false);
   
   // Editable contact fields
@@ -869,6 +872,21 @@ const ChatInterface: React.FC = () => {
     return counts;
   }, [conversations, pipelines]);
 
+  // Calculate status counts for filters (based on selected pipeline)
+  const statusCounts = useMemo(() => {
+    const baseConversations = selectedPipelineFilter === 'no-pipeline'
+      ? conversations.filter(c => c.pipelineId === null)
+      : selectedPipelineFilter
+        ? conversations.filter(c => c.pipelineId === selectedPipelineFilter)
+        : conversations;
+    
+    return {
+      nina: baseConversations.filter(c => c.status === 'nina').length,
+      human: baseConversations.filter(c => c.status === 'human').length,
+      paused: baseConversations.filter(c => c.status === 'paused').length,
+    };
+  }, [conversations, selectedPipelineFilter]);
+
   const filteredConversations = conversations
     .filter(chat => {
       // Hide closed conversations by default (unless toggle is on)
@@ -881,6 +899,11 @@ const ChatInterface: React.FC = () => {
         // Show only conversations WITHOUT pipeline
         if (chat.pipelineId !== null) return false;
       } else if (selectedPipelineFilter && chat.pipelineId !== selectedPipelineFilter) {
+        return false;
+      }
+      
+      // Status filter
+      if (selectedStatusFilter && chat.status !== selectedStatusFilter) {
         return false;
       }
       
@@ -1102,6 +1125,65 @@ const ChatInterface: React.FC = () => {
               </button>
             )}
           </div>
+          
+          {/* Status Filter Pills - Segunda linha */}
+          {!viewingArchived && (
+            <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
+              {/* Todos os Status */}
+              <button
+                onClick={() => setSelectedStatusFilter(null)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                  selectedStatusFilter === null
+                    ? 'bg-slate-500/20 text-slate-300 border-slate-500/40'
+                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                }`}
+              >
+                Todos Status
+              </button>
+              
+              {/* Nina/IA */}
+              <button
+                onClick={() => setSelectedStatusFilter('nina')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                  selectedStatusFilter === 'nina'
+                    ? 'bg-violet-500/20 text-violet-400 border-violet-500/40'
+                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                }`}
+              >
+                <Bot className="w-3.5 h-3.5" />
+                {sdrName || 'Nina'}
+                <span className="text-[10px] opacity-70">({statusCounts.nina})</span>
+              </button>
+              
+              {/* Humano */}
+              <button
+                onClick={() => setSelectedStatusFilter('human')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                  selectedStatusFilter === 'human'
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                }`}
+              >
+                <User className="w-3.5 h-3.5" />
+                Humano
+                <span className="text-[10px] opacity-70">({statusCounts.human})</span>
+              </button>
+              
+              {/* Pausado */}
+              <button
+                onClick={() => setSelectedStatusFilter('paused')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                  selectedStatusFilter === 'paused'
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                }`}
+              >
+                <Pause className="w-3.5 h-3.5" />
+                Pausado
+                <span className="text-[10px] opacity-70">({statusCounts.paused})</span>
+              </button>
+            </div>
+          )}
           
           {/* Search and closed filter */}
           <div className="flex items-center gap-2">
