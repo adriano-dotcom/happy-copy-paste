@@ -6,7 +6,7 @@ import {
   Smile, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
   Tag, Bot, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
   Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle,
-  ArrowLeft, Keyboard, XCircle, PlayCircle
+  ArrowLeft, Keyboard, XCircle, PlayCircle, Pin
 } from 'lucide-react';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
@@ -60,6 +60,10 @@ const ChatInterface: React.FC = () => {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
   const [showProfileInfo, setShowProfileInfo] = useState(true);
+  const [isPinnedProfileInfo, setIsPinnedProfileInfo] = useState(() => {
+    const saved = localStorage.getItem('pinnedProfileInfo');
+    return saved === 'true';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [availableTags, setAvailableTags] = useState<TagDefinition[]>([]);
   const [isTagSelectorOpen, setIsTagSelectorOpen] = useState(false);
@@ -376,7 +380,13 @@ const ChatInterface: React.FC = () => {
     }
   }, [conversations, selectedChatId]);
 
-  // Sync editable contact fields when chat changes
+  // Reopen profile panel when pinned and chat changes
+  useEffect(() => {
+    if (isPinnedProfileInfo && selectedChatId) {
+      setShowProfileInfo(true);
+    }
+  }, [selectedChatId, isPinnedProfileInfo]);
+
   useEffect(() => {
     if (activeChat) {
       setEditEmail(activeChat.contactEmail || '');
@@ -1646,12 +1656,32 @@ const ChatInterface: React.FC = () => {
               {/* Header */}
               <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800 flex-shrink-0">
                 <span className="font-semibold text-white">Informações do Lead</span>
-                <button 
-                  onClick={() => setShowProfileInfo(false)}
-                  className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-1">
+                  {/* Botão de Fixar */}
+                  <button 
+                    onClick={() => {
+                      const newValue = !isPinnedProfileInfo;
+                      setIsPinnedProfileInfo(newValue);
+                      localStorage.setItem('pinnedProfileInfo', String(newValue));
+                    }}
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      isPinnedProfileInfo 
+                        ? 'bg-cyan-500/20 text-cyan-400' 
+                        : 'hover:bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                    title={isPinnedProfileInfo ? 'Desafixar painel' : 'Fixar painel'}
+                  >
+                    <Pin className="w-4 h-4" />
+                  </button>
+                  
+                  {/* Botão de Fechar */}
+                  <button 
+                    onClick={() => setShowProfileInfo(false)}
+                    className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               {/* Content */}
