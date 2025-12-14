@@ -1028,7 +1028,15 @@ const ChatInterface: React.FC = () => {
                   Todos
                   <span className="text-[10px] opacity-70">({conversationCounts.all})</span>
                 </button>
-                {pipelines.map((pipeline) => (
+                {/* Pipelines ordenados: Transporte, Saúde, Prospecção */}
+                {[...pipelines].sort((a, b) => {
+                  const pipelineOrder = ['transporte', 'saude', 'prospeccao'];
+                  const slugA = a.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                  const slugB = b.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                  const indexA = pipelineOrder.indexOf(slugA);
+                  const indexB = pipelineOrder.indexOf(slugB);
+                  return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+                }).map((pipeline) => (
                   <button
                     key={pipeline.id}
                     onClick={() => setSelectedPipelineFilter(pipeline.id)}
@@ -1048,20 +1056,9 @@ const ChatInterface: React.FC = () => {
                     <span className="text-[10px] opacity-70">({conversationCounts[pipeline.id] || 0})</span>
                   </button>
                 ))}
-                <button
-                  onClick={() => setSelectedPipelineFilter('no-pipeline')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
-                    selectedPipelineFilter === 'no-pipeline'
-                      ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                      : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
-                  }`}
-                >
-                  <Inbox className="w-3.5 h-3.5" />
-                  Sem Funil
-                  <span className="text-[10px] opacity-70">({conversationCounts['no-pipeline']})</span>
-                </button>
               </>
             )}
+            {/* Arquivados */}
             <button
               onClick={async () => {
                 const newViewingArchived = !viewingArchived;
@@ -1072,7 +1069,6 @@ const ChatInterface: React.FC = () => {
                   await fetchArchivedConversations();
                 } else {
                   await refetch();
-                  // Update archived count
                   const { count } = await supabase
                     .from('conversations')
                     .select('id', { count: 'exact', head: true })
@@ -1090,6 +1086,21 @@ const ChatInterface: React.FC = () => {
               {viewingArchived ? 'Voltar aos Ativos' : 'Arquivados'}
               {!viewingArchived && <span className="text-[10px] opacity-70">({archivedCount})</span>}
             </button>
+            {/* Sem Funil - depois de Arquivados */}
+            {!viewingArchived && (
+              <button
+                onClick={() => setSelectedPipelineFilter('no-pipeline')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                  selectedPipelineFilter === 'no-pipeline'
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                }`}
+              >
+                <Inbox className="w-3.5 h-3.5" />
+                Sem Funil
+                <span className="text-[10px] opacity-70">({conversationCounts['no-pipeline']})</span>
+              </button>
+            )}
           </div>
           
           {/* Search and closed filter */}
