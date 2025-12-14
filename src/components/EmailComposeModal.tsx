@@ -157,7 +157,9 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
     const template = templates.find(t => t.id === templateId);
     if (template) {
       setSubject(replaceVariables(template.subject));
-      setBody(replaceVariables(template.body_html));
+      // Limpa assinatura genérica imediatamente ao carregar template
+      const cleanedBody = cleanGenericSignature(replaceVariables(template.body_html));
+      setBody(cleanedBody);
     }
   };
 
@@ -244,7 +246,9 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
         setSubject(replaceVariables(data.subject));
       }
       if (data?.body_html) {
-        setBody(replaceVariables(data.body_html));
+        // Limpa assinatura genérica imediatamente ao gerar com IA
+        const cleanedBody = cleanGenericSignature(replaceVariables(data.body_html));
+        setBody(cleanedBody);
       }
       
       setSelectedTemplateId(''); // Clear template selection
