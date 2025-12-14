@@ -57,6 +57,33 @@ export function SendToPipedriveModal({
 
       if (error) throw error;
 
+      // Mover deal para etapa "Enviado Pipedrive" (sync_to_pipedrive = true)
+      if (dealId) {
+        const { data: deal } = await supabase
+          .from('deals')
+          .select('pipeline_id')
+          .eq('id', dealId)
+          .single();
+
+        if (deal?.pipeline_id) {
+          const { data: pipedriveStage } = await supabase
+            .from('pipeline_stages')
+            .select('id')
+            .eq('pipeline_id', deal.pipeline_id)
+            .eq('sync_to_pipedrive', true)
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle();
+
+          if (pipedriveStage) {
+            await supabase
+              .from('deals')
+              .update({ stage_id: pipedriveStage.id })
+              .eq('id', dealId);
+          }
+        }
+      }
+
       toast.success('Contato enviado para Pipedrive!');
       setNotes('');
       setSelectedTag('');
