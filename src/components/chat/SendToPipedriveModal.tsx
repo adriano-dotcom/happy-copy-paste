@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, User, Phone, Mail, Building2, Tag } from 'lucide-react';
+import { Loader2, User, Phone, Mail, Building2, Tag, Sparkles } from 'lucide-react';
 import { api } from '@/services/api';
 import type { TagDefinition } from '@/types';
 
@@ -184,6 +184,14 @@ export function SendToPipedriveModal({
               className="resize-none"
             />
           </div>
+
+          {/* Auto-summary info box */}
+          {!notes.trim() && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20 text-sm text-primary">
+              <Sparkles className="h-4 w-4 flex-shrink-0" />
+              <span>Um resumo será gerado automaticamente com IA</span>
+            </div>
+          )}
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
@@ -191,8 +199,14 @@ export function SendToPipedriveModal({
             Cancelar
           </Button>
           <Button onClick={handleSend} disabled={isSending}>
-            {isSending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Enviar para Pipedrive
+            {isSending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {!notes.trim() ? 'Gerando resumo...' : 'Enviando...'}
+              </>
+            ) : (
+              'Enviar para Pipedrive'
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
