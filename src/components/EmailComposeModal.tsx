@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Send, Loader2, ChevronDown, Sparkles, User, Building2, MapPin, Package, FileText, TrendingUp } from 'lucide-react';
+import { X, Send, Loader2, ChevronDown, Sparkles, User, Building2, MapPin, Package, FileText, TrendingUp, Pencil, Eye } from 'lucide-react';
 import { Button } from './Button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -67,6 +67,7 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
   const [selectedEmailType, setSelectedEmailType] = useState('follow-up');
   const [customContext, setCustomContext] = useState('');
   const [generatingAI, setGeneratingAI] = useState(false);
+  const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit');
   const [showAIAssistant, setShowAIAssistant] = useState(true);
 
   // Extract qualification data
@@ -457,23 +458,78 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
             />
           </div>
 
-          {/* Corpo */}
+          {/* Corpo com Tabs Edit/Preview */}
           <div>
-            <label className="text-xs font-medium text-slate-300 uppercase tracking-wide mb-1.5 block">
-              Mensagem
-            </label>
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Escreva sua mensagem..."
-              rows={10}
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white placeholder:text-slate-400 focus:ring-1 focus:ring-violet-500 outline-none resize-none font-mono"
-            />
-            <p className="text-xs text-slate-400 mt-2">
-              Variáveis disponíveis: <code className="bg-slate-800 px-1 rounded">{"{{nome}}"}</code>, 
-              <code className="bg-slate-800 px-1 rounded ml-1">{"{{empresa}}"}</code>, 
-              <code className="bg-slate-800 px-1 rounded ml-1">{"{{valor}}"}</code>
-            </p>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-slate-300 uppercase tracking-wide">
+                Mensagem
+              </label>
+              {/* Edit/Preview Toggle */}
+              <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-lg">
+                <button
+                  onClick={() => setViewMode('edit')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    viewMode === 'edit'
+                      ? 'bg-violet-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                  }`}
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Editar
+                </button>
+                <button
+                  onClick={() => setViewMode('preview')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    viewMode === 'preview'
+                      ? 'bg-violet-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                  }`}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  Preview
+                </button>
+              </div>
+            </div>
+            
+            {viewMode === 'edit' ? (
+              <>
+                <textarea
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  placeholder="Escreva sua mensagem ou use IA para gerar..."
+                  rows={12}
+                  className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white placeholder:text-slate-400 focus:ring-1 focus:ring-violet-500 outline-none resize-none font-mono"
+                />
+                <p className="text-xs text-slate-500 mt-1.5">
+                  Variáveis disponíveis: {'{{nome}}'}, {'{{empresa}}'}, {'{{valor}}'}, {'{{email}}'}, {'{{telefone}}'}
+                </p>
+              </>
+            ) : (
+              <div className="bg-white rounded-lg border border-slate-300 overflow-hidden">
+                {/* Email Header Preview */}
+                <div className="bg-slate-100 border-b border-slate-200 px-4 py-3 space-y-1.5">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-slate-500 font-medium w-16">Para:</span>
+                    <span className="text-slate-700">{to || 'destinatário@email.com'}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-slate-500 font-medium w-16">Assunto:</span>
+                    <span className="text-slate-900 font-semibold">{subject || '(Sem assunto)'}</span>
+                  </div>
+                </div>
+                {/* Email Body Preview */}
+                <div 
+                  className="p-6 prose prose-sm max-w-none text-slate-800 min-h-[280px] max-h-[400px] overflow-y-auto"
+                  style={{ 
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                    lineHeight: '1.6'
+                  }}
+                  dangerouslySetInnerHTML={{ 
+                    __html: replaceVariables(body) || '<p class="text-slate-400 italic">O conteúdo do email aparecerá aqui...</p>'
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
 
