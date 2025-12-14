@@ -44,7 +44,7 @@ import { SendWhatsAppTemplateModal } from './SendWhatsAppTemplateModal';
 import { AudioPlayer } from './AudioPlayer';
 import { QuickQuestionsDropdown } from './QuickQuestionsDropdown';
 import { formatRegionFromPhone } from '@/utils/dddRegionMapper';
-import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, MessageToneAssistant } from './chat';
+import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, MessageToneAssistant, ConversationSummaryNotes } from './chat';
 
 interface AgentQuestion {
   order: number;
@@ -2174,16 +2174,15 @@ const ChatInterface: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Notes Area */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Notas Internas</h4>
-                  <textarea 
-                    className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-3 text-sm text-slate-300 placeholder:text-slate-600 focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/50 outline-none resize-none transition-all"
-                    rows={4}
-                    placeholder="Adicione observações sobre este lead..."
-                    defaultValue={activeChat.notes || ''}
-                  ></textarea>
-                </div>
+                {/* Notes Area with AI Summary */}
+                <ConversationSummaryNotes
+                  conversationId={activeChat.id}
+                  contactId={activeChat.contactId}
+                  messages={activeChat.messages}
+                  initialNotes={activeChat.notes}
+                  contactName={activeChat.contactName}
+                  agentName={activeChat.agentName || 'Adri'}
+                />
               </div>
             </div>
           </div>

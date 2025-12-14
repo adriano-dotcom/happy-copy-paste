@@ -93,3 +93,6 @@ verify_jwt = false
 
 [functions.rewrite-message]
 verify_jwt = true
+
+[functions.generate-summary]
+verify_jwt = true
