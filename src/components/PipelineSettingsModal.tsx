@@ -5,9 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Pencil, Trash2, GripVertical, Plus, Lock, Bot, User, AlertTriangle } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Pencil, Trash2, GripVertical, Plus, Lock, Bot, User, AlertTriangle, Send } from 'lucide-react';
 import { KanbanColumn } from '@/types';
 import { api } from '@/services/api';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -49,10 +51,12 @@ export function PipelineSettingsModal({ open, onClose, pipelineId, pipelineName,
   const [editColor, setEditColor] = useState('');
   const [editIsAiManaged, setEditIsAiManaged] = useState(false);
   const [editTriggerCriteria, setEditTriggerCriteria] = useState('');
+  const [editSyncToPipedrive, setEditSyncToPipedrive] = useState(false);
   const [newStageTitle, setNewStageTitle] = useState('');
   const [newStageColor, setNewStageColor] = useState('border-slate-500');
   const [newStageIsAiManaged, setNewStageIsAiManaged] = useState(false);
   const [newStageTriggerCriteria, setNewStageTriggerCriteria] = useState('');
+  const [newStageSyncToPipedrive, setNewStageSyncToPipedrive] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ stageId: string; stageName: string } | null>(null);
   const [availableStages, setAvailableStages] = useState<KanbanColumn[]>([]);
   const [moveToStageId, setMoveToStageId] = useState<string>('');
@@ -82,6 +86,7 @@ export function PipelineSettingsModal({ open, onClose, pipelineId, pipelineName,
     setEditColor(stage.color);
     setEditIsAiManaged(stage.isAiManaged);
     setEditTriggerCriteria(stage.aiTriggerCriteria || '');
+    setEditSyncToPipedrive(stage.syncToPipedrive || false);
   };
 
   const handleSaveEdit = async () => {
@@ -93,6 +98,7 @@ export function PipelineSettingsModal({ open, onClose, pipelineId, pipelineName,
         color: editColor,
         isAiManaged: editIsAiManaged,
         aiTriggerCriteria: editTriggerCriteria || null,
+        syncToPipedrive: editSyncToPipedrive,
       } as any);
       
       toast.success('Etapa atualizada');
@@ -109,6 +115,7 @@ export function PipelineSettingsModal({ open, onClose, pipelineId, pipelineName,
     setEditColor('');
     setEditIsAiManaged(false);
     setEditTriggerCriteria('');
+    setEditSyncToPipedrive(false);
   };
 
   const handleDeleteClick = async (stage: KanbanColumn) => {
@@ -155,13 +162,20 @@ export function PipelineSettingsModal({ open, onClose, pipelineId, pipelineName,
     }
 
     try {
-      await api.createPipelineStage({
-        title: newStageTitle,
-        color: newStageColor,
-        pipelineId: pipelineId,
-        isAiManaged: newStageIsAiManaged,
-        aiTriggerCriteria: newStageTriggerCriteria || undefined,
-      });
+      // Create stage via API (need to update api.createPipelineStage to support syncToPipedrive)
+      const { error } = await supabase
+        .from('pipeline_stages')
+        .insert({
+          title: newStageTitle,
+          color: newStageColor,
+          pipeline_id: pipelineId,
+          is_ai_managed: newStageIsAiManaged,
+          ai_trigger_criteria: newStageTriggerCriteria || null,
+          sync_to_pipedrive: newStageSyncToPipedrive,
+          position: stages.length
+        });
+
+      if (error) throw error;
       
       // Recarregar etapas imediatamente após criar
       await loadStages();
@@ -171,6 +185,7 @@ export function PipelineSettingsModal({ open, onClose, pipelineId, pipelineName,
       setNewStageColor('border-slate-500');
       setNewStageIsAiManaged(false);
       setNewStageTriggerCriteria('');
+      setNewStageSyncToPipedrive(false);
     } catch (error) {
       toast.error('Erro ao criar etapa');
     }
@@ -308,6 +323,18 @@ export function PipelineSettingsModal({ open, onClose, pipelineId, pipelineName,
                             />
                           </div>
                         )}
+
+                        {/* Pipedrive Sync Toggle */}
+                        <div className="flex items-center justify-between p-2 bg-purple-500/10 rounded-lg border border-purple-500/20">
+                          <div className="flex items-center gap-2">
+                            <Send className="w-4 h-4 text-purple-500" />
+                            <Label className="text-xs">Enviar para Pipedrive</Label>
+                          </div>
+                          <Switch 
+                            checked={editSyncToPipedrive}
+                            onCheckedChange={setEditSyncToPipedrive}
+                          />
+                        </div>
                         
                         <div className="flex gap-2 justify-end">
                           <Button size="sm" onClick={handleSaveEdit}>
@@ -335,6 +362,11 @@ export function PipelineSettingsModal({ open, onClose, pipelineId, pipelineName,
                           ) : (
                             <div title="Estágio manual - apenas movimentação humana">
                               <User className="w-4 h-4 text-muted-foreground" />
+                            </div>
+                          )}
+                          {stage.syncToPipedrive && (
+                            <div title="Envia para Pipedrive automaticamente">
+                              <Send className="w-4 h-4 text-purple-500" />
                             </div>
                           )}
                           <span className="font-medium">{stage.title}</span>
@@ -435,6 +467,18 @@ export function PipelineSettingsModal({ open, onClose, pipelineId, pipelineName,
                   />
                 </div>
               )}
+
+              {/* Pipedrive Sync Toggle */}
+              <div className="flex items-center justify-between p-2 bg-purple-500/10 rounded-lg border border-purple-500/20">
+                <div className="flex items-center gap-2">
+                  <Send className="w-4 h-4 text-purple-500" />
+                  <Label className="text-xs">Enviar para Pipedrive automaticamente</Label>
+                </div>
+                <Switch 
+                  checked={newStageSyncToPipedrive}
+                  onCheckedChange={setNewStageSyncToPipedrive}
+                />
+              </div>
               
               <Button onClick={handleAddStage} className="w-full">
                 <Plus className="w-4 h-4 mr-1" />

@@ -1254,6 +1254,7 @@ export type Database = {
           is_system: boolean | null
           pipeline_id: string | null
           position: number
+          sync_to_pipedrive: boolean | null
           title: string
           updated_at: string | null
         }
@@ -1267,6 +1268,7 @@ export type Database = {
           is_system?: boolean | null
           pipeline_id?: string | null
           position?: number
+          sync_to_pipedrive?: boolean | null
           title: string
           updated_at?: string | null
         }
@@ -1280,6 +1282,7 @@ export type Database = {
           is_system?: boolean | null
           pipeline_id?: string | null
           position?: number
+          sync_to_pipedrive?: boolean | null
           title?: string
           updated_at?: string | null
         }

@@ -168,6 +168,7 @@ export interface KanbanColumn {
   isAiManaged: boolean;
   aiTriggerCriteria: string | null;
   pipelineId?: string;
+  syncToPipedrive?: boolean;
 }
 
 export interface BackendFunction {
