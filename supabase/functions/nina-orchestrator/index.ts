@@ -1027,6 +1027,44 @@ async function uploadAudioToStorage(
   }
 }
 
+// ===== LOOK-AHEAD DEBOUNCE: Wait for pending messages arriving soon =====
+// Before processing, check if there are more messages scheduled to arrive in the next 10 seconds
+async function waitForPendingMessages(
+  supabase: any,
+  conversationId: string,
+  maxWaitMs: number = 10000
+): Promise<void> {
+  const checkInterval = 2000; // Check every 2 seconds
+  const startTime = Date.now();
+  
+  while (Date.now() - startTime < maxWaitMs) {
+    // Check for pending messages with scheduled_for in the near future (next 10 seconds)
+    const now = new Date();
+    const futureLimit = new Date(Date.now() + 10000);
+    
+    const { data: upcomingItems } = await supabase
+      .from('nina_processing_queue')
+      .select('id, scheduled_for')
+      .eq('conversation_id', conversationId)
+      .eq('status', 'pending')
+      .gt('scheduled_for', now.toISOString())
+      .lte('scheduled_for', futureLimit.toISOString());
+    
+    if (!upcomingItems || upcomingItems.length === 0) {
+      // No more messages arriving soon, safe to process
+      console.log(`[Nina] ✅ No pending messages arriving soon, proceeding with processing`);
+      return;
+    }
+    
+    console.log(`[Nina] ⏳ Waiting for ${upcomingItems.length} pending messages in same conversation (arriving within 10s)...`);
+    
+    // Wait and check again
+    await new Promise(resolve => setTimeout(resolve, checkInterval));
+  }
+  
+  console.log(`[Nina] ⚠️ Max wait time reached, proceeding with available messages`);
+}
+
 // Aggregate pending messages from the same conversation for debouncing
 async function aggregatePendingMessages(
   supabase: any,
@@ -1154,6 +1192,10 @@ async function processQueueItem(
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   
   console.log(`[Nina] Processing queue item: ${item.id}`);
+
+  // 🆕 LOOK-AHEAD: Wait briefly if there are more messages arriving soon from the same conversation
+  // This prevents processing the first message before subsequent messages are ready for aggregation
+  await waitForPendingMessages(supabase, item.conversation_id);
 
   // Check for message aggregation (debouncing)
   const aggregated = await aggregatePendingMessages(supabase, item.conversation_id, item.id);
