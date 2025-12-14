@@ -106,47 +106,47 @@ export function QuickActionsBar({
         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
           Ações Rápidas
         </h4>
-        <div className="flex gap-2">
+      <div className="flex gap-3">
           {/* Qualificar */}
           <Button
             size="sm"
-            variant="outline"
+            variant="ghost"
             onClick={handleQuickQualify}
             disabled={isQualifying || isAlreadyQualified}
-            className={`flex-1 text-xs ${
+            className={`flex-1 text-xs transition-all duration-200 ${
               isAlreadyQualified 
-                ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10' 
-                : 'border-amber-500/30 text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/50'
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' 
+                : 'bg-slate-800/60 text-amber-400 border border-amber-500/30 hover:bg-amber-500/15 hover:border-amber-500/50 hover:shadow-[0_0_12px_rgba(245,158,11,0.2)]'
             }`}
           >
             {isQualifying ? (
-              <Loader2 className="w-3 h-3 animate-spin mr-1" />
+              <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
             ) : (
-              <CheckCircle className="w-3 h-3 mr-1" />
+              <CheckCircle className="w-4 h-4 mr-1.5" />
             )}
             {isAlreadyQualified ? 'Qualificado' : 'Qualificar'}
           </Button>
 
-          {/* Agendar Callback */}
+          {/* Callback */}
           <Button
             size="sm"
-            variant="outline"
+            variant="ghost"
             onClick={() => setShowCallbackModal(true)}
-            className="flex-1 text-xs border-blue-500/30 text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/50"
+            className="flex-1 text-xs bg-slate-800/60 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/15 hover:border-cyan-500/50 hover:shadow-[0_0_12px_rgba(6,182,212,0.2)] transition-all duration-200"
           >
-            <Calendar className="w-3 h-3 mr-1" />
+            <Calendar className="w-4 h-4 mr-1.5" />
             Callback
           </Button>
 
-          {/* Enviar Contato Pipedrive */}
+          {/* Pipedrive */}
           <Button
             size="sm"
-            variant="outline"
+            variant="ghost"
             onClick={handleOpenPipedriveModal}
-            className="flex-1 text-xs border-purple-500/30 text-purple-400 hover:bg-purple-500/10 hover:border-purple-500/50"
+            className="flex-1 text-xs bg-slate-800/60 text-purple-400 border border-purple-500/30 hover:bg-purple-500/15 hover:border-purple-500/50 hover:shadow-[0_0_12px_rgba(168,85,247,0.2)] transition-all duration-200"
           >
-            <Send className="w-3 h-3 mr-1" />
-            Contato
+            <Send className="w-4 h-4 mr-1.5" />
+            Pipedrive
           </Button>
         </div>
       </div>
