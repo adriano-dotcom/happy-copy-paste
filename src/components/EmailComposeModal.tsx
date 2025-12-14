@@ -260,16 +260,21 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
   // Remove assinaturas genéricas embutidas nos templates antes de adicionar a personalizada
   const cleanGenericSignature = (html: string): string => {
     return html
-      // Remove "Atenciosamente, Equipe Jacometo Seguros"
+      // Remove padrão: <p>Atenciosamente,</p><p>Equipe Jacometo...</p> (com ou sem estilos)
+      .replace(/<p[^>]*>Atenciosamente[,.]?<\/p>\s*<p[^>]*>Equipe Jacometo[^<]*<\/p>/gi, '')
+      // Remove "Atenciosamente, Equipe Jacometo Seguros" com <br> e <strong>
       .replace(/Atenciosamente[,.]?\s*<br\s*\/?>\s*<strong>Equipe Jacometo.*?<\/strong>/gi, '')
       // Remove "Com carinho, Equipe Jacometo Seguros"
       .replace(/Com carinho[,.]?\s*<br\s*\/?>\s*<strong>Equipe Jacometo.*?<\/strong>/gi, '')
-      // Remove "<p>Equipe Jacometo Seguros</p>"
-      .replace(/<p[^>]*>Equipe Jacometo Seguros<\/p>/gi, '')
+      // Remove "<p>Equipe Jacometo Seguros</p>" (com qualquer estilo)
+      .replace(/<p[^>]*>Equipe Jacometo[^<]*<\/p>/gi, '')
       // Remove "Equipe Jacometo" genérico em tags strong
       .replace(/<strong>Equipe Jacometo[^<]*<\/strong>/gi, '')
+      // Remove "Atenciosamente," seguido de "Equipe Jacometo" em texto puro
+      .replace(/Atenciosamente[,.]?\s*Equipe Jacometo[^\n<]*/gi, '')
       // Remove linhas vazias extras no final
-      .replace(/(<br\s*\/?>\s*)+$/gi, '');
+      .replace(/(<br\s*\/?>\s*)+$/gi, '')
+      .replace(/(<p[^>]*>\s*<\/p>\s*)+$/gi, '');
   };
 
   const addSignature = (htmlBody: string): string => {
