@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, User, Phone, Mail, Building2, Tag, Sparkles } from 'lucide-react';
+import { Loader2, User, Phone, Mail, Building2, Tag, Sparkles, RefreshCw } from 'lucide-react';
 import { api } from '@/services/api';
 import type { TagDefinition } from '@/types';
 
@@ -26,6 +26,7 @@ interface SendToPipedriveModalProps {
   dealId?: string;
   conversationId?: string;
   onSent?: () => void;
+  initialNotes?: string | null;
 }
 
 export function SendToPipedriveModal({
@@ -34,16 +35,30 @@ export function SendToPipedriveModal({
   contact,
   dealId,
   conversationId,
-  onSent
+  onSent,
+  initialNotes
 }: SendToPipedriveModalProps) {
   const [notes, setNotes] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [selectedTag, setSelectedTag] = useState<string>('');
   const [availableTags, setAvailableTags] = useState<TagDefinition[]>([]);
+  const [forceRegenerate, setForceRegenerate] = useState(false);
 
   useEffect(() => {
     api.fetchTagDefinitions().then(setAvailableTags).catch(console.error);
   }, []);
+
+  // Initialize notes with initial value and reset state on close
+  useEffect(() => {
+    if (open && initialNotes) {
+      setNotes(initialNotes);
+      setForceRegenerate(false);
+    } else if (!open) {
+      setNotes('');
+      setSelectedTag('');
+      setForceRegenerate(false);
+    }
+  }, [open, initialNotes]);
 
   const handleSend = async () => {
     setIsSending(true);
@@ -53,8 +68,9 @@ export function SendToPipedriveModal({
           contactId: contact.id, 
           dealId,
           conversationId,
-          notes: notes.trim() || undefined,
-          pipedriveTag: selectedTag || undefined
+          notes: forceRegenerate ? undefined : (notes.trim() || undefined),
+          pipedriveTag: selectedTag || undefined,
+          forceRegenerateSummary: forceRegenerate
         }
       });
 
@@ -185,11 +201,31 @@ export function SendToPipedriveModal({
             />
           </div>
 
-          {/* Auto-summary info box */}
-          {!notes.trim() && (
+          {/* Auto-summary info box or regenerate option */}
+          {(!notes.trim() || forceRegenerate) ? (
             <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20 text-sm text-primary">
               <Sparkles className="h-4 w-4 flex-shrink-0" />
-              <span>Um resumo será gerado automaticamente com IA</span>
+              <span>{forceRegenerate ? 'Novo resumo será gerado com IA' : 'Um resumo será gerado automaticamente com IA'}</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <div className="flex items-center gap-2 text-sm text-amber-600">
+                <RefreshCw className="h-4 w-4" />
+                <span>Resumo já existe</span>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                type="button"
+                onClick={() => {
+                  setForceRegenerate(true);
+                  setNotes('');
+                }}
+                className="text-amber-600 hover:text-amber-700 hover:bg-amber-500/10"
+              >
+                <Sparkles className="h-3 w-3 mr-1" />
+                Regenerar
+              </Button>
             </div>
           )}
         </div>

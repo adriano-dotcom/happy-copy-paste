@@ -107,7 +107,7 @@ serve(async (req) => {
   }
 
   try {
-    const { contactId, dealId, notes, pipedriveTag, conversationId } = await req.json();
+    const { contactId, dealId, notes, pipedriveTag, conversationId, forceRegenerateSummary } = await req.json();
     
     if (!contactId) {
       throw new Error('contactId is required');
@@ -168,11 +168,11 @@ serve(async (req) => {
 
     console.log('[sync-pipedrive] Contact data:', contact.name, contact.phone_number);
 
-    // Generate summary if contact has no notes and we have a conversation
+    // Generate summary if contact has no notes (or force regenerate) and we have a conversation
     let contactNotes = contact.notes;
     
-    if (!contactNotes && conversationId) {
-      console.log('[sync-pipedrive] No notes found, generating summary automatically...');
+    if ((!contactNotes || forceRegenerateSummary) && conversationId) {
+      console.log('[sync-pipedrive] Generating summary...', { forceRegenerate: forceRegenerateSummary, hasExisting: !!contactNotes });
       
       // Fetch conversation to get agent name
       const { data: conversation } = await supabase
