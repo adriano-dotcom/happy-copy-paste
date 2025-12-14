@@ -617,9 +617,9 @@ async function processIncomingMessage(
 
   // 6. If conversation is handled by Nina, queue for AI processing with debounce delay
   if (conversation.status === 'nina') {
-    // Debounce: schedule processing for 6 seconds in the future
-    // This allows multiple rapid messages to be aggregated
-    const DEBOUNCE_DELAY_MS = 6000;
+    // Debounce: schedule processing for 15 seconds in the future
+    // This allows multiple rapid messages to be aggregated before AI responds
+    const DEBOUNCE_DELAY_MS = 15000;
     const scheduledFor = new Date(Date.now() + DEBOUNCE_DELAY_MS).toISOString();
     
     const { error: ninaQueueError } = await supabase
@@ -661,7 +661,7 @@ async function processIncomingMessage(
         } catch (err) {
           console.error('[Webhook] Failed to trigger nina-orchestrator:', err);
         }
-      }, DEBOUNCE_DELAY_MS + 500); // Small buffer after scheduled time
+      }, DEBOUNCE_DELAY_MS + 1000); // Buffer após tempo agendado
     }
   }
 }
