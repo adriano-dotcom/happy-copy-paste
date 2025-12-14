@@ -1040,7 +1040,7 @@ const ChatInterface: React.FC = () => {
             {!viewingArchived && (
               <>
                 <button
-                  onClick={() => setSelectedPipelineFilter(null)}
+                  onClick={() => { setSelectedPipelineFilter(null); setSelectedStatusFilter(null); }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all ${
                     selectedPipelineFilter === null
                       ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
@@ -1062,7 +1062,7 @@ const ChatInterface: React.FC = () => {
                 }).map((pipeline) => (
                   <button
                     key={pipeline.id}
-                    onClick={() => setSelectedPipelineFilter(pipeline.id)}
+                    onClick={() => { setSelectedPipelineFilter(pipeline.id); setSelectedStatusFilter(null); }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
                       selectedPipelineFilter === pipeline.id
                         ? ''
@@ -1112,7 +1112,7 @@ const ChatInterface: React.FC = () => {
             {/* Sem Funil - depois de Arquivados */}
             {!viewingArchived && (
               <button
-                onClick={() => setSelectedPipelineFilter('no-pipeline')}
+                onClick={() => { setSelectedPipelineFilter('no-pipeline'); setSelectedStatusFilter(null); }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
                   selectedPipelineFilter === 'no-pipeline'
                     ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
