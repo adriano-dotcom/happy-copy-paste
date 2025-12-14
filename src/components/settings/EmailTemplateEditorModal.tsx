@@ -216,7 +216,7 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
             <div className="grid grid-cols-3 gap-4 mb-3">
               {/* Vertical Selection */}
               <div>
-                <Label className="text-slate-400 text-xs mb-2 block">Vertical</Label>
+                <Label className="text-slate-200 text-xs font-medium mb-2 block">Vertical</Label>
                 <div className="flex gap-2">
                   {VERTICALS.map((vertical) => {
                     const Icon = vertical.icon;
@@ -232,7 +232,7 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
                         }`}
                       >
                         <Icon className={`w-4 h-4 ${isSelected ? vertical.color : 'text-slate-400'}`} />
-                        <span className={`text-xs ${isSelected ? 'text-white' : 'text-slate-400'}`}>
+                        <span className={`text-xs font-medium ${isSelected ? 'text-white' : 'text-slate-300'}`}>
                           {vertical.label}
                         </span>
                       </button>
@@ -243,9 +243,9 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
 
               {/* Email Type */}
               <div>
-                <Label className="text-slate-400 text-xs mb-2 block">Tipo de Email</Label>
+                <Label className="text-slate-200 text-xs font-medium mb-2 block">Tipo de Email</Label>
                 <Select value={selectedEmailType} onValueChange={setSelectedEmailType}>
-                  <SelectTrigger className="bg-slate-800/50 border-slate-700">
+                  <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -283,14 +283,14 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
 
             {/* Briefing */}
             <div>
-              <Label className="text-slate-400 text-xs mb-1 block">
+              <Label className="text-slate-200 text-xs font-medium mb-1 block">
                 Briefing (opcional) - Descreva o contexto ou objetivo específico
               </Label>
               <Input
                 value={briefing}
                 onChange={(e) => setBriefing(e.target.value)}
                 placeholder="Ex: Email para transportador que pediu cotação de RCTR-C para cargas de grãos..."
-                className="bg-slate-800/50 border-slate-700 text-sm"
+                className="bg-slate-800/50 border-slate-700 text-sm text-white placeholder:text-slate-400"
               />
             </div>
           </div>
@@ -298,18 +298,18 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
           {/* Basic Info */}
           <div className="grid grid-cols-3 gap-4">
             <div className="col-span-2">
-              <Label className="text-slate-300 mb-2 block">Nome do Template</Label>
+              <Label className="text-slate-100 font-medium mb-2 block">Nome do Template</Label>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Ex: Follow-up Inicial"
-                className="bg-slate-800/50 border-slate-700"
+                className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-400"
               />
             </div>
             <div>
-              <Label className="text-slate-300 mb-2 block">Categoria</Label>
+              <Label className="text-slate-100 font-medium mb-2 block">Categoria</Label>
               <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="bg-slate-800/50 border-slate-700">
+                <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -323,18 +323,18 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
           </div>
 
           <div>
-            <Label className="text-slate-300 mb-2 block">Assunto do Email</Label>
+            <Label className="text-slate-100 font-medium mb-2 block">Assunto do Email</Label>
             <Input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="Ex: Obrigado pelo seu interesse!"
-              className="bg-slate-800/50 border-slate-700"
+              className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-400"
             />
           </div>
 
           {/* Variables Helper */}
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-slate-400 flex items-center gap-1">
+            <span className="text-xs text-slate-300 flex items-center gap-1">
               <Variable className="w-3 h-3" /> Variáveis:
             </span>
             {Object.keys(EXAMPLE_VARIABLES).map((variable) => (
@@ -366,7 +366,7 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
                 <Textarea
                   value={bodyHtml}
                   onChange={(e) => setBodyHtml(e.target.value)}
-                  className="h-full min-h-[250px] font-mono text-sm bg-slate-800/50 border-slate-700 resize-none"
+                  className="h-full min-h-[250px] font-mono text-sm bg-slate-800/50 border-slate-700 resize-none text-slate-100 placeholder:text-slate-400"
                   placeholder="Digite o HTML do email..."
                 />
               </TabsContent>
@@ -387,7 +387,7 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-700 flex items-center justify-between">
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-400">
             💡 Use variáveis como {"{{nome}}"} que serão substituídas ao enviar
           </p>
           <div className="flex gap-3">
