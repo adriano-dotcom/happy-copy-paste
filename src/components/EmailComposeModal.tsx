@@ -274,8 +274,20 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
       .replace(/<p[^>]*>Equipe Jacometo[^<]*<\/p>/gi, '')
       // Remove "Equipe Jacometo" genérico em tags strong
       .replace(/<strong>Equipe Jacometo[^<]*<\/strong>/gi, '')
+      // Remove "Equipe Jacometo" em texto puro (sem tags)
+      .replace(/Equipe Jacometo\s*Seguros?/gi, '')
       // Remove "Atenciosamente," seguido de "Equipe Jacometo" em texto puro
       .replace(/Atenciosamente[,.]?\s*Equipe Jacometo[^\n<]*/gi, '')
+      // Remove "Atenciosamente," seguido de quebra de linha e "Equipe"
+      .replace(/Atenciosamente[,.]?\s*[\n\r]+\s*Equipe[^\n<]*/gi, '')
+      // Remove bloco de assinatura com "Atenciosamente" em qualquer formato
+      .replace(/<p[^>]*>\s*Atenciosamente[,.]?\s*<\/p>/gi, '')
+      // Remove "Equipe" sozinho seguido de nome da empresa
+      .replace(/<p[^>]*>\s*Equipe\s+[^<]+<\/p>/gi, '')
+      // Remove assinatura dentro de div/span
+      .replace(/<(div|span)[^>]*>Equipe Jacometo[^<]*<\/(div|span)>/gi, '')
+      // Remove "Abraços, Equipe Jacometo"
+      .replace(/Abraços[,.]?\s*(<br\s*\/?>)?\s*(Equipe Jacometo[^<\n]*)?/gi, '')
       // Remove linhas vazias extras no final
       .replace(/(<br\s*\/?>\s*)+$/gi, '')
       .replace(/(<p[^>]*>\s*<\/p>\s*)+$/gi, '');
