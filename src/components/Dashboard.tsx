@@ -3,14 +3,7 @@ import { Activity, DollarSign, MessageSquare, Users, Loader2, TrendingUp, Trendi
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { StatMetric } from '../types';
 import { api } from '../services/api';
-import { OnboardingBanner } from './OnboardingBanner';
-import { useOutletContext } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-
-interface OutletContext {
-  showOnboarding: boolean;
-  setShowOnboarding: (show: boolean) => void;
-}
 
 type PeriodFilter = 'today' | '7days' | '30days';
 
@@ -56,7 +49,6 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodFilter>('today');
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics | null>(null);
-  const { setShowOnboarding } = useOutletContext<OutletContext>();
 
   const fetchSystemMetrics = async () => {
     try {
@@ -188,9 +180,6 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="p-6 space-y-8 overflow-y-auto h-full bg-slate-950 text-slate-50 custom-scrollbar">
-      {/* Onboarding Banner */}
-      <OnboardingBanner onOpenWizard={() => setShowOnboarding(true)} />
-
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-white">Dashboard</h2>
