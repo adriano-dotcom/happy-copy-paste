@@ -19,6 +19,7 @@ export type Database = {
           audio_response_enabled: boolean | null
           cargo_focused_greeting: string | null
           created_at: string | null
+          default_owner_id: string | null
           description: string | null
           detection_keywords: string[] | null
           elevenlabs_model: string | null
@@ -33,7 +34,10 @@ export type Database = {
           id: string
           is_active: boolean | null
           is_default: boolean | null
+          last_assigned_owner_id: string | null
           name: string
+          owner_distribution_type: string | null
+          owner_rotation_ids: string[] | null
           qualification_questions: Json | null
           slug: string
           specialty: string | null
@@ -44,6 +48,7 @@ export type Database = {
           audio_response_enabled?: boolean | null
           cargo_focused_greeting?: string | null
           created_at?: string | null
+          default_owner_id?: string | null
           description?: string | null
           detection_keywords?: string[] | null
           elevenlabs_model?: string | null
@@ -58,7 +63,10 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           is_default?: boolean | null
+          last_assigned_owner_id?: string | null
           name: string
+          owner_distribution_type?: string | null
+          owner_rotation_ids?: string[] | null
           qualification_questions?: Json | null
           slug: string
           specialty?: string | null
@@ -69,6 +77,7 @@ export type Database = {
           audio_response_enabled?: boolean | null
           cargo_focused_greeting?: string | null
           created_at?: string | null
+          default_owner_id?: string | null
           description?: string | null
           detection_keywords?: string[] | null
           elevenlabs_model?: string | null
@@ -83,14 +92,32 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           is_default?: boolean | null
+          last_assigned_owner_id?: string | null
           name?: string
+          owner_distribution_type?: string | null
+          owner_rotation_ids?: string[] | null
           qualification_questions?: Json | null
           slug?: string
           specialty?: string | null
           system_prompt?: string
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "agents_default_owner_id_fkey"
+            columns: ["default_owner_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agents_last_assigned_owner_id_fkey"
+            columns: ["last_assigned_owner_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       appointments: {
         Row: {
@@ -1934,6 +1961,7 @@ export type Database = {
       cleanup_processed_message_queue: { Args: never; Returns: undefined }
       cleanup_processed_queues: { Args: never; Returns: undefined }
       delete_vault_secret: { Args: { secret_name: string }; Returns: boolean }
+      get_next_deal_owner: { Args: { p_agent_id: string }; Returns: string }
       get_or_create_conversation_state: {
         Args: { p_conversation_id: string }
         Returns: {
