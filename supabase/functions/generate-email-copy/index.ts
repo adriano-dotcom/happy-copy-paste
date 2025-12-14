@@ -127,7 +127,7 @@ serve(async (req) => {
   }
 
   try {
-    const { vertical, emailType, briefing } = await req.json();
+    const { vertical, emailType, briefing, leadContext } = await req.json();
 
     if (!vertical || !emailType) {
       return new Response(
@@ -167,9 +167,57 @@ FORMATO DE RESPOSTA (JSON):
 
 IMPORTANTE: Retorne APENAS o JSON, sem markdown, sem explicações.`;
 
-    const userPrompt = briefing 
-      ? `Gere um email do tipo "${emailType}" para a vertical "${vertical}" com base neste briefing:\n\n${briefing}`
-      : `Gere um email do tipo "${emailType}" para a vertical "${vertical}". Crie um exemplo genérico mas profissional que possa ser usado como template.`;
+    // Build context-aware user prompt
+    let userPrompt = `Gere um email do tipo "${emailType}" para a vertical "${vertical}".`;
+    
+    if (leadContext) {
+      userPrompt += `\n\nDADOS DO LEAD:`;
+      if (leadContext.name) userPrompt += `\n- Nome: ${leadContext.name}`;
+      if (leadContext.company) userPrompt += `\n- Empresa: ${leadContext.company}`;
+      if (leadContext.cnpj) userPrompt += `\n- CNPJ: ${leadContext.cnpj}`;
+      if (leadContext.phone) userPrompt += `\n- Telefone: ${leadContext.phone}`;
+      if (leadContext.email) userPrompt += `\n- Email: ${leadContext.email}`;
+      if (leadContext.qualification_score) userPrompt += `\n- Score de qualificação: ${leadContext.qualification_score}%`;
+      
+      if (leadContext.qualification_answers && Object.keys(leadContext.qualification_answers).length > 0) {
+        userPrompt += `\n\nRESPOSTAS DE QUALIFICAÇÃO:`;
+        const qaLabels: Record<string, string> = {
+          contratacao: 'Tipo de contratação',
+          tipo_carga: 'Tipo de carga',
+          estados: 'Estados atendidos',
+          viagens_mes: 'Viagens por mês',
+          valor_medio: 'Valor médio por carga',
+          maior_valor: 'Maior valor transportado',
+          tipo_frota: 'Tipo de frota',
+          antt: 'ANTT',
+          cte: 'CT-e',
+        };
+        for (const [key, value] of Object.entries(leadContext.qualification_answers)) {
+          if (value) {
+            const label = qaLabels[key] || key;
+            userPrompt += `\n- ${label}: ${value}`;
+          }
+        }
+      }
+      
+      if (leadContext.interests && leadContext.interests.length > 0) {
+        userPrompt += `\n\nINTERESSES: ${leadContext.interests.join(', ')}`;
+      }
+      
+      if (leadContext.pain_points && leadContext.pain_points.length > 0) {
+        userPrompt += `\n\nDORES IDENTIFICADAS: ${leadContext.pain_points.join(', ')}`;
+      }
+      
+      if (leadContext.conversation_summary) {
+        userPrompt += `\n\nRESUMO DA CONVERSA:\n${leadContext.conversation_summary}`;
+      }
+    }
+    
+    if (briefing) {
+      userPrompt += `\n\nBRIEFING ADICIONAL:\n${briefing}`;
+    }
+    
+    userPrompt += `\n\nGere um email ALTAMENTE PERSONALIZADO usando os dados acima. Mencione informações específicas do lead para criar conexão.`;
 
     console.log(`Gerando email: vertical=${vertical}, tipo=${emailType}`);
 
