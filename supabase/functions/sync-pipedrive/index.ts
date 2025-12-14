@@ -22,13 +22,13 @@ serve(async (req) => {
   }
 
   try {
-    const { contactId, dealId, notes } = await req.json();
+    const { contactId, dealId, notes, pipedriveTag } = await req.json();
     
     if (!contactId) {
       throw new Error('contactId is required');
     }
 
-    console.log('[sync-pipedrive] Starting sync for contact:', contactId);
+    console.log('[sync-pipedrive] Starting sync for contact:', contactId, 'with tag:', pipedriveTag);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -117,10 +117,13 @@ serve(async (req) => {
     ].filter(Boolean).join('\n\n');
 
     // Map system fields to Pipedrive custom fields
+    // If pipedriveTag is provided, use it as the primary tag; otherwise use contact tags
+    const tagsValue = pipedriveTag || contact.tags?.join(', ');
+    
     const systemFieldValues: Record<string, any> = {
       company: contact.company,
       cnpj: contact.cnpj,
-      tags: contact.tags?.join(', '),
+      tags: tagsValue,
       owner: ownerName,
       city: contact.city,
       state: contact.state,
