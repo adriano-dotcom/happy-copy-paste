@@ -4,6 +4,7 @@ import { Button } from './Button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ClientMemory } from '@/types';
+import { useAuth } from '@/hooks/useAuth';
 
 interface EmailTemplate {
   id: string;
@@ -55,6 +56,7 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
   contactPhone,
   contactCnpj,
 }) => {
+  const { user } = useAuth();
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [to, setTo] = useState(contactEmail);
@@ -62,6 +64,7 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
+  const [senderName, setSenderName] = useState('');
   
   // AI Assistant state
   const [selectedEmailType, setSelectedEmailType] = useState('follow-up');
@@ -80,8 +83,35 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
     if (isOpen) {
       loadTemplates();
       setTo(contactEmail);
+      loadSenderName();
     }
   }, [isOpen, contactEmail]);
+
+  const loadSenderName = async () => {
+    if (!user?.email) return;
+    
+    try {
+      const { data } = await supabase
+        .from('team_members')
+        .select('name')
+        .eq('email', user.email)
+        .single();
+      
+      if (data?.name) {
+        setSenderName(data.name);
+      } else {
+        // Fallback: extrair do email
+        const namePart = user.email.split('@')[0];
+        const formattedName = namePart
+          .split('.')
+          .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(' ');
+        setSenderName(formattedName);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar nome do operador:', error);
+    }
+  };
 
   const loadTemplates = async () => {
     try {
@@ -221,6 +251,19 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
     }
   };
 
+  const addSignature = (htmlBody: string): string => {
+    const signature = `
+      <br/><br/>
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #64748b;">
+        <p style="margin: 0; font-weight: 500; color: #334155;">Atenciosamente,</p>
+        <p style="margin: 4px 0 0 0; font-weight: 600; color: #1e293b;">${senderName || 'Equipe Jacometo'}</p>
+        <p style="margin: 2px 0 0 0; color: #64748b;">Jacometo Seguros</p>
+        <a href="https://jacometoseguros.com.br" style="color: #8b5cf6; text-decoration: none; font-size: 13px;">jacometoseguros.com.br</a>
+      </div>
+    `;
+    return htmlBody + signature;
+  };
+
   const handleSend = async () => {
     if (!to || !subject || !body) {
       toast.error('Preencha todos os campos');
@@ -235,8 +278,21 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
 
     setSending(true);
     try {
+      const bodyWithSignature = addSignature(body);
+      
+      // CCO: admin fixo + operador logado
+      const bccList = ['adriano@jacometo.com.br'];
+      if (user?.email && user.email !== 'adriano@jacometo.com.br') {
+        bccList.push(user.email);
+      }
+
       const { data, error } = await supabase.functions.invoke('send-email', {
-        body: { to, subject, html: body }
+        body: { 
+          to, 
+          subject, 
+          html: bodyWithSignature,
+          bcc: bccList
+        }
       });
 
       if (error) throw error;

@@ -13,6 +13,7 @@ interface SendEmailRequest {
   subject: string;
   html: string;
   from?: string;
+  bcc?: string[];
 }
 
 const handler = async (req: Request): Promise<Response> => {
@@ -22,7 +23,7 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const { to, subject, html, from }: SendEmailRequest = await req.json();
+    const { to, subject, html, from, bcc }: SendEmailRequest = await req.json();
 
     // Validação de entrada
     if (!to || !subject || !html) {
@@ -49,7 +50,7 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    console.log(`Sending email to: ${to}, subject: ${subject}`);
+    console.log(`Sending email to: ${to}, subject: ${subject}, bcc: ${bcc?.join(', ') || 'none'}`);
 
     // Usar domínio de teste do Resend se não configurou domínio próprio
     const fromEmail = from || "Jacometo Seguros <onboarding@resend.dev>";
@@ -57,6 +58,7 @@ const handler = async (req: Request): Promise<Response> => {
     const emailResponse = await resend.emails.send({
       from: fromEmail,
       to: [to],
+      bcc: bcc || [],
       subject: subject,
       html: html,
     });
