@@ -44,7 +44,7 @@ import { SendWhatsAppTemplateModal } from './SendWhatsAppTemplateModal';
 import { AudioPlayer } from './AudioPlayer';
 import { QuickQuestionsDropdown } from './QuickQuestionsDropdown';
 import { formatRegionFromPhone } from '@/utils/dddRegionMapper';
-import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar } from './chat';
+import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, MessageToneAssistant } from './chat';
 
 interface AgentQuestion {
   order: number;
@@ -1717,6 +1717,16 @@ const ChatInterface: React.FC = () => {
                   >
                     <FileType className="w-5 h-5" />
                   </Button>
+                  {/* Message Tone Assistant - Only visible when human is in control and there's text */}
+                  {activeChat.status === 'human' && !isMobile && (
+                    <MessageToneAssistant
+                      originalMessage={inputText}
+                      onApplySuggestion={setInputText}
+                      contactName={activeChat.contactName}
+                      lastMessages={activeChat.messages?.slice(-5).map(m => `${m.direction === 'outgoing' ? 'Atendente' : activeChat.contactName}: ${m.content}`)}
+                      disabled={!windowTimeRemaining.isOpen}
+                    />
+                  )}
                 </div>
                 
                 {/* Quick Questions Dropdown */}
