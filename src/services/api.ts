@@ -1046,7 +1046,7 @@ export const api = {
   getDealByContactId: async (contactId: string): Promise<Deal | null> => {
     const { data, error } = await supabase
       .from('deals')
-      .select('*, owner:team_members(name, avatar), pipeline:pipelines(id, slug, name, color, icon)')
+      .select('*, owner:team_members!deals_owner_id_fkey(name, avatar), pipeline:pipelines!deals_pipeline_id_fkey(id, slug, name, color, icon)')
       .eq('contact_id', contactId)
       .maybeSingle();
 
