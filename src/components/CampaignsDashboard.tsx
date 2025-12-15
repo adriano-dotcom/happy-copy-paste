@@ -211,57 +211,61 @@ const CampaignsDashboard: React.FC = () => {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-card/50 backdrop-blur-sm border-border">
-          <CardContent className="pt-6">
+        <Card className="relative overflow-hidden bg-gradient-to-br from-blue-500/10 via-card to-card border-blue-500/20 backdrop-blur-sm">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent" />
+          <CardContent className="pt-6 relative">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total de Leads</p>
+                <p className="text-sm text-muted-foreground font-medium">Total de Leads</p>
                 <p className="text-3xl font-bold text-foreground">{metrics.totalLeads}</p>
               </div>
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Users className="w-6 h-6 text-primary" />
+              <div className="w-14 h-14 rounded-2xl bg-blue-500/20 flex items-center justify-center shadow-lg shadow-blue-500/10">
+                <Users className="w-7 h-7 text-blue-500" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-card/50 backdrop-blur-sm border-border">
-          <CardContent className="pt-6">
+        <Card className="relative overflow-hidden bg-gradient-to-br from-violet-500/10 via-card to-card border-violet-500/20 backdrop-blur-sm">
+          <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 to-transparent" />
+          <CardContent className="pt-6 relative">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Fontes Ativas</p>
+                <p className="text-sm text-muted-foreground font-medium">Fontes Ativas</p>
                 <p className="text-3xl font-bold text-foreground">{metrics.activeSources}</p>
               </div>
-              <div className="w-12 h-12 rounded-xl bg-chart-1/10 flex items-center justify-center">
-                <Target className="w-6 h-6 text-chart-1" />
+              <div className="w-14 h-14 rounded-2xl bg-violet-500/20 flex items-center justify-center shadow-lg shadow-violet-500/10">
+                <Target className="w-7 h-7 text-violet-500" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-card/50 backdrop-blur-sm border-border">
-          <CardContent className="pt-6">
+        <Card className="relative overflow-hidden bg-gradient-to-br from-amber-500/10 via-card to-card border-amber-500/20 backdrop-blur-sm">
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent" />
+          <CardContent className="pt-6 relative">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Campanhas Ativas</p>
+                <p className="text-sm text-muted-foreground font-medium">Campanhas Ativas</p>
                 <p className="text-3xl font-bold text-foreground">{metrics.activeCampaigns}</p>
               </div>
-              <div className="w-12 h-12 rounded-xl bg-chart-2/10 flex items-center justify-center">
-                <Megaphone className="w-6 h-6 text-chart-2" />
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/20 flex items-center justify-center shadow-lg shadow-amber-500/10">
+                <Megaphone className="w-7 h-7 text-amber-500" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-card/50 backdrop-blur-sm border-border">
-          <CardContent className="pt-6">
+        <Card className="relative overflow-hidden bg-gradient-to-br from-emerald-500/10 via-card to-card border-emerald-500/20 backdrop-blur-sm">
+          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent" />
+          <CardContent className="pt-6 relative">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Taxa Qualificação</p>
+                <p className="text-sm text-muted-foreground font-medium">Taxa Qualificação</p>
                 <p className="text-3xl font-bold text-foreground">{metrics.qualificationRate.toFixed(1)}%</p>
               </div>
-              <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                <TrendingUp className="w-6 h-6 text-emerald-500" />
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 flex items-center justify-center shadow-lg shadow-emerald-500/10">
+                <TrendingUp className="w-7 h-7 text-emerald-500" />
               </div>
             </div>
           </CardContent>
