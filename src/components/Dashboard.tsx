@@ -87,7 +87,7 @@ const Dashboard: React.FC = () => {
       ]);
 
       const avgResponseTime = avgTimeData && avgTimeData.length > 0
-        ? Math.round(avgTimeData.reduce((sum, m) => sum + (m.nina_response_time || 0), 0) / avgTimeData.length)
+        ? Number((avgTimeData.reduce((sum, m) => sum + (m.nina_response_time || 0), 0) / avgTimeData.length / 1000).toFixed(1))
         : 0;
 
       setSystemMetrics({
@@ -359,9 +359,9 @@ const Dashboard: React.FC = () => {
               <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Users className="w-4 h-4 text-cyan-400" />
-                  <span className="text-xs text-slate-400">Clientes</span>
+                  <span className="text-xs text-slate-400">Contatos</span>
                 </div>
-                <p className="text-2xl font-bold text-white">{systemMetrics.clientMessages}</p>
+                <p className="text-2xl font-bold text-white">{systemMetrics.totalContacts}</p>
               </div>
               <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 p-4">
                 <div className="flex items-center gap-2 mb-2">
