@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
-import { X, User, Phone, Mail, Building2, FileText, Loader2, MapPin, Search } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { X, User, Phone, Mail, Building2, FileText, Loader2, MapPin, Search, Download, Upload } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { PhoneInput } from './ui/phone-input';
@@ -125,14 +126,31 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
     complement: '',
     neighborhood: '',
     city: '',
-    state: ''
+    state: '',
+    leadSource: 'inbound' as 'inbound' | 'outbound'
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [listCounts, setListCounts] = useState({ inbound: 0, outbound: 0 });
+
+  // Fetch list counts when modal opens
+  useEffect(() => {
+    const fetchCounts = async () => {
+      const { data } = await supabase
+        .from('contacts')
+        .select('lead_source');
+      
+      const inbound = data?.filter(c => c.lead_source === 'inbound').length || 0;
+      const outbound = data?.filter(c => c.lead_source === 'outbound').length || 0;
+      setListCounts({ inbound, outbound });
+    };
+    if (open) fetchCounts();
+  }, [open]);
 
   const resetForm = () => {
     setFormData({ 
       name: '', phone: '', email: '', company: '', cnpj: '', notes: '',
-      cep: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: ''
+      cep: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: '',
+      leadSource: 'inbound'
     });
     setErrors({});
   };
@@ -271,7 +289,8 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
         complement: formData.complement.trim() || null,
         neighborhood: formData.neighborhood.trim() || null,
         city: formData.city.trim() || null,
-        state: formData.state || null
+        state: formData.state || null,
+        lead_source: formData.leadSource
       });
 
       if (error) throw error;
@@ -332,6 +351,44 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-5 mt-4">
+          {/* Seletor de Lista */}
+          <div className="space-y-2">
+            <Label className="text-slate-300">
+              Cadastrar na Lista <span className="text-red-400">*</span>
+            </Label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, leadSource: 'inbound' }))}
+                className={cn(
+                  "flex flex-col items-center p-4 rounded-xl border-2 transition-all",
+                  formData.leadSource === 'inbound'
+                    ? "border-cyan-500 bg-cyan-500/10 text-cyan-400"
+                    : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600"
+                )}
+              >
+                <Download className="w-5 h-5 mb-2" />
+                <span className="font-medium">Inbound</span>
+                <span className="text-xs text-slate-500">({listCounts.inbound})</span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, leadSource: 'outbound' }))}
+                className={cn(
+                  "flex flex-col items-center p-4 rounded-xl border-2 transition-all",
+                  formData.leadSource === 'outbound'
+                    ? "border-purple-500 bg-purple-500/10 text-purple-400"
+                    : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600"
+                )}
+              >
+                <Upload className="w-5 h-5 mb-2" />
+                <span className="font-medium">Outbound</span>
+                <span className="text-xs text-slate-500">({listCounts.outbound})</span>
+              </button>
+            </div>
+          </div>
+
           {/* Dados Pessoais */}
           <div className="space-y-4">
             <h3 className="text-sm font-medium text-slate-400 border-b border-slate-800 pb-2">
