@@ -37,7 +37,7 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const [intervalSeconds, setIntervalSeconds] = useState(5);
+  const [intervalMinutes, setIntervalMinutes] = useState(1);
   const [isProspecting, setIsProspecting] = useState(true);
   const [progress, setProgress] = useState({ current: 0, total: 0, failed: 0 });
 
@@ -133,7 +133,7 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
 
       // Wait interval before next send (except for last contact)
       if (i < contacts.length - 1) {
-        await sleep(intervalSeconds * 1000);
+        await sleep(intervalMinutes * 60 * 1000);
       }
     }
 
@@ -208,20 +208,20 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
                 Intervalo entre envios
               </Label>
               <span className="text-sm font-medium text-white bg-slate-800 px-2 py-1 rounded">
-                {intervalSeconds}s
+                {intervalMinutes}m
               </span>
             </div>
             <Slider
-              value={[intervalSeconds]}
-              onValueChange={(v) => setIntervalSeconds(v[0])}
+              value={[intervalMinutes]}
+              onValueChange={(v) => setIntervalMinutes(v[0])}
               min={1}
-              max={60}
+              max={20}
               step={1}
               disabled={sending}
               className="py-2"
             />
             <p className="text-xs text-slate-500">
-              Tempo estimado: ~{Math.ceil((contacts.length * intervalSeconds) / 60)} min
+              Tempo estimado: ~{contacts.length * intervalMinutes} min
             </p>
           </div>
 
