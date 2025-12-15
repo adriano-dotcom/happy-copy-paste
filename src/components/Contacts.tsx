@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X, CheckSquare, Square, Minus, AlertTriangle } from 'lucide-react';
+import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X, CheckSquare, Square, Minus, AlertTriangle, Send } from 'lucide-react';
 import { useUserRole } from '@/hooks/useUserRole';
 import { Button } from './ui/button';
 import { api } from '../services/api';
@@ -17,6 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Checkbox } from './ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { BulkSendTemplateModal } from './BulkSendTemplateModal';
 
 const statusOptions = [
   { value: 'new', label: 'Novo Lead', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
@@ -63,6 +64,7 @@ const Contacts: React.FC = () => {
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
+  const [isBulkSendTemplateOpen, setIsBulkSendTemplateOpen] = useState(false);
   
   const { isAdmin } = useUserRole();
   
@@ -719,6 +721,15 @@ const Contacts: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setIsBulkSendTemplateOpen(true)}
+                className="text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10"
+              >
+                <Send className="w-4 h-4 mr-1" />
+                Enviar Template
+              </Button>
               {isAdmin && (
                 <Button 
                   variant="ghost" 
@@ -925,6 +936,17 @@ const Contacts: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Bulk Send Template Modal */}
+      <BulkSendTemplateModal
+        isOpen={isBulkSendTemplateOpen}
+        onClose={() => setIsBulkSendTemplateOpen(false)}
+        contacts={contacts.filter(c => selectedContactIds.has(c.id))}
+        onComplete={() => {
+          setSelectedContactIds(new Set());
+          loadContacts();
+        }}
+      />
     </div>
   );
 };
