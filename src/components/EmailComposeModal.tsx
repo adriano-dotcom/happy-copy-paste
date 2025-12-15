@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ClientMemory } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
+import DOMPurify from 'dompurify';
 
 interface EmailTemplate {
   id: string;
@@ -626,7 +627,14 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
                     lineHeight: '1.6'
                   }}
                   dangerouslySetInnerHTML={{ 
-                    __html: replaceVariables(body) || '<p class="text-slate-400 italic">O conteúdo do email aparecerá aqui...</p>'
+                    __html: DOMPurify.sanitize(
+                      replaceVariables(body) || '<p class="text-slate-400 italic">O conteúdo do email aparecerá aqui...</p>',
+                      {
+                        ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'ul', 'ol', 'li', 'table', 'tr', 'td', 'th', 'thead', 'tbody', 'div', 'span', 'img'],
+                        ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'style', 'target'],
+                        ALLOW_DATA_ATTR: false
+                      }
+                    )
                   }}
                 />
               </div>
