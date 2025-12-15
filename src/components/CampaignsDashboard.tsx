@@ -274,7 +274,7 @@ const CampaignsDashboard: React.FC = () => {
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="bg-card/50 backdrop-blur-sm border-border">
+        <Card className="bg-card border-border shadow-lg">
           <CardHeader>
             <CardTitle className="text-lg font-semibold">Leads por Fonte</CardTitle>
           </CardHeader>
@@ -289,7 +289,7 @@ const CampaignsDashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card className="bg-card/50 backdrop-blur-sm border-border">
+        <Card className="bg-card border-border shadow-lg">
           <CardHeader>
             <CardTitle className="text-lg font-semibold">Top 5 Campanhas</CardTitle>
           </CardHeader>
@@ -306,7 +306,7 @@ const CampaignsDashboard: React.FC = () => {
       </div>
 
       {/* Detailed Table */}
-      <Card className="bg-card/50 backdrop-blur-sm border-border">
+      <Card className="bg-card border-border shadow-lg">
         <CardHeader>
           <CardTitle className="text-lg font-semibold">Detalhamento por Campanha</CardTitle>
         </CardHeader>

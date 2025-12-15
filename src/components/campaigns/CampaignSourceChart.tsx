@@ -15,34 +15,33 @@ const getSourceColor = (source: string): string => {
   const normalizedSource = source.toLowerCase();
   
   if (normalizedSource.includes('instagram') || normalizedSource === 'ig') {
-    return '#E4405F'; // Rosa Instagram
+    return '#E4405F';
   }
   if (normalizedSource.includes('facebook') || normalizedSource === 'fb') {
-    return '#1877F2'; // Azul Facebook
+    return '#1877F2';
   }
   if (normalizedSource.includes('google')) {
-    return '#EA4335'; // Vermelho Google
+    return '#EA4335';
   }
   if (normalizedSource.includes('linkedin')) {
-    return '#0A66C2'; // Azul LinkedIn
+    return '#0A66C2';
   }
   if (normalizedSource.includes('tiktok')) {
-    return '#000000'; // Preto TikTok
+    return '#000000';
   }
   if (normalizedSource.includes('youtube')) {
-    return '#FF0000'; // Vermelho YouTube
+    return '#FF0000';
   }
   if (normalizedSource.includes('whatsapp') || normalizedSource === 'wa') {
-    return '#25D366'; // Verde WhatsApp
+    return '#25D366';
   }
   if (normalizedSource.includes('twitter') || normalizedSource === 'x') {
-    return '#1DA1F2'; // Azul Twitter
+    return '#1DA1F2';
   }
   if (normalizedSource === 'direto' || normalizedSource === 'direct') {
-    return '#6366F1'; // Roxo para tráfego direto
+    return '#6366F1';
   }
   
-  // Cores padrão para fontes não identificadas
   const defaultColors = ['#8B5CF6', '#F59E0B', '#10B981', '#EC4899', '#06B6D4'];
   const hash = source.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return defaultColors[hash % defaultColors.length];
@@ -56,8 +55,8 @@ const CampaignSourceChart: React.FC<CampaignSourceChartProps> = ({ data }) => {
 
   const total = chartData.reduce((sum, item) => sum + item.value, 0);
 
-  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: any) => {
-    if (percent < 0.05) return null; // Não mostra label se < 5%
+  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+    if (percent < 0.05) return null;
     
     const RADIAN = Math.PI / 180;
     const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
@@ -86,9 +85,9 @@ const CampaignSourceChart: React.FC<CampaignSourceChartProps> = ({ data }) => {
           <Pie
             data={chartData}
             cx="50%"
-            cy="50%"
-            innerRadius={50}
-            outerRadius={85}
+            cy="45%"
+            innerRadius={45}
+            outerRadius={80}
             paddingAngle={2}
             dataKey="value"
             nameKey="name"
@@ -101,10 +100,10 @@ const CampaignSourceChart: React.FC<CampaignSourceChartProps> = ({ data }) => {
           </Pie>
           <Tooltip
             contentStyle={{
-              backgroundColor: 'hsl(var(--card))',
-              border: '1px solid hsl(var(--border))',
+              backgroundColor: 'hsl(222.2 84% 4.9%)',
+              border: '1px solid hsl(217.2 32.6% 17.5%)',
               borderRadius: '8px',
-              color: 'hsl(var(--foreground))'
+              color: '#f8fafc'
             }}
             formatter={(value: number, name: string) => [
               `${value} leads (${total > 0 ? ((value / total) * 100).toFixed(1) : 0}%)`, 
@@ -112,15 +111,15 @@ const CampaignSourceChart: React.FC<CampaignSourceChartProps> = ({ data }) => {
             ]}
           />
           <Legend
-            layout="vertical"
-            align="right"
-            verticalAlign="middle"
+            layout="horizontal"
+            align="center"
+            verticalAlign="bottom"
+            wrapperStyle={{ paddingTop: '10px' }}
             formatter={(value, entry: any) => (
               <span className="text-sm text-foreground">
                 {value.toUpperCase()} ({entry.payload?.value || 0})
               </span>
             )}
-            wrapperStyle={{ paddingLeft: '20px' }}
           />
         </PieChart>
       </ResponsiveContainer>

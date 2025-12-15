@@ -12,57 +12,68 @@ interface TopCampaignsChartProps {
 }
 
 const TopCampaignsChart: React.FC<TopCampaignsChartProps> = ({ data }) => {
-  // Cores vibrantes para as barras
   const COLORS = {
-    leads: '#3b82f6',      // Azul vibrante
-    qualified: '#22c55e',  // Verde vibrante
+    leads: '#3b82f6',
+    qualified: '#22c55e',
   };
+
+  // Calculate max value for proper Y axis domain
+  const maxValue = Math.max(...data.flatMap(d => [d.leads, d.qualified]), 1);
+  const yAxisMax = Math.ceil(maxValue * 1.2);
 
   return (
     <div className="h-[280px] w-full">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
           data={data}
-          layout="vertical"
-          margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+          margin={{ top: 10, right: 20, left: 0, bottom: 60 }}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
           <XAxis 
-            type="number" 
-            stroke="hsl(var(--muted-foreground))" 
-            fontSize={12}
-            allowDecimals={false}
-            tickFormatter={(value) => Math.floor(value).toString()}
+            dataKey="name" 
+            stroke="#9ca3af"
+            fontSize={11}
+            tickLine={false}
+            axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+            angle={-25}
+            textAnchor="end"
+            height={60}
+            interval={0}
+            tickFormatter={(value) => value.length > 20 ? `${value.substring(0, 20)}...` : value}
           />
           <YAxis 
-            dataKey="name" 
-            type="category" 
-            stroke="hsl(var(--muted-foreground))" 
-            fontSize={11}
-            width={120}
-            tickFormatter={(value) => value.length > 18 ? `${value.substring(0, 18)}...` : value}
+            stroke="#9ca3af"
+            fontSize={12}
+            tickLine={false}
+            axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+            allowDecimals={false}
+            domain={[0, yAxisMax]}
+            tickFormatter={(value) => Math.floor(value).toString()}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: 'hsl(var(--card))',
-              border: '1px solid hsl(var(--border))',
+              backgroundColor: 'hsl(222.2 84% 4.9%)',
+              border: '1px solid hsl(217.2 32.6% 17.5%)',
               borderRadius: '8px',
-              color: 'hsl(var(--foreground))'
+              color: '#f8fafc'
             }}
             formatter={(value: number, name: string) => [
               value, 
               name === 'leads' ? 'Total Leads' : 'Qualificados'
             ]}
+            labelStyle={{ color: '#f8fafc', fontWeight: 600, marginBottom: 4 }}
           />
           <Legend 
+            verticalAlign="top"
+            height={36}
             formatter={(value) => (
               <span className="text-sm text-muted-foreground">
                 {value === 'leads' ? 'Total Leads' : 'Qualificados'}
               </span>
             )}
           />
-          <Bar dataKey="leads" fill={COLORS.leads} radius={[0, 4, 4, 0]} name="leads" />
-          <Bar dataKey="qualified" fill={COLORS.qualified} radius={[0, 4, 4, 0]} name="qualified" />
+          <Bar dataKey="leads" fill={COLORS.leads} radius={[4, 4, 0, 0]} name="leads" />
+          <Bar dataKey="qualified" fill={COLORS.qualified} radius={[4, 4, 0, 0]} name="qualified" />
         </BarChart>
       </ResponsiveContainer>
     </div>
