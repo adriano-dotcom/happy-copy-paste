@@ -32,8 +32,52 @@ serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    // Step 1: Verify authentication
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      console.error('Missing Authorization header');
+      return new Response(
+        JSON.stringify({ success: false, error: 'Não autorizado' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Step 2: Create user client to verify identity
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } }
+    });
+
+    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    if (authError || !user) {
+      console.error('Invalid auth token:', authError?.message);
+      return new Response(
+        JSON.stringify({ success: false, error: 'Token inválido' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Step 3: Verify user is admin
+    const { data: userRole, error: roleError } = await userClient
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .single();
+
+    if (roleError || userRole?.role !== 'admin') {
+      console.error('Admin access denied for user:', user.id, 'role:', userRole?.role);
+      return new Response(
+        JSON.stringify({ success: false, error: 'Acesso negado - Apenas administradores' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('Admin access granted for user:', user.id);
+
+    // Step 4: Now proceed with service role for vault operations
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const { action, secret_name, secret_value } = await req.json();
 
@@ -74,7 +118,7 @@ serve(async (req) => {
           console.error('Erro ao atualizar nina_settings:', updateError);
         }
 
-        console.log(`Secret ${secret_name} salvo no Vault com sucesso`);
+        console.log(`Secret ${secret_name} salvo no Vault com sucesso por admin ${user.id}`);
 
         return new Response(
           JSON.stringify({ 
@@ -155,7 +199,7 @@ serve(async (req) => {
                 .eq('id', settings.id);
 
               migrated.push(settingsName);
-              console.log(`Migrado ${settingsName} para Vault`);
+              console.log(`Migrado ${settingsName} para Vault por admin ${user.id}`);
             } catch (err) {
               errors.push(`${settingsName}: ${err instanceof Error ? err.message : 'Erro desconhecido'}`);
               console.error(`Erro ao migrar ${settingsName}:`, err);
@@ -195,6 +239,8 @@ serve(async (req) => {
           .from('nina_settings')
           .update({ [flagColumn]: false })
           .eq('id', (await supabase.from('nina_settings').select('id').single()).data?.id);
+
+        console.log(`Secret ${secret_name} deletado por admin ${user.id}`);
 
         return new Response(
           JSON.stringify({ 
