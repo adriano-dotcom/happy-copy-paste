@@ -85,7 +85,8 @@ serve(async (req) => {
     
     const { 
       name, phone, email, company, city, state,
-      utm_source, utm_campaign, utm_content, utm_term 
+      utm_source, utm_campaign, utm_content, utm_term,
+      template_name // Optional: template to send, defaults to 'lead_facebook_meta'
     } = payload;
     
     // Validar campos obrigatórios
@@ -193,14 +194,101 @@ serve(async (req) => {
       // Deal será criado automaticamente pelo trigger create_deal_for_new_contact
     }
     
-    console.log('[zapier-leadgen-webhook] Success:', { contactId, action });
+    // ========================================
+    // AUTOMAÇÃO: Criar conversa e enviar template WhatsApp
+    // ========================================
+    
+    let conversationId: string | null = null;
+    let templateSent = false;
+    
+    try {
+      // Buscar agente Adri (default agent)
+      const { data: adri, error: adriError } = await supabase
+        .from('agents')
+        .select('id')
+        .eq('is_default', true)
+        .eq('is_active', true)
+        .single();
+      
+      if (adriError || !adri) {
+        console.error('[zapier-leadgen-webhook] Could not find default agent:', adriError);
+      } else {
+        console.log('[zapier-leadgen-webhook] Found Adri agent:', adri.id);
+        
+        // Criar conversa com status 'nina' (IA ativa) e Adri como agente
+        const { data: conversation, error: convError } = await supabase
+          .from('conversations')
+          .insert({
+            contact_id: contactId,
+            status: 'nina',
+            is_active: true,
+            current_agent_id: adri.id,
+            metadata: { 
+              origin: 'facebook',
+              utm_source: utm_source || null,
+              utm_campaign: utm_campaign || null
+            },
+            last_message_at: new Date().toISOString(),
+            started_at: new Date().toISOString()
+          })
+          .select('id')
+          .single();
+        
+        if (convError) {
+          console.error('[zapier-leadgen-webhook] Error creating conversation:', convError);
+        } else {
+          conversationId = conversation.id;
+          console.log('[zapier-leadgen-webhook] Conversation created:', conversationId);
+          
+          // Enviar template WhatsApp
+          const selectedTemplate = template_name || 'lead_facebook_meta';
+          const firstName = name.split(' ')[0];
+          
+          console.log('[zapier-leadgen-webhook] Sending WhatsApp template:', selectedTemplate);
+          
+          // Invocar send-whatsapp-template edge function
+          const templateResponse = await fetch(
+            `${supabaseUrl}/functions/v1/send-whatsapp-template`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${supabaseKey}`
+              },
+              body: JSON.stringify({
+                contact_id: contactId,
+                conversation_id: conversationId,
+                template_name: selectedTemplate,
+                variables: [firstName], // Primeiro nome como variável
+                language: 'pt_BR'
+              })
+            }
+          );
+          
+          if (templateResponse.ok) {
+            templateSent = true;
+            console.log('[zapier-leadgen-webhook] WhatsApp template sent successfully');
+          } else {
+            const errorText = await templateResponse.text();
+            console.error('[zapier-leadgen-webhook] Error sending template:', errorText);
+          }
+        }
+      }
+    } catch (autoError) {
+      console.error('[zapier-leadgen-webhook] Automation error:', autoError);
+      // Não falha a requisição principal, apenas loga o erro
+    }
+    
+    console.log('[zapier-leadgen-webhook] Success:', { contactId, action, conversationId, templateSent });
     
     return new Response(
       JSON.stringify({ 
         success: true, 
         contact_id: contactId, 
         action,
-        phone: normalizedPhone
+        phone: normalizedPhone,
+        conversation_id: conversationId,
+        template_sent: templateSent
       }),
       { 
         status: 200, 
