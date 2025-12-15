@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, Play, Pause, Volume2, Loader2, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, Play, Pause, Volume2, Loader2, FileText, ChevronDown, ChevronUp, NotebookPen } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -18,6 +18,9 @@ interface CallHistoryPanelProps {
   loading?: boolean;
   compact?: boolean;
   onTranscriptionUpdate?: (callId: string, transcription: string) => void;
+  contactId?: string;
+  contactName?: string;
+  onNotesUpdate?: (notes: string) => void;
 }
 
 const formatDuration = (seconds: number | null): string => {
@@ -178,14 +181,19 @@ const AudioPlayer: React.FC<{ url: string }> = ({ url }) => {
 // Transcription Section Component
 const TranscriptionSection: React.FC<{
   callId: string;
+  callDate: string;
   transcription?: string | null;
   transcriptionStatus?: string | null;
   hasRecording: boolean;
   onTranscriptionUpdate?: (callId: string, transcription: string) => void;
-}> = ({ callId, transcription, transcriptionStatus, hasRecording, onTranscriptionUpdate }) => {
+  contactId?: string;
+  contactName?: string;
+  onNotesUpdate?: (notes: string) => void;
+}> = ({ callId, callDate, transcription, transcriptionStatus, hasRecording, onTranscriptionUpdate, contactId, contactName, onNotesUpdate }) => {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [localTranscription, setLocalTranscription] = useState(transcription);
+  const [isSummarizing, setIsSummarizing] = useState(false);
 
   const handleTranscribe = async () => {
     setIsTranscribing(true);
@@ -209,6 +217,64 @@ const TranscriptionSection: React.FC<{
     }
   };
 
+  const handleSummarizeToNotes = async () => {
+    const transcriptionText = localTranscription || transcription;
+    if (!transcriptionText || !contactId) {
+      toast.error('Transcrição ou contato não disponível');
+      return;
+    }
+
+    setIsSummarizing(true);
+    try {
+      // 1. Gerar resumo via edge function
+      const { data: summaryData, error: summaryError } = await supabase.functions.invoke('summarize-transcription', {
+        body: { 
+          transcription: transcriptionText,
+          callDate,
+          contactName
+        }
+      });
+
+      if (summaryError) throw summaryError;
+
+      if (!summaryData?.summary) {
+        throw new Error('Resumo não gerado');
+      }
+
+      // 2. Buscar notas atuais do contato
+      const { data: contact, error: contactError } = await supabase
+        .from('contacts')
+        .select('notes')
+        .eq('id', contactId)
+        .single();
+
+      if (contactError) throw contactError;
+
+      // 3. Append resumo às notas existentes
+      const existingNotes = contact?.notes || '';
+      const separator = existingNotes.trim() ? '\n\n---\n\n' : '';
+      const newNotes = existingNotes + separator + summaryData.summary;
+
+      // 4. Salvar notas atualizadas
+      const { error: updateError } = await supabase
+        .from('contacts')
+        .update({ notes: newNotes })
+        .eq('id', contactId);
+
+      if (updateError) throw updateError;
+
+      // 5. Notificar componente pai
+      onNotesUpdate?.(newNotes);
+      
+      toast.success('Resumo adicionado às notas!');
+    } catch (error) {
+      console.error('Erro ao resumir para notas:', error);
+      toast.error('Erro ao gerar resumo da ligação');
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
   const displayTranscription = localTranscription || transcription;
   const isProcessing = isTranscribing || transcriptionStatus === 'processing';
 
@@ -217,7 +283,7 @@ const TranscriptionSection: React.FC<{
   // Se tem transcrição, mostrar
   if (displayTranscription) {
     return (
-      <div className="mt-2">
+      <div className="mt-2 space-y-2">
         <button
           onClick={() => setIsExpanded(!isExpanded)}
           className="flex items-center gap-2 text-xs text-cyan-400 hover:text-cyan-300 transition-colors w-full"
@@ -228,11 +294,34 @@ const TranscriptionSection: React.FC<{
         </button>
         
         {isExpanded && (
-          <div className="mt-2 p-3 bg-slate-900/70 rounded-lg border border-slate-700/50 max-h-40 overflow-y-auto">
-            <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">
-              {displayTranscription}
-            </p>
-          </div>
+          <>
+            <div className="p-3 bg-slate-900/70 rounded-lg border border-slate-700/50 max-h-40 overflow-y-auto">
+              <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">
+                {displayTranscription}
+              </p>
+            </div>
+            
+            {/* Botão de resumir para notas */}
+            {contactId && (
+              <button
+                onClick={handleSummarizeToNotes}
+                disabled={isSummarizing}
+                className="flex items-center gap-2 text-xs text-amber-400 hover:text-amber-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSummarizing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Gerando resumo...</span>
+                  </>
+                ) : (
+                  <>
+                    <NotebookPen className="w-3.5 h-3.5" />
+                    <span>Resumir para Notas</span>
+                  </>
+                )}
+              </button>
+            )}
+          </>
         )}
       </div>
     );
@@ -266,7 +355,10 @@ export const CallHistoryPanel: React.FC<CallHistoryPanelProps> = ({
   calls, 
   loading, 
   compact = false,
-  onTranscriptionUpdate 
+  onTranscriptionUpdate,
+  contactId,
+  contactName,
+  onNotesUpdate
 }) => {
   const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
 
@@ -360,10 +452,14 @@ export const CallHistoryPanel: React.FC<CallHistoryPanelProps> = ({
                 <AudioPlayer url={call.record_url!} />
                 <TranscriptionSection
                   callId={call.id}
+                  callDate={call.started_at}
                   transcription={call.transcription}
                   transcriptionStatus={call.transcription_status}
                   hasRecording={hasRecording}
                   onTranscriptionUpdate={onTranscriptionUpdate}
+                  contactId={contactId}
+                  contactName={contactName}
+                  onNotesUpdate={onNotesUpdate}
                 />
               </div>
             )}

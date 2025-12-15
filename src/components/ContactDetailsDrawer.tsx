@@ -164,7 +164,13 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
             <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2 mb-4">
               <Phone className="w-4 h-4" /> Histórico de Chamadas
             </h3>
-            <CallHistoryPanel calls={callHistory} loading={callsLoading} compact />
+            <CallHistoryPanel 
+              calls={callHistory} 
+              loading={callsLoading} 
+              compact
+              contactId={contact?.id}
+              contactName={contact?.name}
+            />
           </section>
 
           {/* Notas */}
