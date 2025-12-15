@@ -83,6 +83,9 @@ const ChatInterface: React.FC = () => {
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<ConversationStatus | null>(null);
   const [showClosedConversations, setShowClosedConversations] = useState(false);
   
+  // Owner filter state
+  const [selectedOwnerFilter, setSelectedOwnerFilter] = useState<string | null>(null);
+  
   // Editable contact fields
   const [isEditingContact, setIsEditingContact] = useState(false);
   const [editEmail, setEditEmail] = useState('');
@@ -891,6 +894,32 @@ const ChatInterface: React.FC = () => {
     };
   }, [conversations, selectedPipelineFilter]);
 
+  // Calculate available owners for filter (based on selected pipeline and status)
+  const availableOwners = useMemo(() => {
+    let baseConversations = selectedPipelineFilter === 'no-pipeline'
+      ? conversations.filter(c => c.pipelineId === null)
+      : selectedPipelineFilter
+        ? conversations.filter(c => c.pipelineId === selectedPipelineFilter)
+        : conversations;
+    
+    if (selectedStatusFilter) {
+      baseConversations = baseConversations.filter(c => c.status === selectedStatusFilter);
+    }
+    
+    const ownersMap = new Map<string, { id: string; name: string; count: number }>();
+    baseConversations.forEach(c => {
+      if (c.dealOwnerId && c.dealOwnerName) {
+        const existing = ownersMap.get(c.dealOwnerId);
+        if (existing) {
+          existing.count++;
+        } else {
+          ownersMap.set(c.dealOwnerId, { id: c.dealOwnerId, name: c.dealOwnerName, count: 1 });
+        }
+      }
+    });
+    return Array.from(ownersMap.values());
+  }, [conversations, selectedPipelineFilter, selectedStatusFilter]);
+
   const filteredConversations = conversations
     .filter(chat => {
       // Hide closed conversations by default (unless toggle is on)
@@ -908,6 +937,11 @@ const ChatInterface: React.FC = () => {
       
       // Status filter
       if (selectedStatusFilter && chat.status !== selectedStatusFilter) {
+        return false;
+      }
+      
+      // Owner filter
+      if (selectedOwnerFilter && chat.dealOwnerId !== selectedOwnerFilter) {
         return false;
       }
       
@@ -1210,10 +1244,42 @@ const ChatInterface: React.FC = () => {
                     : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
                 }`}
               >
-                <Pause className="w-3.5 h-3.5" />
+              <Pause className="w-3.5 h-3.5" />
                 Pausado
                 <span className="text-[10px] opacity-70">({statusCounts.paused})</span>
               </button>
+            </div>
+          )}
+          
+          {/* Owner Filter Pills - Terceira linha */}
+          {!viewingArchived && availableOwners.length > 0 && (
+            <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
+              <button
+                onClick={() => setSelectedOwnerFilter(null)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                  selectedOwnerFilter === null
+                    ? 'bg-slate-500/20 text-slate-300 border-slate-500/40'
+                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                }`}
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                Todos Responsáveis
+              </button>
+              {availableOwners.map(owner => (
+                <button
+                  key={owner.id}
+                  onClick={() => setSelectedOwnerFilter(owner.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                    selectedOwnerFilter === owner.id
+                      ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
+                      : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                  }`}
+                >
+                  <User className="w-3.5 h-3.5" />
+                  {owner.name.split(' ')[0]}
+                  <span className="text-[10px] opacity-70">({owner.count})</span>
+                </button>
+              ))}
             </div>
           )}
           
