@@ -202,10 +202,10 @@ serve(async (req) => {
     let templateSent = false;
     
     try {
-      // Buscar configurações (incluindo template padrão do Facebook)
+      // Buscar configurações (incluindo template padrão do Facebook e email)
       const { data: settings } = await supabase
         .from('nina_settings')
-        .select('facebook_lead_template')
+        .select('facebook_lead_template, facebook_lead_email_template')
         .single();
       
       // Buscar agente Adri (default agent)
@@ -280,27 +280,111 @@ serve(async (req) => {
           }
         }
       }
+      
+      // ========================================
+      // AUTOMAÇÃO 2: Enviar Email (se configurado e lead tem email)
+      // ========================================
+      let emailSent = false;
+      
+      if (email && settings?.facebook_lead_email_template) {
+        try {
+          console.log('[zapier-leadgen-webhook] Email template configured, fetching...');
+          
+          // Buscar template de email
+          const { data: emailTemplate, error: emailTemplateError } = await supabase
+            .from('email_templates')
+            .select('subject, body_html')
+            .eq('id', settings.facebook_lead_email_template)
+            .single();
+          
+          if (emailTemplateError) {
+            console.error('[zapier-leadgen-webhook] Error fetching email template:', emailTemplateError);
+          } else if (emailTemplate) {
+            // Substituir variáveis no template
+            const firstName = name.split(' ')[0];
+            const processedSubject = emailTemplate.subject
+              .replace(/\{\{nome\}\}/gi, firstName)
+              .replace(/\{\{empresa\}\}/gi, company || '');
+            const processedBody = emailTemplate.body_html
+              .replace(/\{\{nome\}\}/gi, firstName)
+              .replace(/\{\{empresa\}\}/gi, company || '');
+            
+            console.log('[zapier-leadgen-webhook] Sending email to:', email);
+            
+            // Enviar email via send-email edge function
+            const emailResponse = await fetch(
+              `${supabaseUrl}/functions/v1/send-email`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${supabaseKey}`
+                },
+                body: JSON.stringify({
+                  to: email,
+                  subject: processedSubject,
+                  html: processedBody,
+                  bcc: 'adriano@jacometo.com.br'
+                })
+              }
+            );
+            
+            if (emailResponse.ok) {
+              emailSent = true;
+              console.log('[zapier-leadgen-webhook] Email sent successfully to:', email);
+            } else {
+              const errorText = await emailResponse.text();
+              console.error('[zapier-leadgen-webhook] Error sending email:', errorText);
+            }
+          }
+        } catch (emailError) {
+          console.error('[zapier-leadgen-webhook] Email automation error:', emailError);
+          // Não falha a requisição principal, apenas loga o erro
+        }
+      } else {
+        console.log('[zapier-leadgen-webhook] Email not sent:', {
+          hasEmail: !!email,
+          hasEmailTemplate: !!settings?.facebook_lead_email_template
+        });
+      }
+      
+      console.log('[zapier-leadgen-webhook] Success:', { contactId, action, conversationId, templateSent, emailSent });
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          contact_id: contactId, 
+          action,
+          phone: normalizedPhone,
+          conversation_id: conversationId,
+          template_sent: templateSent,
+          email_sent: emailSent
+        }),
+        { 
+          status: 200, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+      
     } catch (autoError) {
       console.error('[zapier-leadgen-webhook] Automation error:', autoError);
-      // Não falha a requisição principal, apenas loga o erro
+      // Retorna sucesso parcial mesmo com erro na automação
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          contact_id: contactId, 
+          action,
+          phone: normalizedPhone,
+          conversation_id: conversationId,
+          template_sent: templateSent,
+          automation_error: true
+        }),
+        { 
+          status: 200, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
     }
-    
-    console.log('[zapier-leadgen-webhook] Success:', { contactId, action, conversationId, templateSent });
-    
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        contact_id: contactId, 
-        action,
-        phone: normalizedPhone,
-        conversation_id: conversationId,
-        template_sent: templateSent
-      }),
-      { 
-        status: 200, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    );
     
   } catch (error: unknown) {
     console.error('[zapier-leadgen-webhook] Unexpected error:', error);
