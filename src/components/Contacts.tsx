@@ -65,6 +65,7 @@ const Contacts: React.FC = () => {
   const [cnpjFilter, setCnpjFilter] = useState<'all' | 'with' | 'without'>('all');
   const [channelFilter, setChannelFilter] = useState<'all' | 'email' | 'phone' | 'both'>('all');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [letterFilter, setLetterFilter] = useState<string>('all');
 
   const handleConverse = async (contactId: string) => {
     try {
@@ -207,6 +208,13 @@ const Contacts: React.FC = () => {
       });
     }
     
+    // Filtrar por letra inicial
+    if (letterFilter !== 'all') {
+      filtered = filtered.filter(contact => 
+        contact.name?.charAt(0).toUpperCase() === letterFilter
+      );
+    }
+    
     // Filtrar por termo de busca
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
@@ -268,9 +276,12 @@ const Contacts: React.FC = () => {
     setCnpjFilter('all');
     setChannelFilter('all');
     setDateFilter('all');
+    setLetterFilter('all');
   };
   
-  const hasActiveFilters = selectedStatuses.length > 0 || cnpjFilter !== 'all' || channelFilter !== 'all' || dateFilter !== 'all';
+  const hasActiveFilters = selectedStatuses.length > 0 || cnpjFilter !== 'all' || channelFilter !== 'all' || dateFilter !== 'all' || letterFilter !== 'all';
+  
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
   const toggleStatusFilter = (status: string) => {
     setSelectedStatuses(prev => 
@@ -325,7 +336,46 @@ const Contacts: React.FC = () => {
                     )}
                   </button>
                 </th>
-                <th className="px-4 py-4">Nome / Empresa</th>
+                <th className="px-4 py-4">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors">
+                        Nome / Empresa
+                        <ChevronDown className="w-3 h-3" />
+                        {letterFilter !== 'all' && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="bg-slate-900 border-slate-700 w-64 p-3">
+                      <div className="space-y-3">
+                        <button
+                          onClick={() => setLetterFilter('all')}
+                          className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                            letterFilter === 'all' 
+                              ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' 
+                              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                          }`}
+                        >
+                          Todos os contatos
+                        </button>
+                        <div className="grid grid-cols-9 gap-1">
+                          {alphabet.map(letter => (
+                            <button
+                              key={letter}
+                              onClick={() => setLetterFilter(letter)}
+                              className={`w-6 h-6 flex items-center justify-center rounded text-xs font-medium transition-colors ${
+                                letterFilter === letter
+                                  ? 'bg-cyan-500 text-white'
+                                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                              }`}
+                            >
+                              {letter}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </th>
                 {/* Status Header with Filter */}
                 <th className="px-4 py-4">
                   <Popover>
