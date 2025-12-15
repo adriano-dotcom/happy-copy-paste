@@ -202,6 +202,12 @@ serve(async (req) => {
     let templateSent = false;
     
     try {
+      // Buscar configurações (incluindo template padrão do Facebook)
+      const { data: settings } = await supabase
+        .from('nina_settings')
+        .select('facebook_lead_template')
+        .single();
+      
       // Buscar agente Adri (default agent)
       const { data: adri, error: adriError } = await supabase
         .from('agents')
@@ -240,8 +246,8 @@ serve(async (req) => {
           conversationId = conversation.id;
           console.log('[zapier-leadgen-webhook] Conversation created:', conversationId);
           
-          // Enviar template WhatsApp
-          const selectedTemplate = template_name || 'lead_facebook_meta';
+          // Usar template do payload > configuração do banco > fallback padrão
+          const selectedTemplate = template_name || settings?.facebook_lead_template || 'lead_facebook_meta';
           const firstName = name.split(' ')[0];
           
           console.log('[zapier-leadgen-webhook] Sending WhatsApp template:', selectedTemplate);
