@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, Clock, Loader2, Users, Zap, User, Phone, Building2, CheckCircle2, XCircle, Pause, Play, SkipForward } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { X, Send, Clock, Loader2, Users, Zap, User, Phone, Building2, CheckCircle2, XCircle, Pause, Play, SkipForward, ChevronDown, ChevronUp, ListFilter } from 'lucide-react';
 import { Button } from './ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Slider } from './ui/slider';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
+import { Checkbox } from './ui/checkbox';
+import { ScrollArea } from './ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { api } from '@/services/api';
@@ -54,6 +56,11 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
   
   // Skip contact state
   const skipRequestedRef = useRef(false);
+  
+  // Multiple contacts skip state
+  const [contactsToSkip, setContactsToSkip] = useState<Set<string>>(new Set());
+  const [showPendingList, setShowPendingList] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     if (isOpen) {
@@ -65,6 +72,9 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
       setIsPaused(false);
       isPausedRef.current = false;
       skipRequestedRef.current = false;
+      setContactsToSkip(new Set());
+      setShowPendingList(false);
+      setCurrentIndex(0);
     }
     return () => {
       if (countdownRef.current) {
@@ -121,6 +131,33 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
     }
   };
 
+  // Get pending contacts (after current)
+  const pendingContacts = useMemo(() => {
+    if (!sending) return [];
+    return contacts.slice(currentIndex + 1).filter(c => !contactsToSkip.has(c.id));
+  }, [contacts, currentIndex, contactsToSkip, sending]);
+
+  const toggleContactToSkip = (contactId: string) => {
+    setContactsToSkip(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(contactId)) {
+        newSet.delete(contactId);
+      } else {
+        newSet.add(contactId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllPending = () => {
+    const allPending = contacts.slice(currentIndex + 1);
+    setContactsToSkip(new Set(allPending.map(c => c.id)));
+  };
+
+  const clearSelection = () => {
+    setContactsToSkip(new Set());
+  };
+
   const startCountdown = (seconds: number) => {
     setWaitingTimeLeft(seconds);
     setCurrentPhase('waiting');
@@ -165,6 +202,22 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
       }
       
       const contact = contacts[i];
+      setCurrentIndex(i);
+      
+      // Check if this contact is marked to skip
+      if (contactsToSkip.has(contact.id)) {
+        skipCount++;
+        setProgress(prev => ({ ...prev, current: prev.current + 1, skipped: prev.skipped + 1 }));
+        toast.info(`Pulando ${contact.name || 'contato'} (marcado)`);
+        // Remove from skip set after processing
+        setContactsToSkip(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(contact.id);
+          return newSet;
+        });
+        continue;
+      }
+      
       setCurrentContact(contact);
       setCurrentPhase('sending');
       
@@ -441,6 +494,90 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
                       </Button>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* Pending contacts list - expandable */}
+              {currentPhase === 'waiting' && contacts.slice(currentIndex + 1).length > 0 && (
+                <div className="border border-slate-700 rounded-lg overflow-hidden">
+                  {/* Header - toggle */}
+                  <button
+                    onClick={() => setShowPendingList(!showPendingList)}
+                    className="w-full flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <ListFilter className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm text-slate-300">
+                        {contacts.slice(currentIndex + 1).length} contatos pendentes
+                      </span>
+                      {contactsToSkip.size > 0 && (
+                        <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-xs rounded-full">
+                          {contactsToSkip.size} para pular
+                        </span>
+                      )}
+                    </div>
+                    {showPendingList ? (
+                      <ChevronUp className="w-4 h-4 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    )}
+                  </button>
+
+                  {/* Expandable content */}
+                  {showPendingList && (
+                    <div className="border-t border-slate-700">
+                      {/* Select all / Clear */}
+                      <div className="flex items-center justify-between px-3 py-2 bg-slate-800/30 border-b border-slate-700">
+                        <button
+                          onClick={selectAllPending}
+                          className="text-xs text-cyan-400 hover:text-cyan-300"
+                        >
+                          Selecionar todos
+                        </button>
+                        {contactsToSkip.size > 0 && (
+                          <button
+                            onClick={clearSelection}
+                            className="text-xs text-slate-400 hover:text-slate-300"
+                          >
+                            Limpar seleção
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Contact list */}
+                      <ScrollArea className="max-h-40">
+                        <div className="p-2 space-y-1">
+                          {contacts.slice(currentIndex + 1).map(contact => (
+                            <label
+                              key={contact.id}
+                              className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                                contactsToSkip.has(contact.id) 
+                                  ? 'bg-amber-500/10 border border-amber-500/30' 
+                                  : 'hover:bg-slate-800'
+                              }`}
+                            >
+                              <Checkbox
+                                checked={contactsToSkip.has(contact.id)}
+                                onCheckedChange={() => toggleContactToSkip(contact.id)}
+                                className="border-slate-600 data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm text-white truncate">
+                                  {contact.name || contact.call_name || 'Sem nome'}
+                                </div>
+                                <div className="text-xs text-slate-500 truncate">
+                                  {displayPhoneInternational(contact.phone)}
+                                </div>
+                              </div>
+                              {contactsToSkip.has(contact.id) && (
+                                <SkipForward className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                              )}
+                            </label>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  )}
                 </div>
               )}
 
