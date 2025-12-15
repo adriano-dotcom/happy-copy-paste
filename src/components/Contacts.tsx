@@ -40,6 +40,10 @@ interface ExtendedContact extends Contact {
   notes?: string;
   lead_source?: 'inbound' | 'outbound' | 'facebook';
   whatsapp_id?: string;
+  utm_source?: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  utm_term?: string;
 }
 
 const Contacts: React.FC = () => {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet';
 import { Button } from './ui/button';
-import { User, Building2, MapPin, Phone, Mail, FileText, Calendar, Edit, MessageSquare } from 'lucide-react';
+import { User, Building2, MapPin, Phone, Mail, FileText, Calendar, Edit, MessageSquare, Target } from 'lucide-react';
 import { displayPhoneInternational } from '@/utils/phoneFormatter';
 import { CallHistoryPanel } from './CallHistoryPanel';
 import { useContactCallHistory } from '@/hooks/useContactCallHistory';
@@ -23,6 +23,10 @@ interface ContactData {
   notes?: string;
   lastContact?: string;
   status?: string;
+  utm_source?: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  utm_term?: string;
 }
 
 interface ContactDetailsDrawerProps {
@@ -182,6 +186,41 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
               <p className="text-slate-300 text-sm whitespace-pre-wrap bg-slate-800/50 p-3 rounded-lg border border-slate-700">
                 {contact.notes}
               </p>
+            </section>
+          )}
+
+          {/* Origem da Campanha (UTMs) */}
+          {(contact.utm_source || contact.utm_campaign || contact.utm_content || contact.utm_term) && (
+            <section>
+              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <Target className="w-4 h-4" /> Origem da Campanha
+              </h3>
+              <div className="space-y-2 text-slate-300 text-sm bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+                {contact.utm_source && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Fonte:</span>
+                    <span className="font-mono text-cyan-400">{contact.utm_source}</span>
+                  </div>
+                )}
+                {contact.utm_campaign && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Campanha:</span>
+                    <span className="font-mono text-cyan-400">{contact.utm_campaign}</span>
+                  </div>
+                )}
+                {contact.utm_content && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Conteúdo:</span>
+                    <span className="font-mono text-cyan-400">{contact.utm_content}</span>
+                  </div>
+                )}
+                {contact.utm_term && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Termo:</span>
+                    <span className="font-mono text-cyan-400">{contact.utm_term}</span>
+                  </div>
+                )}
+              </div>
             </section>
           )}
 
