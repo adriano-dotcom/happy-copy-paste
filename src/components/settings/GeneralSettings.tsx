@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Volume2, VolumeX, Facebook, MessageSquare } from 'lucide-react';
+import { Bell, Volume2, VolumeX, Facebook, MessageSquare, Mail } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -8,10 +8,17 @@ import { playNotificationSound, isNotificationSoundEnabled, setNotificationSound
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
+interface EmailTemplate {
+  id: string;
+  name: string;
+}
+
 const GeneralSettings: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [facebookTemplate, setFacebookTemplate] = useState('lead_facebook_meta');
+  const [emailTemplateId, setEmailTemplateId] = useState<string>('');
   const [approvedTemplates, setApprovedTemplates] = useState<{ name: string }[]>([]);
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -24,25 +31,42 @@ const GeneralSettings: React.FC = () => {
   const fetchSettings = async () => {
     const { data } = await supabase
       .from('nina_settings')
-      .select('facebook_lead_template')
+      .select('facebook_lead_template, facebook_lead_email_template')
       .single();
     
     if (data?.facebook_lead_template) {
       setFacebookTemplate(data.facebook_lead_template);
     }
+    if (data?.facebook_lead_email_template) {
+      setEmailTemplateId(data.facebook_lead_email_template);
+    }
   };
 
   const fetchTemplates = async () => {
     setLoading(true);
-    const { data } = await supabase
+    
+    // Fetch WhatsApp templates
+    const { data: waTemplates } = await supabase
       .from('whatsapp_templates')
       .select('name')
       .eq('status', 'APPROVED')
       .order('name');
     
-    if (data) {
-      setApprovedTemplates(data);
+    if (waTemplates) {
+      setApprovedTemplates(waTemplates);
     }
+    
+    // Fetch Email templates
+    const { data: emTemplates } = await supabase
+      .from('email_templates')
+      .select('id, name')
+      .eq('is_active', true)
+      .order('name');
+    
+    if (emTemplates) {
+      setEmailTemplates(emTemplates);
+    }
+    
     setLoading(false);
   };
 
@@ -64,19 +88,22 @@ const GeneralSettings: React.FC = () => {
     }
   };
 
-  const handleSaveTemplate = async () => {
+  const handleSaveSettings = async () => {
     setSaving(true);
     try {
       const { error } = await supabase
         .from('nina_settings')
-        .update({ facebook_lead_template: facebookTemplate })
+        .update({ 
+          facebook_lead_template: facebookTemplate,
+          facebook_lead_email_template: emailTemplateId || null
+        })
         .not('id', 'is', null);
       
       if (error) throw error;
-      toast.success('Template salvo com sucesso');
+      toast.success('Configurações salvas com sucesso');
     } catch (error) {
-      console.error('Error saving template:', error);
-      toast.error('Erro ao salvar template');
+      console.error('Error saving settings:', error);
+      toast.error('Erro ao salvar configurações');
     } finally {
       setSaving(false);
     }
@@ -135,6 +162,7 @@ const GeneralSettings: React.FC = () => {
         </h3>
         
         <div className="space-y-4">
+          {/* WhatsApp Template */}
           <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
             <div className="flex items-start gap-3 mb-4">
               <MessageSquare className="w-5 h-5 text-green-400 mt-0.5" />
@@ -148,38 +176,72 @@ const GeneralSettings: React.FC = () => {
               </div>
             </div>
             
-            <div className="space-y-3">
-              <Select 
-                value={facebookTemplate} 
-                onValueChange={setFacebookTemplate}
-                disabled={loading}
-              >
-                <SelectTrigger className="bg-slate-900/50 border-slate-700">
-                  <SelectValue placeholder="Selecione um template..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {approvedTemplates.map((template) => (
-                    <SelectItem key={template.name} value={template.name}>
-                      {template.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-slate-500">
-                  {approvedTemplates.length} templates aprovados disponíveis
+            <Select 
+              value={facebookTemplate} 
+              onValueChange={setFacebookTemplate}
+              disabled={loading}
+            >
+              <SelectTrigger className="bg-slate-900/50 border-slate-700">
+                <SelectValue placeholder="Selecione um template..." />
+              </SelectTrigger>
+              <SelectContent>
+                {approvedTemplates.map((template) => (
+                  <SelectItem key={template.name} value={template.name}>
+                    {template.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-500 mt-2">
+              {approvedTemplates.length} templates aprovados disponíveis
+            </p>
+          </div>
+
+          {/* Email Template */}
+          <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
+            <div className="flex items-start gap-3 mb-4">
+              <Mail className="w-5 h-5 text-orange-400 mt-0.5" />
+              <div className="flex-1">
+                <Label className="text-sm font-medium text-white">
+                  Template de Email para novos leads
+                </Label>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Enviado automaticamente após WhatsApp (se lead tiver email)
                 </p>
-                <Button
-                  size="sm"
-                  onClick={handleSaveTemplate}
-                  disabled={saving}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {saving ? 'Salvando...' : 'Salvar'}
-                </Button>
               </div>
             </div>
+            
+            <Select 
+              value={emailTemplateId} 
+              onValueChange={setEmailTemplateId}
+              disabled={loading}
+            >
+              <SelectTrigger className="bg-slate-900/50 border-slate-700">
+                <SelectValue placeholder="Não enviar email" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Não enviar email</SelectItem>
+                {emailTemplates.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {template.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-500 mt-2">
+              {emailTemplates.length} templates de email disponíveis
+            </p>
+          </div>
+
+          {/* Save Button */}
+          <div className="flex justify-end pt-2">
+            <Button
+              onClick={handleSaveSettings}
+              disabled={saving}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {saving ? 'Salvando...' : 'Salvar Configurações'}
+            </Button>
           </div>
         </div>
       </div>
