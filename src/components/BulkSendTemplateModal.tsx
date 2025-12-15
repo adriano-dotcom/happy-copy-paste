@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, Clock, Loader2, Users, Zap, User, Phone, Building2, CheckCircle2, XCircle, Pause, Play } from 'lucide-react';
+import { X, Send, Clock, Loader2, Users, Zap, User, Phone, Building2, CheckCircle2, XCircle, Pause, Play, SkipForward } from 'lucide-react';
 import { Button } from './ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Slider } from './ui/slider';
@@ -40,7 +40,7 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [intervalMinutes, setIntervalMinutes] = useState(1);
   const [isProspecting, setIsProspecting] = useState(true);
-  const [progress, setProgress] = useState({ current: 0, total: 0, failed: 0, success: 0 });
+  const [progress, setProgress] = useState({ current: 0, total: 0, failed: 0, success: 0, skipped: 0 });
   
   // New states for visual progress
   const [currentContact, setCurrentContact] = useState<Contact | null>(null);
@@ -51,16 +51,20 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
   // Pause/Resume states
   const [isPaused, setIsPaused] = useState(false);
   const isPausedRef = useRef(false);
+  
+  // Skip contact state
+  const skipRequestedRef = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
       fetchTemplates();
-      setProgress({ current: 0, total: contacts.length, failed: 0, success: 0 });
+      setProgress({ current: 0, total: contacts.length, failed: 0, success: 0, skipped: 0 });
       setCurrentContact(null);
       setCurrentPhase('sending');
       setWaitingTimeLeft(0);
       setIsPaused(false);
       isPausedRef.current = false;
+      skipRequestedRef.current = false;
     }
     return () => {
       if (countdownRef.current) {
@@ -110,6 +114,13 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
     setIsPaused(false);
   };
 
+  const handleSkipContact = () => {
+    if (currentContact) {
+      skipRequestedRef.current = true;
+      toast.info(`Pulando ${currentContact.name || 'contato'}...`);
+    }
+  };
+
   const startCountdown = (seconds: number) => {
     setWaitingTimeLeft(seconds);
     setCurrentPhase('waiting');
@@ -141,10 +152,11 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
     if (!selectedTemplateId || contacts.length === 0) return;
 
     setSending(true);
-    setProgress({ current: 0, total: contacts.length, failed: 0, success: 0 });
+    setProgress({ current: 0, total: contacts.length, failed: 0, success: 0, skipped: 0 });
 
     let successCount = 0;
     let failCount = 0;
+    let skipCount = 0;
 
     for (let i = 0; i < contacts.length; i++) {
       // Wait if paused
@@ -201,9 +213,22 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
         const waitSeconds = intervalMinutes * 60;
         startCountdown(waitSeconds);
         
-        // Interruptible sleep that respects pause
+        // Interruptible sleep that respects pause and skip
         let elapsed = 0;
+        let skipped = false;
         while (elapsed < waitSeconds * 1000) {
+          // Check if skip was requested
+          if (skipRequestedRef.current) {
+            skipRequestedRef.current = false;
+            skipped = true;
+            skipCount++;
+            setProgress(prev => ({ ...prev, skipped: prev.skipped + 1 }));
+            if (countdownRef.current) {
+              clearInterval(countdownRef.current);
+            }
+            break;
+          }
+          
           if (isPausedRef.current) {
             // Stop countdown while paused
             if (countdownRef.current) {
@@ -215,6 +240,11 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
           await sleep(1000);
           elapsed += 1000;
         }
+        
+        // If skipped, continue to next iteration (skip the next contact)
+        if (skipped) {
+          continue;
+        }
       }
     }
 
@@ -225,7 +255,9 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
     setSending(false);
     setCurrentContact(null);
     
-    if (failCount === 0) {
+    if (skipCount > 0) {
+      toast.warning(`${successCount} enviadas, ${skipCount} pulados, ${failCount} falhas`);
+    } else if (failCount === 0) {
       toast.success(`${successCount} mensagens enviadas com sucesso!`);
     } else {
       toast.warning(`${successCount} enviadas, ${failCount} falhas`);
@@ -395,17 +427,37 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
                         <span>{currentContact.company}</span>
                       </div>
                     )}
+                    
+                    {/* Skip button - only show during waiting phase */}
+                    {currentPhase === 'waiting' && !isPaused && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleSkipContact}
+                        className="w-full mt-2 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white"
+                      >
+                        <SkipForward className="w-4 h-4 mr-2" />
+                        Pular este contato
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* Success/Fail counters */}
-              <div className="flex items-center gap-4">
+              {/* Success/Skipped/Fail counters */}
+              <div className="flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-1.5 text-sm">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   <span className="text-emerald-400 font-medium">{progress.success}</span>
                   <span className="text-slate-500">enviados</span>
                 </div>
+                {progress.skipped > 0 && (
+                  <div className="flex items-center gap-1.5 text-sm">
+                    <SkipForward className="w-4 h-4 text-amber-400" />
+                    <span className="text-amber-400 font-medium">{progress.skipped}</span>
+                    <span className="text-slate-500">pulados</span>
+                  </div>
+                )}
                 {progress.failed > 0 && (
                   <div className="flex items-center gap-1.5 text-sm">
                     <XCircle className="w-4 h-4 text-red-400" />
