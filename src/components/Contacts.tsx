@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X } from 'lucide-react';
+import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X, CheckSquare, Square, Minus } from 'lucide-react';
 import { Button } from './ui/button';
 import { api } from '../services/api';
 import { Contact } from '../types';
@@ -13,6 +13,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Checkbox } from './ui/checkbox';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 
 const statusOptions = [
   { value: 'new', label: 'Novo Lead', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
@@ -53,6 +56,15 @@ const Contacts: React.FC = () => {
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
   const [activeTab, setActiveTab] = useState<'inbound' | 'outbound'>('inbound');
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  
+  // Bulk selection state
+  const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+  
+  // Additional filters state
+  const [cnpjFilter, setCnpjFilter] = useState<'all' | 'with' | 'without'>('all');
+  const [channelFilter, setChannelFilter] = useState<'all' | 'email' | 'phone' | 'both'>('all');
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
 
   const handleConverse = async (contactId: string) => {
     try {
@@ -149,7 +161,7 @@ const Contacts: React.FC = () => {
     contact.lead_source === 'outbound' && !contact.whatsapp_id
   );
 
-  // Filtrar pela aba ativa + termo de busca + status
+  // Filtrar pela aba ativa + termo de busca + status + outros filtros
   const getFilteredContacts = () => {
     const baseContacts = activeTab === 'inbound' ? inboundContacts : outboundContacts;
     
@@ -158,6 +170,41 @@ const Contacts: React.FC = () => {
     // Filtrar por status selecionados
     if (selectedStatuses.length > 0) {
       filtered = filtered.filter(contact => selectedStatuses.includes(contact.status));
+    }
+    
+    // Filtrar por CNPJ
+    if (cnpjFilter === 'with') {
+      filtered = filtered.filter(contact => contact.cnpj && contact.cnpj.length > 0);
+    } else if (cnpjFilter === 'without') {
+      filtered = filtered.filter(contact => !contact.cnpj || contact.cnpj.length === 0);
+    }
+    
+    // Filtrar por canal
+    if (channelFilter === 'email') {
+      filtered = filtered.filter(contact => contact.email && !contact.phone);
+    } else if (channelFilter === 'phone') {
+      filtered = filtered.filter(contact => contact.phone && !contact.email);
+    } else if (channelFilter === 'both') {
+      filtered = filtered.filter(contact => contact.email && contact.phone);
+    }
+    
+    // Filtrar por data de interação
+    if (dateFilter !== 'all') {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekStart = new Date(todayStart);
+      weekStart.setDate(weekStart.getDate() - 7);
+      const monthStart = new Date(todayStart);
+      monthStart.setMonth(monthStart.getMonth() - 1);
+      
+      filtered = filtered.filter(contact => {
+        if (!contact.lastContact) return false;
+        const contactDate = new Date(contact.lastContact);
+        if (dateFilter === 'today') return contactDate >= todayStart;
+        if (dateFilter === 'week') return contactDate >= weekStart;
+        if (dateFilter === 'month') return contactDate >= monthStart;
+        return true;
+      });
     }
     
     // Filtrar por termo de busca
@@ -174,6 +221,56 @@ const Contacts: React.FC = () => {
     
     return filtered;
   };
+  
+  // Bulk selection functions
+  const toggleContactSelection = (contactId: string) => {
+    setSelectedContactIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(contactId)) {
+        newSet.delete(contactId);
+      } else {
+        newSet.add(contactId);
+      }
+      return newSet;
+    });
+  };
+  
+  const toggleAllContacts = () => {
+    if (selectedContactIds.size === filteredContacts.length) {
+      setSelectedContactIds(new Set());
+    } else {
+      setSelectedContactIds(new Set(filteredContacts.map(c => c.id)));
+    }
+  };
+  
+  const handleBulkStatusChange = async (newStatus: string) => {
+    if (selectedContactIds.size === 0) return;
+    
+    try {
+      setIsBulkUpdating(true);
+      const promises = Array.from(selectedContactIds).map(id => 
+        api.updateContactStatus(id, newStatus)
+      );
+      await Promise.all(promises);
+      toast.success(`Status atualizado para ${selectedContactIds.size} contato(s)`);
+      setSelectedContactIds(new Set());
+      loadContacts();
+    } catch (error) {
+      console.error('Erro ao atualizar status em massa:', error);
+      toast.error('Erro ao atualizar status em massa');
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
+  
+  const clearAllFilters = () => {
+    setSelectedStatuses([]);
+    setCnpjFilter('all');
+    setChannelFilter('all');
+    setDateFilter('all');
+  };
+  
+  const hasActiveFilters = selectedStatuses.length > 0 || cnpjFilter !== 'all' || channelFilter !== 'all' || dateFilter !== 'all';
 
   const toggleStatusFilter = (status: string) => {
     setSelectedStatuses(prev => 
@@ -186,10 +283,11 @@ const Contacts: React.FC = () => {
   const clearStatusFilters = () => {
     setSelectedStatuses([]);
   };
-
-  const filteredContacts = getFilteredContacts();
-
-  const ContactsTable = ({ contacts }: { contacts: ExtendedContact[] }) => (
+  const ContactsTable = ({ contacts }: { contacts: ExtendedContact[] }) => {
+    const allSelected = contacts.length > 0 && selectedContactIds.size === contacts.length;
+    const someSelected = selectedContactIds.size > 0 && selectedContactIds.size < contacts.length;
+    
+    return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/40 backdrop-blur-sm shadow-xl overflow-hidden min-h-[400px]">
       {loading ? (
         <div className="flex flex-col items-center justify-center h-80">
@@ -212,18 +310,157 @@ const Contacts: React.FC = () => {
           <table className="w-full text-sm text-left">
             <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-800 font-medium text-xs uppercase tracking-wider">
               <tr>
-                <th className="px-6 py-4">Nome / Empresa</th>
-                <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4">Canais</th>
-                <th className="px-6 py-4">CNPJ</th>
-                <th className="px-6 py-4">Última Interação</th>
-                <th className="px-6 py-4 text-right">Ações</th>
+                {/* Checkbox Master */}
+                <th className="px-4 py-4 w-12">
+                  <button 
+                    onClick={toggleAllContacts}
+                    className="flex items-center justify-center w-5 h-5 rounded border border-slate-600 hover:border-cyan-500 transition-colors"
+                  >
+                    {allSelected ? (
+                      <CheckSquare className="w-4 h-4 text-cyan-400" />
+                    ) : someSelected ? (
+                      <Minus className="w-4 h-4 text-cyan-400" />
+                    ) : (
+                      <Square className="w-4 h-4 text-slate-500" />
+                    )}
+                  </button>
+                </th>
+                <th className="px-4 py-4">Nome / Empresa</th>
+                {/* Status Header with Filter */}
+                <th className="px-4 py-4">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors">
+                        Status
+                        <ChevronDown className="w-3 h-3" />
+                        {selectedStatuses.length > 0 && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="bg-slate-900 border-slate-700 w-48 p-2">
+                      <div className="space-y-1">
+                        {statusOptions.map(option => (
+                          <button
+                            key={option.value}
+                            onClick={() => toggleStatusFilter(option.value)}
+                            className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${selectedStatuses.includes(option.value) ? 'bg-slate-800' : ''}`}
+                          >
+                            <span className={`px-2 py-0.5 rounded border ${option.color}`}>
+                              {option.label}
+                            </span>
+                            {selectedStatuses.includes(option.value) && <span className="text-cyan-400">✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </th>
+                {/* Canais Header with Filter */}
+                <th className="px-4 py-4">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors">
+                        Canais
+                        <ChevronDown className="w-3 h-3" />
+                        {channelFilter !== 'all' && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="bg-slate-900 border-slate-700 w-40 p-2">
+                      <div className="space-y-1">
+                        {[
+                          { value: 'all', label: 'Todos' },
+                          { value: 'email', label: 'Só Email' },
+                          { value: 'phone', label: 'Só Telefone' },
+                          { value: 'both', label: 'Ambos' }
+                        ].map(opt => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setChannelFilter(opt.value as typeof channelFilter)}
+                            className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${channelFilter === opt.value ? 'bg-slate-800 text-cyan-400' : 'text-slate-300'}`}
+                          >
+                            {opt.label}
+                            {channelFilter === opt.value && <span>✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </th>
+                {/* CNPJ Header with Filter */}
+                <th className="px-4 py-4">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors">
+                        CNPJ
+                        <ChevronDown className="w-3 h-3" />
+                        {cnpjFilter !== 'all' && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="bg-slate-900 border-slate-700 w-40 p-2">
+                      <div className="space-y-1">
+                        {[
+                          { value: 'all', label: 'Todos' },
+                          { value: 'with', label: 'Com CNPJ' },
+                          { value: 'without', label: 'Sem CNPJ' }
+                        ].map(opt => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setCnpjFilter(opt.value as typeof cnpjFilter)}
+                            className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${cnpjFilter === opt.value ? 'bg-slate-800 text-cyan-400' : 'text-slate-300'}`}
+                          >
+                            {opt.label}
+                            {cnpjFilter === opt.value && <span>✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </th>
+                {/* Última Interação Header with Filter */}
+                <th className="px-4 py-4">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors">
+                        Última Interação
+                        <ChevronDown className="w-3 h-3" />
+                        {dateFilter !== 'all' && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="bg-slate-900 border-slate-700 w-40 p-2">
+                      <div className="space-y-1">
+                        {[
+                          { value: 'all', label: 'Todos' },
+                          { value: 'today', label: 'Hoje' },
+                          { value: 'week', label: 'Última semana' },
+                          { value: 'month', label: 'Último mês' }
+                        ].map(opt => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setDateFilter(opt.value as typeof dateFilter)}
+                            className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${dateFilter === opt.value ? 'bg-slate-800 text-cyan-400' : 'text-slate-300'}`}
+                          >
+                            {opt.label}
+                            {dateFilter === opt.value && <span>✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </th>
+                <th className="px-4 py-4 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {contacts.map((contact) => (
-                <tr key={contact.id} className="hover:bg-slate-800/40 transition-colors group">
-                  <td className="px-6 py-4">
+                <tr key={contact.id} className={`hover:bg-slate-800/40 transition-colors group ${selectedContactIds.has(contact.id) ? 'bg-cyan-500/5' : ''}`}>
+                  {/* Checkbox */}
+                  <td className="px-4 py-4">
+                    <Checkbox
+                      checked={selectedContactIds.has(contact.id)}
+                      onCheckedChange={() => toggleContactSelection(contact.id)}
+                      className="border-slate-600 data-[state=checked]:bg-cyan-600 data-[state=checked]:border-cyan-600"
+                    />
+                  </td>
+                  <td className="px-4 py-4">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-700 flex items-center justify-center text-sm font-bold text-cyan-400 shadow-inner">
                         {contact.name.substring(0, 2).toUpperCase()}
@@ -241,7 +478,7 @@ const Contacts: React.FC = () => {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-4">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button className={`px-2.5 py-1 rounded-md text-xs font-semibold border inline-flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity ${getStatusColor(contact.status)}`}>
@@ -264,12 +501,12 @@ const Contacts: React.FC = () => {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-4">
                     <div className="flex flex-col gap-1">
                       {contact.email && (
                         <div className="flex items-center gap-2 text-slate-400 text-xs">
                             <Mail className="w-3.5 h-3.5" />
-                            {contact.email}
+                            <span className="truncate max-w-[150px]">{contact.email}</span>
                         </div>
                       )}
                       <div className="flex items-center gap-2 text-slate-400 text-xs">
@@ -278,18 +515,18 @@ const Contacts: React.FC = () => {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-4">
                     {contact.cnpj ? (
                       <span className="text-slate-400 text-xs font-mono">{contact.cnpj}</span>
                     ) : (
                       <span className="text-slate-600 text-xs">-</span>
                     )}
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-4">
                      <span className="text-slate-400">{contact.lastContact}</span>
                      <div className="text-[10px] text-slate-600">via WhatsApp</div>
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-4 py-4 text-right">
                     <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
                       <Button 
                         size="sm" 
@@ -336,7 +573,9 @@ const Contacts: React.FC = () => {
         </div>
       )}
     </div>
-  );
+  )};
+
+  const filteredContacts = getFilteredContacts();
 
   return (
     <div className="p-8 h-full overflow-y-auto bg-slate-950 text-slate-50">
@@ -380,7 +619,44 @@ const Contacts: React.FC = () => {
           </TabsTrigger>
         </TabsList>
 
-        {/* Filters Bar */}
+        {/* Bulk Actions Bar */}
+        {selectedContactIds.size > 0 && (
+          <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-4 mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <CheckSquare className="w-5 h-5 text-cyan-400" />
+              <span className="text-cyan-400 font-medium">
+                {selectedContactIds.size} contato{selectedContactIds.size > 1 ? 's' : ''} selecionado{selectedContactIds.size > 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <Select onValueChange={handleBulkStatusChange} disabled={isBulkUpdating}>
+                <SelectTrigger className="w-48 bg-slate-900 border-slate-700 text-slate-200">
+                  <SelectValue placeholder={isBulkUpdating ? "Atualizando..." : "Alterar Status"} />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-900 border-slate-700">
+                  {statusOptions.map(option => (
+                    <SelectItem key={option.value} value={option.value} className="cursor-pointer">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium border ${option.color}`}>
+                        {option.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setSelectedContactIds(new Set())}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4 mr-1" />
+                Limpar
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Search Bar */}
         <div className="flex flex-col sm:flex-row items-center gap-4 mt-6 bg-slate-900/50 p-2 rounded-xl border border-slate-800">
           <div className="relative flex-1 w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
@@ -393,50 +669,22 @@ const Contacts: React.FC = () => {
             />
           </div>
           
-          {/* Status Filter Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button 
-                variant="outline" 
-                className={`w-full sm:w-auto bg-slate-950 border-slate-800 text-slate-300 hover:text-white ${selectedStatuses.length > 0 ? 'border-cyan-500/50 text-cyan-400' : ''}`}
-              >
-                <Filter className="w-4 h-4 mr-2" />
-                Status {selectedStatuses.length > 0 && `(${selectedStatuses.length})`}
-                <ChevronDown className="w-4 h-4 ml-2" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="bg-slate-900 border-slate-700 min-w-[200px]">
-              {statusOptions.map(option => (
-                <DropdownMenuItem 
-                  key={option.value}
-                  onClick={() => toggleStatusFilter(option.value)}
-                  className="cursor-pointer hover:bg-slate-800 focus:bg-slate-800 flex items-center justify-between"
-                >
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium border ${option.color}`}>
-                    {option.label}
-                  </span>
-                  {selectedStatuses.includes(option.value) && (
-                    <span className="text-cyan-400 text-xs">✓</span>
-                  )}
-                </DropdownMenuItem>
-              ))}
-              {selectedStatuses.length > 0 && (
-                <>
-                  <div className="border-t border-slate-700 my-1" />
-                  <DropdownMenuItem 
-                    onClick={clearStatusFilters}
-                    className="cursor-pointer hover:bg-slate-800 focus:bg-slate-800 text-slate-400 text-xs"
-                  >
-                    Limpar filtros
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Clear All Filters Button */}
+          {hasActiveFilters && (
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={clearAllFilters}
+              className="text-slate-400 hover:text-cyan-400"
+            >
+              <X className="w-4 h-4 mr-1" />
+              Limpar filtros
+            </Button>
+          )}
         </div>
 
         {/* Active Filter Chips */}
-        {selectedStatuses.length > 0 && (
+        {hasActiveFilters && (
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <span className="text-xs text-muted-foreground">Filtros ativos:</span>
             {selectedStatuses.map(status => {
@@ -452,8 +700,35 @@ const Contacts: React.FC = () => {
                 </button>
               );
             })}
+            {cnpjFilter !== 'all' && (
+              <button
+                onClick={() => setCnpjFilter('all')}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-purple-500/10 text-purple-400 border-purple-500/20 hover:opacity-80 transition-opacity group"
+              >
+                {cnpjFilter === 'with' ? 'Com CNPJ' : 'Sem CNPJ'}
+                <X className="w-3 h-3 opacity-60 group-hover:opacity-100" />
+              </button>
+            )}
+            {channelFilter !== 'all' && (
+              <button
+                onClick={() => setChannelFilter('all')}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-amber-500/10 text-amber-400 border-amber-500/20 hover:opacity-80 transition-opacity group"
+              >
+                {channelFilter === 'email' ? 'Só Email' : channelFilter === 'phone' ? 'Só Telefone' : 'Ambos'}
+                <X className="w-3 h-3 opacity-60 group-hover:opacity-100" />
+              </button>
+            )}
+            {dateFilter !== 'all' && (
+              <button
+                onClick={() => setDateFilter('all')}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-rose-500/10 text-rose-400 border-rose-500/20 hover:opacity-80 transition-opacity group"
+              >
+                {dateFilter === 'today' ? 'Hoje' : dateFilter === 'week' ? 'Última semana' : 'Último mês'}
+                <X className="w-3 h-3 opacity-60 group-hover:opacity-100" />
+              </button>
+            )}
             <button
-              onClick={clearStatusFilters}
+              onClick={clearAllFilters}
               className="text-xs text-muted-foreground hover:text-foreground underline ml-2"
             >
               Limpar todos
