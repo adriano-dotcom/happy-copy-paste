@@ -83,7 +83,10 @@ serve(async (req) => {
     const payload = await req.json();
     console.log('[zapier-leadgen-webhook] Payload:', JSON.stringify(payload));
     
-    const { name, phone, email, company, city, state } = payload;
+    const { 
+      name, phone, email, company, city, state,
+      utm_source, utm_campaign, utm_content, utm_term 
+    } = payload;
     
     // Validar campos obrigatórios
     if (!name || !phone) {
@@ -136,6 +139,10 @@ serve(async (req) => {
       if (company && !existingContact.company) updateData.company = company;
       if (finalCity) updateData.city = finalCity;
       if (finalState) updateData.state = finalState;
+      if (utm_source) updateData.utm_source = utm_source;
+      if (utm_campaign) updateData.utm_campaign = utm_campaign;
+      if (utm_content) updateData.utm_content = utm_content;
+      if (utm_term) updateData.utm_term = utm_term;
       
       const { error: updateError } = await supabase
         .from('contacts')
@@ -164,6 +171,10 @@ serve(async (req) => {
           city: finalCity,
           state: finalState,
           lead_source: 'facebook',
+          utm_source: utm_source || null,
+          utm_campaign: utm_campaign || null,
+          utm_content: utm_content || null,
+          utm_term: utm_term || null,
           first_contact_date: new Date().toISOString(),
           last_activity: new Date().toISOString(),
         })
