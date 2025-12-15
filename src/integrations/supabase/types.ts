@@ -333,6 +333,7 @@ export type Database = {
           created_at: string
           email: string | null
           first_contact_date: string
+          fleet_size: number | null
           id: string
           is_blocked: boolean | null
           is_business: boolean | null
@@ -369,6 +370,7 @@ export type Database = {
           created_at?: string
           email?: string | null
           first_contact_date?: string
+          fleet_size?: number | null
           id?: string
           is_blocked?: boolean | null
           is_business?: boolean | null
@@ -405,6 +407,7 @@ export type Database = {
           created_at?: string
           email?: string | null
           first_contact_date?: string
+          fleet_size?: number | null
           id?: string
           is_blocked?: boolean | null
           is_business?: boolean | null

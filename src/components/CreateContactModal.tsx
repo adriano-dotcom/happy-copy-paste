@@ -119,6 +119,7 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
     email: '',
     company: '',
     cnpj: '',
+    fleet_size: '',
     notes: '',
     cep: '',
     street: '',
@@ -148,7 +149,7 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
 
   const resetForm = () => {
     setFormData({ 
-      name: '', phone: '', email: '', company: '', cnpj: '', notes: '',
+      name: '', phone: '', email: '', company: '', cnpj: '', fleet_size: '', notes: '',
       cep: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: '',
       leadSource: 'inbound'
     });
@@ -282,6 +283,7 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
         email: formData.email.trim() || null,
         company: formData.company.trim() || null,
         cnpj: cnpjDigits,
+        fleet_size: formData.fleet_size ? parseInt(formData.fleet_size) : null,
         notes: formData.notes.trim() || null,
         cep: cepDigits,
         street: formData.street.trim() || null,
@@ -487,6 +489,19 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
                   className="pl-10 bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-600"
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="fleet_size" className="text-slate-300">Automotor (Qtd. Veículos)</Label>
+              <Input
+                id="fleet_size"
+                type="number"
+                min="0"
+                value={formData.fleet_size}
+                onChange={(e) => setFormData(prev => ({ ...prev, fleet_size: e.target.value }))}
+                placeholder="Ex: 15"
+                className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-600"
+              />
             </div>
           </div>
 

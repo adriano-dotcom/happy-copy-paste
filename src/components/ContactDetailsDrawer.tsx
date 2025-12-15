@@ -13,6 +13,7 @@ interface ContactData {
   email: string;
   company?: string;
   cnpj?: string;
+  fleet_size?: number;
   cep?: string;
   street?: string;
   number?: string;
@@ -116,7 +117,7 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
           </section>
 
           {/* Dados da Empresa */}
-          {(contact.company || contact.cnpj) && (
+          {(contact.company || contact.cnpj || contact.fleet_size) && (
             <section>
               <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2 mb-4">
                 <Building2 className="w-4 h-4" /> Empresa
@@ -132,6 +133,12 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
                   <div className="text-slate-300">
                     <span className="text-slate-500 text-sm">CNPJ</span>
                     <p className="font-mono">{formatCNPJ(contact.cnpj)}</p>
+                  </div>
+                )}
+                {contact.fleet_size && (
+                  <div className="text-slate-300">
+                    <span className="text-slate-500 text-sm">Automotor</span>
+                    <p className="font-medium">{contact.fleet_size} veículos</p>
                   </div>
                 )}
               </div>
