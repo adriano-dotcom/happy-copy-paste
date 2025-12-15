@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X, CheckSquare, Square, Minus } from 'lucide-react';
+import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X, CheckSquare, Square, Minus, AlertTriangle } from 'lucide-react';
+import { useUserRole } from '@/hooks/useUserRole';
 import { Button } from './ui/button';
 import { api } from '../services/api';
 import { Contact } from '../types';
@@ -60,6 +61,10 @@ const Contacts: React.FC = () => {
   // Bulk selection state
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
+  
+  const { isAdmin } = useUserRole();
   
   // Additional filters state
   const [cnpjFilter, setCnpjFilter] = useState<'all' | 'with' | 'without'>('all');
@@ -268,6 +273,27 @@ const Contacts: React.FC = () => {
       toast.error('Erro ao atualizar status em massa');
     } finally {
       setIsBulkUpdating(false);
+    }
+  };
+  
+  const handleBulkDelete = async () => {
+    if (selectedContactIds.size === 0) return;
+    
+    try {
+      setIsBulkDeleting(true);
+      const promises = Array.from(selectedContactIds).map(id => 
+        api.deleteContact(id)
+      );
+      await Promise.all(promises);
+      toast.success(`${selectedContactIds.size} contato(s) excluído(s) com sucesso`);
+      setSelectedContactIds(new Set());
+      setIsBulkDeleteDialogOpen(false);
+      loadContacts();
+    } catch (error) {
+      console.error('Erro ao excluir contatos em massa:', error);
+      toast.error('Erro ao excluir contatos em massa');
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
   
@@ -693,6 +719,17 @@ const Contacts: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {isAdmin && (
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => setIsBulkDeleteDialogOpen(true)}
+                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                >
+                  <Trash2 className="w-4 h-4 mr-1" />
+                  Excluir
+                </Button>
+              )}
               <Button 
                 variant="ghost" 
                 size="sm"
@@ -841,6 +878,49 @@ const Contacts: React.FC = () => {
               className="bg-red-600 hover:bg-red-700 text-white"
             >
               {isDeleting ? 'Excluindo...' : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation Dialog - Admin Only */}
+      <AlertDialog open={isBulkDeleteDialogOpen} onOpenChange={setIsBulkDeleteDialogOpen}>
+        <AlertDialogContent className="bg-slate-900 border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+              Excluir {selectedContactIds.size} Contato(s)
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400">
+              <span className="text-red-400 font-medium">Atenção: Esta ação é permanente e não pode ser desfeita.</span>
+              <br /><br />
+              Você está prestes a excluir <span className="font-semibold text-white">{selectedContactIds.size} contato(s)</span>.
+              Todas as conversas e mensagens associadas também serão removidas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel 
+              className="bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700"
+              disabled={isBulkDeleting}
+            >
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleBulkDelete}
+              disabled={isBulkDeleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isBulkDeleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Excluindo...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Confirmar Exclusão
+                </>
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
