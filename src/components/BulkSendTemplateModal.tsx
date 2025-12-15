@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Send, Clock, Loader2, Users, Zap } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Send, Clock, Loader2, Users, Zap, User, Phone, Building2, CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Slider } from './ui/slider';
@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { api } from '@/services/api';
 import { Contact } from '@/types';
 import { Json } from '@/integrations/supabase/types';
+import { displayPhoneInternational } from '@/utils/phoneFormatter';
 
 interface WhatsAppTemplate {
   id: string;
@@ -39,13 +40,27 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [intervalMinutes, setIntervalMinutes] = useState(1);
   const [isProspecting, setIsProspecting] = useState(true);
-  const [progress, setProgress] = useState({ current: 0, total: 0, failed: 0 });
+  const [progress, setProgress] = useState({ current: 0, total: 0, failed: 0, success: 0 });
+  
+  // New states for visual progress
+  const [currentContact, setCurrentContact] = useState<Contact | null>(null);
+  const [currentPhase, setCurrentPhase] = useState<'sending' | 'waiting'>('sending');
+  const [waitingTimeLeft, setWaitingTimeLeft] = useState(0);
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       fetchTemplates();
-      setProgress({ current: 0, total: contacts.length, failed: 0 });
+      setProgress({ current: 0, total: contacts.length, failed: 0, success: 0 });
+      setCurrentContact(null);
+      setCurrentPhase('sending');
+      setWaitingTimeLeft(0);
     }
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
+    };
   }, [isOpen, contacts.length]);
 
   const fetchTemplates = async () => {
@@ -79,17 +94,46 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
 
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+  const startCountdown = (seconds: number) => {
+    setWaitingTimeLeft(seconds);
+    setCurrentPhase('waiting');
+    
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+    }
+    
+    countdownRef.current = setInterval(() => {
+      setWaitingTimeLeft(prev => {
+        if (prev <= 1) {
+          if (countdownRef.current) {
+            clearInterval(countdownRef.current);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const formatCountdown = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const handleStartSending = async () => {
     if (!selectedTemplateId || contacts.length === 0) return;
 
     setSending(true);
-    setProgress({ current: 0, total: contacts.length, failed: 0 });
+    setProgress({ current: 0, total: contacts.length, failed: 0, success: 0 });
 
     let successCount = 0;
     let failCount = 0;
 
     for (let i = 0; i < contacts.length; i++) {
       const contact = contacts[i];
+      setCurrentContact(contact);
+      setCurrentPhase('sending');
       
       try {
         // Get or create conversation
@@ -123,7 +167,7 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
         if (error) throw error;
         
         successCount++;
-        setProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        setProgress(prev => ({ ...prev, current: prev.current + 1, success: prev.success + 1 }));
 
       } catch (error) {
         console.error(`Erro ao enviar para ${contact.name}:`, error);
@@ -133,11 +177,18 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
 
       // Wait interval before next send (except for last contact)
       if (i < contacts.length - 1) {
-        await sleep(intervalMinutes * 60 * 1000);
+        const waitSeconds = intervalMinutes * 60;
+        startCountdown(waitSeconds);
+        await sleep(waitSeconds * 1000);
       }
     }
 
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+    }
+    
     setSending(false);
+    setCurrentContact(null);
     
     if (failCount === 0) {
       toast.success(`${successCount} mensagens enviadas com sucesso!`);
@@ -242,7 +293,7 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
           </div>
 
           {/* Template preview */}
-          {selectedTemplate && (
+          {selectedTemplate && !sending && (
             <div className="space-y-2">
               <Label className="text-slate-300">Preview</Label>
               <div className="p-3 bg-slate-800/80 rounded-lg border border-slate-700">
@@ -253,26 +304,81 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
             </div>
           )}
 
-          {/* Progress bar - only show when sending */}
+          {/* Progress section - only show when sending */}
           {sending && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">Progresso</span>
-                <span className="text-white font-medium">
-                  {progress.current}/{progress.total} ({progressPercentage}%)
-                </span>
+            <div className="space-y-4">
+              {/* Progress bar */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400">Progresso</span>
+                  <span className="text-white font-medium">
+                    {progress.current}/{progress.total} ({progressPercentage}%)
+                  </span>
+                </div>
+                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-all duration-300"
+                    style={{ width: `${progressPercentage}%` }}
+                  />
+                </div>
               </div>
-              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-all duration-300"
-                  style={{ width: `${progressPercentage}%` }}
-                />
-              </div>
-              {progress.failed > 0 && (
-                <p className="text-xs text-red-400">
-                  {progress.failed} falha(s)
-                </p>
+
+              {/* Current contact card */}
+              {currentContact && (
+                <div className="p-4 bg-slate-800/80 rounded-lg border border-slate-700 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                      {currentPhase === 'sending' ? '📤 Enviando para' : '⏳ Próximo envio'}
+                    </span>
+                    {currentPhase === 'sending' ? (
+                      <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Enviando...
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-xs text-amber-400 font-mono">
+                        <Clock className="w-3 h-3" />
+                        {formatCountdown(waitingTimeLeft)}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-white">
+                      <User className="w-4 h-4 text-cyan-400" />
+                      <span className="font-medium">
+                        {currentContact.name || currentContact.call_name || 'Sem nome'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-slate-400 text-sm">
+                      <Phone className="w-3.5 h-3.5" />
+                      <span>{displayPhoneInternational(currentContact.phone)}</span>
+                    </div>
+                    {currentContact.company && (
+                      <div className="flex items-center gap-2 text-slate-400 text-sm">
+                        <Building2 className="w-3.5 h-3.5" />
+                        <span>{currentContact.company}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
+
+              {/* Success/Fail counters */}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1.5 text-sm">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span className="text-emerald-400 font-medium">{progress.success}</span>
+                  <span className="text-slate-500">enviados</span>
+                </div>
+                {progress.failed > 0 && (
+                  <div className="flex items-center gap-1.5 text-sm">
+                    <XCircle className="w-4 h-4 text-red-400" />
+                    <span className="text-red-400 font-medium">{progress.failed}</span>
+                    <span className="text-slate-500">falhas</span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
