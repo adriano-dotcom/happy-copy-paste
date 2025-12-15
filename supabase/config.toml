@@ -99,3 +99,6 @@ verify_jwt = true
 
 [functions.generate-email-copy]
 verify_jwt = true
+
+[functions.summarize-transcription]
+verify_jwt = true

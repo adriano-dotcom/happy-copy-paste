@@ -2131,7 +2131,16 @@ const ChatInterface: React.FC = () => {
                     <PhoneCall className="w-4 h-4" />
                     Histórico de Ligações
                   </h4>
-                  <CallHistoryPanel calls={callHistory} loading={callHistoryLoading} />
+                  <CallHistoryPanel 
+                    calls={callHistory} 
+                    loading={callHistoryLoading}
+                    contactId={activeChat.contactId}
+                    contactName={activeChat.contactName}
+                    onNotesUpdate={(notes) => {
+                      // Atualizar estado local das notas se necessário
+                      console.log('Notas atualizadas via ligação:', notes.length, 'chars');
+                    }}
+                  />
                 </div>
 
                 <div className="h-px bg-slate-800/50 w-full"></div>
