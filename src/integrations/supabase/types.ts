@@ -350,6 +350,10 @@ export type Database = {
           street: string | null
           tags: string[] | null
           updated_at: string
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_source: string | null
+          utm_term: string | null
           whatsapp_id: string | null
         }
         Insert: {
@@ -382,6 +386,10 @@ export type Database = {
           street?: string | null
           tags?: string[] | null
           updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
           whatsapp_id?: string | null
         }
         Update: {
@@ -414,6 +422,10 @@ export type Database = {
           street?: string | null
           tags?: string[] | null
           updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
           whatsapp_id?: string | null
         }
         Relationships: []
