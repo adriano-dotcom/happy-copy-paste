@@ -1106,6 +1106,7 @@ export type Database = {
           elevenlabs_stability: number
           elevenlabs_style: number
           elevenlabs_voice_id: string
+          facebook_lead_template: string | null
           id: string
           is_active: boolean
           message_breaking_enabled: boolean
@@ -1161,6 +1162,7 @@ export type Database = {
           elevenlabs_stability?: number
           elevenlabs_style?: number
           elevenlabs_voice_id?: string
+          facebook_lead_template?: string | null
           id?: string
           is_active?: boolean
           message_breaking_enabled?: boolean
@@ -1216,6 +1218,7 @@ export type Database = {
           elevenlabs_stability?: number
           elevenlabs_style?: number
           elevenlabs_voice_id?: string
+          facebook_lead_template?: string | null
           id?: string
           is_active?: boolean
           message_breaking_enabled?: boolean
