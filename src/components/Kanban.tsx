@@ -352,12 +352,17 @@ const Kanban: React.FC = () => {
     }
   };
 
-  // Extract unique owners from deals
+  // Extract unique owners from deals with count
   const uniqueOwners = useMemo(() => {
-    const ownersMap = new Map<string, { id: string; name: string }>();
+    const ownersMap = new Map<string, { id: string; name: string; dealCount: number }>();
     deals.forEach(deal => {
       if (deal.ownerId && deal.ownerName) {
-        ownersMap.set(deal.ownerId, { id: deal.ownerId, name: deal.ownerName });
+        const existing = ownersMap.get(deal.ownerId);
+        if (existing) {
+          existing.dealCount++;
+        } else {
+          ownersMap.set(deal.ownerId, { id: deal.ownerId, name: deal.ownerName, dealCount: 1 });
+        }
       }
     });
     return Array.from(ownersMap.values()).sort((a, b) => a.name.localeCompare(b.name));
@@ -474,26 +479,39 @@ const Kanban: React.FC = () => {
             
             {/* Owner Filter */}
             <Select value={selectedOwnerId} onValueChange={setSelectedOwnerId}>
-              <SelectTrigger className="w-full sm:w-[160px] md:w-[180px] h-9 bg-slate-900 border-slate-700">
+              <SelectTrigger className="w-full sm:w-[180px] md:w-[200px] h-9 bg-slate-900 border-slate-700">
                 <SelectValue placeholder="Responsável">
                   <span className="flex items-center gap-2">
                     <Users className="w-4 h-4 text-slate-400" />
-                    {selectedOwnerId === 'all' ? 'Todos' : uniqueOwners.find(o => o.id === selectedOwnerId)?.name || 'Responsável'}
+                    {selectedOwnerId === 'all' 
+                      ? `Todos (${deals.length})` 
+                      : `${uniqueOwners.find(o => o.id === selectedOwnerId)?.name} (${uniqueOwners.find(o => o.id === selectedOwnerId)?.dealCount || 0})`
+                    }
                   </span>
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">
-                  <span className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-slate-400" />
-                    Todos os Responsáveis
+                  <span className="flex items-center justify-between gap-3 w-full">
+                    <span className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-slate-400" />
+                      Todos os Responsáveis
+                    </span>
+                    <span className="text-xs bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded-full">
+                      {deals.length}
+                    </span>
                   </span>
                 </SelectItem>
                 {uniqueOwners.map((owner) => (
                   <SelectItem key={owner.id} value={owner.id}>
-                    <span className="flex items-center gap-2">
-                      <User className="w-4 h-4 text-slate-400" />
-                      {owner.name}
+                    <span className="flex items-center justify-between gap-3 w-full">
+                      <span className="flex items-center gap-2">
+                        <User className="w-4 h-4 text-slate-400" />
+                        {owner.name}
+                      </span>
+                      <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full">
+                        {owner.dealCount}
+                      </span>
                     </span>
                   </SelectItem>
                 ))}
