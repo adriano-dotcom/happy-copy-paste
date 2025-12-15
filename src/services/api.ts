@@ -847,7 +847,7 @@ export const api = {
       .select(`
         *,
         contact:contacts(name, call_name, phone_number, email, client_memory),
-        owner:team_members(name, avatar)
+        owner:team_members!deals_owner_id_fkey(name, avatar)
       `)
       .order('created_at', { ascending: false });
 
@@ -1415,7 +1415,7 @@ export const api = {
       .from('deals')
       .select(`
         contact_id,
-        pipeline:pipelines(id, name, icon, color)
+        pipeline:pipelines!deals_pipeline_id_fkey(id, name, icon, color)
       `)
       .in('contact_id', contactIds);
 
