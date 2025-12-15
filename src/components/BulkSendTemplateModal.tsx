@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, Clock, Loader2, Users, Zap, User, Phone, Building2, CheckCircle2, XCircle } from 'lucide-react';
+import { X, Send, Clock, Loader2, Users, Zap, User, Phone, Building2, CheckCircle2, XCircle, Pause, Play } from 'lucide-react';
 import { Button } from './ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Slider } from './ui/slider';
@@ -47,6 +47,10 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
   const [currentPhase, setCurrentPhase] = useState<'sending' | 'waiting'>('sending');
   const [waitingTimeLeft, setWaitingTimeLeft] = useState(0);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Pause/Resume states
+  const [isPaused, setIsPaused] = useState(false);
+  const isPausedRef = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -55,6 +59,8 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
       setCurrentContact(null);
       setCurrentPhase('sending');
       setWaitingTimeLeft(0);
+      setIsPaused(false);
+      isPausedRef.current = false;
     }
     return () => {
       if (countdownRef.current) {
@@ -94,6 +100,16 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
 
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+  const handlePause = () => {
+    isPausedRef.current = true;
+    setIsPaused(true);
+  };
+
+  const handleResume = () => {
+    isPausedRef.current = false;
+    setIsPaused(false);
+  };
+
   const startCountdown = (seconds: number) => {
     setWaitingTimeLeft(seconds);
     setCurrentPhase('waiting');
@@ -131,6 +147,11 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
     let failCount = 0;
 
     for (let i = 0; i < contacts.length; i++) {
+      // Wait if paused
+      while (isPausedRef.current) {
+        await sleep(100);
+      }
+      
       const contact = contacts[i];
       setCurrentContact(contact);
       setCurrentPhase('sending');
@@ -179,7 +200,21 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
       if (i < contacts.length - 1) {
         const waitSeconds = intervalMinutes * 60;
         startCountdown(waitSeconds);
-        await sleep(waitSeconds * 1000);
+        
+        // Interruptible sleep that respects pause
+        let elapsed = 0;
+        while (elapsed < waitSeconds * 1000) {
+          if (isPausedRef.current) {
+            // Stop countdown while paused
+            if (countdownRef.current) {
+              clearInterval(countdownRef.current);
+            }
+            await sleep(100);
+            continue;
+          }
+          await sleep(1000);
+          elapsed += 1000;
+        }
       }
     }
 
@@ -379,6 +414,14 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Pause indicator badge */}
+              {isPaused && (
+                <div className="flex items-center gap-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                  <Pause className="w-4 h-4 text-amber-400" />
+                  <span className="text-sm text-amber-400 font-medium">Envio pausado</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -393,6 +436,31 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
           >
             Cancelar
           </Button>
+          
+          {/* Pause/Resume button - only show when sending */}
+          {sending && (
+            <Button
+              variant="outline"
+              onClick={isPaused ? handleResume : handlePause}
+              className={isPaused 
+                ? "border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10" 
+                : "border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
+              }
+            >
+              {isPaused ? (
+                <>
+                  <Play className="w-4 h-4 mr-2" />
+                  Retomar
+                </>
+              ) : (
+                <>
+                  <Pause className="w-4 h-4 mr-2" />
+                  Pausar
+                </>
+              )}
+            </Button>
+          )}
+          
           <Button
             onClick={handleStartSending}
             disabled={!selectedTemplateId || sending || contacts.length === 0}
