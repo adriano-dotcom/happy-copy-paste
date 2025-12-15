@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
   Plus, Search, MoreHorizontal, DollarSign, Loader2, CalendarClock, Tag, X, 
   Building, User, Calendar, ArrowRight, CheckCircle2, Circle, 
-  FileText, Phone, Mail, Paperclip, Send, CheckSquare, Clock, Trash2, Settings, Brain, MessageSquare
+  FileText, Phone, Mail, Paperclip, Send, CheckSquare, Clock, Trash2, Settings, Brain, MessageSquare, Users
 } from 'lucide-react';
 import { Button } from './Button';
 import { api } from '../services/api';
@@ -26,6 +26,7 @@ const Kanban: React.FC = () => {
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string>('all');
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [activeTab, setActiveTab] = useState<'note' | 'activity' | 'email'>('note');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -351,10 +352,23 @@ const Kanban: React.FC = () => {
     }
   };
 
-  const filteredDeals = deals.filter(deal => 
-    deal.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    deal.company.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Extract unique owners from deals
+  const uniqueOwners = useMemo(() => {
+    const ownersMap = new Map<string, { id: string; name: string }>();
+    deals.forEach(deal => {
+      if (deal.ownerId && deal.ownerName) {
+        ownersMap.set(deal.ownerId, { id: deal.ownerId, name: deal.ownerName });
+      }
+    });
+    return Array.from(ownersMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [deals]);
+
+  const filteredDeals = deals.filter(deal => {
+    const matchesSearch = deal.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      deal.company.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesOwner = selectedOwnerId === 'all' || deal.ownerId === selectedOwnerId;
+    return matchesSearch && matchesOwner;
+  });
 
   const getPriorityColor = (priority: string) => {
       switch(priority) {
@@ -452,6 +466,34 @@ const Kanban: React.FC = () => {
                       {pipeline.agentName && (
                         <span className="text-xs text-slate-500">({pipeline.agentName})</span>
                       )}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            {/* Owner Filter */}
+            <Select value={selectedOwnerId} onValueChange={setSelectedOwnerId}>
+              <SelectTrigger className="w-full sm:w-[160px] md:w-[180px] h-9 bg-slate-900 border-slate-700">
+                <SelectValue placeholder="Responsável">
+                  <span className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-slate-400" />
+                    {selectedOwnerId === 'all' ? 'Todos' : uniqueOwners.find(o => o.id === selectedOwnerId)?.name || 'Responsável'}
+                  </span>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <span className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-slate-400" />
+                    Todos os Responsáveis
+                  </span>
+                </SelectItem>
+                {uniqueOwners.map((owner) => (
+                  <SelectItem key={owner.id} value={owner.id}>
+                    <span className="flex items-center gap-2">
+                      <User className="w-4 h-4 text-slate-400" />
+                      {owner.name}
                     </span>
                   </SelectItem>
                 ))}
