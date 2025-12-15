@@ -38,14 +38,14 @@ const CampaignsTable: React.FC<CampaignsTableProps> = ({ data }) => {
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/30 hover:bg-muted/30">
-            <TableHead className="font-semibold">Fonte</TableHead>
+            <TableHead className="font-semibold w-[100px]">Fonte</TableHead>
             <TableHead className="font-semibold">Campanha</TableHead>
             <TableHead className="font-semibold">Conteúdo</TableHead>
             <TableHead className="font-semibold">Termo</TableHead>
-            <TableHead className="text-center font-semibold">Leads</TableHead>
-            <TableHead className="text-center font-semibold">Qualificados</TableHead>
-            <TableHead className="text-center font-semibold">Clientes</TableHead>
-            <TableHead className="text-center font-semibold">Taxa Conv.</TableHead>
+            <TableHead className="text-center font-semibold w-[80px]">Leads</TableHead>
+            <TableHead className="text-center font-semibold w-[100px]">Qualificados</TableHead>
+            <TableHead className="text-center font-semibold w-[80px]">Clientes</TableHead>
+            <TableHead className="text-center font-semibold w-[100px]">Taxa Conv.</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -63,13 +63,13 @@ const CampaignsTable: React.FC<CampaignsTableProps> = ({ data }) => {
                     {row.fonte}
                   </Badge>
                 </TableCell>
-                <TableCell className="font-medium max-w-[200px] truncate" title={row.campanha}>
+                <TableCell className="font-medium">
                   {row.campanha}
                 </TableCell>
-                <TableCell className="text-muted-foreground max-w-[150px] truncate" title={row.conteudo}>
+                <TableCell className="text-muted-foreground">
                   {row.conteudo || '-'}
                 </TableCell>
-                <TableCell className="text-muted-foreground max-w-[100px] truncate" title={row.termo}>
+                <TableCell className="text-muted-foreground">
                   {row.termo || '-'}
                 </TableCell>
                 <TableCell className="text-center font-semibold">{row.leads}</TableCell>
