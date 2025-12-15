@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface CampaignData {
   name: string;
@@ -12,6 +12,12 @@ interface TopCampaignsChartProps {
 }
 
 const TopCampaignsChart: React.FC<TopCampaignsChartProps> = ({ data }) => {
+  // Cores vibrantes para as barras
+  const COLORS = {
+    leads: '#3b82f6',      // Azul vibrante
+    qualified: '#22c55e',  // Verde vibrante
+  };
+
   return (
     <div className="h-[280px] w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -21,7 +27,13 @@ const TopCampaignsChart: React.FC<TopCampaignsChartProps> = ({ data }) => {
           margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-          <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+          <XAxis 
+            type="number" 
+            stroke="hsl(var(--muted-foreground))" 
+            fontSize={12}
+            allowDecimals={false}
+            tickFormatter={(value) => Math.floor(value).toString()}
+          />
           <YAxis 
             dataKey="name" 
             type="category" 
@@ -42,8 +54,15 @@ const TopCampaignsChart: React.FC<TopCampaignsChartProps> = ({ data }) => {
               name === 'leads' ? 'Total Leads' : 'Qualificados'
             ]}
           />
-          <Bar dataKey="leads" fill="hsl(var(--chart-1))" radius={[0, 4, 4, 0]} />
-          <Bar dataKey="qualified" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} />
+          <Legend 
+            formatter={(value) => (
+              <span className="text-sm text-muted-foreground">
+                {value === 'leads' ? 'Total Leads' : 'Qualificados'}
+              </span>
+            )}
+          />
+          <Bar dataKey="leads" fill={COLORS.leads} radius={[0, 4, 4, 0]} name="leads" />
+          <Bar dataKey="qualified" fill={COLORS.qualified} radius={[0, 4, 4, 0]} name="qualified" />
         </BarChart>
       </ResponsiveContainer>
     </div>
