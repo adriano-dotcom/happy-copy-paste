@@ -72,7 +72,9 @@ FORMATO DO RESUMO:
 [Detalhes relevantes, tom do cliente, urgência - se houver]`;
 
   try {
-    const response = await fetch('https://api.lovable.dev/v1/chat/completions', {
+    console.log('[sync-pipedrive] Calling AI Gateway for summary generation...');
+    
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -89,12 +91,15 @@ FORMATO DO RESUMO:
     });
 
     if (!response.ok) {
-      console.error('[sync-pipedrive] AI API error:', await response.text());
+      const errorText = await response.text();
+      console.error('[sync-pipedrive] AI API error:', response.status, errorText);
       return '';
     }
 
     const data = await response.json();
-    return data.choices?.[0]?.message?.content || '';
+    const summary = data.choices?.[0]?.message?.content || '';
+    console.log('[sync-pipedrive] Summary generated, length:', summary.length);
+    return summary;
   } catch (error) {
     console.error('[sync-pipedrive] Error generating summary:', error);
     return '';
@@ -265,8 +270,17 @@ serve(async (req) => {
     for (const [systemField, pipedriveField] of Object.entries(fieldMappings)) {
       if (pipedriveField && systemFieldValues[systemField]) {
         personData[pipedriveField] = systemFieldValues[systemField];
+        console.log(`[sync-pipedrive] Mapped ${systemField} -> ${pipedriveField}:`, systemFieldValues[systemField]);
       }
     }
+
+    // Log notes status
+    console.log('[sync-pipedrive] Notes content:', {
+      hasOperatorNotes: !!notes,
+      hasContactNotes: !!contactNotes,
+      combinedNotesLength: combinedNotes?.length || 0,
+      notesFieldMapping: fieldMappings['notes'] || 'NOT_MAPPED'
+    });
 
     console.log('[sync-pipedrive] Person data to send:', JSON.stringify(personData));
 
