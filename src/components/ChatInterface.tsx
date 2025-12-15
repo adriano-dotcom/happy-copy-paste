@@ -1439,6 +1439,27 @@ const ChatInterface: React.FC = () => {
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}
+                      {/* Pipeline Badge */}
+                      {!isMobile && existingDeal?.pipeline && (
+                        <span 
+                          className="px-2.5 py-1 backdrop-blur-sm text-[10px] rounded-full font-medium flex items-center gap-1.5 border shadow-lg"
+                          style={{
+                            backgroundColor: `${existingDeal.pipeline.color || '#3b82f6'}20`,
+                            color: existingDeal.pipeline.color || '#3b82f6',
+                            borderColor: `${existingDeal.pipeline.color || '#3b82f6'}30`
+                          }}
+                        >
+                          <span>{existingDeal.pipeline.icon || '📋'}</span>
+                          {existingDeal.pipeline.name}
+                        </span>
+                      )}
+                      {/* Owner Badge */}
+                      {!isMobile && existingDeal?.owner && (
+                        <span className="px-2.5 py-1 bg-gradient-to-r from-emerald-500/20 to-green-500/20 backdrop-blur-sm text-emerald-300 border border-emerald-400/30 text-[10px] rounded-full font-medium flex items-center gap-1.5 shadow-lg shadow-emerald-500/10">
+                          <User className="w-3 h-3" />
+                          {existingDeal.owner.name?.split(' ')[0] || 'Sem responsável'}
+                        </span>
+                      )}
                       {/* WhatsApp Window Badge - Real-time (hidden on mobile) */}
                       {!isMobile && windowTimeRemaining.isOpen ? (
                         <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium border flex items-center gap-1 ${getWindowBadgeStyle()}`}>
