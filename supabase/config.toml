@@ -102,3 +102,6 @@ verify_jwt = true
 
 [functions.summarize-transcription]
 verify_jwt = true
+
+[functions.zapier-leadgen-webhook]
+verify_jwt = false
