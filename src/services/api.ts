@@ -357,6 +357,7 @@ export const api = {
     email?: string | null;
     company?: string | null;
     cnpj?: string | null;
+    fleet_size?: number | null;
     cep?: string | null;
     street?: string | null;
     number?: string | null;

@@ -35,6 +35,7 @@ interface ColumnMapping {
   email: string;
   company: string;
   cnpj: string;
+  fleet_size: string;
 }
 
 interface ValidationResult {
@@ -48,7 +49,8 @@ const FIELD_LABELS: Record<string, string> = {
   phone: 'Telefone',
   email: 'Email',
   company: 'Empresa',
-  cnpj: 'CNPJ'
+  cnpj: 'CNPJ',
+  fleet_size: 'Automotor'
 };
 
 const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
@@ -65,7 +67,8 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
     phone: '',
     email: '',
     company: '',
-    cnpj: ''
+    cnpj: '',
+    fleet_size: ''
   });
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [importing, setImporting] = useState(false);
@@ -77,7 +80,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
     setFile(null);
     setHeaders([]);
     setRows([]);
-    setMapping({ name: '', phone: '', email: '', company: '', cnpj: '' });
+    setMapping({ name: '', phone: '', email: '', company: '', cnpj: '', fleet_size: '' });
     setValidation(null);
     setImporting(false);
     setProgress({ current: 0, total: 0 });
@@ -133,7 +136,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
       setRows(parsedRows);
 
       // Auto-detect mapping
-      const autoMapping: ColumnMapping = { name: '', phone: '', email: '', company: '', cnpj: '' };
+      const autoMapping: ColumnMapping = { name: '', phone: '', email: '', company: '', cnpj: '', fleet_size: '' };
       parsedHeaders.forEach(header => {
         const lowerHeader = header.toLowerCase();
         if (lowerHeader.includes('nome') || lowerHeader === 'name') autoMapping.name = header;
@@ -141,6 +144,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
         if (lowerHeader.includes('email') || lowerHeader.includes('e-mail')) autoMapping.email = header;
         if (lowerHeader.includes('empresa') || lowerHeader.includes('company')) autoMapping.company = header;
         if (lowerHeader.includes('cnpj')) autoMapping.cnpj = header;
+        if (lowerHeader.includes('automotor') || lowerHeader.includes('frota') || lowerHeader.includes('veiculos') || lowerHeader.includes('veículos') || lowerHeader.includes('fleet')) autoMapping.fleet_size = header;
       });
       setMapping(autoMapping);
       setStep('mapping');
@@ -240,6 +244,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
           email: mapping.email ? row[mapping.email]?.trim() || null : null,
           company: mapping.company ? row[mapping.company]?.trim() || null : null,
           cnpj: mapping.cnpj ? row[mapping.cnpj]?.replace(/\D/g, '') || null : null,
+          fleet_size: mapping.fleet_size ? parseInt(row[mapping.fleet_size]) || null : null,
           lead_source: 'outbound', // Contatos importados são outbound
           city: region?.city || null,
           state: region?.stateCode || null
@@ -273,7 +278,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
   };
 
   const downloadTemplate = () => {
-    const csvContent = 'nome,telefone,email,empresa,cnpj\nJoão Silva,11999998888,joao@email.com,Transportes ABC,12345678000190\nMaria Santos,21988887777,maria@email.com,Logística XYZ,98765432000199';
+    const csvContent = 'nome,telefone,email,empresa,cnpj,automotor\nJoão Silva,11999998888,joao@email.com,Transportes ABC,12345678000190,15\nMaria Santos,21988887777,maria@email.com,Logística XYZ,98765432000199,8';
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -347,7 +352,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                 </h3>
 
                 <div className="grid grid-cols-2 gap-4">
-                  {(['name', 'phone', 'email', 'company', 'cnpj'] as const).map(field => (
+                  {(['name', 'phone', 'email', 'company', 'cnpj', 'fleet_size'] as const).map(field => (
                     <div key={field} className="space-y-2">
                       <Label className="text-slate-300">
                         {FIELD_LABELS[field]}

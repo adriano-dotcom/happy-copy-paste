@@ -18,6 +18,7 @@ interface ContactData {
   email: string;
   company?: string;
   cnpj?: string;
+  fleet_size?: number;
   cep?: string;
   street?: string;
   number?: string;
@@ -64,6 +65,7 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
     email: '',
     company: '',
     cnpj: '',
+    fleet_size: '',
     cep: '',
     street: '',
     number: '',
@@ -82,6 +84,7 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
         email: contact.email || '',
         company: contact.company || '',
         cnpj: contact.cnpj || '',
+        fleet_size: contact.fleet_size?.toString() || '',
         cep: contact.cep || '',
         street: contact.street || '',
         number: contact.number || '',
@@ -201,6 +204,7 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
         email: formData.email.trim() || null,
         company: formData.company.trim() || null,
         cnpj: formData.cnpj.replace(/\D/g, '') || null,
+        fleet_size: formData.fleet_size ? parseInt(formData.fleet_size) : null,
         cep: formData.cep.replace(/\D/g, '') || null,
         street: formData.street.trim() || null,
         number: formData.number.trim() || null,
@@ -303,6 +307,17 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
                   value={formData.company}
                   onChange={(e) => handleChange('company', e.target.value)}
                   placeholder="Nome da empresa"
+                  className="bg-slate-950 border-slate-700 text-slate-100"
+                />
+              </div>
+              <div>
+                <Label className="text-slate-300">Automotor (Qtd. Veículos)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={formData.fleet_size}
+                  onChange={(e) => handleChange('fleet_size', e.target.value)}
+                  placeholder="Ex: 15"
                   className="bg-slate-950 border-slate-700 text-slate-100"
                 />
               </div>
