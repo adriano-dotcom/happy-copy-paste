@@ -16,7 +16,7 @@ interface EmailTemplate {
 const GeneralSettings: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [facebookTemplate, setFacebookTemplate] = useState('lead_facebook_meta');
-  const [emailTemplateId, setEmailTemplateId] = useState<string>('');
+  const [emailTemplateId, setEmailTemplateId] = useState<string>('none');
   const [approvedTemplates, setApprovedTemplates] = useState<{ name: string }[]>([]);
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
   const [loading, setLoading] = useState(false);
@@ -39,6 +39,8 @@ const GeneralSettings: React.FC = () => {
     }
     if (data?.facebook_lead_email_template) {
       setEmailTemplateId(data.facebook_lead_email_template);
+    } else {
+      setEmailTemplateId('none');
     }
   };
 
@@ -95,7 +97,7 @@ const GeneralSettings: React.FC = () => {
         .from('nina_settings')
         .update({ 
           facebook_lead_template: facebookTemplate,
-          facebook_lead_email_template: emailTemplateId || null
+          facebook_lead_email_template: emailTemplateId === 'none' ? null : emailTemplateId
         })
         .not('id', 'is', null);
       
@@ -220,7 +222,7 @@ const GeneralSettings: React.FC = () => {
                 <SelectValue placeholder="Não enviar email" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Não enviar email</SelectItem>
+                <SelectItem value="none">Não enviar email</SelectItem>
                 {emailTemplates.map((template) => (
                   <SelectItem key={template.id} value={template.id}>
                     {template.name}
