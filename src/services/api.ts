@@ -325,7 +325,11 @@ export const api = {
       status: ((c as any).lead_status || 'new') as 'new' | 'lead' | 'qualified' | 'customer' | 'churned',
       lastContact: new Date(c.last_activity).toLocaleDateString('pt-BR'),
       lead_source: (c as any).lead_source || 'inbound',
-      whatsapp_id: c.whatsapp_id || undefined
+      whatsapp_id: c.whatsapp_id || undefined,
+      utm_source: (c as any).utm_source || undefined,
+      utm_campaign: (c as any).utm_campaign || undefined,
+      utm_content: (c as any).utm_content || undefined,
+      utm_term: (c as any).utm_term || undefined
     }));
   },
 
