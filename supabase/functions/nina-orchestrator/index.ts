@@ -2070,6 +2070,32 @@ async function processQueueItem(
     }
   }
 
+  // ===== ENSURE DEAL HAS OWNER (even without handoff) =====
+  // Check if current deal has no owner and assign one based on agent
+  if (agent) {
+    const { data: currentDeal } = await supabase
+      .from('deals')
+      .select('id, owner_id')
+      .eq('contact_id', conversation.contact_id)
+      .is('owner_id', null)
+      .maybeSingle();
+
+    if (currentDeal) {
+      const { data: nextOwnerId } = await supabase.rpc('get_next_deal_owner', { 
+        p_agent_id: agent.id 
+      });
+      
+      if (nextOwnerId) {
+        await supabase
+          .from('deals')
+          .update({ owner_id: nextOwnerId })
+          .eq('id', currentDeal.id);
+        
+        console.log(`[Nina] 👤 Auto-assigned owner ${nextOwnerId} to deal ${currentDeal.id} (first assignment)`);
+      }
+    }
+  }
+
   // Get recent messages for context (last 20)
   const { data: recentMessages } = await supabase
     .from('messages')
