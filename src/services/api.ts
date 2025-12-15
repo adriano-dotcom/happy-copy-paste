@@ -1046,7 +1046,7 @@ export const api = {
   getDealByContactId: async (contactId: string): Promise<Deal | null> => {
     const { data, error } = await supabase
       .from('deals')
-      .select('*, owner:team_members(name, avatar), pipeline:pipelines(id, slug, name)')
+      .select('*, owner:team_members(name, avatar), pipeline:pipelines(id, slug, name, color, icon)')
       .eq('contact_id', contactId)
       .maybeSingle();
 
@@ -1065,7 +1065,9 @@ export const api = {
       stage: data.stage,
       stageId: data.stage_id,
       pipelineId: data.pipeline_id,
+      owner: data.owner,
       ownerAvatar: data.owner?.avatar || 'https://ui-avatars.com/api/?name=NA&background=334155&color=fff',
+      pipeline: data.pipeline,
       tags: data.tags || [],
       dueDate: data.due_date,
       priority: data.priority as 'low' | 'medium' | 'high',

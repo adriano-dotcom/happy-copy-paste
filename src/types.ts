@@ -126,9 +126,11 @@ export interface Deal {
   stage: string;
   stageId?: string;
   pipelineId?: string;
+  owner?: { name: string; avatar?: string } | null;
   ownerAvatar: string;
   ownerId?: string;
   ownerName?: string;
+  pipeline?: { id: string; slug: string; name: string; color?: string; icon?: string } | null;
   tags: string[];
   dueDate?: string;
   priority: 'low' | 'medium' | 'high';
