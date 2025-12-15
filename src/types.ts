@@ -339,6 +339,9 @@ export interface UIConversation {
   whatsappWindowStart: string | null;
   isWhatsAppWindowOpen: boolean;
   windowHoursRemaining: number | null;
+  // Deal owner fields
+  dealOwnerId: string | null;
+  dealOwnerName: string | null;
 }
 
 export interface UIMessage {
@@ -412,7 +415,10 @@ export function transformDBToUIConversation(
     // WhatsApp 24h window
     whatsappWindowStart: conv.whatsapp_window_start || null,
     isWhatsAppWindowOpen: isWindowOpen,
-    windowHoursRemaining: hoursRemaining
+    windowHoursRemaining: hoursRemaining,
+    // Deal owner (enriched by API)
+    dealOwnerId: (conv as any).dealOwnerId || null,
+    dealOwnerName: (conv as any).dealOwnerName || null
   };
 }
 

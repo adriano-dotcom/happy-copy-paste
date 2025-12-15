@@ -1409,22 +1409,27 @@ export const api = {
 
     console.log(`[API] Found ${conversations.length} conversations`);
 
-    // Fetch deals with pipeline data for all contacts
+    // Fetch deals with pipeline and owner data for all contacts
     const contactIds = conversations.map(c => c.contact_id).filter(Boolean);
     const { data: deals } = await supabase
       .from('deals')
       .select(`
         contact_id,
-        pipeline:pipelines!deals_pipeline_id_fkey(id, name, icon, color)
+        pipeline:pipelines!deals_pipeline_id_fkey(id, name, icon, color),
+        owner:team_members!deals_owner_id_fkey(id, name)
       `)
       .in('contact_id', contactIds);
 
-    // Create a map of contact_id to pipeline data
+    // Create maps of contact_id to pipeline and owner data
     const pipelineByContact = new Map<string, { id: string; name: string; icon: string; color: string } | null>();
+    const ownerByContact = new Map<string, { id: string; name: string } | null>();
     if (deals) {
       for (const deal of deals) {
         if (deal.contact_id && deal.pipeline) {
           pipelineByContact.set(deal.contact_id, deal.pipeline as any);
+        }
+        if (deal.contact_id && deal.owner) {
+          ownerByContact.set(deal.contact_id, deal.owner as any);
         }
       }
     }
@@ -1446,8 +1451,9 @@ export const api = {
           console.error(`[API] Error fetching messages for ${conv.id}:`, msgError);
         }
 
-        // Enrich conversation with pipeline data
+        // Enrich conversation with pipeline and owner data
         const pipeline = pipelineByContact.get(conv.contact_id);
+        const owner = ownerByContact.get(conv.contact_id);
 
         const enrichedConv = {
           ...conv,
@@ -1456,7 +1462,10 @@ export const api = {
           pipelineIcon: pipeline?.icon || null,
           pipelineColor: pipeline?.color || null,
           // Read assigned_user_name from database
-          assignedUserName: (conv as any).assigned_user_name || null
+          assignedUserName: (conv as any).assigned_user_name || null,
+          // Deal owner
+          dealOwnerId: owner?.id || null,
+          dealOwnerName: owner?.name || null
         };
 
         return transformDBToUIConversation(
