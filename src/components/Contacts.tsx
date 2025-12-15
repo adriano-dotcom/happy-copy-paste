@@ -38,7 +38,7 @@ interface ExtendedContact extends Contact {
   city?: string;
   state?: string;
   notes?: string;
-  lead_source?: 'inbound' | 'outbound';
+  lead_source?: 'inbound' | 'outbound' | 'facebook';
   whatsapp_id?: string;
 }
 
@@ -56,7 +56,7 @@ const Contacts: React.FC = () => {
   const [contactToDelete, setContactToDelete] = useState<ExtendedContact | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
-  const [activeTab, setActiveTab] = useState<'inbound' | 'outbound'>('inbound');
+  const [activeTab, setActiveTab] = useState<'inbound' | 'outbound' | 'facebook'>('inbound');
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   
   // Bulk selection state
@@ -160,18 +160,26 @@ const Contacts: React.FC = () => {
     }
   };
 
-  // Filtrar por origem (inbound/outbound)
+  // Filtrar por origem (inbound/outbound/facebook)
   const inboundContacts = contacts.filter(contact => 
-    contact.lead_source === 'inbound' || contact.whatsapp_id
+    (contact.lead_source === 'inbound' || contact.whatsapp_id) && contact.lead_source !== 'facebook'
   );
   
   const outboundContacts = contacts.filter(contact => 
     contact.lead_source === 'outbound' && !contact.whatsapp_id
   );
+  
+  const facebookContacts = contacts.filter(contact => 
+    contact.lead_source === 'facebook'
+  );
 
   // Filtrar pela aba ativa + termo de busca + status + outros filtros
   const getFilteredContacts = () => {
-    const baseContacts = activeTab === 'inbound' ? inboundContacts : outboundContacts;
+    const baseContacts = activeTab === 'inbound' 
+      ? inboundContacts 
+      : activeTab === 'facebook' 
+        ? facebookContacts 
+        : outboundContacts;
     
     let filtered = baseContacts;
     
@@ -679,7 +687,7 @@ const Contacts: React.FC = () => {
       </div>
 
       {/* Tabs Inbound/Outbound */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'inbound' | 'outbound')} className="mb-6">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'inbound' | 'outbound' | 'facebook')} className="mb-6">
         <TabsList className="bg-slate-900/50 border border-slate-800 p-1">
           <TabsTrigger 
             value="inbound" 
@@ -694,6 +702,15 @@ const Contacts: React.FC = () => {
           >
             <Upload className="w-4 h-4 mr-2" />
             Outbound ({outboundContacts.length})
+          </TabsTrigger>
+          <TabsTrigger 
+            value="facebook"
+            className="data-[state=active]:bg-blue-600 data-[state=active]:text-white px-6"
+          >
+            <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+            </svg>
+            Facebook ({facebookContacts.length})
           </TabsTrigger>
         </TabsList>
 
@@ -839,6 +856,10 @@ const Contacts: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="outbound" className="mt-0">
+          <ContactsTable contacts={filteredContacts} />
+        </TabsContent>
+
+        <TabsContent value="facebook" className="mt-0">
           <ContactsTable contacts={filteredContacts} />
         </TabsContent>
       </Tabs>
