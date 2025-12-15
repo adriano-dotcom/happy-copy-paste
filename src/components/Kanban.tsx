@@ -5,9 +5,10 @@ import {
   Building, User, Calendar, ArrowRight, CheckCircle2, Circle, 
   FileText, Phone, Mail, Paperclip, Send, CheckSquare, Clock, Trash2, Settings, Brain, MessageSquare, Users
 } from 'lucide-react';
+import { ConversationSummaryNotes } from './chat/ConversationSummaryNotes';
 import { Button } from './Button';
 import { api } from '../services/api';
-import { Deal, DealActivity, TeamMember, KanbanColumn, Pipeline } from '../types';
+import { Deal, DealActivity, TeamMember, KanbanColumn, Pipeline, MessageDirection } from '../types';
 import { supabase } from '../integrations/supabase/client';
 import { CreateDealModal } from './CreateDealModal';
 import { LostReasonModal } from './LostReasonModal';
@@ -815,6 +816,27 @@ const Kanban: React.FC = () => {
                               Compor Email
                             </Button>
                           </div>
+                        ) : activeTab === 'note' && selectedDeal?.conversationId && selectedDeal?.contactId ? (
+                          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                            <ConversationSummaryNotes
+                              conversationId={selectedDeal.conversationId}
+                              contactId={selectedDeal.contactId}
+                              messages={conversationMessages.map(msg => ({
+                                id: msg.id,
+                                content: msg.content || '',
+                                fromType: msg.from_type as 'user' | 'nina' | 'human',
+                                timestamp: msg.sent_at,
+                                status: msg.status || 'sent',
+                                type: msg.type || 'text',
+                                direction: msg.from_type === 'user' ? MessageDirection.INCOMING : MessageDirection.OUTGOING,
+                                mediaUrl: msg.media_url || null,
+                                senderName: (msg.metadata as any)?.sender_name || null
+                              }))}
+                              initialNotes={null}
+                              contactName={selectedDeal.contactName || selectedDeal.title}
+                              agentName={sdrName}
+                            />
+                          </div>
                         ) : (
                           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden focus-within:ring-1 focus-within:ring-cyan-500/50 transition-all shadow-inner">
                             <input 
@@ -826,10 +848,7 @@ const Kanban: React.FC = () => {
                             />
                             <textarea 
                                 className="w-full bg-transparent p-4 text-sm text-slate-200 placeholder:text-slate-600 outline-none resize-none min-h-[80px]"
-                                placeholder={
-                                    activeTab === 'note' ? "Escreva uma nota..." :
-                                    "Descreva a atividade..."
-                                }
+                                placeholder="Descreva a atividade..."
                                 value={newActivityDescription}
                                 onChange={(e) => setNewActivityDescription(e.target.value)}
                             />
