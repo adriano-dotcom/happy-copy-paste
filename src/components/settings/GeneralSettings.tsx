@@ -325,7 +325,10 @@ const GeneralSettings: React.FC = () => {
       {/* Email Template Editor Modal */}
       <EmailTemplateEditorModal
         isOpen={isEditorOpen}
-        onClose={() => setIsEditorOpen(false)}
+        onClose={() => {
+          setIsEditorOpen(false);
+          setSelectedTemplate(null);
+        }}
         template={selectedTemplate}
         onSave={handleSaveTemplate}
       />
