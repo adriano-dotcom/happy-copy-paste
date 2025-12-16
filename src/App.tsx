@@ -15,6 +15,7 @@ import Functions from './components/Functions';
 import Auth from './pages/Auth';
 import { CompanySettingsProvider } from './hooks/useCompanySettings';
 import { AuthProvider } from './hooks/useAuth';
+import { UnreadMessagesProvider } from './contexts/UnreadMessagesContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { Toaster } from 'sonner';
@@ -61,7 +62,9 @@ const App: React.FC = () => {
             {/* Rotas Internas (Com Sidebar) - Protected */}
             <Route element={
               <ProtectedRoute>
-                <AppLayout />
+                <UnreadMessagesProvider>
+                  <AppLayout />
+                </UnreadMessagesProvider>
               </ProtectedRoute>
             }>
               <Route path="/" element={<DefaultRedirect />} />
