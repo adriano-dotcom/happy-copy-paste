@@ -617,15 +617,19 @@ export const ProspectingEmailModal: React.FC<ProspectingEmailModalProps> = ({
                     🏢 {cnpjData?.nome_fantasia || cnpjData?.razao_social || contact.company}
                   </span>
                 )}
-                {selectedVertical !== 'prospeccao' && (
-                  <span className={`px-2 py-0.5 rounded text-xs ${
+<span className={`px-2 py-0.5 rounded text-xs ${
                     selectedVertical === 'transporte'
                       ? 'bg-green-500/20 text-green-300'
-                      : 'bg-blue-500/20 text-blue-300'
+                      : selectedVertical === 'frotas'
+                        ? 'bg-blue-500/20 text-blue-300'
+                        : 'bg-violet-500/20 text-violet-300'
                   }`}>
-                    {selectedVertical === 'transporte' ? '🚛 Transporte' : '🚗 Automotores'}
+                    {selectedVertical === 'transporte' 
+                      ? '🚛 Transporte' 
+                      : selectedVertical === 'frotas' 
+                        ? '🚗 Automotores' 
+                        : '📧 Genérico'}
                   </span>
-                )}
                 {cnpjData?.cnae_fiscal_descricao && (
                   <span className="px-2 py-0.5 bg-violet-500/20 text-violet-300 rounded text-xs">
                     🎯 {cnpjData.cnae_fiscal_descricao.substring(0, 30)}...
