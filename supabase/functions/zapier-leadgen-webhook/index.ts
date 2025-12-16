@@ -265,7 +265,8 @@ serve(async (req) => {
                 contact_id: contactId,
                 conversation_id: conversationId,
                 template_name: selectedTemplate,
-                variables: [firstName], // Primeiro nome como variável
+                header_variables: [firstName], // Nome no HEADER do template
+                variables: [], // Sem variáveis no BODY
                 language: 'pt_BR'
               })
             }
@@ -343,7 +344,7 @@ serve(async (req) => {
                   to: email,
                   subject: processedSubject,
                   html: finalBody,
-                  bcc: 'adriano@jacometo.com.br'
+                  bcc: ['adriano@jacometo.com.br']
                 })
               }
             );
