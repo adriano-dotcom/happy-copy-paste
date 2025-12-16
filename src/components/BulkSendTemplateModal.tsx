@@ -104,12 +104,32 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
 
   const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
 
-  const getTemplatePreview = () => {
-    if (!selectedTemplate?.components) return '';
+  // Count expected variables from template text (e.g., {{1}}, {{2}})
+  const countExpectedParams = (text?: string | null): number => {
+    if (!text) return 0;
+    const matches = [...text.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1])).filter((n) => Number.isFinite(n));
+    return matches.length ? Math.max(...matches) : 0;
+  };
+
+  // Get template components
+  const getTemplateComponents = () => {
+    if (!selectedTemplate?.components) return { header: null, body: null };
     const components = selectedTemplate.components as any[];
-    if (!Array.isArray(components)) return '';
-    const bodyComponent = components.find((c: any) => c.type === 'BODY');
-    return bodyComponent?.text || '';
+    if (!Array.isArray(components)) return { header: null, body: null };
+    return {
+      header: components.find((c: any) => c.type === 'HEADER'),
+      body: components.find((c: any) => c.type === 'BODY')
+    };
+  };
+
+  const getTemplatePreview = () => {
+    const { body } = getTemplateComponents();
+    return body?.text || '';
+  };
+
+  const getHeaderPreview = () => {
+    const { header } = getTemplateComponents();
+    return header?.text || '';
   };
 
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -233,19 +253,35 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
           ? conversationResult 
           : (conversationResult as any).id;
 
-        // Build variables from contact data
-        const variables = [
-          contact.name || contact.call_name || 'Cliente'
-        ];
+        // Detect expected variables in template
+        const { header, body } = getTemplateComponents();
+        const headerExpected = countExpectedParams(header?.text);
+        const bodyExpected = countExpectedParams(body?.text);
 
-        // Send template
+        // Build header variables (typically contact name)
+        const headerVariables: string[] = [];
+        if (headerExpected >= 1) {
+          headerVariables.push(contact.name || contact.call_name || 'Cliente');
+        }
+
+        // Build body variables (typically company name)
+        const bodyVariables: string[] = [];
+        if (bodyExpected >= 1) {
+          bodyVariables.push(contact.company || contact.name || 'Transportadora');
+        }
+        if (bodyExpected >= 2) {
+          bodyVariables.push(contact.name || contact.call_name || 'Cliente');
+        }
+
+        // Send template with proper header and body variables
         const { error } = await supabase.functions.invoke('send-whatsapp-template', {
           body: {
             contact_id: contact.id,
             conversation_id: conversationId,
             template_name: selectedTemplate?.name,
             language: selectedTemplate?.language || 'pt_BR',
-            variables,
+            variables: bodyVariables,
+            header_variables: headerVariables,
             is_prospecting: isProspecting
           }
         });
@@ -415,11 +451,24 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
           {/* Template preview */}
           {selectedTemplate && !sending && (
             <div className="space-y-2">
-              <Label className="text-slate-300">Preview</Label>
-              <div className="p-3 bg-slate-800/80 rounded-lg border border-slate-700">
+              <Label className="text-slate-300">Preview do Template</Label>
+              <div className="p-3 bg-slate-800/80 rounded-lg border border-slate-700 space-y-2">
+                {getHeaderPreview() && (
+                  <p className="text-sm font-medium text-white">
+                    {getHeaderPreview()}
+                    <span className="text-xs text-cyan-400 ml-2">
+                      {'({{1}} = nome do contato)'}
+                    </span>
+                  </p>
+                )}
                 <p className="text-sm text-slate-300 whitespace-pre-wrap">
                   {getTemplatePreview() || 'Sem preview disponível'}
                 </p>
+                {countExpectedParams(getTemplateComponents().body?.text) > 0 && (
+                  <p className="text-xs text-amber-400 mt-1">
+                    {'{{1}} = empresa do contato'}
+                  </p>
+                )}
               </div>
             </div>
           )}
