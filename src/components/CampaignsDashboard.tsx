@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Target, Users, Megaphone, TrendingUp } from 'lucide-react';
+import { RefreshCw, Target, Users, Megaphone, TrendingUp, BarChart3, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import CampaignSourceChart from '@/components/campaigns/CampaignSourceChart';
 import TopCampaignsChart from '@/components/campaigns/TopCampaignsChart';
 import CampaignsTable from '@/components/campaigns/CampaignsTable';
+import CampaignManagement from '@/components/campaigns/CampaignManagement';
 
 interface CampaignMetrics {
   totalLeads: number;
@@ -199,145 +201,166 @@ const CampaignsDashboard: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <Target className="w-7 h-7 text-primary" />
-            Dashboard de Campanhas
+            Campanhas
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Análise de origem e performance das campanhas UTM
+            Analytics UTM e gerenciamento de campanhas de classificação
           </p>
         </div>
-        
-        <div className="flex items-center gap-3">
-          <Select value={period} onValueChange={setPeriod}>
-            <SelectTrigger className="w-[140px] bg-slate-800 border-slate-600 text-white hover:bg-slate-700">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-slate-800 border-slate-600 text-white z-50">
-              <SelectItem value="0" className="focus:bg-slate-700 focus:text-white">Hoje</SelectItem>
-              <SelectItem value="1" className="focus:bg-slate-700 focus:text-white">Ontem</SelectItem>
-              <SelectItem value="7" className="focus:bg-slate-700 focus:text-white">7 dias</SelectItem>
-              <SelectItem value="30" className="focus:bg-slate-700 focus:text-white">30 dias</SelectItem>
-              <SelectItem value="90" className="focus:bg-slate-700 focus:text-white">90 dias</SelectItem>
-              <SelectItem value="all" className="focus:bg-slate-700 focus:text-white">Todos</SelectItem>
-            </SelectContent>
-          </Select>
-          
-          <Button 
-            variant="outline" 
-            size="icon"
-            onClick={fetchData}
-            disabled={loading}
-            className="border-border"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="relative overflow-hidden bg-gradient-to-br from-blue-500/20 via-card to-card border-blue-500/40 backdrop-blur-sm shadow-xl">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent" />
-          <CardContent className="pt-6 relative">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground font-medium">Total de Leads</p>
-                <p className="text-3xl font-bold text-foreground">{metrics.totalLeads}</p>
-              </div>
-              <div className="w-14 h-14 rounded-2xl bg-blue-500/30 flex items-center justify-center shadow-lg shadow-blue-500/20">
-                <Users className="w-7 h-7 text-blue-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Tabs */}
+      <Tabs defaultValue="analytics" className="space-y-6">
+        <TabsList className="bg-muted/50">
+          <TabsTrigger value="analytics" className="gap-2">
+            <BarChart3 className="w-4 h-4" />
+            Analytics UTM
+          </TabsTrigger>
+          <TabsTrigger value="manage" className="gap-2">
+            <Tag className="w-4 h-4" />
+            Gerenciar Campanhas
+          </TabsTrigger>
+        </TabsList>
 
-        <Card className="relative overflow-hidden bg-gradient-to-br from-violet-500/20 via-card to-card border-violet-500/40 backdrop-blur-sm shadow-xl">
-          <div className="absolute inset-0 bg-gradient-to-br from-violet-500/10 to-transparent" />
-          <CardContent className="pt-6 relative">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground font-medium">Fontes Ativas</p>
-                <p className="text-3xl font-bold text-foreground">{metrics.activeSources}</p>
-              </div>
-              <div className="w-14 h-14 rounded-2xl bg-violet-500/30 flex items-center justify-center shadow-lg shadow-violet-500/20">
-                <Target className="w-7 h-7 text-violet-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <TabsContent value="analytics" className="space-y-6 mt-0">
+          {/* Period Filter */}
+          <div className="flex justify-end gap-3">
+            <Select value={period} onValueChange={setPeriod}>
+              <SelectTrigger className="w-[140px] bg-slate-800 border-slate-600 text-white hover:bg-slate-700">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-800 border-slate-600 text-white z-50">
+                <SelectItem value="0" className="focus:bg-slate-700 focus:text-white">Hoje</SelectItem>
+                <SelectItem value="1" className="focus:bg-slate-700 focus:text-white">Ontem</SelectItem>
+                <SelectItem value="7" className="focus:bg-slate-700 focus:text-white">7 dias</SelectItem>
+                <SelectItem value="30" className="focus:bg-slate-700 focus:text-white">30 dias</SelectItem>
+                <SelectItem value="90" className="focus:bg-slate-700 focus:text-white">90 dias</SelectItem>
+                <SelectItem value="all" className="focus:bg-slate-700 focus:text-white">Todos</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Button 
+              variant="outline" 
+              size="icon"
+              onClick={fetchData}
+              disabled={loading}
+              className="border-border"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
 
-        <Card className="relative overflow-hidden bg-gradient-to-br from-amber-500/20 via-card to-card border-amber-500/40 backdrop-blur-sm shadow-xl">
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-transparent" />
-          <CardContent className="pt-6 relative">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground font-medium">Campanhas Ativas</p>
-                <p className="text-3xl font-bold text-foreground">{metrics.activeCampaigns}</p>
-              </div>
-              <div className="w-14 h-14 rounded-2xl bg-amber-500/30 flex items-center justify-center shadow-lg shadow-amber-500/20">
-                <Megaphone className="w-7 h-7 text-amber-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="relative overflow-hidden bg-gradient-to-br from-blue-500/20 via-card to-card border-blue-500/40 backdrop-blur-sm shadow-xl">
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent" />
+              <CardContent className="pt-6 relative">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground font-medium">Total de Leads</p>
+                    <p className="text-3xl font-bold text-foreground">{metrics.totalLeads}</p>
+                  </div>
+                  <div className="w-14 h-14 rounded-2xl bg-blue-500/30 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                    <Users className="w-7 h-7 text-blue-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card className="relative overflow-hidden bg-gradient-to-br from-emerald-500/20 via-card to-card border-emerald-500/40 backdrop-blur-sm shadow-xl">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-transparent" />
-          <CardContent className="pt-6 relative">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground font-medium">Taxa Qualificação</p>
-                <p className="text-3xl font-bold text-foreground">{metrics.qualificationRate.toFixed(1)}%</p>
-              </div>
-              <div className="w-14 h-14 rounded-2xl bg-emerald-500/30 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                <TrendingUp className="w-7 h-7 text-emerald-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            <Card className="relative overflow-hidden bg-gradient-to-br from-violet-500/20 via-card to-card border-violet-500/40 backdrop-blur-sm shadow-xl">
+              <div className="absolute inset-0 bg-gradient-to-br from-violet-500/10 to-transparent" />
+              <CardContent className="pt-6 relative">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground font-medium">Fontes Ativas</p>
+                    <p className="text-3xl font-bold text-foreground">{metrics.activeSources}</p>
+                  </div>
+                  <div className="w-14 h-14 rounded-2xl bg-violet-500/30 flex items-center justify-center shadow-lg shadow-violet-500/20">
+                    <Target className="w-7 h-7 text-violet-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="bg-card/95 border-border/50 shadow-xl ring-1 ring-white/5">
-          <CardHeader className="border-b border-border/30">
-            <CardTitle className="text-lg font-semibold">Leads por Fonte</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            {sourceData.length > 0 ? (
-              <CampaignSourceChart data={sourceData} />
-            ) : (
-              <div className="h-[280px] flex items-center justify-center text-muted-foreground">
-                Nenhum dado disponível
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            <Card className="relative overflow-hidden bg-gradient-to-br from-amber-500/20 via-card to-card border-amber-500/40 backdrop-blur-sm shadow-xl">
+              <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-transparent" />
+              <CardContent className="pt-6 relative">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground font-medium">Campanhas Ativas</p>
+                    <p className="text-3xl font-bold text-foreground">{metrics.activeCampaigns}</p>
+                  </div>
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/30 flex items-center justify-center shadow-lg shadow-amber-500/20">
+                    <Megaphone className="w-7 h-7 text-amber-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card className="bg-card/95 border-border/50 shadow-xl ring-1 ring-white/5">
-          <CardHeader className="border-b border-border/30">
-            <CardTitle className="text-lg font-semibold">Top 5 Campanhas</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            {campaignData.length > 0 ? (
-              <TopCampaignsChart data={campaignData} />
-            ) : (
-              <div className="h-[280px] flex items-center justify-center text-muted-foreground">
-                Nenhum dado disponível
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            <Card className="relative overflow-hidden bg-gradient-to-br from-emerald-500/20 via-card to-card border-emerald-500/40 backdrop-blur-sm shadow-xl">
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-transparent" />
+              <CardContent className="pt-6 relative">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground font-medium">Taxa Qualificação</p>
+                    <p className="text-3xl font-bold text-foreground">{metrics.qualificationRate.toFixed(1)}%</p>
+                  </div>
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/30 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                    <TrendingUp className="w-7 h-7 text-emerald-400" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
-      {/* Detailed Table */}
-      <Card className="bg-card/95 border-border/50 shadow-xl ring-1 ring-white/5">
-        <CardHeader className="border-b border-border/30">
-          <CardTitle className="text-lg font-semibold">Detalhamento por Campanha</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <CampaignsTable data={tableData} />
-        </CardContent>
-      </Card>
+          {/* Charts Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card className="bg-card/95 border-border/50 shadow-xl ring-1 ring-white/5">
+              <CardHeader className="border-b border-border/30">
+                <CardTitle className="text-lg font-semibold">Leads por Fonte</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6">
+                {sourceData.length > 0 ? (
+                  <CampaignSourceChart data={sourceData} />
+                ) : (
+                  <div className="h-[280px] flex items-center justify-center text-muted-foreground">
+                    Nenhum dado disponível
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/95 border-border/50 shadow-xl ring-1 ring-white/5">
+              <CardHeader className="border-b border-border/30">
+                <CardTitle className="text-lg font-semibold">Top 5 Campanhas</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6">
+                {campaignData.length > 0 ? (
+                  <TopCampaignsChart data={campaignData} />
+                ) : (
+                  <div className="h-[280px] flex items-center justify-center text-muted-foreground">
+                    Nenhum dado disponível
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Detailed Table */}
+          <Card className="bg-card/95 border-border/50 shadow-xl ring-1 ring-white/5">
+            <CardHeader className="border-b border-border/30">
+              <CardTitle className="text-lg font-semibold">Detalhamento por Campanha</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <CampaignsTable data={tableData} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="manage" className="mt-0">
+          <CampaignManagement />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
