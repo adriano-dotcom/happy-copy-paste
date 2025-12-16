@@ -83,6 +83,40 @@ DIFERENCIAL COMPETITIVO:
 
 TOM: Profissional, foco em proteção patrimonial, segurança operacional, continuidade do negócio e redução de custos.
 `,
+  ambos: `
+PRODUTOS DE SEGURO - SOLUÇÃO COMPLETA PARA TRANSPORTADORES:
+
+**SEGURO DE TRANSPORTE (RCTR-C/RC-DC/RC-V):**
+- Obrigatório pela Lei 14.599/2023 para RNTRC
+- RCTR-C: Cobre danos à carga durante transporte
+- RC-DC: Cobre roubo e furto de carga
+- RC-V: Cobre danos a terceiros
+- Fiscalização digital pela ANTT (Resolução 6.068/2025)
+- CT-e obrigatório para emissão
+
+**SEGURO DE FROTA EMPRESARIAL:**
+- Proteção completa para veículos da empresa (cavalos, carretas, caminhões)
+- Casco (colisão, incêndio, roubo), RCF-V (danos a terceiros), APP (acidentes pessoais)
+- Desconto por volume (economia significativa ao segurar toda a frota)
+- Assistência 24h: guincho, socorro mecânico
+- Gestão centralizada de sinistros
+
+DIFERENCIAL JACOMETO - SOLUÇÃO COMPLETA:
+- Especialista em transportadores = entende todas as necessidades
+- Carga protegida + Veículos protegidos = Operação 100% segura
+- Economia ao contratar ambos com mesmo corretor (condições especiais)
+- Gestão unificada de renovações, sinistros e documentação
+- Compliance legal (Lei 14.599) + Proteção patrimonial em um só lugar
+- Único ponto de contato para todas as questões de seguros
+
+ABORDAGEM RECOMENDADA:
+- Focar na proteção TOTAL do negócio do transportador
+- Enfatizar a simplificação: um corretor para todas as necessidades
+- Destacar economia ao centralizar os seguros
+- Mencionar a experiência específica com transportadores
+
+TOM: Consultivo, foco em solução completa, economia e simplificação. Profissional sem emojis.
+`,
   saude: `
 PRODUTOS DE PLANOS DE SAÚDE:
 - Planos empresariais (mínimo 2 vidas, vantagens fiscais)
@@ -137,6 +171,7 @@ OBJETIVO: Primeiro contato frio com lead de prospecção
 SEGMENTAÇÃO POR VERTICAL/CNAE:
 - Se vertical="transporte": Focar em Lei 14.599/2023, RCTR-C/RC-DC/RC-V obrigatórios, compliance ANTT, fiscalização digital
 - Se vertical="frotas": Focar em proteção patrimonial dos veículos, seguro de frota empresarial, economia por volume, gestão centralizada
+- Se vertical="ambos": Oferecer SOLUÇÃO COMPLETA - seguro de carga + seguro de frota juntos, economia ao centralizar com mesmo corretor, proteção total da operação
 - Se vertical="prospeccao" (genérico): Usar CNAE para identificar melhor abordagem
 
 PERSONALIZAÇÃO GEOGRÁFICA:
