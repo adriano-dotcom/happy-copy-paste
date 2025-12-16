@@ -309,17 +309,20 @@ serve(async (req) => {
               .replace(/\{\{nome\}\}/gi, firstName)
               .replace(/\{\{empresa\}\}/gi, company || '');
             
-            // Assinatura profissional
+            // Assinatura profissional com formatação otimizada para clientes de email
             const emailSignature = `
-<br><br>
-<table cellpadding="0" cellspacing="0" style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
-  <tr><td style="padding-bottom: 8px;"><strong style="font-size: 16px; color: #1a365d;">Adriano Jacometo</strong></td></tr>
-  <tr><td style="color: #666; padding-bottom: 4px;">Corretor de Seguros</td></tr>
-  <tr><td style="font-weight: bold; color: #2c5282; padding-bottom: 12px;">Jacometo Corretora de Seguros</td></tr>
-  <tr><td style="padding-bottom: 4px;">📱 WhatsApp: <a href="https://wa.me/5543999145000" style="color: #25D366;">+55 43 9 9914-5000</a></td></tr>
-  <tr><td style="padding-bottom: 4px;">📞 Telefone: (43) 3321-5007</td></tr>
-  <tr><td style="padding-bottom: 4px;">📍 Rua Souza Naves, 612 – Sala 51 – Centro – Londrina/PR</td></tr>
-  <tr><td style="padding-top: 8px;">🌐 <a href="https://jacometoseguros.com.br" style="color: #2c5282;">jacometoseguros.com.br</a></td></tr>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 30px; border-top: 1px solid #e0e0e0; padding-top: 20px;">
+  <tr>
+    <td style="font-family: Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6;">
+      <strong style="font-size: 15px; color: #1a365d; display: block;">Adriano Jacometo</strong>
+      <span style="color: #666; display: block; margin-bottom: 4px;">Corretor de Seguros</span>
+      <strong style="color: #2c5282; display: block; margin-bottom: 12px;">Jacometo Corretora de Seguros</strong>
+      <span style="display: block; margin-bottom: 4px;">📱 WhatsApp: <a href="https://wa.me/5543999145000" style="color: #25D366; text-decoration: none;">+55 43 9 9914-5000</a></span>
+      <span style="display: block; margin-bottom: 4px;">📞 Telefone: (43) 3321-5007</span>
+      <span style="display: block; margin-bottom: 4px;">📍 Rua Souza Naves, 612 – Sala 51 – Centro – Londrina/PR</span>
+      <span style="display: block; margin-top: 8px;">🌐 <a href="https://jacometoseguros.com.br" style="color: #2c5282; text-decoration: none;">jacometoseguros.com.br</a></span>
+    </td>
+  </tr>
 </table>`;
             
             const finalBody = processedBody + emailSignature;
