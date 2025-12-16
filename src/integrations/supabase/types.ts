@@ -386,6 +386,7 @@ export type Database = {
           utm_content: string | null
           utm_source: string | null
           utm_term: string | null
+          vertical: string | null
           whatsapp_id: string | null
         }
         Insert: {
@@ -424,6 +425,7 @@ export type Database = {
           utm_content?: string | null
           utm_source?: string | null
           utm_term?: string | null
+          vertical?: string | null
           whatsapp_id?: string | null
         }
         Update: {
@@ -462,6 +464,7 @@ export type Database = {
           utm_content?: string | null
           utm_source?: string | null
           utm_term?: string | null
+          vertical?: string | null
           whatsapp_id?: string | null
         }
         Relationships: []
