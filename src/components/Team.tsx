@@ -266,10 +266,11 @@ const Team: React.FC = () => {
                             <th className="px-6 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider">Email</th>
                             <th className="px-6 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider">Role</th>
                             <th className="px-6 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider">Time</th>
-                            <th className="px-6 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider">Função</th>
-                            <th className="px-6 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider">Peso</th>
-                            <th className="px-6 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider text-center">Status</th>
-                            <th className="px-6 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider text-center">Ações</th>
+                                            <th className="px-6 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider">Função</th>
+                                            <th className="px-6 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider">Peso</th>
+                                            <th className="px-6 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider">Ramal</th>
+                                            <th className="px-6 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider text-center">Status</th>
+                                            <th className="px-6 py-4 text-xs font-medium text-slate-500 uppercase tracking-wider text-center">Ações</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/30">
@@ -326,17 +327,28 @@ const Team: React.FC = () => {
                                     </select>
                                 </td>
 
-                                {/* Weight */}
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        max="10"
-                                        value={member.weight || 1}
-                                        onChange={(e) => handleUpdateMember(member.id, 'weight', parseInt(e.target.value))}
-                                        className="w-16 px-2 py-1 bg-slate-950 border border-slate-800 rounded-md text-sm text-slate-300 text-center"
-                                    />
-                                </td>
+                                                {/* Weight */}
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        max="10"
+                                                        value={member.weight || 1}
+                                                        onChange={(e) => handleUpdateMember(member.id, 'weight', parseInt(e.target.value))}
+                                                        className="w-16 px-2 py-1 bg-slate-950 border border-slate-800 rounded-md text-sm text-slate-300 text-center"
+                                                    />
+                                                </td>
+
+                                                {/* Ramal API4Com */}
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="1000"
+                                                        value={member.api4com_extension || ''}
+                                                        onChange={(e) => handleUpdateMember(member.id, 'api4com_extension', e.target.value || null)}
+                                                        className="w-20 px-2 py-1 bg-slate-950 border border-slate-800 rounded-md text-sm text-slate-300 text-center placeholder:text-slate-600"
+                                                    />
+                                                </td>
 
                                 {/* Status */}
                                 <td className="px-6 py-4 whitespace-nowrap text-center">

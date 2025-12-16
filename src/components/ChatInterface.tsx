@@ -337,16 +337,33 @@ const ChatInterface: React.FC = () => {
         setArchivedCount(count || 0);
       });
 
-    // Fetch default extension for calls
-    supabase
-      .from('nina_settings')
-      .select('api4com_default_extension')
-      .single()
-      .then(({ data }) => {
-        if (data?.api4com_default_extension) {
-          setDefaultExtension(data.api4com_default_extension);
+    // Fetch extension for calls - operator's personal extension or global fallback
+    const loadExtension = async () => {
+      // 1. Try operator's personal extension
+      if (user?.email) {
+        const { data: teamMember } = await supabase
+          .from('team_members')
+          .select('api4com_extension')
+          .eq('email', user.email)
+          .maybeSingle();
+        
+        if (teamMember?.api4com_extension) {
+          setDefaultExtension(teamMember.api4com_extension);
+          return;
         }
-      });
+      }
+      
+      // 2. Fallback to global default
+      const { data: settings } = await supabase
+        .from('nina_settings')
+        .select('api4com_default_extension')
+        .maybeSingle();
+      
+      if (settings?.api4com_default_extension) {
+        setDefaultExtension(settings.api4com_default_extension);
+      }
+    };
+    loadExtension();
 
     // Fetch available agents
     supabase
