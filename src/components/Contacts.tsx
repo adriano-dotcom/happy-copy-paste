@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from './ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { BulkSendTemplateModal } from './BulkSendTemplateModal';
+import { supabase } from '@/integrations/supabase/client';
 
 const statusOptions = [
   { value: 'new', label: 'Novo Lead', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
@@ -70,6 +71,7 @@ const Contacts: React.FC = () => {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
   const [isBulkSendTemplateOpen, setIsBulkSendTemplateOpen] = useState(false);
+  const [isBulkCampaignUpdating, setIsBulkCampaignUpdating] = useState(false);
   
   const { isAdmin } = useUserRole();
   
@@ -79,7 +81,7 @@ const Contacts: React.FC = () => {
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [letterFilter, setLetterFilter] = useState<string>('all');
   const [campaignFilter, setCampaignFilter] = useState<string>('all');
-  const [availableCampaigns, setAvailableCampaigns] = useState<string[]>([]);
+  const [availableCampaigns, setAvailableCampaigns] = useState<{id: string; name: string; color: string | null}[]>([]);
 
   const handleConverse = async (contactId: string) => {
     try {
@@ -135,10 +137,6 @@ const Contacts: React.FC = () => {
       setLoading(true);
       const data = await api.fetchContacts();
       setContacts(data);
-      
-      // Extract unique campaigns from contacts
-      const campaigns = [...new Set(data.map(c => (c as ExtendedContact).campaign).filter(Boolean))] as string[];
-      setAvailableCampaigns(campaigns.sort());
     } catch (error) {
       console.error("Erro ao carregar contatos", error);
     } finally {
@@ -146,8 +144,18 @@ const Contacts: React.FC = () => {
     }
   };
 
+  const loadCampaigns = async () => {
+    const { data } = await supabase
+      .from('campaigns')
+      .select('id, name, color')
+      .eq('is_active', true)
+      .order('name');
+    if (data) setAvailableCampaigns(data);
+  };
+
   useEffect(() => {
     loadContacts();
+    loadCampaigns();
   }, []);
 
   const getStatusColor = (status: string) => {
@@ -308,6 +316,24 @@ const Contacts: React.FC = () => {
       toast.error('Erro ao atualizar status em massa');
     } finally {
       setIsBulkUpdating(false);
+    }
+  };
+  
+  const handleBulkCampaignChange = async (campaign: string) => {
+    if (selectedContactIds.size === 0) return;
+    
+    try {
+      setIsBulkCampaignUpdating(true);
+      const campaignValue = campaign === '__none__' ? null : campaign;
+      await api.updateContactsCampaign(Array.from(selectedContactIds), campaignValue);
+      toast.success(`Campanha ${campaignValue ? 'atribuída' : 'removida'} de ${selectedContactIds.size} contato(s)`);
+      setSelectedContactIds(new Set());
+      loadContacts();
+    } catch (error) {
+      console.error('Erro ao atualizar campanha em massa:', error);
+      toast.error('Erro ao atualizar campanha em massa');
+    } finally {
+      setIsBulkCampaignUpdating(false);
     }
   };
   
@@ -489,12 +515,15 @@ const Contacts: React.FC = () => {
                           </button>
                           {availableCampaigns.map(campaign => (
                             <button
-                              key={campaign}
-                              onClick={() => setCampaignFilter(campaign)}
-                              className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${campaignFilter === campaign ? 'bg-slate-800 text-cyan-400' : 'text-slate-300'}`}
+                              key={campaign.id}
+                              onClick={() => setCampaignFilter(campaign.name)}
+                              className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${campaignFilter === campaign.name ? 'bg-slate-800 text-cyan-400' : 'text-slate-300'}`}
                             >
-                              <span className="truncate">{campaign}</span>
-                              {campaignFilter === campaign && <span>✓</span>}
+                              <div className="flex items-center gap-2 truncate">
+                                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: campaign.color || '#3b82f6' }} />
+                                <span className="truncate">{campaign.name}</span>
+                              </div>
+                              {campaignFilter === campaign.name && <span>✓</span>}
                             </button>
                           ))}
                           {availableCampaigns.length === 0 && (
@@ -812,7 +841,7 @@ const Contacts: React.FC = () => {
                 {selectedContactIds.size} contato{selectedContactIds.size > 1 ? 's' : ''} selecionado{selectedContactIds.size > 1 ? 's' : ''}
               </span>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <Select onValueChange={handleBulkStatusChange} disabled={isBulkUpdating}>
                 <SelectTrigger className="w-48 bg-slate-900 border-slate-700 text-slate-200">
                   <SelectValue placeholder={isBulkUpdating ? "Atualizando..." : "Alterar Status"} />
@@ -823,6 +852,24 @@ const Contacts: React.FC = () => {
                       <span className={`px-2 py-0.5 rounded text-xs font-medium border ${option.color}`}>
                         {option.label}
                       </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select onValueChange={handleBulkCampaignChange} disabled={isBulkCampaignUpdating}>
+                <SelectTrigger className="w-48 bg-slate-900 border-slate-700 text-slate-200">
+                  <SelectValue placeholder={isBulkCampaignUpdating ? "Atualizando..." : "🏷️ Campanha"} />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-900 border-slate-700">
+                  <SelectItem value="__none__" className="cursor-pointer text-slate-400">
+                    Remover campanha
+                  </SelectItem>
+                  {availableCampaigns.map(campaign => (
+                    <SelectItem key={campaign.id} value={campaign.name} className="cursor-pointer">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: campaign.color || '#3b82f6' }} />
+                        {campaign.name}
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
