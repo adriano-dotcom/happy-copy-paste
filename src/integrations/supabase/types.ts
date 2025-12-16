@@ -1108,6 +1108,8 @@ export type Database = {
           elevenlabs_voice_id: string
           facebook_lead_email_template: string | null
           facebook_lead_template: string | null
+          google_lead_email_template: string | null
+          google_lead_template: string | null
           id: string
           is_active: boolean
           message_breaking_enabled: boolean
@@ -1165,6 +1167,8 @@ export type Database = {
           elevenlabs_voice_id?: string
           facebook_lead_email_template?: string | null
           facebook_lead_template?: string | null
+          google_lead_email_template?: string | null
+          google_lead_template?: string | null
           id?: string
           is_active?: boolean
           message_breaking_enabled?: boolean
@@ -1222,6 +1226,8 @@ export type Database = {
           elevenlabs_voice_id?: string
           facebook_lead_email_template?: string | null
           facebook_lead_template?: string | null
+          google_lead_email_template?: string | null
+          google_lead_template?: string | null
           id?: string
           is_active?: boolean
           message_breaking_enabled?: boolean
@@ -1255,6 +1261,13 @@ export type Database = {
           {
             foreignKeyName: "nina_settings_facebook_lead_email_template_fkey"
             columns: ["facebook_lead_email_template"]
+            isOneToOne: false
+            referencedRelation: "email_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nina_settings_google_lead_email_template_fkey"
+            columns: ["google_lead_email_template"]
             isOneToOne: false
             referencedRelation: "email_templates"
             referencedColumns: ["id"]
