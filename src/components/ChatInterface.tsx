@@ -1204,7 +1204,7 @@ const ChatInterface: React.FC = () => {
                     : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
                 }`}
               >
-                Todos Status
+                Status
               </button>
               
               {/* Nina/IA */}
