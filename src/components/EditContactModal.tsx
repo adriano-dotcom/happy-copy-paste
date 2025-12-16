@@ -7,9 +7,16 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { toast } from 'sonner';
-import { Loader2, Search, User, Building2, MapPin, FileText } from 'lucide-react';
+import { Loader2, Search, User, Building2, MapPin, FileText, Tag, Plus } from 'lucide-react';
 import { api } from '../services/api';
 import { formatPhoneInternational } from '@/utils/phoneFormatter';
+import { supabase } from '@/integrations/supabase/client';
+
+interface Campaign {
+  id: string;
+  name: string;
+  color: string | null;
+}
 
 interface ContactData {
   id: string;
@@ -27,6 +34,7 @@ interface ContactData {
   city?: string;
   state?: string;
   notes?: string;
+  campaign?: string;
 }
 
 interface EditContactModalProps {
@@ -57,6 +65,9 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
   const [loading, setLoading] = useState(false);
   const [loadingCep, setLoadingCep] = useState(false);
   const [loadingCnpj, setLoadingCnpj] = useState(false);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [newCampaignName, setNewCampaignName] = useState('');
+  const [showNewCampaign, setShowNewCampaign] = useState(false);
   const numberInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
@@ -73,8 +84,15 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
     neighborhood: '',
     city: '',
     state: '',
-    notes: ''
+    notes: '',
+    campaign: ''
   });
+
+  useEffect(() => {
+    if (open) {
+      loadCampaigns();
+    }
+  }, [open]);
 
   useEffect(() => {
     if (contact && open) {
@@ -92,10 +110,38 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
         neighborhood: contact.neighborhood || '',
         city: contact.city || '',
         state: contact.state || '',
-        notes: contact.notes || ''
+        notes: contact.notes || '',
+        campaign: contact.campaign || ''
       });
     }
   }, [contact, open]);
+
+  const loadCampaigns = async () => {
+    const { data } = await supabase
+      .from('campaigns')
+      .select('id, name, color')
+      .eq('is_active', true)
+      .order('name');
+    if (data) setCampaigns(data);
+  };
+
+  const createCampaign = async () => {
+    if (!newCampaignName.trim()) return;
+    const { data, error } = await supabase
+      .from('campaigns')
+      .insert({ name: newCampaignName.trim() })
+      .select()
+      .single();
+    if (error) {
+      toast.error('Erro ao criar campanha');
+      return;
+    }
+    setCampaigns(prev => [...prev, data]);
+    setFormData(prev => ({ ...prev, campaign: data.name }));
+    setNewCampaignName('');
+    setShowNewCampaign(false);
+    toast.success('Campanha criada!');
+  };
 
   // Use international phone format from utility
 
@@ -212,7 +258,8 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
         neighborhood: formData.neighborhood.trim() || null,
         city: formData.city.trim() || null,
         state: formData.state || null,
-        notes: formData.notes.trim() || null
+        notes: formData.notes.trim() || null,
+        campaign: formData.campaign.trim() || null
       });
       toast.success('Contato atualizado com sucesso!');
       onOpenChange(false);
@@ -415,6 +462,68 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
                   </Select>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Campanha */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <Tag className="w-4 h-4" /> Campanha
+            </h3>
+            <div className="space-y-2">
+              <Select 
+                value={formData.campaign || 'none'} 
+                onValueChange={(value) => {
+                  if (value === 'new') {
+                    setShowNewCampaign(true);
+                  } else {
+                    setFormData(prev => ({ ...prev, campaign: value === 'none' ? '' : value }));
+                  }
+                }}
+              >
+                <SelectTrigger className="bg-slate-950 border-slate-700 text-slate-100">
+                  <SelectValue placeholder="Selecione uma campanha" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-900 border-slate-700">
+                  <SelectItem value="none" className="text-slate-400 focus:bg-slate-800">
+                    Sem campanha
+                  </SelectItem>
+                  {campaigns.map((campaign) => (
+                    <SelectItem key={campaign.id} value={campaign.name} className="text-slate-100 focus:bg-slate-800">
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-3 h-3 rounded-full" 
+                          style={{ backgroundColor: campaign.color || '#3b82f6' }} 
+                        />
+                        {campaign.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="new" className="text-cyan-400 focus:bg-slate-800">
+                    <div className="flex items-center gap-2">
+                      <Plus className="w-3 h-3" />
+                      Nova campanha...
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {showNewCampaign && (
+                <div className="flex gap-2">
+                  <Input
+                    value={newCampaignName}
+                    onChange={(e) => setNewCampaignName(e.target.value)}
+                    placeholder="Nome da nova campanha"
+                    className="bg-slate-950 border-slate-700 text-slate-100"
+                    onKeyDown={(e) => e.key === 'Enter' && createCampaign()}
+                  />
+                  <Button type="button" size="sm" onClick={createCampaign} className="bg-cyan-600 hover:bg-cyan-700">
+                    Criar
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setShowNewCampaign(false)}>
+                    Cancelar
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 

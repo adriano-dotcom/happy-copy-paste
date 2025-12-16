@@ -366,6 +366,7 @@ export const api = {
     city?: string | null;
     state?: string | null;
     notes?: string | null;
+    campaign?: string | null;
   }): Promise<void> => {
     const { error } = await supabase
       .from('contacts')
@@ -377,6 +378,21 @@ export const api = {
 
     if (error) {
       console.error('[API] Error updating contact:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Update campaign for multiple contacts
+   */
+  updateContactsCampaign: async (contactIds: string[], campaign: string | null): Promise<void> => {
+    const { error } = await supabase
+      .from('contacts')
+      .update({ campaign, updated_at: new Date().toISOString() })
+      .in('id', contactIds);
+
+    if (error) {
+      console.error('[API] Error updating contacts campaign:', error);
       throw error;
     }
   },
