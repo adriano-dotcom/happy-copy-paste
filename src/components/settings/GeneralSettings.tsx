@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Volume2, VolumeX, Facebook, MessageSquare, Mail } from 'lucide-react';
+import { Bell, Volume2, VolumeX, Facebook, MessageSquare, Mail, Pencil } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -7,10 +7,20 @@ import { Button } from '@/components/ui/button';
 import { playNotificationSound, isNotificationSoundEnabled, setNotificationSoundEnabled } from '@/utils/notificationSound';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import EmailTemplateEditorModal from './EmailTemplateEditorModal';
 
 interface EmailTemplate {
   id: string;
   name: string;
+}
+
+interface FullEmailTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  body_html: string;
+  category: string | null;
+  is_active: boolean | null;
 }
 
 const GeneralSettings: React.FC = () => {
@@ -21,6 +31,10 @@ const GeneralSettings: React.FC = () => {
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  
+  // Editor modal states
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<FullEmailTemplate | null>(null);
 
   useEffect(() => {
     setSoundEnabled(isNotificationSoundEnabled());
@@ -109,6 +123,49 @@ const GeneralSettings: React.FC = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleEditTemplate = async () => {
+    if (emailTemplateId === 'none') {
+      toast.error('Selecione um template para editar');
+      return;
+    }
+    
+    const { data, error } = await supabase
+      .from('email_templates')
+      .select('*')
+      .eq('id', emailTemplateId)
+      .single();
+    
+    if (error) {
+      toast.error('Erro ao carregar template');
+      return;
+    }
+    
+    if (data) {
+      setSelectedTemplate(data as FullEmailTemplate);
+      setIsEditorOpen(true);
+    }
+  };
+
+  const handleSaveTemplate = async (template: Partial<FullEmailTemplate>) => {
+    if (!selectedTemplate?.id) return;
+    
+    const { error } = await supabase
+      .from('email_templates')
+      .update({
+        name: template.name,
+        subject: template.subject,
+        body_html: template.body_html,
+        category: template.category
+      })
+      .eq('id', selectedTemplate.id);
+    
+    if (error) throw error;
+    
+    // Refresh templates list
+    await fetchTemplates();
+    toast.success('Template atualizado com sucesso!');
   };
 
   return (
@@ -213,23 +270,37 @@ const GeneralSettings: React.FC = () => {
               </div>
             </div>
             
-            <Select 
-              value={emailTemplateId} 
-              onValueChange={setEmailTemplateId}
-              disabled={loading}
-            >
-              <SelectTrigger className="bg-slate-900/50 border-slate-700">
-                <SelectValue placeholder="Não enviar email" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Não enviar email</SelectItem>
-                {emailTemplates.map((template) => (
-                  <SelectItem key={template.id} value={template.id}>
-                    {template.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex gap-2">
+              <Select 
+                value={emailTemplateId} 
+                onValueChange={setEmailTemplateId}
+                disabled={loading}
+              >
+                <SelectTrigger className="bg-slate-900/50 border-slate-700 flex-1">
+                  <SelectValue placeholder="Não enviar email" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Não enviar email</SelectItem>
+                  {emailTemplates.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              {emailTemplateId !== 'none' && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleEditTemplate}
+                  className="border-slate-700 hover:bg-slate-800 shrink-0"
+                  title="Editar template selecionado"
+                >
+                  <Pencil className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
             <p className="text-xs text-slate-500 mt-2">
               {emailTemplates.length} templates de email disponíveis
             </p>
@@ -247,6 +318,14 @@ const GeneralSettings: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Email Template Editor Modal */}
+      <EmailTemplateEditorModal
+        isOpen={isEditorOpen}
+        onClose={() => setIsEditorOpen(false)}
+        template={selectedTemplate}
+        onSave={handleSaveTemplate}
+      />
     </div>
   );
 };
