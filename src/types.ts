@@ -28,6 +28,7 @@ export interface TeamMember {
   team_id?: string | null;
   function_id?: string | null;
   weight?: number;
+  api4com_extension?: string | null;
   team?: Team;
   function?: TeamFunction;
 }

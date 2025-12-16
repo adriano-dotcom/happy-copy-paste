@@ -1713,6 +1713,7 @@ export type Database = {
       }
       team_members: {
         Row: {
+          api4com_extension: string | null
           avatar: string | null
           created_at: string
           email: string
@@ -1727,6 +1728,7 @@ export type Database = {
           weight: number | null
         }
         Insert: {
+          api4com_extension?: string | null
           avatar?: string | null
           created_at?: string
           email: string
@@ -1741,6 +1743,7 @@ export type Database = {
           weight?: number | null
         }
         Update: {
+          api4com_extension?: string | null
           avatar?: string | null
           created_at?: string
           email?: string
