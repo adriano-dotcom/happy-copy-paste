@@ -264,8 +264,6 @@ serve(async (req) => {
         
         // Só enviar template se temos conversationId
         if (conversationId) {
-          conversationId = conversation.id;
-          console.log('[zapier-leadgen-webhook] Conversation created:', conversationId);
           
           // Usar template do payload > configuração do banco > fallback padrão
           const selectedTemplate = template_name || settings?.facebook_lead_template || 'lead_facebook_meta';
