@@ -149,7 +149,9 @@ const GeneralSettings: React.FC = () => {
   };
 
   const handleSaveTemplate = async (template: Partial<FullEmailTemplate>) => {
-    if (!selectedTemplate?.id) return;
+    if (!selectedTemplate?.id) {
+      throw new Error('Nenhum template selecionado');
+    }
     
     const { error } = await supabase
       .from('email_templates')
@@ -161,11 +163,12 @@ const GeneralSettings: React.FC = () => {
       })
       .eq('id', selectedTemplate.id);
     
-    if (error) throw error;
+    if (error) {
+      throw new Error(error.message || 'Erro ao atualizar template');
+    }
     
     // Refresh templates list
     await fetchTemplates();
-    toast.success('Template atualizado com sucesso!');
   };
 
   return (

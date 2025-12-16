@@ -191,6 +191,11 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
         body_html: bodyHtml,
         category,
       });
+      toast.success('Template salvo com sucesso!');
+      onClose();
+    } catch (error: any) {
+      console.error('Erro ao salvar template:', error);
+      toast.error(error.message || 'Erro ao salvar template');
     } finally {
       setSaving(false);
     }
