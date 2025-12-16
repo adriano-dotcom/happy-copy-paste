@@ -63,6 +63,21 @@ const handler = async (req: Request): Promise<Response> => {
       html: html,
     });
 
+    // Verificar se houve erro na resposta do Resend
+    if (emailResponse.error) {
+      console.error("Resend API error:", emailResponse.error);
+      return new Response(
+        JSON.stringify({ 
+          error: emailResponse.error.message || "Erro ao enviar email",
+          details: emailResponse.error.name
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
+    }
+
     console.log("Email sent successfully:", emailResponse);
 
     return new Response(JSON.stringify({ 
