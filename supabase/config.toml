@@ -7,6 +7,12 @@ verify_jwt = false
 [functions.api4com-webhook]
 verify_jwt = false
 
+[functions.zapier-leadgen-webhook]
+verify_jwt = false
+
+[functions.google-leadgen-webhook]
+verify_jwt = false
+
 # Funções de processamento interno (chamadas por triggers do banco)
 # Estas ainda precisam ser públicas pois são acionadas por database triggers
 [functions.nina-orchestrator]
@@ -102,6 +108,3 @@ verify_jwt = true
 
 [functions.summarize-transcription]
 verify_jwt = true
-
-[functions.zapier-leadgen-webhook]
-verify_jwt = false
