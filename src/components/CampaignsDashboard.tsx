@@ -208,16 +208,16 @@ const CampaignsDashboard: React.FC = () => {
         
         <div className="flex items-center gap-3">
           <Select value={period} onValueChange={setPeriod}>
-            <SelectTrigger className="w-[140px] bg-card border-border">
+            <SelectTrigger className="w-[140px] bg-slate-800 border-slate-600 text-white hover:bg-slate-700">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="bg-popover border-border z-50">
-              <SelectItem value="0">Hoje</SelectItem>
-              <SelectItem value="1">Ontem</SelectItem>
-              <SelectItem value="7">7 dias</SelectItem>
-              <SelectItem value="30">30 dias</SelectItem>
-              <SelectItem value="90">90 dias</SelectItem>
-              <SelectItem value="all">Todos</SelectItem>
+            <SelectContent className="bg-slate-800 border-slate-600 text-white z-50">
+              <SelectItem value="0" className="focus:bg-slate-700 focus:text-white">Hoje</SelectItem>
+              <SelectItem value="1" className="focus:bg-slate-700 focus:text-white">Ontem</SelectItem>
+              <SelectItem value="7" className="focus:bg-slate-700 focus:text-white">7 dias</SelectItem>
+              <SelectItem value="30" className="focus:bg-slate-700 focus:text-white">30 dias</SelectItem>
+              <SelectItem value="90" className="focus:bg-slate-700 focus:text-white">90 dias</SelectItem>
+              <SelectItem value="all" className="focus:bg-slate-700 focus:text-white">Todos</SelectItem>
             </SelectContent>
           </Select>
           
