@@ -16,6 +16,13 @@ interface SendTemplateRequest {
   is_prospecting?: boolean; // Flag to mark as active prospecting
 }
 
+function countExpectedParamsFromText(text?: string | null): number {
+  if (!text) return 0;
+  // WhatsApp templates use placeholders like {{1}}, {{2}}...
+  const matches = [...text.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1])).filter((n) => Number.isFinite(n));
+  return matches.length ? Math.max(...matches) : 0;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -88,28 +95,43 @@ serve(async (req) => {
     // Clean phone number (remove non-digits)
     const phoneNumber = contact.phone_number.replace(/\D/g, '');
 
+    // Infer expected parameter counts from template definition
+    const tplHeaderComponent = template.components?.find((c: any) => c.type === 'HEADER');
+    const tplBodyComponent = template.components?.find((c: any) => c.type === 'BODY');
+
+    const headerExpected = countExpectedParamsFromText(tplHeaderComponent?.text);
+    const bodyExpected = countExpectedParamsFromText(tplBodyComponent?.text);
+
+    // Heuristic: if template expects header params but body expects none, treat provided `variables`
+    // as header variables (common in prospecting templates).
+    let effectiveHeaderVars = header_variables;
+    let effectiveBodyVars = variables;
+
+    if (headerExpected > 0 && bodyExpected === 0 && effectiveHeaderVars.length === 0 && effectiveBodyVars.length > 0) {
+      effectiveHeaderVars = effectiveBodyVars;
+      effectiveBodyVars = [];
+    }
+
     // Build components array for the API
     const components: any[] = [];
 
-    // Add header parameters if there are header variables
-    if (header_variables.length > 0) {
+    if (headerExpected > 0) {
+      if (effectiveHeaderVars.length !== headerExpected) {
+        throw new Error(`Template ${template_name} exige ${headerExpected} variável(is) no HEADER, mas recebeu ${effectiveHeaderVars.length}.`);
+      }
       components.push({
         type: 'header',
-        parameters: header_variables.map(v => ({
-          type: 'text',
-          text: v
-        }))
+        parameters: effectiveHeaderVars.map((v) => ({ type: 'text', text: v }))
       });
     }
 
-    // Add body parameters
-    if (variables.length > 0) {
+    if (bodyExpected > 0) {
+      if (effectiveBodyVars.length !== bodyExpected) {
+        throw new Error(`Template ${template_name} exige ${bodyExpected} variável(is) no BODY, mas recebeu ${effectiveBodyVars.length}.`);
+      }
       components.push({
         type: 'body',
-        parameters: variables.map(v => ({
-          type: 'text',
-          text: v
-        }))
+        parameters: effectiveBodyVars.map((v) => ({ type: 'text', text: v }))
       });
     }
 
@@ -157,11 +179,11 @@ serve(async (req) => {
     console.log('WhatsApp API response:', waData);
 
     // Get template body text for message content
-    const bodyComponent = template.components?.find((c: any) => c.type === 'BODY');
-    let messageContent = bodyComponent?.text || `[Template: ${template_name}]`;
-    
-    // Replace variables in content for display
-    variables.forEach((v, i) => {
+    const templateBodyComponent = template.components?.find((c: any) => c.type === 'BODY');
+    let messageContent = templateBodyComponent?.text || `[Template: ${template_name}]`;
+
+    // Replace variables in content for display (BODY vars)
+    effectiveBodyVars.forEach((v, i) => {
       messageContent = messageContent.replace(`{{${i + 1}}}`, v);
     });
 
@@ -179,7 +201,8 @@ serve(async (req) => {
           is_template: true,
           template_name,
           template_language: language,
-          variables,
+          variables: effectiveBodyVars,
+          header_variables: effectiveHeaderVars,
           is_prospecting
         }
       })
