@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Volume2, VolumeX, Facebook, MessageSquare, Mail, Pencil } from 'lucide-react';
+import { Bell, Volume2, VolumeX, Facebook, MessageSquare, Mail, Pencil, Search } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -27,6 +27,8 @@ const GeneralSettings: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [facebookTemplate, setFacebookTemplate] = useState('lead_facebook_meta');
   const [emailTemplateId, setEmailTemplateId] = useState<string>('none');
+  const [googleTemplate, setGoogleTemplate] = useState('lead_google_ads');
+  const [googleEmailTemplateId, setGoogleEmailTemplateId] = useState<string>('none');
   const [approvedTemplates, setApprovedTemplates] = useState<{ name: string }[]>([]);
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
   const [loading, setLoading] = useState(false);
@@ -45,7 +47,7 @@ const GeneralSettings: React.FC = () => {
   const fetchSettings = async () => {
     const { data } = await supabase
       .from('nina_settings')
-      .select('facebook_lead_template, facebook_lead_email_template')
+      .select('facebook_lead_template, facebook_lead_email_template, google_lead_template, google_lead_email_template')
       .single();
     
     if (data?.facebook_lead_template) {
@@ -55,6 +57,14 @@ const GeneralSettings: React.FC = () => {
       setEmailTemplateId(data.facebook_lead_email_template);
     } else {
       setEmailTemplateId('none');
+    }
+    if (data?.google_lead_template) {
+      setGoogleTemplate(data.google_lead_template);
+    }
+    if (data?.google_lead_email_template) {
+      setGoogleEmailTemplateId(data.google_lead_email_template);
+    } else {
+      setGoogleEmailTemplateId('none');
     }
   };
 
@@ -111,7 +121,9 @@ const GeneralSettings: React.FC = () => {
         .from('nina_settings')
         .update({ 
           facebook_lead_template: facebookTemplate,
-          facebook_lead_email_template: emailTemplateId === 'none' ? null : emailTemplateId
+          facebook_lead_email_template: emailTemplateId === 'none' ? null : emailTemplateId,
+          google_lead_template: googleTemplate,
+          google_lead_email_template: googleEmailTemplateId === 'none' ? null : googleEmailTemplateId
         })
         .not('id', 'is', null);
       
@@ -315,6 +327,127 @@ const GeneralSettings: React.FC = () => {
               onClick={handleSaveSettings}
               disabled={saving}
               className="bg-blue-600 hover:bg-blue-700"
+            >
+              {saving ? 'Salvando...' : 'Salvar Configurações'}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Automação Google Leads */}
+      <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
+        <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <Search className="w-5 h-5 text-red-400" />
+          Automação Google Leads
+        </h3>
+        
+        <div className="space-y-4">
+          {/* WhatsApp Template Google */}
+          <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
+            <div className="flex items-start gap-3 mb-4">
+              <MessageSquare className="w-5 h-5 text-green-400 mt-0.5" />
+              <div className="flex-1">
+                <Label className="text-sm font-medium text-white">
+                  Template WhatsApp para novos leads
+                </Label>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Enviado automaticamente quando lead do Google chega via webhook
+                </p>
+              </div>
+            </div>
+            
+            <Select 
+              value={googleTemplate} 
+              onValueChange={setGoogleTemplate}
+              disabled={loading}
+            >
+              <SelectTrigger className="bg-slate-900/50 border-slate-700">
+                <SelectValue placeholder="Selecione um template..." />
+              </SelectTrigger>
+              <SelectContent>
+                {approvedTemplates.map((template) => (
+                  <SelectItem key={template.name} value={template.name}>
+                    {template.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-500 mt-2">
+              {approvedTemplates.length} templates aprovados disponíveis
+            </p>
+          </div>
+
+          {/* Email Template Google */}
+          <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
+            <div className="flex items-start gap-3 mb-4">
+              <Mail className="w-5 h-5 text-orange-400 mt-0.5" />
+              <div className="flex-1">
+                <Label className="text-sm font-medium text-white">
+                  Template de Email para novos leads
+                </Label>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Enviado automaticamente após WhatsApp (se lead tiver email)
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex gap-2">
+              <Select 
+                value={googleEmailTemplateId} 
+                onValueChange={setGoogleEmailTemplateId}
+                disabled={loading}
+              >
+                <SelectTrigger className="bg-slate-900/50 border-slate-700 flex-1">
+                  <SelectValue placeholder="Não enviar email" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Não enviar email</SelectItem>
+                  {emailTemplates.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              {googleEmailTemplateId !== 'none' && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    const template = emailTemplates.find(t => t.id === googleEmailTemplateId);
+                    if (template) {
+                      supabase
+                        .from('email_templates')
+                        .select('*')
+                        .eq('id', googleEmailTemplateId)
+                        .single()
+                        .then(({ data }) => {
+                          if (data) {
+                            setSelectedTemplate(data as FullEmailTemplate);
+                            setIsEditorOpen(true);
+                          }
+                        });
+                    }
+                  }}
+                  className="border-slate-700 hover:bg-slate-800 shrink-0"
+                  title="Editar template selecionado"
+                >
+                  <Pencil className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mt-2">
+              {emailTemplates.length} templates de email disponíveis
+            </p>
+          </div>
+
+          {/* Save Button Google */}
+          <div className="flex justify-end pt-2">
+            <Button
+              onClick={handleSaveSettings}
+              disabled={saving}
+              className="bg-red-600 hover:bg-red-700"
             >
               {saving ? 'Salvando...' : 'Salvar Configurações'}
             </Button>
