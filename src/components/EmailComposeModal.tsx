@@ -299,14 +299,21 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
     const cleanedBody = cleanGenericSignature(htmlBody);
     
     const signature = `
-      <br/><br/>
-      <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #64748b;">
-        <p style="margin: 0; font-weight: 500; color: #334155;">Atenciosamente,</p>
-        <p style="margin: 4px 0 0 0; font-weight: 600; color: #1e293b;">${senderName || 'Equipe Jacometo'}</p>
-        <p style="margin: 2px 0 0 0; color: #64748b;">Jacometo Seguros</p>
-        <a href="https://jacometoseguros.com.br" style="color: #8b5cf6; text-decoration: none; font-size: 13px;">jacometoseguros.com.br</a>
-      </div>
-    `;
+<br/><br/>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
+  <tr>
+    <td style="font-family: Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.7;">
+      <p style="margin: 0 0 12px 0; font-weight: 500; color: #475569;">Atenciosamente,</p>
+      <strong style="font-size: 15px; color: #1e293b; display: block;">${senderName || 'Adriano Jacometo'}</strong>
+      <span style="color: #64748b; display: block; margin-bottom: 4px;">Corretor de Seguros</span>
+      <strong style="color: #334155; display: block; margin-bottom: 16px;">Jacometo Corretora de Seguros</strong>
+      <span style="display: block; margin-bottom: 6px; color: #475569;">📱 WhatsApp: <a href="https://wa.me/5543991434002" style="color: #25D366; text-decoration: none;">+55 43 9 9143 4002</a></span>
+      <span style="display: block; margin-bottom: 6px; color: #475569;">📞 Telefone: (43) 3321‑5007</span>
+      <span style="display: block; margin-bottom: 6px; color: #475569;">📍 Rua Souza Naves, 612 – Sala 51 – Centro – Londrina/PR</span>
+      <span style="display: block; margin-top: 10px;">🌐 <a href="https://jacometoseguros.com.br" style="color: #6366f1; text-decoration: none;">jacometoseguros.com.br</a></span>
+    </td>
+  </tr>
+</table>`;
     return cleanedBody + signature;
   };
 
