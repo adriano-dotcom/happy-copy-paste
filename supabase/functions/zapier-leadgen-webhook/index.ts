@@ -221,28 +221,49 @@ serve(async (req) => {
       } else {
         console.log('[zapier-leadgen-webhook] Found Adri agent:', adri.id);
         
-        // Criar conversa com status 'nina' (IA ativa) e Adri como agente
-        const { data: conversation, error: convError } = await supabase
+        // Verificar se já existe conversa ativa para este contato
+        const { data: existingConversations } = await supabase
           .from('conversations')
-          .insert({
-            contact_id: contactId,
-            status: 'nina',
-            is_active: true,
-            current_agent_id: adri.id,
-            metadata: { 
-              origin: 'facebook',
-              utm_source: utm_source || null,
-              utm_campaign: utm_campaign || null
-            },
-            last_message_at: new Date().toISOString(),
-            started_at: new Date().toISOString()
-          })
           .select('id')
-          .single();
+          .eq('contact_id', contactId)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(1);
         
-        if (convError) {
-          console.error('[zapier-leadgen-webhook] Error creating conversation:', convError);
+        if (existingConversations && existingConversations.length > 0) {
+          // Usar conversa existente
+          conversationId = existingConversations[0].id;
+          console.log('[zapier-leadgen-webhook] Using existing conversation:', conversationId);
         } else {
+          // Criar nova conversa apenas se não existir
+          const { data: conversation, error: convError } = await supabase
+            .from('conversations')
+            .insert({
+              contact_id: contactId,
+              status: 'nina',
+              is_active: true,
+              current_agent_id: adri.id,
+              metadata: { 
+                origin: 'facebook',
+                utm_source: utm_source || null,
+                utm_campaign: utm_campaign || null
+              },
+              last_message_at: new Date().toISOString(),
+              started_at: new Date().toISOString()
+            })
+            .select('id')
+            .single();
+          
+          if (convError) {
+            console.error('[zapier-leadgen-webhook] Error creating conversation:', convError);
+          } else {
+            conversationId = conversation.id;
+            console.log('[zapier-leadgen-webhook] Conversation created:', conversationId);
+          }
+        }
+        
+        // Só enviar template se temos conversationId
+        if (conversationId) {
           conversationId = conversation.id;
           console.log('[zapier-leadgen-webhook] Conversation created:', conversationId);
           

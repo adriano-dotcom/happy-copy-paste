@@ -485,13 +485,16 @@ async function processIncomingMessage(
     console.log('[Webhook] Using existing contact:', contact.id, 'found by phone variant');
   }
 
-  // 2. Get or create active conversation
-  let { data: conversation } = await supabase
+  // 2. Get or create active conversation (usar limit(1) para evitar erro quando há múltiplas)
+  const { data: existingConversations } = await supabase
     .from('conversations')
     .select('*')
     .eq('contact_id', contact.id)
     .eq('is_active', true)
-    .maybeSingle();
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  let conversation = existingConversations?.[0] || null;
 
   if (!conversation) {
     const { data: newConversation, error: convError } = await supabase
