@@ -19,10 +19,9 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { Toaster } from 'sonner';
 
-// Mobile redirect component - redirects to /chat on mobile, /dashboard on desktop
-const MobileRedirect: React.FC = () => {
-  const isMobile = window.innerWidth < 768;
-  return <Navigate to={isMobile ? "/chat" : "/dashboard"} replace />;
+// Default redirect component - redirects all users to /chat
+const DefaultRedirect: React.FC = () => {
+  return <Navigate to="/chat" replace />;
 };
 
 // Componente de Layout que envolve a aplicação principal
@@ -65,7 +64,7 @@ const App: React.FC = () => {
                 <AppLayout />
               </ProtectedRoute>
             }>
-              <Route path="/" element={<MobileRedirect />} />
+              <Route path="/" element={<DefaultRedirect />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/kanban" element={<Kanban />} />
               <Route path="/chat" element={<ChatInterface />} />
