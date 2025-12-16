@@ -5,6 +5,25 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Função para determinar saudação baseada no horário de Brasília
+function getGreetingByTime(): string {
+  // Horário de Brasília (UTC-3)
+  const now = new Date();
+  const brasiliaOffset = -3 * 60; // -3 horas em minutos
+  const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const brasiliaTime = new Date(utcTime + (brasiliaOffset * 60000));
+  
+  const hour = brasiliaTime.getHours();
+  
+  if (hour >= 5 && hour < 12) {
+    return 'Bom dia';
+  } else if (hour >= 12 && hour < 18) {
+    return 'Boa tarde';
+  } else {
+    return 'Boa noite';
+  }
+}
+
 // Conhecimento especializado por vertical
 const VERTICAL_KNOWLEDGE: Record<string, string> = {
   transporte: `
@@ -126,8 +145,9 @@ PERSONALIZAÇÃO GEOGRÁFICA:
 - Contextualizar riscos locais se relevante (ex: grandes centros = mais roubo, rodovias = mais acidentes)
 
 ESTRUTURA:
-1. Saudação personalizada + reconhecimento da empresa e localização
-2. Gancho relevante baseado na vertical:
+1. Saudação dinâmica por horário + nome do lead (usar a saudação fornecida: "Bom dia/Boa tarde/Boa noite [Nome],")
+2. Reconhecimento da empresa e localização
+3. Gancho relevante baseado na vertical:
    - Transporte: Lei obrigatória, compliance, fiscalização
    - Frotas: Proteção do patrimônio, veículos como ativos, economia
 3. Proposta de valor em 2-3 frases concisas
@@ -210,6 +230,7 @@ REGRAS CRÍTICAS:
 5. Assunto máximo 60 caracteres
 6. Tom profissional e brasileiro
 7. NÃO inclua assinatura no final - ela será adicionada automaticamente pelo sistema com o nome do operador
+8. SEMPRE inicie o email com a saudação do horário fornecida seguida do nome (ex: "Bom dia João," ou "Boa tarde Maria,")
 
 FORMATO DE RESPOSTA (JSON):
 {
@@ -276,6 +297,10 @@ IMPORTANTE: Retorne APENAS o JSON, sem markdown, sem explicações.`;
     if (briefing) {
       userPrompt += `\n\nBRIEFING ADICIONAL:\n${briefing}`;
     }
+    
+    // Adicionar saudação dinâmica por horário
+    const saudacao = getGreetingByTime();
+    userPrompt += `\n\nSAUDAÇÃO DO HORÁRIO: "${saudacao}" - Use esta saudação para iniciar o email (ex: "${saudacao} João,")`;
     
     userPrompt += `\n\nGere um email ALTAMENTE PERSONALIZADO usando os dados acima. Mencione informações específicas do lead para criar conexão.`;
 
