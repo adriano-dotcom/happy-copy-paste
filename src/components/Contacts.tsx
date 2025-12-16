@@ -697,7 +697,7 @@ const Contacts: React.FC = () => {
       </div>
 
       {/* Tabs Inbound/Outbound */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'inbound' | 'outbound' | 'facebook')} className="mb-6">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'inbound' | 'outbound' | 'facebook' | 'google')} className="mb-6">
         <TabsList className="bg-slate-900/50 border border-slate-800 p-1">
           <TabsTrigger 
             value="inbound" 
