@@ -47,6 +47,7 @@ interface ExtendedContact extends Contact {
   utm_content?: string;
   utm_term?: string;
   campaign?: string;
+  vertical?: 'transporte' | 'frotas';
 }
 
 const Contacts: React.FC = () => {
@@ -86,6 +87,7 @@ const Contacts: React.FC = () => {
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [letterFilter, setLetterFilter] = useState<string>('all');
   const [campaignFilter, setCampaignFilter] = useState<string>('all');
+  const [verticalFilter, setVerticalFilter] = useState<'all' | 'transporte' | 'frotas' | 'none'>('all');
   const [availableCampaigns, setAvailableCampaigns] = useState<{id: string; name: string; color: string | null}[]>([]);
 
   const handleConverse = async (contactId: string) => {
@@ -267,6 +269,15 @@ const Contacts: React.FC = () => {
       );
     }
     
+    // Filtrar por segmento (vertical)
+    if (verticalFilter !== 'all') {
+      if (verticalFilter === 'none') {
+        filtered = filtered.filter(contact => !(contact as ExtendedContact).vertical);
+      } else {
+        filtered = filtered.filter(contact => (contact as ExtendedContact).vertical === verticalFilter);
+      }
+    }
+    
     // Filtrar por termo de busca (incluindo campanha)
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
@@ -370,9 +381,28 @@ const Contacts: React.FC = () => {
     setDateFilter('all');
     setLetterFilter('all');
     setCampaignFilter('all');
+    setVerticalFilter('all');
   };
   
-  const hasActiveFilters = selectedStatuses.length > 0 || cnpjFilter !== 'all' || channelFilter !== 'all' || dateFilter !== 'all' || letterFilter !== 'all' || campaignFilter !== 'all';
+  const hasActiveFilters = selectedStatuses.length > 0 || cnpjFilter !== 'all' || channelFilter !== 'all' || dateFilter !== 'all' || letterFilter !== 'all' || campaignFilter !== 'all' || verticalFilter !== 'all';
+  
+  const getVerticalBadge = (vertical?: 'transporte' | 'frotas') => {
+    if (vertical === 'transporte') {
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-500/10 text-green-400 border border-green-500/20 inline-flex items-center gap-1">
+          🚛 Carga
+        </span>
+      );
+    }
+    if (vertical === 'frotas') {
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 inline-flex items-center gap-1">
+          🚗 Frota
+        </span>
+      );
+    }
+    return <span className="text-slate-600 text-xs">-</span>;
+  };
   
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
@@ -433,7 +463,7 @@ const Contacts: React.FC = () => {
                   <Popover>
                     <PopoverTrigger asChild>
                       <button className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors">
-                        Nome / Empresa
+                        Nome
                         <ChevronDown className="w-3 h-3" />
                         {letterFilter !== 'all' && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />}
                       </button>
@@ -469,6 +499,15 @@ const Contacts: React.FC = () => {
                     </PopoverContent>
                   </Popover>
                 </th>
+                {/* Empresa Header - Only show on Outbound tab */}
+                {activeTab === 'outbound' && (
+                  <th className="px-4 py-4">
+                    <span className="flex items-center gap-1.5">
+                      <Building2 className="w-3 h-3" />
+                      Empresa
+                    </span>
+                  </th>
+                )}
                 {/* Status Header with Filter */}
                 <th className="px-4 py-4">
                   <Popover>
@@ -534,6 +573,39 @@ const Contacts: React.FC = () => {
                           {availableCampaigns.length === 0 && (
                             <div className="px-2 py-1.5 text-xs text-slate-500">Nenhuma campanha</div>
                           )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </th>
+                )}
+                {/* Segmento Header with Filter - Only show on Outbound tab */}
+                {activeTab === 'outbound' && (
+                  <th className="px-4 py-4">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors">
+                          Segmento
+                          <ChevronDown className="w-3 h-3" />
+                          {verticalFilter !== 'all' && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />}
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="bg-slate-900 border-slate-700 w-48 p-2">
+                        <div className="space-y-1">
+                          {[
+                            { value: 'all', label: 'Todos' },
+                            { value: 'transporte', label: '🚛 Transporte', color: 'text-green-400' },
+                            { value: 'frotas', label: '🚗 Automotores', color: 'text-blue-400' },
+                            { value: 'none', label: 'Sem classificação', color: 'text-slate-500' }
+                          ].map(opt => (
+                            <button
+                              key={opt.value}
+                              onClick={() => setVerticalFilter(opt.value as typeof verticalFilter)}
+                              className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${verticalFilter === opt.value ? 'bg-slate-800 text-cyan-400' : opt.color || 'text-slate-300'}`}
+                            >
+                              {opt.label}
+                              {verticalFilter === opt.value && <span className="text-cyan-400">✓</span>}
+                            </button>
+                          ))}
                         </div>
                       </PopoverContent>
                     </Popover>
@@ -651,18 +723,34 @@ const Contacts: React.FC = () => {
                         {contact.name.substring(0, 2).toUpperCase()}
                       </div>
                       <div>
-                          <div className="font-semibold text-slate-200 group-hover:text-cyan-400 transition-colors">{contact.name}</div>
-                          {contact.company ? (
+                        <div className="font-semibold text-slate-200 group-hover:text-cyan-400 transition-colors">{contact.name}</div>
+                        {/* Show company below name only for non-outbound tabs */}
+                        {activeTab !== 'outbound' && (
+                          contact.company ? (
                             <div className="flex items-center gap-1 text-xs text-slate-500">
                               <Building2 className="w-3 h-3" />
                               {contact.company}
                             </div>
                           ) : (
                             <div className="text-xs text-slate-600">Sem empresa</div>
-                          )}
+                          )
+                        )}
                       </div>
                     </div>
                   </td>
+                  {/* Empresa Cell - Only show on Outbound tab */}
+                  {activeTab === 'outbound' && (
+                    <td className="px-4 py-4">
+                      {contact.company ? (
+                        <div className="flex items-center gap-1.5 text-slate-300">
+                          <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                          <span className="truncate max-w-[180px]">{contact.company}</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-600 text-xs">-</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-4 py-4">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -696,6 +784,12 @@ const Contacts: React.FC = () => {
                       ) : (
                         <span className="text-slate-600 text-xs">-</span>
                       )}
+                    </td>
+                  )}
+                  {/* Segmento Cell - Only show on Outbound tab */}
+                  {activeTab === 'outbound' && (
+                    <td className="px-4 py-4">
+                      {getVerticalBadge((contact as ExtendedContact).vertical)}
                     </td>
                   )}
                   <td className="px-4 py-4">

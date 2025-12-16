@@ -368,6 +368,7 @@ export const api = {
     state?: string | null;
     notes?: string | null;
     campaign?: string | null;
+    vertical?: string | null;
   }): Promise<void> => {
     const { error } = await supabase
       .from('contacts')

@@ -35,6 +35,7 @@ interface ContactData {
   state?: string;
   notes?: string;
   campaign?: string;
+  vertical?: 'transporte' | 'frotas';
 }
 
 interface EditContactModalProps {
@@ -85,7 +86,8 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
     city: '',
     state: '',
     notes: '',
-    campaign: ''
+    campaign: '',
+    vertical: ''
   });
 
   useEffect(() => {
@@ -111,7 +113,8 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
         city: contact.city || '',
         state: contact.state || '',
         notes: contact.notes || '',
-        campaign: contact.campaign || ''
+        campaign: contact.campaign || '',
+        vertical: contact.vertical || ''
       });
     }
   }, [contact, open]);
@@ -259,7 +262,8 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
         city: formData.city.trim() || null,
         state: formData.state || null,
         notes: formData.notes.trim() || null,
-        campaign: formData.campaign.trim() || null
+        campaign: formData.campaign.trim() || null,
+        vertical: formData.vertical || null
       });
       toast.success('Contato atualizado com sucesso!');
       onOpenChange(false);
@@ -367,6 +371,32 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
                   placeholder="Ex: 15"
                   className="bg-slate-950 border-slate-700 text-slate-100"
                 />
+              </div>
+              <div>
+                <Label className="text-slate-300">Segmento</Label>
+                <Select 
+                  value={formData.vertical || 'none'} 
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, vertical: value === 'none' ? '' : value }))}
+                >
+                  <SelectTrigger className="bg-slate-950 border-slate-700 text-slate-100">
+                    <SelectValue placeholder="Selecione o segmento" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-700">
+                    <SelectItem value="none" className="text-slate-400 focus:bg-slate-800">
+                      Não definido
+                    </SelectItem>
+                    <SelectItem value="transporte" className="text-green-400 focus:bg-slate-800">
+                      <div className="flex items-center gap-2">
+                        🚛 Transporte (Seguro de Carga)
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="frotas" className="text-blue-400 focus:bg-slate-800">
+                      <div className="flex items-center gap-2">
+                        🚗 Automotores (Seguro de Frota)
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>
