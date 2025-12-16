@@ -884,6 +884,10 @@ const Contacts: React.FC = () => {
         <TabsContent value="facebook" className="mt-0">
           <ContactsTable contacts={filteredContacts} />
         </TabsContent>
+
+        <TabsContent value="google" className="mt-0">
+          <ContactsTable contacts={filteredContacts} />
+        </TabsContent>
       </Tabs>
 
       {/* Modals */}
