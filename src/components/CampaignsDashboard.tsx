@@ -55,10 +55,29 @@ const CampaignsDashboard: React.FC = () => {
     setLoading(true);
     try {
       // Calculate date filter
-      const daysAgo = period === 'all' ? null : parseInt(period);
-      const dateFilter = daysAgo 
-        ? new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString()
-        : null;
+      let dateFilter: string | null = null;
+      let endDateFilter: string | null = null;
+
+      if (period === 'all') {
+        dateFilter = null;
+      } else if (period === '0') {
+        // Hoje: início do dia atual
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        dateFilter = today.toISOString();
+      } else if (period === '1') {
+        // Ontem: do início de ontem até o início de hoje
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        dateFilter = yesterday.toISOString();
+        endDateFilter = today.toISOString();
+      } else {
+        // Últimos N dias
+        const daysAgo = parseInt(period);
+        dateFilter = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
+      }
 
       // Fetch contacts with UTM data
       let query = supabase
@@ -68,6 +87,9 @@ const CampaignsDashboard: React.FC = () => {
 
       if (dateFilter) {
         query = query.gte('created_at', dateFilter);
+      }
+      if (endDateFilter) {
+        query = query.lt('created_at', endDateFilter);
       }
 
       const { data: contacts, error } = await query;
@@ -189,7 +211,9 @@ const CampaignsDashboard: React.FC = () => {
             <SelectTrigger className="w-[140px] bg-card border-border">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-popover border-border z-50">
+              <SelectItem value="0">Hoje</SelectItem>
+              <SelectItem value="1">Ontem</SelectItem>
               <SelectItem value="7">7 dias</SelectItem>
               <SelectItem value="30">30 dias</SelectItem>
               <SelectItem value="90">90 dias</SelectItem>
