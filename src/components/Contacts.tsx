@@ -166,7 +166,7 @@ const Contacts: React.FC = () => {
 
   // Filtrar por origem (inbound/outbound/facebook)
   const inboundContacts = contacts.filter(contact => 
-    (contact.lead_source === 'inbound' || contact.whatsapp_id) && contact.lead_source !== 'facebook'
+    (contact.lead_source === 'inbound' || contact.whatsapp_id) && contact.lead_source !== 'facebook' && contact.lead_source !== 'google'
   );
   
   const outboundContacts = contacts.filter(contact => 
