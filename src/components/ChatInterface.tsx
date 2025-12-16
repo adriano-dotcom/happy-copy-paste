@@ -1263,7 +1263,7 @@ const ChatInterface: React.FC = () => {
                 }`}
               >
                 <UserCheck className="w-3.5 h-3.5" />
-                Todos Responsáveis
+                Todos
               </button>
               {availableOwners.map(owner => (
                 <button
