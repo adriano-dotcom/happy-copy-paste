@@ -643,25 +643,7 @@ async function processIncomingMessage(
       console.error('[Webhook] Error queuing for Nina:', ninaQueueError);
     } else {
       console.log('[Webhook] Message queued for Nina processing (scheduled for:', scheduledFor, ')');
-      
-      // Trigger nina-orchestrator after debounce delay
-      setTimeout(() => {
-        try {
-          const orchestratorUrl = `${supabaseUrl}/functions/v1/nina-orchestrator`;
-          console.log('[Webhook] Triggering nina-orchestrator after debounce');
-          
-          fetch(orchestratorUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${supabaseServiceKey}`
-            },
-            body: JSON.stringify({ triggered_by: 'whatsapp-webhook-debounced' })
-          }).catch(err => console.error('[Webhook] Error triggering nina-orchestrator:', err));
-        } catch (err) {
-          console.error('[Webhook] Failed to trigger nina-orchestrator:', err);
-        }
-      }, DEBOUNCE_DELAY_MS + 1000); // Buffer após tempo agendado
+      // Cron job (process-nina-queue) é responsável por disparar o nina-orchestrator
     }
   }
 }
