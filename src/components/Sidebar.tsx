@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { LayoutDashboard, MessageSquare, Users, Settings as SettingsIcon, LogOut, ShieldCheck, Calendar, Kanban, Code2, Megaphone, Target } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import { Sidebar, SidebarBody, SidebarLink, useSidebar } from '@/components/ui/sidebar';
-import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import jacometoLogo from '@/assets/jacometo-logo.png';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useAuth } from '@/hooks/useAuth';
+import { useUnreadMessages } from '@/contexts/UnreadMessagesContext';
 
 const allMenuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, adminOnly: false },
@@ -52,17 +52,73 @@ const LogoIcon = () => {
   );
 };
 
+const UnreadPreviewPanel = () => {
+  const { unreadConversations, totalUnread } = useUnreadMessages();
+  const { open } = useSidebar();
+  const location = useLocation();
+  const isOnChatPage = location.pathname === '/chat';
+
+  // Não mostrar se está na página de chat, sidebar fechada, ou sem mensagens
+  if (isOnChatPage || !open || totalUnread === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mt-4 border-t border-slate-800/50 pt-4"
+    >
+      <h4 className="text-xs text-slate-500 uppercase tracking-wider mb-3 px-2 font-medium">
+        Mensagens não lidas
+      </h4>
+      <div className="space-y-1">
+        {unreadConversations.slice(0, 5).map(conv => (
+          <Link
+            key={conv.id}
+            to={`/chat?conversation=${conv.id}`}
+            className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-800/60 transition-all group"
+          >
+            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-cyan-900 to-slate-800 flex items-center justify-center text-xs font-bold text-cyan-200 border border-slate-700 flex-shrink-0 group-hover:ring-2 group-hover:ring-cyan-500/30 transition-all">
+              {conv.contactInitials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-slate-200 truncate group-hover:text-white transition-colors">
+                {conv.contactName}
+              </p>
+              <p className="text-xs text-slate-500 truncate">
+                {conv.lastMessage.length > 30 ? conv.lastMessage.slice(0, 30) + '...' : conv.lastMessage}
+              </p>
+            </div>
+            <span className="min-w-[22px] h-[22px] flex items-center justify-center text-[11px] font-bold bg-red-500 text-white rounded-full px-1.5 shadow-lg shadow-red-500/30 flex-shrink-0">
+              {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
+            </span>
+          </Link>
+        ))}
+      </div>
+      {unreadConversations.length > 5 && (
+        <Link
+          to="/chat"
+          className="block text-center text-xs text-cyan-500 hover:text-cyan-400 mt-3 py-2 hover:bg-slate-800/40 rounded-lg transition-colors"
+        >
+          Ver todas ({totalUnread} mensagens)
+        </Link>
+      )}
+    </motion.div>
+  );
+};
+
 const SidebarContent = () => {
   const location = useLocation();
   const currentPath = location.pathname.substring(1) || 'dashboard';
   const { open } = useSidebar();
   const { isAdmin, loading: roleLoading } = useUserRole();
   const { user, signOut } = useAuth();
+  const { totalUnread } = useUnreadMessages();
 
   // Filter menu items based on user role
   const menuItems = allMenuItems.filter(item => !item.adminOnly || isAdmin);
 
   const links = menuItems.map(item => ({
+    id: item.id,
     label: item.label,
     href: `/${item.id}`,
     icon: <item.icon className="h-5 w-5" />,
@@ -94,9 +150,13 @@ const SidebarContent = () => {
               key={idx}
               link={link}
               isActive={currentPath.startsWith(link.href.slice(1))}
+              badge={link.id === 'chat' ? totalUnread : undefined}
             />
           ))}
         </nav>
+
+        {/* Preview de mensagens não lidas */}
+        <UnreadPreviewPanel />
       </div>
 
       {/* User Footer */}

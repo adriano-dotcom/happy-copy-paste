@@ -169,12 +169,14 @@ export const SidebarLink = ({
   className,
   isActive,
   onClick,
+  badge,
   ...props
 }: {
   link: Links;
   className?: string;
   isActive?: boolean;
   onClick?: () => void;
+  badge?: number;
   props?: Omit<LinkProps, 'to'>;
 }) => {
   const { open, animate, setOpen } = useSidebar();
@@ -205,10 +207,16 @@ export const SidebarLink = ({
         <div className="absolute left-0 top-0 bottom-0 w-1 bg-cyan-500 rounded-l-md shadow-[0_0_10px_rgba(6,182,212,0.5)]" />
       )}
       <span className={cn(
-        "flex-shrink-0 transition-colors",
+        "flex-shrink-0 transition-colors relative",
         isActive ? "text-cyan-400" : "text-slate-500 group-hover/sidebar:text-slate-300"
       )}>
         {link.icon}
+        {/* Badge when collapsed */}
+        {badge && badge > 0 && !open && (
+          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-1 shadow-lg shadow-red-500/30 animate-pulse">
+            {badge > 99 ? '99+' : badge}
+          </span>
+        )}
       </span>
       <motion.span
         animate={{
@@ -220,12 +228,22 @@ export const SidebarLink = ({
           ease: "easeInOut",
         }}
         className={cn(
-          "text-sm font-medium group-hover/sidebar:translate-x-1 transition duration-150 whitespace-pre",
+          "text-sm font-medium group-hover/sidebar:translate-x-1 transition duration-150 whitespace-pre flex-1",
           isActive && "text-cyan-50"
         )}
       >
         {link.label}
       </motion.span>
+      {/* Badge when expanded */}
+      {badge && badge > 0 && open && (
+        <motion.span
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          className="min-w-[22px] h-[22px] flex items-center justify-center text-[11px] font-bold bg-red-500 text-white rounded-full px-1.5 shadow-lg shadow-red-500/30"
+        >
+          {badge > 99 ? '99+' : badge}
+        </motion.span>
+      )}
     </Link>
   );
 };
