@@ -105,14 +105,15 @@ serve(async (req) => {
         }
       }
 
-      // Fallback: find by metadata (contactId + conversationId + active status)
+      // Fallback: find by metadata (contactId + conversationId)
+      // Include 'cancelled' because user_hangup might have triggered before webhook arrives
       if (metaContactId && metaConversationId) {
         const { data } = await supabase
           .from('call_logs')
           .select('id, api4com_call_id')
           .eq('contact_id', metaContactId)
           .eq('conversation_id', metaConversationId)
-          .in('status', ['dialing', 'ringing', 'answered'])
+          .in('status', ['dialing', 'ringing', 'answered', 'cancelled'])
           .order('started_at', { ascending: false })
           .limit(1)
           .maybeSingle();
