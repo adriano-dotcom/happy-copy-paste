@@ -309,6 +309,21 @@ serve(async (req) => {
               .replace(/\{\{nome\}\}/gi, firstName)
               .replace(/\{\{empresa\}\}/gi, company || '');
             
+            // Assinatura profissional
+            const emailSignature = `
+<br><br>
+<table cellpadding="0" cellspacing="0" style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
+  <tr><td style="padding-bottom: 8px;"><strong style="font-size: 16px; color: #1a365d;">Adriano Jacometo</strong></td></tr>
+  <tr><td style="color: #666; padding-bottom: 4px;">Corretor de Seguros</td></tr>
+  <tr><td style="font-weight: bold; color: #2c5282; padding-bottom: 12px;">Jacometo Corretora de Seguros</td></tr>
+  <tr><td style="padding-bottom: 4px;">📱 WhatsApp: <a href="https://wa.me/5543999145000" style="color: #25D366;">+55 43 9 9914-5000</a></td></tr>
+  <tr><td style="padding-bottom: 4px;">📞 Telefone: (43) 3321-5007</td></tr>
+  <tr><td style="padding-bottom: 4px;">📍 Rua Souza Naves, 612 – Sala 51 – Centro – Londrina/PR</td></tr>
+  <tr><td style="padding-top: 8px;">🌐 <a href="https://jacometoseguros.com.br" style="color: #2c5282;">jacometoseguros.com.br</a></td></tr>
+</table>`;
+            
+            const finalBody = processedBody + emailSignature;
+            
             console.log('[zapier-leadgen-webhook] Sending email to:', email);
             
             // Enviar email via send-email edge function
@@ -323,7 +338,7 @@ serve(async (req) => {
                 body: JSON.stringify({
                   to: email,
                   subject: processedSubject,
-                  html: processedBody,
+                  html: finalBody,
                   bcc: 'adriano@jacometo.com.br'
                 })
               }
