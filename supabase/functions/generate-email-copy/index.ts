@@ -35,6 +35,35 @@ COBERTURAS ACESSÓRIAS RC-DC:
 
 TOM: Profissional, técnico mas acessível, sem emojis, foco em compliance e proteção do patrimônio.
 `,
+  frotas: `
+PRODUTOS DE SEGURO DE FROTA EMPRESARIAL:
+- Seguro de Frota: Proteção completa para todos os veículos da empresa
+- Auto Empresarial: Casco (colisão, incêndio, roubo), RCF-V (danos a terceiros), APP (acidentes pessoais)
+- Rastreamento e Monitoramento: Integração com sistemas de telemetria
+- Assistência 24h: Guincho, socorro mecânico, carro reserva
+
+BENEFÍCIOS DO SEGURO DE FROTA:
+- Proteção do patrimônio empresarial (veículos são ativos importantes)
+- Desconto por volume (quanto mais veículos, melhor o preço por unidade)
+- Cobertura personalizada por tipo de uso (comercial, serviço, carga leve)
+- Gestão centralizada de sinistros e renovações
+- Continuidade operacional em caso de perda total
+- Redução de impacto financeiro em acidentes
+
+CONTEXTO PARA AUTOMOTORES/CONCESSIONÁRIAS/LOCADORAS:
+- Concessionárias têm veículos em estoque de alto valor agregado
+- Veículos de test-drive e demonstração precisam de cobertura específica
+- Transporte de veículos entre unidades ou clientes
+- Proteção contra roubo de veículos em pátio (alta concentração de valor)
+- Locadoras precisam de cobertura para frota rotativa com alto giro
+
+DIFERENCIAL COMPETITIVO:
+- Apólice única para toda a frota (simplifica gestão)
+- Renovação centralizada com negociação anual
+- Perfil de risco empresarial geralmente melhor que pessoa física
+
+TOM: Profissional, foco em proteção patrimonial, segurança operacional, continuidade do negócio e redução de custos.
+`,
   saude: `
 PRODUTOS DE PLANOS DE SAÚDE:
 - Planos empresariais (mínimo 2 vidas, vantagens fiscais)
@@ -85,14 +114,26 @@ TOM: Direto, personalizado, curioso, sem ser invasivo ou agressivo.
 const EMAIL_TYPES: Record<string, string> = {
   'cold-email': `
 OBJETIVO: Primeiro contato frio com lead de prospecção
-- Personalização máxima usando dados da empresa (CNAE, porte, localização)
-- Assunto curto e intrigante (máx 50 caracteres)
-- Primeira linha captura atenção imediatamente
-- Mencionar Lei 14.599/2023 como gancho de compliance
-- Proposta de valor em 2-3 frases concisas
-- CTA único e claro (agendar conversa ou responder)
-- Tom consultivo, não vendedor
-- Máximo 150 palavras no corpo
+
+SEGMENTAÇÃO POR VERTICAL/CNAE:
+- Se vertical="transporte": Focar em Lei 14.599/2023, RCTR-C/RC-DC/RC-V obrigatórios, compliance ANTT, fiscalização digital
+- Se vertical="frotas": Focar em proteção patrimonial dos veículos, seguro de frota empresarial, economia por volume, gestão centralizada
+- Se vertical="prospeccao" (genérico): Usar CNAE para identificar melhor abordagem
+
+PERSONALIZAÇÃO GEOGRÁFICA:
+- SEMPRE usar cidade/estado do lead para criar proximidade regional
+- Mencionar "aqui na região de [cidade]" ou "empresas de [estado]" quando disponível
+- Contextualizar riscos locais se relevante (ex: grandes centros = mais roubo, rodovias = mais acidentes)
+
+ESTRUTURA:
+1. Saudação personalizada + reconhecimento da empresa e localização
+2. Gancho relevante baseado na vertical:
+   - Transporte: Lei obrigatória, compliance, fiscalização
+   - Frotas: Proteção do patrimônio, veículos como ativos, economia
+3. Proposta de valor em 2-3 frases concisas
+4. CTA único e claro (agendar conversa breve de 10-15 min)
+5. Tom consultivo, não vendedor
+6. Máximo 150 palavras no corpo
 `,
   'follow-up': `
 OBJETIVO: Reengajar lead que não respondeu

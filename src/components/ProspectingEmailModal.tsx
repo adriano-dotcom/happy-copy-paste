@@ -50,6 +50,56 @@ const EMAIL_TYPES = [
   { value: 'proposta', label: 'Proposta Comercial', icon: '📋' },
 ];
 
+const PRODUCT_VERTICALS = [
+  { value: 'transporte', label: 'Seguro de Carga', icon: '🚛', description: 'RCTR-C, RC-DC, RC-V' },
+  { value: 'frotas', label: 'Seguro de Frota', icon: '🚗', description: 'Auto empresarial, frota' },
+  { value: 'prospeccao', label: 'Genérico', icon: '📧', description: 'Prospecção geral' },
+];
+
+// Detecta vertical automaticamente baseado no CNAE
+const detectVerticalByCNAE = (cnaeDescription: string): 'transporte' | 'frotas' | 'prospeccao' => {
+  if (!cnaeDescription) return 'prospeccao';
+  
+  const cnaeLower = cnaeDescription.toLowerCase();
+  
+  // CNAEs de transporte de carga
+  if (
+    (cnaeLower.includes('transporte') && (cnaeLower.includes('carga') || cnaeLower.includes('rodoviário') || cnaeLower.includes('mudança'))) ||
+    cnaeLower.includes('transportador') ||
+    cnaeLower.includes('frete') ||
+    cnaeLower.includes('logística') ||
+    cnaeLower.includes('logistica')
+  ) {
+    return 'transporte';
+  }
+  
+  // CNAEs de automotores/veículos/frotas
+  if (
+    cnaeLower.includes('veículos') || 
+    cnaeLower.includes('veiculos') ||
+    cnaeLower.includes('automóveis') || 
+    cnaeLower.includes('automoveis') ||
+    cnaeLower.includes('concessionária') ||
+    cnaeLower.includes('concessionaria') ||
+    cnaeLower.includes('locação de veículos') ||
+    cnaeLower.includes('locadora') ||
+    cnaeLower.includes('comércio de veículos') ||
+    cnaeLower.includes('comercio de veiculos') ||
+    cnaeLower.includes('peças automotivas') ||
+    cnaeLower.includes('pecas automotivas') ||
+    cnaeLower.includes('automotivo') ||
+    cnaeLower.includes('oficina mecânica') ||
+    cnaeLower.includes('oficina mecanica') ||
+    cnaeLower.includes('funilaria') ||
+    cnaeLower.includes('retífica') ||
+    cnaeLower.includes('retifica')
+  ) {
+    return 'frotas';
+  }
+  
+  return 'prospeccao';
+};
+
 export const ProspectingEmailModal: React.FC<ProspectingEmailModalProps> = ({
   isOpen,
   onClose,
@@ -66,6 +116,7 @@ export const ProspectingEmailModal: React.FC<ProspectingEmailModalProps> = ({
   
   // Email generation state
   const [selectedEmailType, setSelectedEmailType] = useState('cold-email');
+  const [selectedVertical, setSelectedVertical] = useState<'transporte' | 'frotas' | 'prospeccao'>('prospeccao');
   const [customContext, setCustomContext] = useState('');
   const [generatingEmail, setGeneratingEmail] = useState(false);
   
@@ -84,9 +135,25 @@ export const ProspectingEmailModal: React.FC<ProspectingEmailModalProps> = ({
       setCnpjData(null);
       setSubject('');
       setBodyHtml('');
+      setSelectedVertical('prospeccao');
       loadSenderName();
     }
   }, [isOpen, contact]);
+
+  // Auto-detect vertical when CNPJ data is loaded
+  useEffect(() => {
+    if (cnpjData?.cnae_fiscal_descricao) {
+      const detectedVertical = detectVerticalByCNAE(cnpjData.cnae_fiscal_descricao);
+      setSelectedVertical(detectedVertical);
+      
+      if (detectedVertical !== 'prospeccao') {
+        const verticalInfo = PRODUCT_VERTICALS.find(v => v.value === detectedVertical);
+        toast.success(`Produto sugerido: ${verticalInfo?.label}`, {
+          description: `Baseado no CNAE: ${cnpjData.cnae_fiscal_descricao.substring(0, 40)}...`
+        });
+      }
+    }
+  }, [cnpjData?.cnae_fiscal_descricao]);
 
   const loadSenderName = async () => {
     if (!user?.email) return;
@@ -231,7 +298,7 @@ export const ProspectingEmailModal: React.FC<ProspectingEmailModalProps> = ({
 
       const { data, error } = await supabase.functions.invoke('generate-email-copy', {
         body: {
-          vertical: 'prospeccao',
+          vertical: selectedVertical,
           emailType: selectedEmailType,
           briefing: briefingParts.join('\n'),
           leadContext,
@@ -488,6 +555,39 @@ export const ProspectingEmailModal: React.FC<ProspectingEmailModalProps> = ({
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               </div>
+            </div>
+            
+            {/* Product/Vertical Selector */}
+            <div>
+              <label className="text-xs font-medium text-slate-300 uppercase tracking-wide mb-1.5 block">
+                Produto a Oferecer
+              </label>
+              <div className="flex gap-2">
+                {PRODUCT_VERTICALS.map(vertical => (
+                  <button
+                    key={vertical.value}
+                    onClick={() => setSelectedVertical(vertical.value as 'transporte' | 'frotas' | 'prospeccao')}
+                    className={`flex-1 px-3 py-2 rounded-lg border text-sm transition-all ${
+                      selectedVertical === vertical.value
+                        ? vertical.value === 'transporte'
+                          ? 'bg-orange-500/20 border-orange-500/50 text-orange-300'
+                          : vertical.value === 'frotas'
+                            ? 'bg-blue-500/20 border-blue-500/50 text-blue-300'
+                            : 'bg-slate-600/30 border-slate-500/50 text-slate-300'
+                        : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-700/50 hover:border-slate-600'
+                    }`}
+                  >
+                    <span className="text-base">{vertical.icon}</span>
+                    <span className="block text-xs font-medium mt-0.5">{vertical.label}</span>
+                  </button>
+                ))}
+              </div>
+              {selectedVertical !== 'prospeccao' && cnpjData?.cnae_fiscal_descricao && (
+                <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1">
+                  <span className="text-green-400">✓</span>
+                  Detectado automaticamente pelo CNAE
+                </p>
+              )}
             </div>
             
             {/* Custom Context */}
