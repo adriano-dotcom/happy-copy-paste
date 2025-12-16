@@ -22,6 +22,69 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Create a Note in Pipedrive linked to a Person
+async function createPipedriveNote(
+  baseUrl: string, 
+  apiToken: string, 
+  personId: string, 
+  content: string
+): Promise<boolean> {
+  try {
+    console.log('[sync-pipedrive] Checking for existing recent notes for person:', personId);
+    
+    // Check if there's a recent note (within last hour) to avoid duplicates
+    const existingNotesResponse = await fetch(
+      `${baseUrl}/notes?person_id=${personId}&api_token=${apiToken}&limit=10`
+    );
+    
+    if (existingNotesResponse.ok) {
+      const existingNotes = await existingNotesResponse.json();
+      const oneHourAgo = Date.now() - 3600000;
+      
+      const hasRecentNote = existingNotes.data?.some((note: any) => {
+        const noteTime = new Date(note.add_time).getTime();
+        return noteTime > oneHourAgo;
+      });
+      
+      if (hasRecentNote) {
+        console.log('[sync-pipedrive] Recent note already exists, skipping note creation');
+        return false;
+      }
+    }
+    
+    // Create new note
+    console.log('[sync-pipedrive] Creating note in Pipedrive...');
+    
+    const noteData = {
+      content: content,
+      person_id: parseInt(personId),
+      pinned_to_person_flag: 1 // Pin the note to the person
+    };
+    
+    const noteResponse = await fetch(
+      `${baseUrl}/notes?api_token=${apiToken}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(noteData),
+      }
+    );
+    
+    const noteResult = await noteResponse.json();
+    
+    if (noteResult.success) {
+      console.log('[sync-pipedrive] Note created with ID:', noteResult.data.id);
+      return true;
+    } else {
+      console.warn('[sync-pipedrive] Failed to create note:', noteResult);
+      return false;
+    }
+  } catch (error) {
+    console.error('[sync-pipedrive] Error creating note:', error);
+    return false;
+  }
+}
+
 // Generate summary using Lovable AI Gateway
 async function generateSummary(
   messages: Message[], 
@@ -307,11 +370,23 @@ serve(async (req) => {
 
       console.log('[sync-pipedrive] Person updated successfully');
       
+      // Create Note with summary if available
+      let noteCreated = false;
+      if (combinedNotes && combinedNotes.trim()) {
+        noteCreated = await createPipedriveNote(
+          pipedriveBaseUrl, 
+          apiToken, 
+          contact.pipedrive_person_id, 
+          combinedNotes
+        );
+      }
+      
       return new Response(
         JSON.stringify({ 
           success: true, 
           message: 'Contato atualizado no Pipedrive',
-          personId: contact.pipedrive_person_id 
+          personId: contact.pipedrive_person_id,
+          noteCreated
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -375,11 +450,23 @@ serve(async (req) => {
       .update({ pipedrive_person_id: String(personId) })
       .eq('id', contactId);
 
+    // Create Note with summary if available
+    let noteCreated = false;
+    if (combinedNotes && combinedNotes.trim()) {
+      noteCreated = await createPipedriveNote(
+        pipedriveBaseUrl, 
+        apiToken, 
+        String(personId), 
+        combinedNotes
+      );
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true, 
         message: 'Contato enviado para Pipedrive',
-        personId 
+        personId,
+        noteCreated
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
