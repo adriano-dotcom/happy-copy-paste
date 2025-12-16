@@ -83,6 +83,17 @@ TOM: Direto, personalizado, curioso, sem ser invasivo ou agressivo.
 
 // Tipos de email com instruções específicas
 const EMAIL_TYPES: Record<string, string> = {
+  'cold-email': `
+OBJETIVO: Primeiro contato frio com lead de prospecção
+- Personalização máxima usando dados da empresa (CNAE, porte, localização)
+- Assunto curto e intrigante (máx 50 caracteres)
+- Primeira linha captura atenção imediatamente
+- Mencionar Lei 14.599/2023 como gancho de compliance
+- Proposta de valor em 2-3 frases concisas
+- CTA único e claro (agendar conversa ou responder)
+- Tom consultivo, não vendedor
+- Máximo 150 palavras no corpo
+`,
   'follow-up': `
 OBJETIVO: Reengajar lead que não respondeu
 - Referência ao contato anterior
@@ -177,7 +188,15 @@ IMPORTANTE: Retorne APENAS o JSON, sem markdown, sem explicações.`;
       if (leadContext.cnpj) userPrompt += `\n- CNPJ: ${leadContext.cnpj}`;
       if (leadContext.phone) userPrompt += `\n- Telefone: ${leadContext.phone}`;
       if (leadContext.email) userPrompt += `\n- Email: ${leadContext.email}`;
+      if (leadContext.cidade) userPrompt += `\n- Cidade: ${leadContext.cidade}`;
       if (leadContext.qualification_score) userPrompt += `\n- Score de qualificação: ${leadContext.qualification_score}%`;
+      
+      // CNPJ enrichment data
+      if (leadContext.cnae) userPrompt += `\n- Atividade (CNAE): ${leadContext.cnae}`;
+      if (leadContext.porte) userPrompt += `\n- Porte da empresa: ${leadContext.porte}`;
+      if (leadContext.capital_social) userPrompt += `\n- Capital social: ${leadContext.capital_social}`;
+      if (leadContext.situacao_cadastral) userPrompt += `\n- Situação cadastral: ${leadContext.situacao_cadastral}`;
+      if (leadContext.data_abertura) userPrompt += `\n- Data de abertura: ${leadContext.data_abertura}`;
       
       if (leadContext.qualification_answers && Object.keys(leadContext.qualification_answers).length > 0) {
         userPrompt += `\n\nRESPOSTAS DE QUALIFICAÇÃO:`;
