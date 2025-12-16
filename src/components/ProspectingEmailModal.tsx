@@ -53,11 +53,12 @@ const EMAIL_TYPES = [
 const PRODUCT_VERTICALS = [
   { value: 'transporte', label: 'Seguro de Carga', icon: '🚛', description: 'RCTR-C, RC-DC, RC-V' },
   { value: 'frotas', label: 'Seguro de Frota', icon: '🚗', description: 'Auto empresarial, frota' },
+  { value: 'ambos', label: 'Ambos Produtos', icon: '🚛🚗', description: 'Carga + Frota' },
   { value: 'prospeccao', label: 'Genérico', icon: '📧', description: 'Prospecção geral' },
 ];
 
 // Detecta vertical automaticamente baseado no CNAE
-const detectVerticalByCNAE = (cnaeDescription: string): 'transporte' | 'frotas' | 'prospeccao' => {
+const detectVerticalByCNAE = (cnaeDescription: string): 'transporte' | 'frotas' | 'ambos' | 'prospeccao' => {
   if (!cnaeDescription) return 'prospeccao';
   
   const cnaeLower = cnaeDescription.toLowerCase();
@@ -116,7 +117,7 @@ export const ProspectingEmailModal: React.FC<ProspectingEmailModalProps> = ({
   
   // Email generation state
   const [selectedEmailType, setSelectedEmailType] = useState('cold-email');
-  const [selectedVertical, setSelectedVertical] = useState<'transporte' | 'frotas' | 'prospeccao'>('prospeccao');
+  const [selectedVertical, setSelectedVertical] = useState<'transporte' | 'frotas' | 'ambos' | 'prospeccao'>('prospeccao');
   const [customContext, setCustomContext] = useState('');
   const [generatingEmail, setGeneratingEmail] = useState(false);
   
@@ -567,14 +568,16 @@ export const ProspectingEmailModal: React.FC<ProspectingEmailModalProps> = ({
                 {PRODUCT_VERTICALS.map(vertical => (
                   <button
                     key={vertical.value}
-                    onClick={() => setSelectedVertical(vertical.value as 'transporte' | 'frotas' | 'prospeccao')}
+                    onClick={() => setSelectedVertical(vertical.value as 'transporte' | 'frotas' | 'ambos' | 'prospeccao')}
                     className={`flex-1 px-3 py-2 rounded-lg border text-sm transition-all ${
                       selectedVertical === vertical.value
                         ? vertical.value === 'transporte'
                           ? 'bg-orange-500/20 border-orange-500/50 text-orange-300'
                           : vertical.value === 'frotas'
                             ? 'bg-blue-500/20 border-blue-500/50 text-blue-300'
-                            : 'bg-slate-600/30 border-slate-500/50 text-slate-300'
+                            : vertical.value === 'ambos'
+                              ? 'bg-purple-500/20 border-purple-500/50 text-purple-300'
+                              : 'bg-slate-600/30 border-slate-500/50 text-slate-300'
                         : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-700/50 hover:border-slate-600'
                     }`}
                   >
@@ -617,19 +620,23 @@ export const ProspectingEmailModal: React.FC<ProspectingEmailModalProps> = ({
                     🏢 {cnpjData?.nome_fantasia || cnpjData?.razao_social || contact.company}
                   </span>
                 )}
-<span className={`px-2 py-0.5 rounded text-xs ${
-                    selectedVertical === 'transporte'
-                      ? 'bg-green-500/20 text-green-300'
-                      : selectedVertical === 'frotas'
-                        ? 'bg-blue-500/20 text-blue-300'
+                <span className={`px-2 py-0.5 rounded text-xs ${
+                  selectedVertical === 'transporte'
+                    ? 'bg-green-500/20 text-green-300'
+                    : selectedVertical === 'frotas'
+                      ? 'bg-blue-500/20 text-blue-300'
+                      : selectedVertical === 'ambos'
+                        ? 'bg-purple-500/20 text-purple-300'
                         : 'bg-violet-500/20 text-violet-300'
-                  }`}>
-                    {selectedVertical === 'transporte' 
-                      ? '🚛 Transporte' 
-                      : selectedVertical === 'frotas' 
-                        ? '🚗 Automotores' 
+                }`}>
+                  {selectedVertical === 'transporte' 
+                    ? '🚛 Transporte' 
+                    : selectedVertical === 'frotas' 
+                      ? '🚗 Automotores' 
+                      : selectedVertical === 'ambos'
+                        ? '🚛🚗 Carga + Frota'
                         : '📧 Genérico'}
-                  </span>
+                </span>
                 {cnpjData?.cnae_fiscal_descricao && (
                   <span className="px-2 py-0.5 bg-violet-500/20 text-violet-300 rounded text-xs">
                     🎯 {cnpjData.cnae_fiscal_descricao.substring(0, 30)}...
