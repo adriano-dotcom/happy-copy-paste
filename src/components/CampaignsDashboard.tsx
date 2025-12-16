@@ -235,61 +235,61 @@ const CampaignsDashboard: React.FC = () => {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="relative overflow-hidden bg-gradient-to-br from-blue-500/10 via-card to-card border-blue-500/20 backdrop-blur-sm">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent" />
+        <Card className="relative overflow-hidden bg-gradient-to-br from-blue-500/20 via-card to-card border-blue-500/40 backdrop-blur-sm shadow-xl">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent" />
           <CardContent className="pt-6 relative">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground font-medium">Total de Leads</p>
                 <p className="text-3xl font-bold text-foreground">{metrics.totalLeads}</p>
               </div>
-              <div className="w-14 h-14 rounded-2xl bg-blue-500/20 flex items-center justify-center shadow-lg shadow-blue-500/10">
-                <Users className="w-7 h-7 text-blue-500" />
+              <div className="w-14 h-14 rounded-2xl bg-blue-500/30 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <Users className="w-7 h-7 text-blue-400" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden bg-gradient-to-br from-violet-500/10 via-card to-card border-violet-500/20 backdrop-blur-sm">
-          <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 to-transparent" />
+        <Card className="relative overflow-hidden bg-gradient-to-br from-violet-500/20 via-card to-card border-violet-500/40 backdrop-blur-sm shadow-xl">
+          <div className="absolute inset-0 bg-gradient-to-br from-violet-500/10 to-transparent" />
           <CardContent className="pt-6 relative">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground font-medium">Fontes Ativas</p>
                 <p className="text-3xl font-bold text-foreground">{metrics.activeSources}</p>
               </div>
-              <div className="w-14 h-14 rounded-2xl bg-violet-500/20 flex items-center justify-center shadow-lg shadow-violet-500/10">
-                <Target className="w-7 h-7 text-violet-500" />
+              <div className="w-14 h-14 rounded-2xl bg-violet-500/30 flex items-center justify-center shadow-lg shadow-violet-500/20">
+                <Target className="w-7 h-7 text-violet-400" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden bg-gradient-to-br from-amber-500/10 via-card to-card border-amber-500/20 backdrop-blur-sm">
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent" />
+        <Card className="relative overflow-hidden bg-gradient-to-br from-amber-500/20 via-card to-card border-amber-500/40 backdrop-blur-sm shadow-xl">
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-transparent" />
           <CardContent className="pt-6 relative">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground font-medium">Campanhas Ativas</p>
                 <p className="text-3xl font-bold text-foreground">{metrics.activeCampaigns}</p>
               </div>
-              <div className="w-14 h-14 rounded-2xl bg-amber-500/20 flex items-center justify-center shadow-lg shadow-amber-500/10">
-                <Megaphone className="w-7 h-7 text-amber-500" />
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/30 flex items-center justify-center shadow-lg shadow-amber-500/20">
+                <Megaphone className="w-7 h-7 text-amber-400" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden bg-gradient-to-br from-emerald-500/10 via-card to-card border-emerald-500/20 backdrop-blur-sm">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent" />
+        <Card className="relative overflow-hidden bg-gradient-to-br from-emerald-500/20 via-card to-card border-emerald-500/40 backdrop-blur-sm shadow-xl">
+          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-transparent" />
           <CardContent className="pt-6 relative">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground font-medium">Taxa Qualificação</p>
                 <p className="text-3xl font-bold text-foreground">{metrics.qualificationRate.toFixed(1)}%</p>
               </div>
-              <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 flex items-center justify-center shadow-lg shadow-emerald-500/10">
-                <TrendingUp className="w-7 h-7 text-emerald-500" />
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/30 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                <TrendingUp className="w-7 h-7 text-emerald-400" />
               </div>
             </div>
           </CardContent>
@@ -298,11 +298,11 @@ const CampaignsDashboard: React.FC = () => {
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="bg-card border-border shadow-lg">
-          <CardHeader>
+        <Card className="bg-card/95 border-border/50 shadow-xl ring-1 ring-white/5">
+          <CardHeader className="border-b border-border/30">
             <CardTitle className="text-lg font-semibold">Leads por Fonte</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             {sourceData.length > 0 ? (
               <CampaignSourceChart data={sourceData} />
             ) : (
@@ -313,11 +313,11 @@ const CampaignsDashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card className="bg-card border-border shadow-lg">
-          <CardHeader>
+        <Card className="bg-card/95 border-border/50 shadow-xl ring-1 ring-white/5">
+          <CardHeader className="border-b border-border/30">
             <CardTitle className="text-lg font-semibold">Top 5 Campanhas</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             {campaignData.length > 0 ? (
               <TopCampaignsChart data={campaignData} />
             ) : (
@@ -330,11 +330,11 @@ const CampaignsDashboard: React.FC = () => {
       </div>
 
       {/* Detailed Table */}
-      <Card className="bg-card border-border shadow-lg">
-        <CardHeader>
+      <Card className="bg-card/95 border-border/50 shadow-xl ring-1 ring-white/5">
+        <CardHeader className="border-b border-border/30">
           <CardTitle className="text-lg font-semibold">Detalhamento por Campanha</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <CampaignsTable data={tableData} />
         </CardContent>
       </Card>
