@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X, CheckSquare, Square, Minus, AlertTriangle, Send } from 'lucide-react';
+import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X, CheckSquare, Square, Minus, AlertTriangle, Send, Tag } from 'lucide-react';
 import { useUserRole } from '@/hooks/useUserRole';
 import { Button } from './ui/button';
 import { api } from '../services/api';
@@ -44,6 +44,7 @@ interface ExtendedContact extends Contact {
   utm_campaign?: string;
   utm_content?: string;
   utm_term?: string;
+  campaign?: string;
 }
 
 const Contacts: React.FC = () => {
@@ -77,6 +78,8 @@ const Contacts: React.FC = () => {
   const [channelFilter, setChannelFilter] = useState<'all' | 'email' | 'phone' | 'both'>('all');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [letterFilter, setLetterFilter] = useState<string>('all');
+  const [campaignFilter, setCampaignFilter] = useState<string>('all');
+  const [availableCampaigns, setAvailableCampaigns] = useState<string[]>([]);
 
   const handleConverse = async (contactId: string) => {
     try {
@@ -132,6 +135,10 @@ const Contacts: React.FC = () => {
       setLoading(true);
       const data = await api.fetchContacts();
       setContacts(data);
+      
+      // Extract unique campaigns from contacts
+      const campaigns = [...new Set(data.map(c => (c as ExtendedContact).campaign).filter(Boolean))] as string[];
+      setAvailableCampaigns(campaigns.sort());
     } catch (error) {
       console.error("Erro ao carregar contatos", error);
     } finally {
@@ -240,7 +247,14 @@ const Contacts: React.FC = () => {
       );
     }
     
-    // Filtrar por termo de busca
+    // Filtrar por campanha
+    if (campaignFilter !== 'all') {
+      filtered = filtered.filter(contact => 
+        (contact as ExtendedContact).campaign === campaignFilter
+      );
+    }
+    
+    // Filtrar por termo de busca (incluindo campanha)
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
       filtered = filtered.filter(contact => 
@@ -248,7 +262,8 @@ const Contacts: React.FC = () => {
         contact.email?.toLowerCase().includes(search) ||
         contact.phone?.includes(search) ||
         contact.company?.toLowerCase().includes(search) ||
-        contact.cnpj?.includes(search)
+        contact.cnpj?.includes(search) ||
+        (contact as ExtendedContact).campaign?.toLowerCase().includes(search)
       );
     }
     
@@ -323,9 +338,10 @@ const Contacts: React.FC = () => {
     setChannelFilter('all');
     setDateFilter('all');
     setLetterFilter('all');
+    setCampaignFilter('all');
   };
   
-  const hasActiveFilters = selectedStatuses.length > 0 || cnpjFilter !== 'all' || channelFilter !== 'all' || dateFilter !== 'all' || letterFilter !== 'all';
+  const hasActiveFilters = selectedStatuses.length > 0 || cnpjFilter !== 'all' || channelFilter !== 'all' || dateFilter !== 'all' || letterFilter !== 'all' || campaignFilter !== 'all';
   
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
@@ -450,6 +466,45 @@ const Contacts: React.FC = () => {
                     </PopoverContent>
                   </Popover>
                 </th>
+                {/* Campaign Header with Filter - Only show on Outbound tab */}
+                {activeTab === 'outbound' && (
+                  <th className="px-4 py-4">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors">
+                          <Tag className="w-3 h-3" />
+                          Campanha
+                          <ChevronDown className="w-3 h-3" />
+                          {campaignFilter !== 'all' && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />}
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="bg-slate-900 border-slate-700 w-48 p-2">
+                        <div className="space-y-1 max-h-60 overflow-y-auto">
+                          <button
+                            onClick={() => setCampaignFilter('all')}
+                            className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${campaignFilter === 'all' ? 'bg-slate-800 text-cyan-400' : 'text-slate-300'}`}
+                          >
+                            Todas as campanhas
+                            {campaignFilter === 'all' && <span>✓</span>}
+                          </button>
+                          {availableCampaigns.map(campaign => (
+                            <button
+                              key={campaign}
+                              onClick={() => setCampaignFilter(campaign)}
+                              className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${campaignFilter === campaign ? 'bg-slate-800 text-cyan-400' : 'text-slate-300'}`}
+                            >
+                              <span className="truncate">{campaign}</span>
+                              {campaignFilter === campaign && <span>✓</span>}
+                            </button>
+                          ))}
+                          {availableCampaigns.length === 0 && (
+                            <div className="px-2 py-1.5 text-xs text-slate-500">Nenhuma campanha</div>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </th>
+                )}
                 {/* Canais Header with Filter */}
                 <th className="px-4 py-4">
                   <Popover>
@@ -597,6 +652,18 @@ const Contacts: React.FC = () => {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>
+                  {/* Campaign Cell - Only show on Outbound tab */}
+                  {activeTab === 'outbound' && (
+                    <td className="px-4 py-4">
+                      {(contact as ExtendedContact).campaign ? (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                          {(contact as ExtendedContact).campaign}
+                        </span>
+                      ) : (
+                        <span className="text-slate-600 text-xs">-</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-4 py-4">
                     <div className="flex flex-col gap-1">
                       {contact.email && (

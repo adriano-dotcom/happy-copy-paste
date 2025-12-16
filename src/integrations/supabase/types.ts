@@ -319,11 +319,42 @@ export type Database = {
           },
         ]
       }
+      campaigns: {
+        Row: {
+          color: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          color?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       contacts: {
         Row: {
           blocked_at: string | null
           blocked_reason: string | null
           call_name: string | null
+          campaign: string | null
           cep: string | null
           city: string | null
           client_memory: Json | null
@@ -361,6 +392,7 @@ export type Database = {
           blocked_at?: string | null
           blocked_reason?: string | null
           call_name?: string | null
+          campaign?: string | null
           cep?: string | null
           city?: string | null
           client_memory?: Json | null
@@ -398,6 +430,7 @@ export type Database = {
           blocked_at?: string | null
           blocked_reason?: string | null
           call_name?: string | null
+          campaign?: string | null
           cep?: string | null
           city?: string | null
           client_memory?: Json | null

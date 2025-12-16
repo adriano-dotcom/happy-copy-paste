@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
-import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, X, Download } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, X, Download, Tag, Plus } from 'lucide-react';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
+import { Input } from './ui/input';
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,13 @@ interface ValidationResult {
   invalid: { row: ParsedRow; errors: string[] }[];
 }
 
+interface Campaign {
+  id: string;
+  name: string;
+  color: string;
+  description?: string;
+}
+
 const REQUIRED_FIELDS = ['name', 'phone'];
 const FIELD_LABELS: Record<string, string> = {
   name: 'Nome',
@@ -53,12 +61,16 @@ const FIELD_LABELS: Record<string, string> = {
   fleet_size: 'Automotor'
 };
 
+const CAMPAIGN_COLORS = [
+  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'
+];
+
 const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
   open,
   onOpenChange,
   onSuccess
 }) => {
-  const [step, setStep] = useState<'upload' | 'mapping' | 'preview' | 'importing'>('upload');
+  const [step, setStep] = useState<'campaign' | 'upload' | 'mapping' | 'preview' | 'importing'>('campaign');
   const [file, setFile] = useState<File | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<ParsedRow[]>([]);
@@ -75,8 +87,74 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Campaign state
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
+  const [isCreatingCampaign, setIsCreatingCampaign] = useState(false);
+  const [newCampaignName, setNewCampaignName] = useState('');
+  const [newCampaignColor, setNewCampaignColor] = useState(CAMPAIGN_COLORS[0]);
+  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
+
+  // Load campaigns
+  useEffect(() => {
+    if (open) {
+      loadCampaigns();
+    }
+  }, [open]);
+
+  const loadCampaigns = async () => {
+    try {
+      setLoadingCampaigns(true);
+      const { data, error } = await supabase
+        .from('campaigns')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+      
+      if (error) throw error;
+      setCampaigns(data || []);
+    } catch (error) {
+      console.error('Error loading campaigns:', error);
+    } finally {
+      setLoadingCampaigns(false);
+    }
+  };
+
+  const handleCreateCampaign = async () => {
+    if (!newCampaignName.trim()) {
+      toast.error('Digite um nome para a campanha');
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('campaigns')
+        .insert({
+          name: newCampaignName.trim(),
+          color: newCampaignColor
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setCampaigns(prev => [...prev, data]);
+      setSelectedCampaignId(data.id);
+      setIsCreatingCampaign(false);
+      setNewCampaignName('');
+      toast.success('Campanha criada com sucesso');
+    } catch (error: any) {
+      console.error('Error creating campaign:', error);
+      if (error.code === '23505') {
+        toast.error('Já existe uma campanha com esse nome');
+      } else {
+        toast.error('Erro ao criar campanha');
+      }
+    }
+  };
+
   const resetState = () => {
-    setStep('upload');
+    setStep('campaign');
     setFile(null);
     setHeaders([]);
     setRows([]);
@@ -84,6 +162,9 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
     setValidation(null);
     setImporting(false);
     setProgress({ current: 0, total: 0 });
+    setSelectedCampaignId('');
+    setIsCreatingCampaign(false);
+    setNewCampaignName('');
   };
 
   const parseCSV = (text: string): { headers: string[]; rows: ParsedRow[] } => {
@@ -227,6 +308,9 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
       batches.push(validation.valid.slice(i, i + batchSize));
     }
 
+    // Get selected campaign name
+    const selectedCampaign = campaigns.find(c => c.id === selectedCampaignId);
+
     for (const batch of batches) {
       const contacts = batch.map(row => {
         // Normalizar telefone para formato internacional (55...)
@@ -247,7 +331,8 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
           fleet_size: mapping.fleet_size ? parseInt(row[mapping.fleet_size]) || null : null,
           lead_source: 'outbound', // Contatos importados são outbound
           city: region?.city || null,
-          state: region?.stateCode || null
+          state: region?.stateCode || null,
+          campaign: selectedCampaign?.name || null
         };
       });
 
@@ -302,9 +387,149 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
         </DialogHeader>
 
         <div className="mt-4">
+          {/* Step 0: Campaign Selection */}
+          {step === 'campaign' && (
+            <div className="space-y-6">
+              <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+                <div className="flex items-center gap-2 mb-2">
+                  <Tag className="w-5 h-5 text-cyan-400" />
+                  <h3 className="font-medium text-slate-200">Selecione a Campanha</h3>
+                </div>
+                <p className="text-sm text-slate-400">
+                  Todos os contatos importados serão associados a esta campanha para facilitar a organização e filtros.
+                </p>
+              </div>
+
+              {!isCreatingCampaign ? (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-slate-300">Campanha *</Label>
+                    <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
+                      <SelectTrigger className="bg-slate-950 border-slate-800 text-slate-200">
+                        <SelectValue placeholder="Selecione uma campanha existente" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-900 border-slate-800">
+                        {loadingCampaigns ? (
+                          <div className="px-4 py-2 text-slate-400 text-sm">Carregando...</div>
+                        ) : campaigns.length === 0 ? (
+                          <div className="px-4 py-2 text-slate-400 text-sm">Nenhuma campanha encontrada</div>
+                        ) : (
+                          campaigns.map(campaign => (
+                            <SelectItem key={campaign.id} value={campaign.id} className="text-slate-200">
+                              <div className="flex items-center gap-2">
+                                <div 
+                                  className="w-3 h-3 rounded-full" 
+                                  style={{ backgroundColor: campaign.color }}
+                                />
+                                {campaign.name}
+                              </div>
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-px bg-slate-800" />
+                    <span className="text-xs text-slate-500">ou</span>
+                    <div className="flex-1 h-px bg-slate-800" />
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsCreatingCampaign(true)}
+                    className="w-full border-slate-700 text-slate-300 hover:bg-slate-800"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Criar Nova Campanha
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4 p-4 bg-slate-800/30 rounded-lg border border-slate-700">
+                  <h4 className="font-medium text-slate-300">Nova Campanha</h4>
+                  
+                  <div className="space-y-2">
+                    <Label className="text-slate-300">Nome da Campanha *</Label>
+                    <Input
+                      value={newCampaignName}
+                      onChange={(e) => setNewCampaignName(e.target.value)}
+                      placeholder="Ex: Leads Maringá 2025"
+                      className="bg-slate-950 border-slate-800 text-slate-200"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-slate-300">Cor</Label>
+                    <div className="flex gap-2">
+                      {CAMPAIGN_COLORS.map(color => (
+                        <button
+                          key={color}
+                          onClick={() => setNewCampaignColor(color)}
+                          className={`w-8 h-8 rounded-full transition-all ${
+                            newCampaignColor === color 
+                              ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900' 
+                              : 'hover:scale-110'
+                          }`}
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setIsCreatingCampaign(false);
+                        setNewCampaignName('');
+                      }}
+                      className="flex-1 border-slate-700 text-slate-300"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={handleCreateCampaign}
+                      className="flex-1 bg-cyan-600 hover:bg-cyan-700"
+                    >
+                      Criar Campanha
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end pt-4 border-t border-slate-800">
+                <Button
+                  onClick={() => setStep('upload')}
+                  disabled={!selectedCampaignId}
+                  className="bg-cyan-600 hover:bg-cyan-700"
+                >
+                  Continuar
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Step 1: Upload */}
           {step === 'upload' && (
             <div className="space-y-6">
+              {/* Campaign badge */}
+              {selectedCampaignId && (
+                <div className="flex items-center gap-2 p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                  <Tag className="w-4 h-4 text-cyan-400" />
+                  <span className="text-sm text-slate-300">Campanha:</span>
+                  <span 
+                    className="text-sm font-medium px-2 py-0.5 rounded-full"
+                    style={{ 
+                      backgroundColor: `${campaigns.find(c => c.id === selectedCampaignId)?.color}20`,
+                      color: campaigns.find(c => c.id === selectedCampaignId)?.color
+                    }}
+                  >
+                    {campaigns.find(c => c.id === selectedCampaignId)?.name}
+                  </span>
+                </div>
+              )}
+
               <div
                 onClick={() => fileInputRef.current?.click()}
                 className="border-2 border-dashed border-slate-700 rounded-xl p-10 text-center cursor-pointer hover:border-cyan-500/50 hover:bg-slate-800/30 transition-all"
@@ -321,7 +546,14 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                 />
               </div>
 
-              <div className="flex items-center justify-center">
+              <div className="flex items-center justify-between">
+                <Button
+                  variant="outline"
+                  onClick={() => setStep('campaign')}
+                  className="border-slate-700 text-slate-300 hover:bg-slate-800"
+                >
+                  Voltar
+                </Button>
                 <Button
                   variant="outline"
                   onClick={downloadTemplate}
