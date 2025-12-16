@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Send, Loader2, Building2, MapPin, FileText, Sparkles, Search, Save, Eye, Pencil, ChevronDown, RefreshCw, Phone, Mail as MailIcon, Calendar, DollarSign, Truck, Activity } from 'lucide-react';
+import { X, Send, Loader2, Building2, MapPin, FileText, Sparkles, Search, Save, Eye, Pencil, ChevronDown, RefreshCw, Phone, Mail as MailIcon, Calendar, DollarSign, Truck, Activity, Code } from 'lucide-react';
 import { Button } from './ui/button';
+import { RichTextEditor } from './ui/rich-text-editor';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { api } from '@/services/api';
@@ -72,7 +73,7 @@ export const ProspectingEmailModal: React.FC<ProspectingEmailModalProps> = ({
   const [toEmail, setToEmail] = useState(contact.email || '');
   const [subject, setSubject] = useState('');
   const [bodyHtml, setBodyHtml] = useState('');
-  const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit');
+  const [viewMode, setViewMode] = useState<'visual' | 'code' | 'preview'>('visual');
   const [sendingEmail, setSendingEmail] = useState(false);
   const [senderName, setSenderName] = useState('');
 
@@ -558,14 +559,23 @@ export const ProspectingEmailModal: React.FC<ProspectingEmailModalProps> = ({
                 </div>
                 <div className="flex items-center gap-1 bg-slate-700/50 rounded-lg p-0.5">
                   <button
-                    onClick={() => setViewMode('edit')}
-                    className={`p-1.5 rounded ${viewMode === 'edit' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    onClick={() => setViewMode('visual')}
+                    className={`p-1.5 rounded flex items-center gap-1 text-xs ${viewMode === 'visual' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    title="Editor Visual"
                   >
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button
+                    onClick={() => setViewMode('code')}
+                    className={`p-1.5 rounded flex items-center gap-1 text-xs ${viewMode === 'code' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    title="Código HTML"
+                  >
+                    <Code className="w-4 h-4" />
+                  </button>
+                  <button
                     onClick={() => setViewMode('preview')}
-                    className={`p-1.5 rounded ${viewMode === 'preview' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    className={`p-1.5 rounded flex items-center gap-1 text-xs ${viewMode === 'preview' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    title="Visualizar"
                   >
                     <Eye className="w-4 h-4" />
                   </button>
@@ -598,11 +608,19 @@ export const ProspectingEmailModal: React.FC<ProspectingEmailModalProps> = ({
               {/* Body */}
               <div>
                 <label className="text-xs font-medium text-slate-400 mb-1 block">Corpo</label>
-                {viewMode === 'edit' ? (
+                {viewMode === 'visual' ? (
+                  <RichTextEditor
+                    value={bodyHtml}
+                    onChange={setBodyHtml}
+                    placeholder="Escreva o corpo do email..."
+                    minHeight="200px"
+                    className="bg-white text-slate-900"
+                  />
+                ) : viewMode === 'code' ? (
                   <textarea
                     value={bodyHtml}
                     onChange={(e) => setBodyHtml(e.target.value)}
-                    rows={8}
+                    rows={10}
                     className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white placeholder:text-slate-500 focus:ring-1 focus:ring-emerald-500 outline-none resize-none font-mono text-xs"
                   />
                 ) : (
