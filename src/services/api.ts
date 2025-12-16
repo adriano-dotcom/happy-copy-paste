@@ -329,7 +329,8 @@ export const api = {
       utm_source: (c as any).utm_source || undefined,
       utm_campaign: (c as any).utm_campaign || undefined,
       utm_content: (c as any).utm_content || undefined,
-      utm_term: (c as any).utm_term || undefined
+      utm_term: (c as any).utm_term || undefined,
+      campaign: (c as any).campaign || undefined
     }));
   },
 
