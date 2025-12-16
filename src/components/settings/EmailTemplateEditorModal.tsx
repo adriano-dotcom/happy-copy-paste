@@ -83,21 +83,25 @@ const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
 
   useEffect(() => {
     if (template) {
-      setName(template.name);
-      setSubject(template.subject);
-      setBodyHtml(template.body_html);
-      setCategory(template.category);
+      setName(template.name || '');
+      setSubject(template.subject || '');
+      setBodyHtml(template.body_html || DEFAULT_HTML);
+      setCategory(template.category || 'general');
     } else {
       setName('');
       setSubject('');
       setBodyHtml(DEFAULT_HTML);
       setCategory('general');
     }
+    // Reset to code view when opening to ensure preview refreshes correctly
+    if (isOpen) {
+      setActiveView('code');
+    }
   }, [template, isOpen]);
 
   useEffect(() => {
     if (iframeRef.current && activeView === 'preview') {
-      const previewHtml = replaceVariables(bodyHtml);
+      const previewHtml = replaceVariables(bodyHtml || '');
       const doc = iframeRef.current.contentDocument;
       if (doc) {
         doc.open();
