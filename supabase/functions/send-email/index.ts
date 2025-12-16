@@ -52,8 +52,8 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log(`Sending email to: ${to}, subject: ${subject}, bcc: ${bcc?.join(', ') || 'none'}`);
 
-    // Usar domínio de teste do Resend se não configurou domínio próprio
-    const fromEmail = from || "Jacometo Seguros <onboarding@resend.dev>";
+    // Usar domínio verificado da Jacometo
+    const fromEmail = from || "Jacometo Seguros <noreply@jacometo.com.br>";
 
     const emailResponse = await resend.emails.send({
       from: fromEmail,
