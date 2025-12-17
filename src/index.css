@@ -150,3 +150,28 @@ input {
 .glow-animate {
   animation: glow-pulse 2s ease-in-out infinite;
 }
+
+/* iOS 18 Glass Card Hover Effect */
+.glass-card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 40px -15px rgba(0,0,0,0.4);
+}
+
+/* Score Glow Animation */
+@keyframes score-glow {
+  0%, 100% { 
+    opacity: 0.7;
+    filter: brightness(1);
+  }
+  50% { 
+    opacity: 1;
+    filter: brightness(1.1);
+  }
+}
+
+.score-glow-animate {
+  animation: score-glow 2s ease-in-out infinite;
+}
