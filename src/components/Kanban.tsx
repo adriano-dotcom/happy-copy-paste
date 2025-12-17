@@ -830,7 +830,8 @@ const Kanban: React.FC = () => {
                                 type: msg.type || 'text',
                                 direction: msg.from_type === 'user' ? MessageDirection.INCOMING : MessageDirection.OUTGOING,
                                 mediaUrl: msg.media_url || null,
-                                senderName: (msg.metadata as any)?.sender_name || null
+                                senderName: (msg.metadata as any)?.sender_name || null,
+                                metadata: msg.metadata as Record<string, any> | null
                               }))}
                               initialNotes={null}
                               contactName={selectedDeal.contactName || selectedDeal.title}
