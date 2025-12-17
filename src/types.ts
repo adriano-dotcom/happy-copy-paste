@@ -351,10 +351,11 @@ export interface UIMessage {
   timestamp: string;
   direction: MessageDirection;
   type: MessageType;
-  status: 'sent' | 'delivered' | 'read';
+  status: 'sent' | 'delivered' | 'read' | 'failed' | 'processing';
   fromType: MessageFromType;
   mediaUrl: string | null;
   senderName: string | null;
+  metadata: Record<string, any> | null;
 }
 
 // ============= Utility Functions =============
@@ -437,7 +438,8 @@ export function transformDBToUIMessage(msg: DBMessage): UIMessage {
     status: mapDBMessageStatus(msg.status),
     fromType: msg.from_type,
     mediaUrl: msg.media_url,
-    senderName
+    senderName,
+    metadata
   };
 }
 
@@ -449,10 +451,12 @@ function mapDBMessageType(type: DBMessageType): MessageType {
   }
 }
 
-function mapDBMessageStatus(status: DBMessageStatus): 'sent' | 'delivered' | 'read' {
+function mapDBMessageStatus(status: DBMessageStatus): 'sent' | 'delivered' | 'read' | 'failed' | 'processing' {
   switch (status) {
     case 'read': return 'read';
     case 'delivered': return 'delivered';
+    case 'failed': return 'failed';
+    case 'processing': return 'processing';
     default: return 'sent';
   }
 }

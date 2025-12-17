@@ -6,8 +6,9 @@ import {
   Smile, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
   Tag, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
   Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle,
-  ArrowLeft, Keyboard, XCircle, PlayCircle, Pin, Sparkles, UserCheck, PauseCircle, Bot
+  ArrowLeft, Keyboard, XCircle, PlayCircle, Pin, Sparkles, UserCheck, PauseCircle, Bot, AlertCircle
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -1756,6 +1757,48 @@ const ChatInterface: React.FC = () => {
                             )}
                             <span className="text-[10px] text-slate-500 font-medium">{msg.timestamp}</span>
                             {isOutgoing && (
+                              msg.status === 'failed' ? (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div className="flex items-center cursor-help">
+                                        <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="max-w-xs">
+                                      <div className="text-xs">
+                                        <p className="font-semibold text-red-400">Mensagem não entregue</p>
+                                        {msg.metadata?.whatsapp_error ? (
+                                          <>
+                                            <p className="text-slate-300 mt-1">
+                                              Código: {msg.metadata.whatsapp_error.code}
+                                            </p>
+                                            <p className="text-slate-400 mt-0.5 break-words">
+                                              {msg.metadata.whatsapp_error.title || msg.metadata.whatsapp_error.message}
+                                            </p>
+                                          </>
+                                        ) : (
+                                          <p className="text-slate-400 mt-1">Erro desconhecido</p>
+                                        )}
+                                      </div>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) :
+                              msg.status === 'processing' ? (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div className="flex items-center cursor-help">
+                                        <Clock className="w-3.5 h-3.5 text-yellow-500 animate-pulse" />
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top">
+                                      <span className="text-xs">Processando...</span>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) :
                               msg.status === 'read' ? <CheckCheck className="w-3.5 h-3.5 text-cyan-500" /> : 
                               msg.status === 'delivered' ? <CheckCheck className="w-3.5 h-3.5 text-slate-500" /> :
                               <Check className="w-3.5 h-3.5 text-slate-500" />

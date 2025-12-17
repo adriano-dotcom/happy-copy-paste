@@ -257,7 +257,8 @@ export function useConversations() {
       status: 'sent',
       fromType: 'human',
       mediaUrl: null,
-      senderName: operatorName || null
+      senderName: operatorName || null,
+      metadata: null
     };
 
     setConversations(prev => {
