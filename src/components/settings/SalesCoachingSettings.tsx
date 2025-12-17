@@ -26,6 +26,7 @@ import {
   FileText,
   Sparkles
 } from 'lucide-react';
+import LearningInsightsCard from './LearningInsightsCard';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -290,6 +291,9 @@ export default function SalesCoachingSettings() {
           </div>
         </div>
       </div>
+
+      {/* Learning Insights Card - Knowledge Base */}
+      <LearningInsightsCard agents={agents} />
 
       {/* Agent/Department Summary Cards - iOS 18 Style */}
       {latestReportsByAgent.length > 0 && (
