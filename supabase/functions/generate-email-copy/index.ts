@@ -32,11 +32,11 @@ PRODUTOS DE SEGURO DE TRANSPORTE:
 - RC-DC (Responsabilidade Civil Desaparecimento de Carga): Cobre roubo e furto de carga
 - RC-V (Responsabilidade Civil Veicular): Cobre danos a terceiros
 
-CONTEXTO LEGAL:
-- Lei 14.599/2023 torna os seguros OBRIGATÓRIOS para RNTRC
-- Resolução ANTT 6.068/2025 e Portaria SUROC 27/2025 fiscalizam digitalmente
-- CT-e é documento obrigatório para emissão do seguro
-- Todos os 3 seguros são obrigatórios, não opcionais
+CONTEXTO DO TRANSPORTADOR:
+- O seguro de carga é proteção essencial para operações profissionais de transporte
+- Empresas bem estruturadas mantêm suas coberturas em dia para operar com tranquilidade
+- O CT-e é o documento usado para vincular a apólice ao transporte
+- Uma operação organizada inclui RCTR-C, RC-DC e RC-V para proteção completa
 
 COBERTURAS ACESSÓRIAS RCTR-C:
 - Limpeza de Pista
@@ -52,7 +52,7 @@ COBERTURAS ACESSÓRIAS RC-DC:
 - Impostos Suspensos e Benefícios Fiscais
 - Cobertura de Frete
 
-TOM: Profissional, técnico mas acessível, sem emojis, foco em compliance e proteção do patrimônio.
+TOM: Profissional, técnico mas acessível, sem emojis, foco em proteção do patrimônio e tranquilidade operacional.
 `,
   frotas: `
 PRODUTOS DE SEGURO DE FROTA EMPRESARIAL:
@@ -87,12 +87,12 @@ TOM: Profissional, foco em proteção patrimonial, segurança operacional, conti
 PRODUTOS DE SEGURO - SOLUÇÃO COMPLETA PARA TRANSPORTADORES:
 
 **SEGURO DE TRANSPORTE (RCTR-C/RC-DC/RC-V):**
-- Obrigatório pela Lei 14.599/2023 para RNTRC
+- Proteção essencial para operações de transporte profissional
 - RCTR-C: Cobre danos à carga durante transporte
 - RC-DC: Cobre roubo e furto de carga
 - RC-V: Cobre danos a terceiros
-- Fiscalização digital pela ANTT (Resolução 6.068/2025)
-- CT-e obrigatório para emissão
+- Cobertura completa para a operação do dia a dia
+- CT-e vinculado à apólice para controle
 
 **SEGURO DE FROTA EMPRESARIAL:**
 - Proteção completa para veículos da empresa (cavalos, carretas, caminhões)
@@ -106,7 +106,7 @@ DIFERENCIAL JACOMETO - SOLUÇÃO COMPLETA:
 - Carga protegida + Veículos protegidos = Operação 100% segura
 - Economia ao contratar ambos com mesmo corretor (condições especiais)
 - Gestão unificada de renovações, sinistros e documentação
-- Compliance legal (Lei 14.599) + Proteção patrimonial em um só lugar
+- Proteção total da operação em um só lugar
 - Único ponto de contato para todas as questões de seguros
 
 ABORDAGEM RECOMENDADA:
@@ -169,7 +169,7 @@ const EMAIL_TYPES: Record<string, string> = {
 OBJETIVO: Primeiro contato frio com lead de prospecção
 
 SEGMENTAÇÃO POR VERTICAL/CNAE:
-- Se vertical="transporte": Focar em Lei 14.599/2023, RCTR-C/RC-DC/RC-V obrigatórios, compliance ANTT, fiscalização digital
+- Se vertical="transporte": Focar em proteção da carga, segurança operacional, tranquilidade no dia a dia, especialização em transportadores
 - Se vertical="frotas": Focar em proteção patrimonial dos veículos, seguro de frota empresarial, economia por volume, gestão centralizada
 - Se vertical="ambos": Oferecer SOLUÇÃO COMPLETA - seguro de carga + seguro de frota juntos, economia ao centralizar com mesmo corretor, proteção total da operação
 - Se vertical="prospeccao" (genérico): Usar CNAE para identificar melhor abordagem
@@ -183,7 +183,7 @@ ESTRUTURA:
 1. Saudação dinâmica por horário + nome do lead (usar a saudação fornecida: "Bom dia/Boa tarde/Boa noite [Nome],")
 2. Reconhecimento da empresa e localização
 3. Gancho relevante baseado na vertical:
-   - Transporte: Lei obrigatória, compliance, fiscalização
+   - Transporte: Proteção da operação, segurança da carga, especialização em transportadores
    - Frotas: Proteção do patrimônio, veículos como ativos, economia
 3. Proposta de valor em 2-3 frases concisas
 4. CTA único e claro (agendar conversa breve de 10-15 min)
