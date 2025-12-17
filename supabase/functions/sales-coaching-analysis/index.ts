@@ -565,11 +565,140 @@ async function generateReportForAgent(
 
   console.log(`[sales-coaching] Report saved for ${agent.name}:`, savedReport.id);
 
+  // Aggregate learning insights from improvement_areas and recommended_actions
+  await aggregateLearningInsights(supabase, savedReport, agent, pipeline);
+
   return {
     ...savedReport,
     agent_name: agent.name,
     pipeline_name: pipeline?.name
   };
+}
+
+// Function to aggregate learning insights from reports
+async function aggregateLearningInsights(
+  supabase: any,
+  report: any,
+  agent: Agent,
+  pipeline: Pipeline | null
+) {
+  try {
+    console.log(`[sales-coaching] Aggregating learning insights for ${agent.name}`);
+    
+    // Process improvement_areas
+    const improvementAreas = report.improvement_areas || [];
+    for (const area of improvementAreas) {
+      await processInsight(supabase, {
+        title: area.title,
+        description: area.description,
+        suggestion: area.suggestion || null,
+        examples: area.example ? [{ type: 'bad', text: area.example }] : [],
+        category: 'prompt',
+        priority: 2, // Default to high priority for improvement areas
+        agent_id: agent.id,
+        pipeline_id: pipeline?.id || null,
+        source_report_id: report.id
+      });
+    }
+
+    // Process recommended_actions
+    const recommendedActions = report.recommended_actions || [];
+    for (const action of recommendedActions) {
+      // Determine category based on action.category or default to 'process'
+      const category = action.category === 'prompt' ? 'prompt' : 
+                       action.category === 'training' ? 'training' : 'process';
+      
+      await processInsight(supabase, {
+        title: action.action,
+        description: action.impact || 'Ação recomendada pela análise de coaching',
+        suggestion: null,
+        examples: [],
+        category,
+        priority: action.priority || 2,
+        agent_id: agent.id,
+        pipeline_id: pipeline?.id || null,
+        source_report_id: report.id
+      });
+    }
+
+    console.log(`[sales-coaching] Learning insights aggregated for ${agent.name}`);
+  } catch (error) {
+    // Don't throw - just log the error so it doesn't break report generation
+    console.error('[sales-coaching] Error aggregating learning insights:', error);
+  }
+}
+
+// Process a single insight - check for similar existing, update or create
+async function processInsight(
+  supabase: any,
+  insight: {
+    title: string;
+    description: string;
+    suggestion: string | null;
+    examples: any[];
+    category: string;
+    priority: number;
+    agent_id: string;
+    pipeline_id: string | null;
+    source_report_id: string;
+  }
+) {
+  // Look for similar existing insight (same title and agent)
+  const { data: existing } = await supabase
+    .from('learning_insights')
+    .select('*')
+    .eq('agent_id', insight.agent_id)
+    .ilike('title', `%${insight.title.substring(0, 30)}%`)
+    .in('status', ['pending', 'reviewing'])
+    .limit(1);
+
+  if (existing && existing.length > 0) {
+    // Update existing insight - increment count and add source report
+    const existingInsight = existing[0];
+    const existingReports = existingInsight.source_reports || [];
+    
+    // Don't add duplicate report IDs
+    if (!existingReports.includes(insight.source_report_id)) {
+      const updatedReports = [...existingReports, insight.source_report_id];
+      const updatedExamples = [...(existingInsight.examples || []), ...insight.examples];
+      
+      // Increase priority if occurrence is high
+      const newCount = existingInsight.occurrence_count + 1;
+      const newPriority = newCount >= 5 ? 1 : newCount >= 3 ? Math.min(existingInsight.priority, 2) : existingInsight.priority;
+      
+      await supabase
+        .from('learning_insights')
+        .update({
+          occurrence_count: newCount,
+          source_reports: updatedReports,
+          examples: updatedExamples.slice(-10), // Keep last 10 examples
+          priority: newPriority,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingInsight.id);
+        
+      console.log(`[sales-coaching] Updated existing insight: ${insight.title} (count: ${newCount})`);
+    }
+  } else {
+    // Create new insight
+    await supabase
+      .from('learning_insights')
+      .insert({
+        title: insight.title,
+        description: insight.description,
+        suggestion: insight.suggestion,
+        examples: insight.examples,
+        category: insight.category,
+        priority: insight.priority,
+        agent_id: insight.agent_id,
+        pipeline_id: insight.pipeline_id,
+        source_reports: [insight.source_report_id],
+        status: 'pending',
+        occurrence_count: 1
+      });
+      
+    console.log(`[sales-coaching] Created new insight: ${insight.title}`);
+  }
 }
 
 serve(async (req) => {

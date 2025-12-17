@@ -917,6 +917,90 @@ export type Database = {
           },
         ]
       }
+      learning_insights: {
+        Row: {
+          agent_id: string | null
+          applied_at: string | null
+          category: string
+          created_at: string | null
+          description: string
+          examples: Json | null
+          id: string
+          impact: string | null
+          occurrence_count: number | null
+          pipeline_id: string | null
+          priority: number | null
+          rejection_reason: string | null
+          review_notes: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          source_reports: string[] | null
+          status: string | null
+          suggestion: string | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          agent_id?: string | null
+          applied_at?: string | null
+          category?: string
+          created_at?: string | null
+          description: string
+          examples?: Json | null
+          id?: string
+          impact?: string | null
+          occurrence_count?: number | null
+          pipeline_id?: string | null
+          priority?: number | null
+          rejection_reason?: string | null
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          source_reports?: string[] | null
+          status?: string | null
+          suggestion?: string | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          agent_id?: string | null
+          applied_at?: string | null
+          category?: string
+          created_at?: string | null
+          description?: string
+          examples?: Json | null
+          id?: string
+          impact?: string | null
+          occurrence_count?: number | null
+          pipeline_id?: string | null
+          priority?: number | null
+          rejection_reason?: string | null
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          source_reports?: string[] | null
+          status?: string | null
+          suggestion?: string | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "learning_insights_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "learning_insights_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_grouping_queue: {
         Row: {
           contacts_data: Json | null
