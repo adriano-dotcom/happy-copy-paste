@@ -22,10 +22,13 @@ import {
   Phone,
   MessageSquare,
   UserCheck,
-  UserX
+  UserX,
+  FileText,
+  Sparkles
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
 
 interface StrengthItem {
   title: string;
@@ -218,17 +221,24 @@ export default function SalesCoachingSettings() {
   };
 
   const getScoreColor = (score: number | null) => {
-    if (!score) return 'text-muted-foreground';
-    if (score >= 80) return 'text-green-500';
-    if (score >= 70) return 'text-yellow-500';
-    return 'text-red-500';
+    if (!score) return 'text-slate-400';
+    if (score >= 80) return 'text-emerald-400';
+    if (score >= 70) return 'text-amber-400';
+    return 'text-red-400';
   };
 
   const getScoreBg = (score: number | null) => {
-    if (!score) return 'bg-muted';
-    if (score >= 80) return 'bg-green-500/20';
-    if (score >= 70) return 'bg-yellow-500/20';
+    if (!score) return 'bg-slate-800/60';
+    if (score >= 80) return 'bg-emerald-500/20';
+    if (score >= 70) return 'bg-amber-500/20';
     return 'bg-red-500/20';
+  };
+
+  const getScoreGlow = (score: number | null) => {
+    if (!score) return '';
+    if (score >= 80) return 'shadow-lg shadow-emerald-500/25';
+    if (score >= 70) return 'shadow-lg shadow-amber-500/25';
+    return 'shadow-lg shadow-red-500/25 animate-pulse';
   };
 
   const getAgentName = (agentId: string | null) => {
@@ -237,10 +247,14 @@ export default function SalesCoachingSettings() {
   };
 
   const ScoreCard = ({ label, score }: { label: string; score: number | null }) => (
-    <div className={`p-3 rounded-lg ${getScoreBg(score)}`}>
-      <p className="text-xs text-muted-foreground mb-1">{label}</p>
-      <p className={`text-2xl font-bold ${getScoreColor(score)}`}>
-        {score ?? '-'}
+    <div className={cn(
+      "p-4 rounded-xl backdrop-blur-sm border border-slate-700/30 transition-all duration-300",
+      getScoreBg(score),
+      getScoreGlow(score)
+    )}>
+      <p className="text-xs text-slate-400 mb-1">{label}</p>
+      <p className={cn("text-3xl font-bold", getScoreColor(score))}>
+        {score ?? '—'}
       </p>
     </div>
   );
@@ -259,151 +273,186 @@ export default function SalesCoachingSettings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Brain className="h-5 w-5 text-primary" />
-            Gerente de Vendas IA
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            Análise automática de performance por agente e departamento
-          </p>
+      {/* Header with glassmorphism */}
+      <div className="flex items-center justify-between p-4 rounded-xl bg-slate-900/40 backdrop-blur-xl border border-slate-700/30">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 shadow-lg shadow-violet-500/20">
+            <Brain className="h-5 w-5 text-violet-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              Gerente de Vendas IA
+              <Sparkles className="h-4 w-4 text-violet-400" />
+            </h3>
+            <p className="text-sm text-slate-400">
+              Análise automática de performance por agente e departamento
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Agent/Department Summary Cards */}
+      {/* Agent/Department Summary Cards - iOS 18 Style */}
       {latestReportsByAgent.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {latestReportsByAgent.map(({ agent, pipeline, latestReport }) => (
-            <Card key={agent.id} className={`${latestReport.overall_score && latestReport.overall_score < 70 ? 'border-red-500/50' : ''}`}>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {pipeline && <span className="text-lg">{pipeline.icon}</span>}
-                    <div>
-                      <CardTitle className="text-base">{agent.name}</CardTitle>
-                      {pipeline && (
-                        <CardDescription className="flex items-center gap-1">
-                          <Building2 className="h-3 w-3" />
-                          {pipeline.name}
-                        </CardDescription>
-                      )}
-                    </div>
-                  </div>
-                  <div className={`p-2 rounded-lg ${getScoreBg(latestReport.overall_score)}`}>
-                    <span className={`text-xl font-bold ${getScoreColor(latestReport.overall_score)}`}>
-                      {latestReport.overall_score ?? '-'}
-                    </span>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Qualificação</p>
-                    <p className={`font-semibold ${getScoreColor(latestReport.qualification_effectiveness)}`}>
-                      {latestReport.qualification_effectiveness ?? '-'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Objeções</p>
-                    <p className={`font-semibold ${getScoreColor(latestReport.objection_handling_score)}`}>
-                      {latestReport.objection_handling_score ?? '-'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Fechamento</p>
-                    <p className={`font-semibold ${getScoreColor(latestReport.closing_skills_score)}`}>
-                      {latestReport.closing_skills_score ?? '-'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Prospecting Metrics for Leonardo */}
-                {agent.specialty === 'prospeccao_ativa' && latestReport.prospecting_metrics && (
-                  <div className="mt-3 pt-3 border-t">
-                    <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
-                      <Phone className="h-3 w-3" />
-                      Métricas de Prospecção
-                    </p>
-                    <div className="grid grid-cols-4 gap-1 text-center">
-                      <div className="p-1.5 bg-muted rounded">
-                        <p className="text-[10px] text-muted-foreground">Templates</p>
-                        <p className="font-bold text-sm">{latestReport.prospecting_metrics.templates_sent}</p>
-                      </div>
-                      <div className="p-1.5 bg-blue-500/10 rounded">
-                        <p className="text-[10px] text-muted-foreground">Respostas</p>
-                        <p className="font-bold text-sm text-blue-500">
-                          {latestReport.prospecting_metrics.response_rate.toFixed(0)}%
-                        </p>
-                      </div>
-                      <div className="p-1.5 bg-red-500/10 rounded">
-                        <p className="text-[10px] text-muted-foreground">Rejeições</p>
-                        <p className="font-bold text-sm text-red-500">
-                          {latestReport.prospecting_metrics.rejection_rate.toFixed(0)}%
-                        </p>
-                      </div>
-                      <div className={`p-1.5 rounded ${
-                        latestReport.prospecting_metrics.conversion_rate >= 15 ? 'bg-green-500/10' :
-                        latestReport.prospecting_metrics.conversion_rate >= 10 ? 'bg-yellow-500/10' : 'bg-red-500/10'
-                      }`}>
-                        <p className="text-[10px] text-muted-foreground">Conversão</p>
-                        <p className={`font-bold text-sm ${
-                          latestReport.prospecting_metrics.conversion_rate >= 15 ? 'text-green-500' :
-                          latestReport.prospecting_metrics.conversion_rate >= 10 ? 'text-yellow-500' : 'text-red-500'
-                        }`}>
-                          {latestReport.prospecting_metrics.conversion_rate.toFixed(0)}%
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+          {latestReportsByAgent.map(({ agent, pipeline, latestReport }) => {
+            const isAlert = latestReport.overall_score && latestReport.overall_score < 70;
+            return (
+              <Card 
+                key={agent.id} 
+                className={cn(
+                  "relative overflow-hidden transition-all duration-300 glass-card-hover",
+                  "bg-slate-900/60 backdrop-blur-xl border-slate-700/50",
+                  "shadow-xl shadow-black/20",
+                  isAlert && "ring-2 ring-red-500/40 shadow-red-500/10"
                 )}
+              >
+                {/* Gradient overlay */}
+                <div className="absolute inset-0 bg-gradient-to-br from-slate-800/30 via-transparent to-slate-800/20 pointer-events-none" />
+                
+                <CardHeader className="pb-2 relative">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {pipeline && (
+                        <div className="p-2.5 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30">
+                          <span className="text-xl">{pipeline.icon}</span>
+                        </div>
+                      )}
+                      <div>
+                        <CardTitle className="text-base text-white">{agent.name}</CardTitle>
+                        {pipeline && (
+                          <CardDescription className="flex items-center gap-1 text-slate-400">
+                            <Building2 className="h-3 w-3" />
+                            {pipeline.name}
+                          </CardDescription>
+                        )}
+                      </div>
+                    </div>
+                    <div className={cn(
+                      "p-3 rounded-xl backdrop-blur-sm border border-slate-700/30 transition-all",
+                      getScoreBg(latestReport.overall_score),
+                      getScoreGlow(latestReport.overall_score)
+                    )}>
+                      <span className={cn("text-2xl font-bold", getScoreColor(latestReport.overall_score))}>
+                        {latestReport.overall_score ?? '—'}
+                      </span>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="relative">
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    {[
+                      { label: 'Qualificação', score: latestReport.qualification_effectiveness },
+                      { label: 'Objeções', score: latestReport.objection_handling_score },
+                      { label: 'Fechamento', score: latestReport.closing_skills_score },
+                    ].map((item, idx) => (
+                      <div key={idx} className="p-2.5 rounded-lg bg-slate-800/60 backdrop-blur-sm border border-slate-700/30">
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide">{item.label}</p>
+                        <p className={cn("font-bold text-lg", getScoreColor(item.score))}>
+                          {item.score ?? '—'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
 
-                <div className="flex items-center justify-between mt-3 pt-3 border-t text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {format(new Date(latestReport.created_at), "dd/MM HH:mm", { locale: ptBR })}
-                  </span>
-                  {latestReport.alert_sent && (
-                    <span className="flex items-center gap-1 text-red-500">
-                      <Mail className="h-3 w-3" />
-                      Alerta enviado
-                    </span>
+                  {/* Prospecting Metrics for Leonardo */}
+                  {agent.specialty === 'prospeccao_ativa' && latestReport.prospecting_metrics && (
+                    <div className="mt-3 pt-3 border-t border-slate-700/30">
+                      <p className="text-xs font-medium text-slate-400 mb-2 flex items-center gap-1">
+                        <Phone className="h-3 w-3 text-cyan-400" />
+                        Métricas de Prospecção
+                      </p>
+                      <div className="grid grid-cols-4 gap-1.5 text-center">
+                        <div className="p-2 rounded-lg bg-slate-800/60 backdrop-blur-sm border border-slate-700/30">
+                          <p className="text-[10px] text-slate-500">Templates</p>
+                          <p className="font-bold text-sm text-white">{latestReport.prospecting_metrics.templates_sent}</p>
+                        </div>
+                        <div className="p-2 rounded-lg bg-blue-500/15 border border-blue-500/30 shadow-lg shadow-blue-500/10">
+                          <p className="text-[10px] text-blue-400">Respostas</p>
+                          <p className="font-bold text-sm text-blue-400">
+                            {latestReport.prospecting_metrics.response_rate.toFixed(0)}%
+                          </p>
+                        </div>
+                        <div className="p-2 rounded-lg bg-red-500/15 border border-red-500/30 shadow-lg shadow-red-500/10">
+                          <p className="text-[10px] text-red-400">Rejeições</p>
+                          <p className="font-bold text-sm text-red-400">
+                            {latestReport.prospecting_metrics.rejection_rate.toFixed(0)}%
+                          </p>
+                        </div>
+                        <div className={cn(
+                          "p-2 rounded-lg border",
+                          latestReport.prospecting_metrics.conversion_rate >= 15 
+                            ? 'bg-emerald-500/15 border-emerald-500/30 shadow-lg shadow-emerald-500/10' 
+                            : latestReport.prospecting_metrics.conversion_rate >= 10 
+                            ? 'bg-amber-500/15 border-amber-500/30 shadow-lg shadow-amber-500/10' 
+                            : 'bg-red-500/15 border-red-500/30 shadow-lg shadow-red-500/10'
+                        )}>
+                          <p className="text-[10px] text-slate-400">Conversão</p>
+                          <p className={cn(
+                            "font-bold text-sm",
+                            latestReport.prospecting_metrics.conversion_rate >= 15 ? 'text-emerald-400' :
+                            latestReport.prospecting_metrics.conversion_rate >= 10 ? 'text-amber-400' : 'text-red-400'
+                          )}>
+                            {latestReport.prospecting_metrics.conversion_rate.toFixed(0)}%
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-700/30 text-xs text-slate-500">
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {format(new Date(latestReport.created_at), "dd/MM HH:mm", { locale: ptBR })}
+                    </span>
+                    {latestReport.alert_sent && (
+                      <span className="flex items-center gap-1 text-red-400 bg-red-500/20 px-2 py-0.5 rounded-full">
+                        <Mail className="h-3 w-3" />
+                        Alerta enviado
+                      </span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
-      {/* Generate Report Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Gerar Novo Relatório</CardTitle>
-          <CardDescription>
-            Analise as conversas e ligações por agente/departamento
-          </CardDescription>
+      {/* Generate Report Section - iOS 18 Style */}
+      <Card className="bg-gradient-to-br from-slate-800/80 to-slate-900/90 backdrop-blur-xl border-slate-700/50 shadow-2xl overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-violet-500/5 pointer-events-none" />
+        <CardHeader className="border-b border-slate-700/30 relative">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 shadow-lg shadow-cyan-500/20">
+              <Brain className="w-5 h-5 text-cyan-400" />
+            </div>
+            <div>
+              <CardTitle className="text-base text-white">Gerar Novo Relatório</CardTitle>
+              <CardDescription className="text-slate-400">
+                Analise as conversas e ligações por agente/departamento
+              </CardDescription>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6 relative">
           <div className="flex flex-wrap gap-4 items-end">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Agente</label>
+              <label className="text-sm font-medium text-slate-300">Agente</label>
               <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-[180px] bg-slate-800/80 border-slate-600 text-white hover:bg-slate-700/80 transition-colors">
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectItem value="all" className="text-white hover:bg-slate-700">
                     <span className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
+                      <Users className="h-4 w-4 text-cyan-400" />
                       Todos os agentes
                     </span>
                   </SelectItem>
                   {agents.map(agent => {
                     const pipeline = pipelines.find(p => p.agent_id === agent.id);
                     return (
-                      <SelectItem key={agent.id} value={agent.id}>
+                      <SelectItem key={agent.id} value={agent.id} className="text-white hover:bg-slate-700">
                         <span className="flex items-center gap-2">
                           {pipeline?.icon && <span>{pipeline.icon}</span>}
                           {agent.name}
@@ -416,14 +465,14 @@ export default function SalesCoachingSettings() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Período</label>
+              <label className="text-sm font-medium text-slate-300">Período</label>
               <Select value={reportType} onValueChange={setReportType}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-[180px] bg-slate-800/80 border-slate-600 text-white hover:bg-slate-700/80 transition-colors">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="daily">Últimas 24h</SelectItem>
-                  <SelectItem value="weekly">Últimos 7 dias</SelectItem>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectItem value="daily" className="text-white hover:bg-slate-700">Últimas 24h</SelectItem>
+                  <SelectItem value="weekly" className="text-white hover:bg-slate-700">Últimos 7 dias</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -431,7 +480,7 @@ export default function SalesCoachingSettings() {
             <Button 
               onClick={generateReport} 
               disabled={isGenerating}
-              className="gap-2"
+              className="gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-500/25 border-0 text-white font-medium"
             >
               {isGenerating ? (
                 <RefreshCw className="h-4 w-4 animate-spin" />
@@ -442,83 +491,107 @@ export default function SalesCoachingSettings() {
             </Button>
           </div>
           
-          <p className="text-xs text-muted-foreground mt-3">
-            Relatórios com score abaixo de 70 enviam alerta automático por email para adriano@jacometo.com.br
+          <p className="text-xs text-slate-500 mt-4 flex items-center gap-1.5">
+            <AlertTriangle className="h-3 w-3 text-amber-400" />
+            Relatórios com score abaixo de 70 enviam alerta automático por email
           </p>
         </CardContent>
       </Card>
 
-      {/* Reports List */}
+      {/* Reports List - iOS 18 Style */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h4 className="font-medium">Relatórios Recentes</h4>
+        <div className="flex items-center justify-between p-4 bg-slate-800/40 backdrop-blur-sm rounded-xl border border-slate-700/30">
+          <h4 className="font-semibold text-white flex items-center gap-2">
+            <FileText className="w-4 h-4 text-cyan-400" />
+            Relatórios Recentes
+          </h4>
           <div className="flex items-center gap-2">
             <Select value={selectedPipeline} onValueChange={setSelectedPipeline}>
-              <SelectTrigger className="w-[150px] h-8 text-xs">
+              <SelectTrigger className="w-[150px] h-8 text-xs bg-slate-800/80 border-slate-600 text-white">
                 <SelectValue placeholder="Departamento" />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
+              <SelectContent className="bg-slate-800 border-slate-700">
+                <SelectItem value="all" className="text-white hover:bg-slate-700">Todos</SelectItem>
                 {pipelines.map(pipeline => (
-                  <SelectItem key={pipeline.id} value={pipeline.id}>
+                  <SelectItem key={pipeline.id} value={pipeline.id} className="text-white hover:bg-slate-700">
                     {pipeline.icon} {pipeline.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="ghost" size="sm" onClick={fetchReports} disabled={isLoading}>
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={fetchReports} 
+              disabled={isLoading}
+              className="text-slate-400 hover:text-white hover:bg-slate-700/50"
+            >
+              <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
             </Button>
           </div>
         </div>
 
         {reports.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center text-muted-foreground">
-              <Brain className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Nenhum relatório gerado ainda</p>
-              <p className="text-sm">Clique em "Gerar Análise" para começar</p>
+          <Card className="bg-slate-900/50 backdrop-blur-xl border-slate-700/50">
+            <CardContent className="py-12 text-center">
+              <div className="p-4 rounded-2xl bg-slate-800/60 w-fit mx-auto mb-4">
+                <Brain className="h-12 w-12 text-slate-600" />
+              </div>
+              <p className="text-slate-400">Nenhum relatório gerado ainda</p>
+              <p className="text-sm text-slate-500">Clique em "Gerar Análise" para começar</p>
             </CardContent>
           </Card>
         ) : (
           reports.map(report => (
-            <Card key={report.id} className={`overflow-hidden ${report.alert_sent ? 'border-l-4 border-l-red-500' : ''}`}>
+            <Card 
+              key={report.id} 
+              className={cn(
+                "overflow-hidden transition-all duration-300",
+                "bg-slate-900/50 backdrop-blur-xl border-slate-700/40",
+                "hover:bg-slate-800/60",
+                report.alert_sent && "border-l-4 border-l-red-500"
+              )}
+            >
               <CardHeader 
-                className="cursor-pointer hover:bg-muted/50 transition-colors"
+                className="cursor-pointer hover:bg-slate-800/30 transition-colors"
                 onClick={() => setExpandedReport(expandedReport === report.id ? null : report.id)}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <div className={`p-2 rounded-lg ${getScoreBg(report.overall_score)}`}>
-                      <span className={`text-xl font-bold ${getScoreColor(report.overall_score)}`}>
-                        {report.overall_score ?? '-'}
+                    <div className={cn(
+                      "p-3 rounded-xl backdrop-blur-sm border border-slate-700/30",
+                      getScoreBg(report.overall_score),
+                      getScoreGlow(report.overall_score)
+                    )}>
+                      <span className={cn("text-xl font-bold", getScoreColor(report.overall_score))}>
+                        {report.overall_score ?? '—'}
                       </span>
                     </div>
                     <div>
-                      <CardTitle className="text-base flex items-center gap-2">
+                      <CardTitle className="text-base flex items-center gap-2 flex-wrap text-white">
                         <span className="flex items-center gap-1">
                           {report.pipeline_name && (
-                            <span className="text-muted-foreground">
+                            <span className="text-slate-400">
                               {pipelines.find(p => p.id === report.pipeline_id)?.icon}
                             </span>
                           )}
                           {getAgentName(report.agent_id)}
                         </span>
-                        <span className="text-xs font-normal px-2 py-0.5 bg-muted rounded">
+                        <span className="text-xs font-normal px-2 py-0.5 bg-slate-700/60 rounded-full text-slate-300">
                           {report.report_type === 'daily' ? 'Diário' : 'Semanal'}
                         </span>
-                        <span className="text-xs font-normal text-muted-foreground flex items-center gap-1">
+                        <span className="text-xs font-normal text-slate-500 flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {format(new Date(report.created_at), "dd/MM HH:mm", { locale: ptBR })}
                         </span>
                         {report.alert_sent && (
-                          <span className="text-xs font-normal text-red-500 flex items-center gap-1">
+                          <span className="text-xs font-normal text-red-400 flex items-center gap-1 bg-red-500/20 px-2 py-0.5 rounded-full">
                             <AlertTriangle className="h-3 w-3" />
                             Alerta
                           </span>
                         )}
                       </CardTitle>
-                      <CardDescription className="flex items-center gap-4 mt-1">
+                      <CardDescription className="flex items-center gap-4 mt-1 text-slate-500">
                         {report.pipeline_name && <span>{report.pipeline_name}</span>}
                         <span>{report.conversations_analyzed} conversas</span>
                         <span>{report.calls_analyzed} ligações</span>
@@ -527,15 +600,15 @@ export default function SalesCoachingSettings() {
                     </div>
                   </div>
                   {expandedReport === report.id ? (
-                    <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                    <ChevronUp className="h-5 w-5 text-slate-500" />
                   ) : (
-                    <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                    <ChevronDown className="h-5 w-5 text-slate-500" />
                   )}
                 </div>
               </CardHeader>
 
               {expandedReport === report.id && (
-                <CardContent className="border-t space-y-6">
+                <CardContent className="border-t border-slate-700/30 space-y-6 pt-6">
                   {/* Scores Grid */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <ScoreCard label="Score Geral" score={report.overall_score} />
@@ -546,36 +619,38 @@ export default function SalesCoachingSettings() {
 
                   {/* Prospecting Funnel - Only for prospecting agents */}
                   {report.prospecting_metrics && report.prospecting_metrics.templates_sent > 0 && (
-                    <div className="p-4 bg-muted/50 rounded-lg border">
-                      <h5 className="font-medium flex items-center gap-2 mb-4">
-                        <Phone className="h-4 w-4 text-primary" />
+                    <div className="p-5 bg-slate-800/40 backdrop-blur-sm rounded-xl border border-slate-700/30">
+                      <h5 className="font-medium flex items-center gap-2 mb-4 text-white">
+                        <div className="p-1.5 rounded-lg bg-cyan-500/20 border border-cyan-500/30">
+                          <Phone className="h-4 w-4 text-cyan-400" />
+                        </div>
                         Funil de Prospecção
                       </h5>
                       
                       {/* Funnel Visualization */}
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {[
-                          { label: 'Templates Enviados', value: report.prospecting_metrics.templates_sent, icon: MessageSquare, color: 'bg-slate-500' },
-                          { label: 'Respostas', value: report.prospecting_metrics.responses_received, icon: MessageSquare, color: 'bg-blue-500', pct: report.prospecting_metrics.response_rate },
-                          { label: 'Respostas Positivas', value: report.prospecting_metrics.positive_responses, icon: UserCheck, color: 'bg-green-500', pct: report.prospecting_metrics.positive_rate },
-                          { label: 'Em Qualificação', value: report.prospecting_metrics.deals_in_qualification, icon: Target, color: 'bg-yellow-500' },
-                          { label: 'Qualificados', value: report.prospecting_metrics.deals_qualified, icon: CheckCircle, color: 'bg-emerald-500', pct: report.prospecting_metrics.conversion_rate },
+                          { label: 'Templates Enviados', value: report.prospecting_metrics.templates_sent, icon: MessageSquare, color: 'bg-slate-500', textColor: 'text-slate-300' },
+                          { label: 'Respostas', value: report.prospecting_metrics.responses_received, icon: MessageSquare, color: 'bg-blue-500', textColor: 'text-blue-400', pct: report.prospecting_metrics.response_rate },
+                          { label: 'Respostas Positivas', value: report.prospecting_metrics.positive_responses, icon: UserCheck, color: 'bg-green-500', textColor: 'text-green-400', pct: report.prospecting_metrics.positive_rate },
+                          { label: 'Em Qualificação', value: report.prospecting_metrics.deals_in_qualification, icon: Target, color: 'bg-amber-500', textColor: 'text-amber-400' },
+                          { label: 'Qualificados', value: report.prospecting_metrics.deals_qualified, icon: CheckCircle, color: 'bg-emerald-500', textColor: 'text-emerald-400', pct: report.prospecting_metrics.conversion_rate },
                         ].map((step, idx) => (
                           <div key={idx} className="flex items-center gap-3">
-                            <step.icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <step.icon className={cn("h-4 w-4 shrink-0", step.textColor)} />
                             <div className="flex-1">
-                              <div className="flex justify-between text-sm mb-1">
-                                <span>{step.label}</span>
-                                <span className="font-medium">
+                              <div className="flex justify-between text-sm mb-1.5">
+                                <span className="text-slate-300">{step.label}</span>
+                                <span className="font-medium text-white">
                                   {step.value}
                                   {step.pct !== undefined && (
-                                    <span className="text-muted-foreground ml-1">({step.pct.toFixed(1)}%)</span>
+                                    <span className="text-slate-500 ml-1">({step.pct.toFixed(1)}%)</span>
                                   )}
                                 </span>
                               </div>
-                              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                              <div className="h-2.5 bg-slate-700/50 rounded-full overflow-hidden">
                                 <div 
-                                  className={`h-full ${step.color} transition-all`}
+                                  className={cn("h-full rounded-full transition-all", step.color)}
                                   style={{ 
                                     width: `${report.prospecting_metrics.templates_sent > 0 
                                       ? (step.value / report.prospecting_metrics.templates_sent) * 100 
@@ -588,14 +663,14 @@ export default function SalesCoachingSettings() {
                         ))}
                         
                         {/* Rejections */}
-                        <div className="flex items-center gap-3 mt-2 pt-2 border-t">
-                          <UserX className="h-4 w-4 text-red-500 shrink-0" />
+                        <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-700/30">
+                          <UserX className="h-4 w-4 text-red-400 shrink-0" />
                           <div className="flex-1">
                             <div className="flex justify-between text-sm">
-                              <span className="text-red-500">Rejeições</span>
-                              <span className="font-medium text-red-500">
+                              <span className="text-red-400">Rejeições</span>
+                              <span className="font-medium text-red-400">
                                 {report.prospecting_metrics.rejections}
-                                <span className="text-muted-foreground ml-1">
+                                <span className="text-slate-500 ml-1">
                                   ({report.prospecting_metrics.rejection_rate.toFixed(1)}%)
                                 </span>
                               </span>
@@ -605,28 +680,19 @@ export default function SalesCoachingSettings() {
                       </div>
 
                       {/* KPI Summary */}
-                      <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t">
-                        <div className="text-center">
-                          <p className="text-2xl font-bold text-blue-500">
-                            {report.prospecting_metrics.response_rate.toFixed(1)}%
-                          </p>
-                          <p className="text-xs text-muted-foreground">Taxa de Resposta</p>
-                        </div>
-                        <div className="text-center">
-                          <p className={`text-2xl font-bold ${
-                            report.prospecting_metrics.conversion_rate >= 15 ? 'text-green-500' :
-                            report.prospecting_metrics.conversion_rate >= 10 ? 'text-yellow-500' : 'text-red-500'
-                          }`}>
-                            {report.prospecting_metrics.conversion_rate.toFixed(1)}%
-                          </p>
-                          <p className="text-xs text-muted-foreground">Taxa de Conversão</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-2xl font-bold text-red-500">
-                            {report.prospecting_metrics.rejection_rate.toFixed(1)}%
-                          </p>
-                          <p className="text-xs text-muted-foreground">Taxa de Rejeição</p>
-                        </div>
+                      <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-slate-700/30">
+                        {[
+                          { value: report.prospecting_metrics.response_rate, label: 'Taxa de Resposta', color: 'text-blue-400', glow: 'shadow-blue-500/20' },
+                          { value: report.prospecting_metrics.conversion_rate, label: 'Taxa de Conversão', color: report.prospecting_metrics.conversion_rate >= 15 ? 'text-emerald-400' : report.prospecting_metrics.conversion_rate >= 10 ? 'text-amber-400' : 'text-red-400', glow: report.prospecting_metrics.conversion_rate >= 15 ? 'shadow-emerald-500/20' : report.prospecting_metrics.conversion_rate >= 10 ? 'shadow-amber-500/20' : 'shadow-red-500/20' },
+                          { value: report.prospecting_metrics.rejection_rate, label: 'Taxa de Rejeição', color: 'text-red-400', glow: 'shadow-red-500/20' },
+                        ].map((kpi, idx) => (
+                          <div key={idx} className={cn("text-center p-3 rounded-xl bg-slate-800/60 shadow-lg", kpi.glow)}>
+                            <p className={cn("text-2xl font-bold", kpi.color)}>
+                              {kpi.value.toFixed(1)}%
+                            </p>
+                            <p className="text-xs text-slate-500">{kpi.label}</p>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -634,17 +700,17 @@ export default function SalesCoachingSettings() {
                   {/* Strengths */}
                   {report.strengths?.length > 0 && (
                     <div>
-                      <h5 className="font-medium flex items-center gap-2 mb-3 text-green-600">
+                      <h5 className="font-medium flex items-center gap-2 mb-3 text-emerald-400">
                         <TrendingUp className="h-4 w-4" />
                         Pontos Fortes
                       </h5>
                       <div className="space-y-2">
                         {report.strengths.map((s, i) => (
-                          <div key={i} className="p-3 bg-green-500/10 rounded-lg border border-green-500/20">
-                            <p className="font-medium text-sm">{s.title}</p>
-                            <p className="text-sm text-muted-foreground">{s.description}</p>
+                          <div key={i} className="p-4 bg-emerald-500/10 backdrop-blur-sm rounded-xl border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
+                            <p className="font-medium text-sm text-emerald-300">{s.title}</p>
+                            <p className="text-sm text-slate-400 mt-1">{s.description}</p>
                             {s.example && (
-                              <p className="text-xs mt-2 italic text-muted-foreground">"{s.example}"</p>
+                              <p className="text-xs mt-2 italic text-slate-500">"{s.example}"</p>
                             )}
                           </div>
                         ))}
@@ -655,18 +721,18 @@ export default function SalesCoachingSettings() {
                   {/* Improvement Areas */}
                   {report.improvement_areas?.length > 0 && (
                     <div>
-                      <h5 className="font-medium flex items-center gap-2 mb-3 text-amber-600">
+                      <h5 className="font-medium flex items-center gap-2 mb-3 text-amber-400">
                         <TrendingDown className="h-4 w-4" />
                         Áreas de Melhoria
                       </h5>
                       <div className="space-y-2">
                         {report.improvement_areas.map((area, i) => (
-                          <div key={i} className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
-                            <p className="font-medium text-sm">{area.title}</p>
-                            <p className="text-sm text-muted-foreground">{area.description}</p>
+                          <div key={i} className="p-4 bg-amber-500/10 backdrop-blur-sm rounded-xl border border-amber-500/30 shadow-lg shadow-amber-500/10">
+                            <p className="font-medium text-sm text-amber-300">{area.title}</p>
+                            <p className="text-sm text-slate-400 mt-1">{area.description}</p>
                             {area.suggestion && (
-                              <p className="text-xs mt-2 text-amber-600">
-                                Sugestão: {area.suggestion}
+                              <p className="text-xs mt-2 text-amber-400">
+                                💡 Sugestão: {area.suggestion}
                               </p>
                             )}
                           </div>
@@ -678,25 +744,26 @@ export default function SalesCoachingSettings() {
                   {/* Recommended Actions */}
                   {report.recommended_actions?.length > 0 && (
                     <div>
-                      <h5 className="font-medium flex items-center gap-2 mb-3">
-                        <Target className="h-4 w-4" />
+                      <h5 className="font-medium flex items-center gap-2 mb-3 text-white">
+                        <Target className="h-4 w-4 text-cyan-400" />
                         Ações Recomendadas
                       </h5>
                       <div className="space-y-2">
                         {report.recommended_actions
                           .sort((a, b) => a.priority - b.priority)
                           .map((action, i) => (
-                            <div key={i} className="p-3 bg-muted rounded-lg flex items-start gap-3">
-                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                action.priority === 1 ? 'bg-red-500/20 text-red-600' :
-                                action.priority === 2 ? 'bg-amber-500/20 text-amber-600' :
-                                'bg-blue-500/20 text-blue-600'
-                              }`}>
+                            <div key={i} className="p-4 bg-slate-800/60 backdrop-blur-sm rounded-xl border border-slate-700/30 flex items-start gap-3">
+                              <span className={cn(
+                                "px-2.5 py-1 rounded-full text-xs font-bold",
+                                action.priority === 1 ? 'bg-red-500/20 text-red-400 shadow-lg shadow-red-500/20' :
+                                action.priority === 2 ? 'bg-amber-500/20 text-amber-400 shadow-lg shadow-amber-500/20' :
+                                'bg-blue-500/20 text-blue-400 shadow-lg shadow-blue-500/20'
+                              )}>
                                 P{action.priority}
                               </span>
                               <div className="flex-1">
-                                <p className="text-sm">{action.action}</p>
-                                <p className="text-xs text-muted-foreground mt-1">
+                                <p className="text-sm text-white">{action.action}</p>
+                                <p className="text-xs text-slate-500 mt-1">
                                   Impacto: {action.impact}
                                 </p>
                               </div>
@@ -709,12 +776,12 @@ export default function SalesCoachingSettings() {
                   {/* Prompt Suggestions */}
                   {report.prompt_suggestions && (
                     <div>
-                      <h5 className="font-medium flex items-center gap-2 mb-3">
-                        <Lightbulb className="h-4 w-4" />
+                      <h5 className="font-medium flex items-center gap-2 mb-3 text-white">
+                        <Lightbulb className="h-4 w-4 text-amber-400" />
                         Sugestões para o Prompt
                       </h5>
-                      <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
-                        <p className="text-sm whitespace-pre-wrap">{report.prompt_suggestions}</p>
+                      <div className="p-4 bg-gradient-to-br from-violet-500/10 to-purple-500/10 backdrop-blur-sm rounded-xl border border-violet-500/30 shadow-lg shadow-violet-500/10">
+                        <p className="text-sm text-slate-300 whitespace-pre-wrap">{report.prompt_suggestions}</p>
                       </div>
                     </div>
                   )}
@@ -722,15 +789,15 @@ export default function SalesCoachingSettings() {
                   {/* Good Examples */}
                   {report.good_examples?.length > 0 && (
                     <div>
-                      <h5 className="font-medium flex items-center gap-2 mb-3 text-green-600">
+                      <h5 className="font-medium flex items-center gap-2 mb-3 text-emerald-400">
                         <CheckCircle className="h-4 w-4" />
                         Exemplos Positivos
                       </h5>
                       <div className="space-y-2">
                         {report.good_examples.map((ex, i) => (
-                          <div key={i} className="p-3 bg-green-500/5 rounded-lg border border-green-500/20">
-                            <p className="text-sm italic">"{ex.excerpt}"</p>
-                            <p className="text-xs text-green-600 mt-2">{ex.why_good}</p>
+                          <div key={i} className="p-4 bg-emerald-500/5 backdrop-blur-sm rounded-xl border border-emerald-500/20">
+                            <p className="text-sm italic text-slate-300">"{ex.excerpt}"</p>
+                            <p className="text-xs text-emerald-400 mt-2">✓ {ex.why_good}</p>
                           </div>
                         ))}
                       </div>
@@ -740,18 +807,18 @@ export default function SalesCoachingSettings() {
                   {/* Bad Examples */}
                   {report.bad_examples?.length > 0 && (
                     <div>
-                      <h5 className="font-medium flex items-center gap-2 mb-3 text-red-600">
+                      <h5 className="font-medium flex items-center gap-2 mb-3 text-red-400">
                         <AlertTriangle className="h-4 w-4" />
                         Exemplos a Melhorar
                       </h5>
                       <div className="space-y-2">
                         {report.bad_examples.map((ex, i) => (
-                          <div key={i} className="p-3 bg-red-500/5 rounded-lg border border-red-500/20">
-                            <p className="text-sm italic">"{ex.excerpt}"</p>
-                            <p className="text-xs text-red-600 mt-2">{ex.why_bad}</p>
+                          <div key={i} className="p-4 bg-red-500/5 backdrop-blur-sm rounded-xl border border-red-500/20">
+                            <p className="text-sm italic text-slate-300">"{ex.excerpt}"</p>
+                            <p className="text-xs text-red-400 mt-2">✗ {ex.why_bad}</p>
                             {ex.better_response && (
-                              <p className="text-xs text-green-600 mt-1">
-                                Melhor: "{ex.better_response}"
+                              <p className="text-xs text-emerald-400 mt-1">
+                                ✓ Melhor: "{ex.better_response}"
                               </p>
                             )}
                           </div>
