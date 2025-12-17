@@ -34,6 +34,12 @@ const GeneralSettings: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   
+  // Channel enable states
+  const [facebookWhatsappEnabled, setFacebookWhatsappEnabled] = useState(true);
+  const [facebookEmailEnabled, setFacebookEmailEnabled] = useState(true);
+  const [googleWhatsappEnabled, setGoogleWhatsappEnabled] = useState(true);
+  const [googleEmailEnabled, setGoogleEmailEnabled] = useState(true);
+  
   // Editor modal states
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<FullEmailTemplate | null>(null);
@@ -47,7 +53,7 @@ const GeneralSettings: React.FC = () => {
   const fetchSettings = async () => {
     const { data } = await supabase
       .from('nina_settings')
-      .select('facebook_lead_template, facebook_lead_email_template, google_lead_template, google_lead_email_template')
+      .select('facebook_lead_template, facebook_lead_email_template, google_lead_template, google_lead_email_template, facebook_whatsapp_enabled, facebook_email_enabled, google_whatsapp_enabled, google_email_enabled')
       .single();
     
     if (data?.facebook_lead_template) {
@@ -66,6 +72,12 @@ const GeneralSettings: React.FC = () => {
     } else {
       setGoogleEmailTemplateId('none');
     }
+    
+    // Load channel enable states (default to true if not set)
+    setFacebookWhatsappEnabled(data?.facebook_whatsapp_enabled ?? true);
+    setFacebookEmailEnabled(data?.facebook_email_enabled ?? true);
+    setGoogleWhatsappEnabled(data?.google_whatsapp_enabled ?? true);
+    setGoogleEmailEnabled(data?.google_email_enabled ?? true);
   };
 
   const fetchTemplates = async () => {
@@ -111,6 +123,33 @@ const GeneralSettings: React.FC = () => {
   const handleTestSound = () => {
     if (soundEnabled) {
       playNotificationSound();
+    }
+  };
+
+  const handleToggleChannel = async (source: 'facebook' | 'google', channel: 'whatsapp' | 'email', enabled: boolean) => {
+    const fieldName = `${source}_${channel}_enabled`;
+    
+    try {
+      const { error } = await supabase
+        .from('nina_settings')
+        .update({ [fieldName]: enabled })
+        .not('id', 'is', null);
+      
+      if (error) throw error;
+      
+      // Update local state
+      if (source === 'facebook' && channel === 'whatsapp') setFacebookWhatsappEnabled(enabled);
+      if (source === 'facebook' && channel === 'email') setFacebookEmailEnabled(enabled);
+      if (source === 'google' && channel === 'whatsapp') setGoogleWhatsappEnabled(enabled);
+      if (source === 'google' && channel === 'email') setGoogleEmailEnabled(enabled);
+      
+      const channelLabel = channel === 'whatsapp' ? 'WhatsApp' : 'Email';
+      const sourceLabel = source === 'facebook' ? 'Facebook' : 'Google';
+      
+      toast.success(`${channelLabel} ${sourceLabel} ${enabled ? 'ativado' : 'pausado'}`);
+    } catch (error) {
+      console.error('Error toggling channel:', error);
+      toast.error('Erro ao alterar configuração');
     }
   };
 
@@ -237,23 +276,34 @@ const GeneralSettings: React.FC = () => {
         
         <div className="space-y-4">
           {/* WhatsApp Template */}
-          <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
-            <div className="flex items-start gap-3 mb-4">
-              <MessageSquare className="w-5 h-5 text-green-400 mt-0.5" />
-              <div className="flex-1">
-                <Label className="text-sm font-medium text-white">
-                  Template WhatsApp para novos leads
-                </Label>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Enviado automaticamente quando lead do Facebook chega via Zapier
-                </p>
+          <div className={`p-4 bg-slate-800/50 rounded-lg border border-slate-700/50 transition-opacity ${!facebookWhatsappEnabled ? 'opacity-50' : ''}`}>
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex items-start gap-3">
+                <MessageSquare className="w-5 h-5 text-green-400 mt-0.5" />
+                <div className="flex-1">
+                  <Label className="text-sm font-medium text-white">
+                    Template WhatsApp para novos leads
+                  </Label>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Enviado automaticamente quando lead do Facebook chega via Zapier
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-medium ${facebookWhatsappEnabled ? 'text-green-400' : 'text-red-400'}`}>
+                  {facebookWhatsappEnabled ? 'Ativo' : 'Pausado'}
+                </span>
+                <Switch
+                  checked={facebookWhatsappEnabled}
+                  onCheckedChange={(enabled) => handleToggleChannel('facebook', 'whatsapp', enabled)}
+                />
               </div>
             </div>
             
             <Select 
               value={facebookTemplate} 
               onValueChange={setFacebookTemplate}
-              disabled={loading}
+              disabled={loading || !facebookWhatsappEnabled}
             >
               <SelectTrigger className="bg-slate-900/50 border-slate-700">
                 <SelectValue placeholder="Selecione um template..." />
@@ -272,16 +322,27 @@ const GeneralSettings: React.FC = () => {
           </div>
 
           {/* Email Template */}
-          <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
-            <div className="flex items-start gap-3 mb-4">
-              <Mail className="w-5 h-5 text-orange-400 mt-0.5" />
-              <div className="flex-1">
-                <Label className="text-sm font-medium text-white">
-                  Template de Email para novos leads
-                </Label>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Enviado automaticamente após WhatsApp (se lead tiver email)
-                </p>
+          <div className={`p-4 bg-slate-800/50 rounded-lg border border-slate-700/50 transition-opacity ${!facebookEmailEnabled ? 'opacity-50' : ''}`}>
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex items-start gap-3">
+                <Mail className="w-5 h-5 text-orange-400 mt-0.5" />
+                <div className="flex-1">
+                  <Label className="text-sm font-medium text-white">
+                    Template de Email para novos leads
+                  </Label>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Enviado automaticamente após WhatsApp (se lead tiver email)
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-medium ${facebookEmailEnabled ? 'text-green-400' : 'text-red-400'}`}>
+                  {facebookEmailEnabled ? 'Ativo' : 'Pausado'}
+                </span>
+                <Switch
+                  checked={facebookEmailEnabled}
+                  onCheckedChange={(enabled) => handleToggleChannel('facebook', 'email', enabled)}
+                />
               </div>
             </div>
             
@@ -289,7 +350,7 @@ const GeneralSettings: React.FC = () => {
               <Select 
                 value={emailTemplateId} 
                 onValueChange={setEmailTemplateId}
-                disabled={loading}
+                disabled={loading || !facebookEmailEnabled}
               >
                 <SelectTrigger className="bg-slate-900/50 border-slate-700 flex-1">
                   <SelectValue placeholder="Não enviar email" />
@@ -304,7 +365,7 @@ const GeneralSettings: React.FC = () => {
                 </SelectContent>
               </Select>
               
-              {emailTemplateId !== 'none' && (
+              {emailTemplateId !== 'none' && facebookEmailEnabled && (
                 <Button
                   variant="outline"
                   size="icon"
@@ -343,23 +404,34 @@ const GeneralSettings: React.FC = () => {
         
         <div className="space-y-4">
           {/* WhatsApp Template Google */}
-          <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
-            <div className="flex items-start gap-3 mb-4">
-              <MessageSquare className="w-5 h-5 text-green-400 mt-0.5" />
-              <div className="flex-1">
-                <Label className="text-sm font-medium text-white">
-                  Template WhatsApp para novos leads
-                </Label>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Enviado automaticamente quando lead do Google chega via webhook
-                </p>
+          <div className={`p-4 bg-slate-800/50 rounded-lg border border-slate-700/50 transition-opacity ${!googleWhatsappEnabled ? 'opacity-50' : ''}`}>
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex items-start gap-3">
+                <MessageSquare className="w-5 h-5 text-green-400 mt-0.5" />
+                <div className="flex-1">
+                  <Label className="text-sm font-medium text-white">
+                    Template WhatsApp para novos leads
+                  </Label>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Enviado automaticamente quando lead do Google chega via webhook
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-medium ${googleWhatsappEnabled ? 'text-green-400' : 'text-red-400'}`}>
+                  {googleWhatsappEnabled ? 'Ativo' : 'Pausado'}
+                </span>
+                <Switch
+                  checked={googleWhatsappEnabled}
+                  onCheckedChange={(enabled) => handleToggleChannel('google', 'whatsapp', enabled)}
+                />
               </div>
             </div>
             
             <Select 
               value={googleTemplate} 
               onValueChange={setGoogleTemplate}
-              disabled={loading}
+              disabled={loading || !googleWhatsappEnabled}
             >
               <SelectTrigger className="bg-slate-900/50 border-slate-700">
                 <SelectValue placeholder="Selecione um template..." />
@@ -378,16 +450,27 @@ const GeneralSettings: React.FC = () => {
           </div>
 
           {/* Email Template Google */}
-          <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
-            <div className="flex items-start gap-3 mb-4">
-              <Mail className="w-5 h-5 text-orange-400 mt-0.5" />
-              <div className="flex-1">
-                <Label className="text-sm font-medium text-white">
-                  Template de Email para novos leads
-                </Label>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Enviado automaticamente após WhatsApp (se lead tiver email)
-                </p>
+          <div className={`p-4 bg-slate-800/50 rounded-lg border border-slate-700/50 transition-opacity ${!googleEmailEnabled ? 'opacity-50' : ''}`}>
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex items-start gap-3">
+                <Mail className="w-5 h-5 text-orange-400 mt-0.5" />
+                <div className="flex-1">
+                  <Label className="text-sm font-medium text-white">
+                    Template de Email para novos leads
+                  </Label>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Enviado automaticamente após WhatsApp (se lead tiver email)
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-medium ${googleEmailEnabled ? 'text-green-400' : 'text-red-400'}`}>
+                  {googleEmailEnabled ? 'Ativo' : 'Pausado'}
+                </span>
+                <Switch
+                  checked={googleEmailEnabled}
+                  onCheckedChange={(enabled) => handleToggleChannel('google', 'email', enabled)}
+                />
               </div>
             </div>
             
@@ -395,7 +478,7 @@ const GeneralSettings: React.FC = () => {
               <Select 
                 value={googleEmailTemplateId} 
                 onValueChange={setGoogleEmailTemplateId}
-                disabled={loading}
+                disabled={loading || !googleEmailEnabled}
               >
                 <SelectTrigger className="bg-slate-900/50 border-slate-700 flex-1">
                   <SelectValue placeholder="Não enviar email" />
@@ -410,7 +493,7 @@ const GeneralSettings: React.FC = () => {
                 </SelectContent>
               </Select>
               
-              {googleEmailTemplateId !== 'none' && (
+              {googleEmailTemplateId !== 'none' && googleEmailEnabled && (
                 <Button
                   variant="outline"
                   size="icon"

@@ -200,13 +200,21 @@ serve(async (req) => {
     
     let conversationId: string | null = null;
     let templateSent = false;
+    let whatsappSkipped = false;
+    let emailSkipped = false;
     
     try {
-      // Buscar configurações (incluindo template do Google e email)
+      // Buscar configurações (incluindo template do Google, email e flags de habilitação)
       const { data: settings } = await supabase
         .from('nina_settings')
-        .select('google_lead_template, google_lead_email_template')
+        .select('google_lead_template, google_lead_email_template, google_whatsapp_enabled, google_email_enabled')
         .single();
+      
+      // Verificar se WhatsApp está habilitado
+      const whatsappEnabled = settings?.google_whatsapp_enabled ?? true;
+      const emailEnabled = settings?.google_email_enabled ?? true;
+      
+      console.log('[google-leadgen-webhook] Channel settings:', { whatsappEnabled, emailEnabled });
       
       // Buscar agente Adri (default agent)
       const { data: adri, error: adriError } = await supabase
@@ -262,9 +270,8 @@ serve(async (req) => {
           }
         }
         
-        // Só enviar template se temos conversationId
-        if (conversationId) {
-          
+        // Só enviar template WhatsApp se habilitado e temos conversationId
+        if (conversationId && whatsappEnabled) {
           // Usar template do payload > configuração do banco > fallback padrão
           const selectedTemplate = template_name || settings?.google_lead_template || 'lead_google_ads';
           const firstName = name.split(' ')[0];
@@ -298,15 +305,18 @@ serve(async (req) => {
             const errorText = await templateResponse.text();
             console.error('[google-leadgen-webhook] Error sending template:', errorText);
           }
+        } else if (!whatsappEnabled) {
+          whatsappSkipped = true;
+          console.log('[google-leadgen-webhook] WhatsApp DISABLED, skipping template send');
         }
       }
       
       // ========================================
-      // AUTOMAÇÃO 2: Enviar Email (se configurado e lead tem email)
+      // AUTOMAÇÃO 2: Enviar Email (se habilitado e configurado e lead tem email)
       // ========================================
       let emailSent = false;
       
-      if (email && settings?.google_lead_email_template) {
+      if (email && emailEnabled && settings?.google_lead_email_template) {
         try {
           console.log('[google-leadgen-webhook] Email template configured, fetching...');
           
@@ -380,14 +390,18 @@ serve(async (req) => {
           console.error('[google-leadgen-webhook] Email automation error:', emailError);
           // Não falha a requisição principal, apenas loga o erro
         }
+      } else if (!emailEnabled) {
+        emailSkipped = true;
+        console.log('[google-leadgen-webhook] Email DISABLED, skipping email send');
       } else {
         console.log('[google-leadgen-webhook] Email not sent:', {
           hasEmail: !!email,
+          emailEnabled,
           hasEmailTemplate: !!settings?.google_lead_email_template
         });
       }
       
-      console.log('[google-leadgen-webhook] Success:', { contactId, action, conversationId, templateSent, emailSent });
+      console.log('[google-leadgen-webhook] Success:', { contactId, action, conversationId, templateSent, emailSent, whatsappSkipped, emailSkipped });
       
       return new Response(
         JSON.stringify({ 
@@ -397,7 +411,9 @@ serve(async (req) => {
           phone: normalizedPhone,
           conversation_id: conversationId,
           template_sent: templateSent,
-          email_sent: emailSent
+          email_sent: emailSent,
+          whatsapp_skipped: whatsappSkipped,
+          email_skipped: emailSkipped
         }),
         { 
           status: 200, 
