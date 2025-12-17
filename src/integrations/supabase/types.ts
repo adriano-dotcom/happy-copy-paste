@@ -1142,10 +1142,14 @@ export type Database = {
           elevenlabs_stability: number
           elevenlabs_style: number
           elevenlabs_voice_id: string
+          facebook_email_enabled: boolean | null
           facebook_lead_email_template: string | null
           facebook_lead_template: string | null
+          facebook_whatsapp_enabled: boolean | null
+          google_email_enabled: boolean | null
           google_lead_email_template: string | null
           google_lead_template: string | null
+          google_whatsapp_enabled: boolean | null
           id: string
           is_active: boolean
           message_breaking_enabled: boolean
@@ -1201,10 +1205,14 @@ export type Database = {
           elevenlabs_stability?: number
           elevenlabs_style?: number
           elevenlabs_voice_id?: string
+          facebook_email_enabled?: boolean | null
           facebook_lead_email_template?: string | null
           facebook_lead_template?: string | null
+          facebook_whatsapp_enabled?: boolean | null
+          google_email_enabled?: boolean | null
           google_lead_email_template?: string | null
           google_lead_template?: string | null
+          google_whatsapp_enabled?: boolean | null
           id?: string
           is_active?: boolean
           message_breaking_enabled?: boolean
@@ -1260,10 +1268,14 @@ export type Database = {
           elevenlabs_stability?: number
           elevenlabs_style?: number
           elevenlabs_voice_id?: string
+          facebook_email_enabled?: boolean | null
           facebook_lead_email_template?: string | null
           facebook_lead_template?: string | null
+          facebook_whatsapp_enabled?: boolean | null
+          google_email_enabled?: boolean | null
           google_lead_email_template?: string | null
           google_lead_template?: string | null
+          google_whatsapp_enabled?: boolean | null
           id?: string
           is_active?: boolean
           message_breaking_enabled?: boolean
