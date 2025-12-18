@@ -145,7 +145,7 @@ serve(async (req) => {
       console.log(`[simulate-audio-webhook] Found existing contact: ${contact.id}`);
     }
 
-    // Find or create conversation
+    // Find or create conversation (tentar reativar conversa existente)
     let { data: conversation, error: convError } = await supabase
       .from('conversations')
       .select('*')
@@ -154,22 +154,55 @@ serve(async (req) => {
       .maybeSingle();
 
     if (!conversation) {
-      const { data: newConv, error: createConvError } = await supabase
+      // Buscar conversa INATIVA mais recente para reativar
+      const { data: inactiveConversation } = await supabase
         .from('conversations')
-        .insert({
-          contact_id: contact.id,
-          status: 'nina',
-          is_active: true,
-        })
-        .select()
-        .single();
+        .select('*')
+        .eq('contact_id', contact.id)
+        .eq('is_active', false)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (createConvError) {
-        console.error('Error creating conversation:', createConvError);
-        throw createConvError;
+      if (inactiveConversation) {
+        // Reativar conversa existente mantendo histórico
+        const { data: reactivatedConv, error: reactivateError } = await supabase
+          .from('conversations')
+          .update({
+            is_active: true,
+            status: 'nina',
+            whatsapp_window_start: new Date().toISOString()
+          })
+          .eq('id', inactiveConversation.id)
+          .select()
+          .single();
+
+        if (!reactivateError && reactivatedConv) {
+          conversation = reactivatedConv;
+          console.log(`[simulate-audio-webhook] Reactivated existing conversation: ${conversation.id}`);
+        } else {
+          console.error('Error reactivating conversation:', reactivateError);
+          throw reactivateError || new Error('Failed to reactivate conversation');
+        }
+      } else {
+        // Criar nova conversa apenas se não existir nenhuma
+        const { data: newConv, error: createConvError } = await supabase
+          .from('conversations')
+          .insert({
+            contact_id: contact.id,
+            status: 'nina',
+            is_active: true,
+          })
+          .select()
+          .single();
+
+        if (createConvError) {
+          console.error('Error creating conversation:', createConvError);
+          throw createConvError;
+        }
+        conversation = newConv;
+        console.log(`[simulate-audio-webhook] Created new conversation: ${conversation.id}`);
       }
-      conversation = newConv;
-      console.log(`[simulate-audio-webhook] Created new conversation: ${conversation.id}`);
     } else {
       console.log(`[simulate-audio-webhook] Found existing conversation: ${conversation.id}`);
     }

@@ -120,7 +120,7 @@ serve(async (req) => {
       console.log(`[simulate-webhook] Created new contact: ${contactId}`, region ? `(${region.city} - ${region.state})` : '');
     }
 
-    // Get or create active conversation
+    // Get or create active conversation (tentar reativar conversa existente)
     const { data: existingConversation } = await supabase
       .from('conversations')
       .select('*')
@@ -129,24 +129,59 @@ serve(async (req) => {
       .maybeSingle();
 
     let conversationId: string;
+    let conversationStatus: string = 'nina';
 
     if (existingConversation) {
       conversationId = existingConversation.id;
+      conversationStatus = existingConversation.status;
       console.log(`[simulate-webhook] Using existing conversation: ${conversationId}`);
     } else {
-      const { data: newConversation, error: convError } = await supabase
+      // Buscar conversa INATIVA mais recente para reativar
+      const { data: inactiveConversation } = await supabase
         .from('conversations')
-        .insert({
-          contact_id: contactId,
-          status: 'nina',
-          is_active: true,
-        })
-        .select()
-        .single();
+        .select('*')
+        .eq('contact_id', contactId)
+        .eq('is_active', false)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (convError) throw convError;
-      conversationId = newConversation.id;
-      console.log(`[simulate-webhook] Created new conversation: ${conversationId}`);
+      if (inactiveConversation) {
+        // Reativar conversa existente mantendo histórico
+        const { data: reactivatedConv, error: reactivateError } = await supabase
+          .from('conversations')
+          .update({
+            is_active: true,
+            status: 'nina',
+            whatsapp_window_start: new Date().toISOString()
+          })
+          .eq('id', inactiveConversation.id)
+          .select()
+          .single();
+
+        if (!reactivateError && reactivatedConv) {
+          conversationId = reactivatedConv.id;
+          conversationStatus = reactivatedConv.status;
+          console.log(`[simulate-webhook] Reactivated existing conversation: ${conversationId}`);
+        } else {
+          throw reactivateError || new Error('Failed to reactivate conversation');
+        }
+      } else {
+        // Criar nova conversa apenas se não existir nenhuma
+        const { data: newConversation, error: convError } = await supabase
+          .from('conversations')
+          .insert({
+            contact_id: contactId,
+            status: 'nina',
+            is_active: true,
+          })
+          .select()
+          .single();
+
+        if (convError) throw convError;
+        conversationId = newConversation.id;
+        console.log(`[simulate-webhook] Created new conversation: ${conversationId}`);
+      }
     }
 
     // Create message
@@ -173,14 +208,8 @@ serve(async (req) => {
       .eq('id', conversationId);
 
     // Queue for Nina processing if conversation is in 'nina' status
-    const { data: conversation } = await supabase
-      .from('conversations')
-      .select('status')
-      .eq('id', conversationId)
-      .maybeSingle();
-
     let queuedForNina = false;
-    if (conversation?.status === 'nina') {
+    if (conversationStatus === 'nina') {
       const { error: queueError } = await supabase
         .from('nina_processing_queue')
         .insert({
@@ -221,7 +250,7 @@ serve(async (req) => {
       conversation_id: conversationId,
       message_id: newMessage.id,
       queued_for_nina: queuedForNina,
-      conversation_status: conversation?.status,
+      conversation_status: conversationStatus,
     };
 
     console.log('[simulate-webhook] Result:', result);

@@ -575,7 +575,7 @@ async function processIncomingMessage(
     console.log('[Webhook] Using existing contact:', contact.id, 'found by phone variant');
   }
 
-  // 2. Get or create active conversation (usar limit(1) para evitar erro quando há múltiplas)
+  // 2. Get or create active conversation (tentar reativar conversa existente se não houver ativa)
   const { data: existingConversations } = await supabase
     .from('conversations')
     .select('*')
@@ -586,6 +586,37 @@ async function processIncomingMessage(
 
   let conversation = existingConversations?.[0] || null;
 
+  // Se não encontrou conversa ativa, buscar conversa INATIVA mais recente para reativar
+  if (!conversation) {
+    const { data: inactiveConversations } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('contact_id', contact.id)
+      .eq('is_active', false)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (inactiveConversations?.[0]) {
+      // Reativar conversa existente mantendo histórico
+      const { data: reactivatedConv, error: reactivateError } = await supabase
+        .from('conversations')
+        .update({
+          is_active: true,
+          status: 'nina', // Nina assume novamente
+          whatsapp_window_start: new Date().toISOString()
+        })
+        .eq('id', inactiveConversations[0].id)
+        .select()
+        .single();
+
+      if (!reactivateError && reactivatedConv) {
+        conversation = reactivatedConv;
+        console.log('[Webhook] Reactivated existing conversation:', conversation.id);
+      }
+    }
+  }
+
+  // Só cria nova conversa se realmente não existir nenhuma
   if (!conversation) {
     const { data: newConversation, error: convError } = await supabase
       .from('conversations')
