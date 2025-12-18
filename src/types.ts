@@ -349,6 +349,7 @@ export interface UIMessage {
   id: string;
   content: string;
   timestamp: string;
+  sentAt: string; // ISO date string for accurate date comparison
   direction: MessageDirection;
   type: MessageType;
   status: 'sent' | 'delivered' | 'read' | 'failed' | 'processing';
@@ -433,6 +434,7 @@ export function transformDBToUIMessage(msg: DBMessage): UIMessage {
     id: msg.id,
     content: msg.content || '',
     timestamp: formatMessageTime(msg.sent_at),
+    sentAt: msg.sent_at,
     direction: msg.from_type === 'user' ? MessageDirection.INCOMING : MessageDirection.OUTGOING,
     type: mapDBMessageType(msg.type),
     status: mapDBMessageStatus(msg.status),

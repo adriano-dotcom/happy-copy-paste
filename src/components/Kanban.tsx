@@ -826,6 +826,7 @@ const Kanban: React.FC = () => {
                                 content: msg.content || '',
                                 fromType: msg.from_type as 'user' | 'nina' | 'human',
                                 timestamp: msg.sent_at,
+                                sentAt: msg.sent_at,
                                 status: msg.status || 'sent',
                                 type: msg.type || 'text',
                                 direction: msg.from_type === 'user' ? MessageDirection.INCOMING : MessageDirection.OUTGOING,
