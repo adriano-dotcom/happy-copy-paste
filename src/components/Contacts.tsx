@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X, CheckSquare, Square, Minus, AlertTriangle, Send, Tag, User, CalendarDays } from 'lucide-react';
+import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X, CheckSquare, Square, Minus, AlertTriangle, Send, Tag, User, CalendarDays, Archive } from 'lucide-react';
 import { useUserRole } from '@/hooks/useUserRole';
 import { Button } from './ui/button';
 import { api } from '../services/api';
@@ -57,6 +57,9 @@ interface ExtendedContact extends Contact {
   pipelineSlug?: string;
   pipelineIcon?: string;
   pipelineColor?: string;
+  // Conversation data
+  conversationActive?: boolean | null;
+  conversationStatus?: string;
 }
 
 const Contacts: React.FC = () => {
@@ -99,10 +102,11 @@ const Contacts: React.FC = () => {
   const [verticalFilter, setVerticalFilter] = useState<'all' | 'transporte' | 'frotas' | 'none'>('all');
   const [availableCampaigns, setAvailableCampaigns] = useState<{id: string; name: string; color: string | null}[]>([]);
   
-  // New filters: Owner and Pipeline
+  // New filters: Owner, Pipeline, and Chat status
   const [ownerFilter, setOwnerFilter] = useState<string>('all');
   const [pipelineFilter, setPipelineFilter] = useState<string>('all');
   const [createdDateFilter, setCreatedDateFilter] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month'>('all');
+  const [chatStatusFilter, setChatStatusFilter] = useState<'all' | 'active' | 'archived' | 'none'>('all');
   const [availableOwners, setAvailableOwners] = useState<{id: string; name: string}[]>([]);
   const [availablePipelines, setAvailablePipelines] = useState<{id: string; name: string; slug: string; icon: string | null; color: string | null}[]>([]);
 
@@ -345,6 +349,17 @@ const Contacts: React.FC = () => {
       });
     }
     
+    // Filtrar por status de conversa (chat)
+    if (chatStatusFilter !== 'all') {
+      if (chatStatusFilter === 'none') {
+        filtered = filtered.filter(c => (c as ExtendedContact).conversationActive === null || (c as ExtendedContact).conversationActive === undefined);
+      } else if (chatStatusFilter === 'active') {
+        filtered = filtered.filter(c => (c as ExtendedContact).conversationActive === true);
+      } else if (chatStatusFilter === 'archived') {
+        filtered = filtered.filter(c => (c as ExtendedContact).conversationActive === false);
+      }
+    }
+    
     // Filtrar por termo de busca (incluindo campanha e responsável)
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
@@ -454,9 +469,30 @@ const Contacts: React.FC = () => {
     setOwnerFilter('all');
     setPipelineFilter('all');
     setCreatedDateFilter('all');
+    setChatStatusFilter('all');
   };
   
-  const hasActiveFilters = selectedStatuses.length > 0 || cnpjFilter !== 'all' || channelFilter !== 'all' || dateFilter !== 'all' || letterFilter !== 'all' || campaignFilter !== 'all' || verticalFilter !== 'all' || ownerFilter !== 'all' || pipelineFilter !== 'all' || createdDateFilter !== 'all';
+  const hasActiveFilters = selectedStatuses.length > 0 || cnpjFilter !== 'all' || channelFilter !== 'all' || dateFilter !== 'all' || letterFilter !== 'all' || campaignFilter !== 'all' || verticalFilter !== 'all' || ownerFilter !== 'all' || pipelineFilter !== 'all' || createdDateFilter !== 'all' || chatStatusFilter !== 'all';
+  
+  const getChatStatusBadge = (contact: ExtendedContact) => {
+    if (contact.conversationActive === null || contact.conversationActive === undefined) {
+      return <span className="text-slate-600 text-xs">—</span>;
+    }
+    if (contact.conversationActive) {
+      return (
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-500/10 text-green-400 border border-green-500/20 inline-flex items-center gap-1">
+          <MessageSquare className="w-3 h-3" />
+          Ativo
+        </span>
+      );
+    }
+    return (
+      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-700/50 text-slate-400 border border-slate-600/30 inline-flex items-center gap-1">
+        <Archive className="w-3 h-3" />
+        Arquivado
+      </span>
+    );
+  };
   
   const getPipelineBadge = (contact: ExtendedContact) => {
     if (!contact.pipelineSlug) return <span className="text-slate-600 text-xs">-</span>;
@@ -746,6 +782,38 @@ const Contacts: React.FC = () => {
                     </PopoverContent>
                   </Popover>
                 </th>
+                {/* Chat Status Header with Filter */}
+                <th className="px-4 py-4">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors">
+                        <MessageSquare className="w-3 h-3" />
+                        Chat
+                        <ChevronDown className="w-3 h-3" />
+                        {chatStatusFilter !== 'all' && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="bg-slate-900 border-slate-700 w-44 p-2">
+                      <div className="space-y-1">
+                        {[
+                          { value: 'all', label: 'Todos' },
+                          { value: 'active', label: '🟢 Ativo no chat', color: 'text-green-400' },
+                          { value: 'archived', label: '⬜ Arquivado', color: 'text-slate-400' },
+                          { value: 'none', label: 'Sem conversa', color: 'text-slate-500' }
+                        ].map(opt => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setChatStatusFilter(opt.value as typeof chatStatusFilter)}
+                            className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${chatStatusFilter === opt.value ? 'bg-slate-800 text-cyan-400' : opt.color || 'text-slate-300'}`}
+                          >
+                            {opt.label}
+                            {chatStatusFilter === opt.value && <span className="text-cyan-400">✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </th>
                 {/* Campaign Header with Filter - Only show on Outbound tab */}
                 {activeTab === 'outbound' && (
                   <th className="px-4 py-4">
@@ -1008,6 +1076,10 @@ const Contacts: React.FC = () => {
                     ) : (
                       <span className="text-slate-600 text-xs">-</span>
                     )}
+                  </td>
+                  {/* Chat Status Cell */}
+                  <td className="px-4 py-4">
+                    {getChatStatusBadge(contact as ExtendedContact)}
                   </td>
                   {/* Campaign Cell - Only show on Outbound tab */}
                   {activeTab === 'outbound' && (
