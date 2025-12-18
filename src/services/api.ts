@@ -281,23 +281,48 @@ export const api = {
   },
 
   /**
-   * Fetch contacts from database
+   * Fetch contacts from database with deal/owner/pipeline data
    */
   fetchContacts: async (): Promise<Contact[]> => {
-    const { data, error } = await supabase
+    // Fetch contacts
+    const { data: contactsData, error: contactsError } = await supabase
       .from('contacts')
       .select('*')
       .order('last_activity', { ascending: false })
-      .limit(100);
+      .limit(500);
 
-    if (error) {
-      console.error('[API] Error fetching contacts:', error);
-      return MOCK_CONTACTS; // Fallback to mock data
+    if (contactsError) {
+      console.error('[API] Error fetching contacts:', contactsError);
+      return MOCK_CONTACTS;
     }
 
-    if (!data || data.length === 0) {
-      return MOCK_CONTACTS; // Return mock if no data
+    if (!contactsData || contactsData.length === 0) {
+      return MOCK_CONTACTS;
     }
+
+    // Fetch deals with owner and pipeline info
+    const contactIds = contactsData.map(c => c.id);
+    const { data: dealsData } = await supabase
+      .from('deals')
+      .select(`
+        id,
+        contact_id,
+        owner_id,
+        pipeline_id,
+        created_at,
+        team_members!deals_owner_id_fkey(id, name),
+        pipelines(id, name, slug, icon, color)
+      `)
+      .in('contact_id', contactIds)
+      .order('created_at', { ascending: false });
+
+    // Create a map of contact_id to deal info (most recent deal per contact)
+    const dealsByContact = new Map<string, any>();
+    (dealsData || []).forEach(deal => {
+      if (!dealsByContact.has(deal.contact_id)) {
+        dealsByContact.set(deal.contact_id, deal);
+      }
+    });
 
     // Format CNPJ for display
     const formatCNPJDisplay = (cnpj: string | null) => {
@@ -307,31 +332,47 @@ export const api = {
       return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`;
     };
 
-    return data.map(c => ({
-      id: c.id,
-      name: c.name || c.call_name || c.phone_number,
-      phone: c.phone_number,
-      email: c.email || '',
-      company: (c as any).company || undefined,
-      cnpj: formatCNPJDisplay((c as any).cnpj),
-      cep: (c as any).cep || undefined,
-      street: (c as any).street || undefined,
-      number: (c as any).number || undefined,
-      complement: (c as any).complement || undefined,
-      neighborhood: (c as any).neighborhood || undefined,
-      city: (c as any).city || undefined,
-      state: (c as any).state || undefined,
-      notes: c.notes || undefined,
-      status: ((c as any).lead_status || 'new') as 'new' | 'lead' | 'qualified' | 'customer' | 'churned',
-      lastContact: new Date(c.last_activity).toLocaleDateString('pt-BR'),
-      lead_source: (c as any).lead_source || 'inbound',
-      whatsapp_id: c.whatsapp_id || undefined,
-      utm_source: (c as any).utm_source || undefined,
-      utm_campaign: (c as any).utm_campaign || undefined,
-      utm_content: (c as any).utm_content || undefined,
-      utm_term: (c as any).utm_term || undefined,
-      campaign: (c as any).campaign || undefined
-    }));
+    return contactsData.map(c => {
+      const deal = dealsByContact.get(c.id);
+      const owner = deal?.team_members;
+      const pipeline = deal?.pipelines;
+
+      return {
+        id: c.id,
+        name: c.name || c.call_name || c.phone_number,
+        phone: c.phone_number,
+        email: c.email || '',
+        company: (c as any).company || undefined,
+        cnpj: formatCNPJDisplay((c as any).cnpj),
+        cep: (c as any).cep || undefined,
+        street: (c as any).street || undefined,
+        number: (c as any).number || undefined,
+        complement: (c as any).complement || undefined,
+        neighborhood: (c as any).neighborhood || undefined,
+        city: (c as any).city || undefined,
+        state: (c as any).state || undefined,
+        notes: c.notes || undefined,
+        status: ((c as any).lead_status || 'new') as 'new' | 'lead' | 'qualified' | 'customer' | 'churned',
+        lastContact: new Date(c.last_activity).toLocaleDateString('pt-BR'),
+        created_at: c.created_at,
+        lead_source: (c as any).lead_source || 'inbound',
+        whatsapp_id: c.whatsapp_id || undefined,
+        utm_source: (c as any).utm_source || undefined,
+        utm_campaign: (c as any).utm_campaign || undefined,
+        utm_content: (c as any).utm_content || undefined,
+        utm_term: (c as any).utm_term || undefined,
+        campaign: (c as any).campaign || undefined,
+        vertical: (c as any).vertical || undefined,
+        // Deal/Owner/Pipeline data
+        ownerId: owner?.id || undefined,
+        ownerName: owner?.name || undefined,
+        pipelineId: pipeline?.id || undefined,
+        pipelineName: pipeline?.name || undefined,
+        pipelineSlug: pipeline?.slug || undefined,
+        pipelineIcon: pipeline?.icon || undefined,
+        pipelineColor: pipeline?.color || undefined,
+      };
+    });
   },
 
   /**
