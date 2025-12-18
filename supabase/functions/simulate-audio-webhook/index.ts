@@ -116,12 +116,36 @@ serve(async (req) => {
 
     const phoneNumberId = settings?.whatsapp_phone_number_id || 'simulated';
 
-    // Find or create contact
-    let { data: contact, error: contactError } = await supabase
+    // Find or create contact - first try by whatsapp_id, then by phone
+    let contact = null;
+    
+    // Try to find by whatsapp_id first (most reliable)
+    const { data: contactByWaId } = await supabase
       .from('contacts')
       .select('*')
-      .eq('phone_number', phone)
+      .eq('whatsapp_id', phone)
       .maybeSingle();
+    
+    if (contactByWaId) {
+      contact = contactByWaId;
+      console.log(`[simulate-audio-webhook] Found existing contact by whatsapp_id: ${contact.id}`);
+    } else {
+      // Fallback to phone_number search
+      const { data: contactByPhone } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('phone_number', phone)
+        .maybeSingle();
+      
+      if (contactByPhone) {
+        contact = contactByPhone;
+        // Update whatsapp_id if not set
+        if (!contact.whatsapp_id) {
+          await supabase.from('contacts').update({ whatsapp_id: phone }).eq('id', contact.id);
+          console.log(`[simulate-audio-webhook] Updated whatsapp_id for contact: ${contact.id}`);
+        }
+      }
+    }
 
     if (!contact) {
       const { data: newContact, error: createError } = await supabase

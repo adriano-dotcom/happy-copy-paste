@@ -80,22 +80,41 @@ serve(async (req) => {
 
     const phoneNumberId = settings?.whatsapp_phone_number_id || 'test_phone_id';
 
-    // Get or create contact
-    const { data: existingContact } = await supabase
+    // Get or create contact - first try by whatsapp_id, then by phone
+    let existingContact = null;
+    
+    // Try to find by whatsapp_id first (most reliable)
+    const { data: contactByWaId } = await supabase
       .from('contacts')
       .select('*')
-      .eq('phone_number', phone)
+      .eq('whatsapp_id', phone)
       .maybeSingle();
+    
+    if (contactByWaId) {
+      existingContact = contactByWaId;
+    } else {
+      // Fallback to phone_number search
+      const { data: contactByPhone } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('phone_number', phone)
+        .maybeSingle();
+      existingContact = contactByPhone;
+    }
 
     let contactId: string;
 
     if (existingContact) {
       contactId = existingContact.id;
-      // Update name if provided
-      if (name && existingContact.name !== name) {
+      // Update name if provided, and ensure whatsapp_id is set
+      const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+      if (name && existingContact.name !== name) updates.name = name;
+      if (!existingContact.whatsapp_id) updates.whatsapp_id = phone;
+      
+      if (Object.keys(updates).length > 1) {
         await supabase
           .from('contacts')
-          .update({ name, updated_at: new Date().toISOString() })
+          .update(updates)
           .eq('id', contactId);
       }
       console.log(`[simulate-webhook] Using existing contact: ${contactId}`);
