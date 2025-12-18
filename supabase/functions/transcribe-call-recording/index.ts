@@ -58,13 +58,35 @@ serve(async (req) => {
 
     console.log(`[transcribe-call-recording] Baixando áudio de: ${callLog.record_url}`);
 
-    // Baixar o áudio da gravação
-    const audioResponse = await fetch(callLog.record_url);
-    if (!audioResponse.ok) {
-      throw new Error(`Erro ao baixar áudio: ${audioResponse.status}`);
+    // Baixar o áudio da gravação com redirect manual para evitar loops
+    const audioResponse = await fetch(callLog.record_url, {
+      redirect: 'manual',
+    });
+    
+    // Se for redirect, seguir manualmente uma vez
+    let finalResponse = audioResponse;
+    if (audioResponse.status >= 300 && audioResponse.status < 400) {
+      const redirectUrl = audioResponse.headers.get('location');
+      if (redirectUrl) {
+        console.log(`[transcribe-call-recording] Seguindo redirect para: ${redirectUrl}`);
+        finalResponse = await fetch(redirectUrl, { redirect: 'manual' });
+        
+        // Se ainda for redirect, tentar mais uma vez
+        if (finalResponse.status >= 300 && finalResponse.status < 400) {
+          const secondRedirect = finalResponse.headers.get('location');
+          if (secondRedirect) {
+            console.log(`[transcribe-call-recording] Seguindo segundo redirect para: ${secondRedirect}`);
+            finalResponse = await fetch(secondRedirect);
+          }
+        }
+      }
+    }
+    
+    if (!finalResponse.ok && finalResponse.status < 300) {
+      throw new Error(`Erro ao baixar áudio: ${finalResponse.status}`);
     }
 
-    const audioBlob = await audioResponse.blob();
+    const audioBlob = await finalResponse.blob();
     console.log(`[transcribe-call-recording] Áudio baixado: ${audioBlob.size} bytes, tipo: ${audioBlob.type}`);
 
     // Buscar API key do ElevenLabs (mesmo usado para TTS)
