@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X, CheckSquare, Square, Minus, AlertTriangle, Send, Tag } from 'lucide-react';
+import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X, CheckSquare, Square, Minus, AlertTriangle, Send, Tag, User, CalendarDays } from 'lucide-react';
 import { useUserRole } from '@/hooks/useUserRole';
 import { Button } from './ui/button';
 import { api } from '../services/api';
@@ -48,6 +48,15 @@ interface ExtendedContact extends Contact {
   utm_term?: string;
   campaign?: string;
   vertical?: 'transporte' | 'frotas';
+  created_at?: string;
+  // Deal/Owner/Pipeline data
+  ownerId?: string;
+  ownerName?: string;
+  pipelineId?: string;
+  pipelineName?: string;
+  pipelineSlug?: string;
+  pipelineIcon?: string;
+  pipelineColor?: string;
 }
 
 const Contacts: React.FC = () => {
@@ -89,6 +98,13 @@ const Contacts: React.FC = () => {
   const [campaignFilter, setCampaignFilter] = useState<string>('all');
   const [verticalFilter, setVerticalFilter] = useState<'all' | 'transporte' | 'frotas' | 'none'>('all');
   const [availableCampaigns, setAvailableCampaigns] = useState<{id: string; name: string; color: string | null}[]>([]);
+  
+  // New filters: Owner and Pipeline
+  const [ownerFilter, setOwnerFilter] = useState<string>('all');
+  const [pipelineFilter, setPipelineFilter] = useState<string>('all');
+  const [createdDateFilter, setCreatedDateFilter] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month'>('all');
+  const [availableOwners, setAvailableOwners] = useState<{id: string; name: string}[]>([]);
+  const [availablePipelines, setAvailablePipelines] = useState<{id: string; name: string; slug: string; icon: string | null; color: string | null}[]>([]);
 
   const handleConverse = async (contactId: string) => {
     try {
@@ -160,9 +176,19 @@ const Contacts: React.FC = () => {
     if (data) setAvailableCampaigns(data);
   };
 
+  const loadFiltersData = async () => {
+    const [ownersRes, pipelinesRes] = await Promise.all([
+      supabase.from('team_members').select('id, name').eq('status', 'active').order('name'),
+      supabase.from('pipelines').select('id, name, slug, icon, color').eq('is_active', true).order('name')
+    ]);
+    if (ownersRes.data) setAvailableOwners(ownersRes.data);
+    if (pipelinesRes.data) setAvailablePipelines(pipelinesRes.data);
+  };
+
   useEffect(() => {
     loadContacts();
     loadCampaigns();
+    loadFiltersData();
   }, []);
 
   const getStatusColor = (status: string) => {
@@ -278,17 +304,60 @@ const Contacts: React.FC = () => {
       }
     }
     
-    // Filtrar por termo de busca (incluindo campanha)
+    // Filtrar por responsável (owner)
+    if (ownerFilter !== 'all') {
+      if (ownerFilter === 'none') {
+        filtered = filtered.filter(c => !(c as ExtendedContact).ownerId);
+      } else {
+        filtered = filtered.filter(c => (c as ExtendedContact).ownerId === ownerFilter);
+      }
+    }
+    
+    // Filtrar por pipeline (tipo)
+    if (pipelineFilter !== 'all') {
+      if (pipelineFilter === 'none') {
+        filtered = filtered.filter(c => !(c as ExtendedContact).pipelineId);
+      } else {
+        filtered = filtered.filter(c => (c as ExtendedContact).pipelineSlug === pipelineFilter);
+      }
+    }
+    
+    // Filtrar por data de criação
+    if (createdDateFilter !== 'all') {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterdayStart = new Date(todayStart);
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+      const weekStart = new Date(todayStart);
+      weekStart.setDate(weekStart.getDate() - 7);
+      const monthStart = new Date(todayStart);
+      monthStart.setMonth(monthStart.getMonth() - 1);
+      
+      filtered = filtered.filter(contact => {
+        const extContact = contact as ExtendedContact;
+        if (!extContact.created_at) return false;
+        const contactDate = new Date(extContact.created_at);
+        if (createdDateFilter === 'today') return contactDate >= todayStart;
+        if (createdDateFilter === 'yesterday') return contactDate >= yesterdayStart && contactDate < todayStart;
+        if (createdDateFilter === 'week') return contactDate >= weekStart;
+        if (createdDateFilter === 'month') return contactDate >= monthStart;
+        return true;
+      });
+    }
+    
+    // Filtrar por termo de busca (incluindo campanha e responsável)
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
-      filtered = filtered.filter(contact => 
-        contact.name.toLowerCase().includes(search) ||
-        contact.email?.toLowerCase().includes(search) ||
-        contact.phone?.includes(search) ||
-        contact.company?.toLowerCase().includes(search) ||
-        contact.cnpj?.includes(search) ||
-        (contact as ExtendedContact).campaign?.toLowerCase().includes(search)
-      );
+      filtered = filtered.filter(contact => {
+        const extContact = contact as ExtendedContact;
+        return contact.name.toLowerCase().includes(search) ||
+          contact.email?.toLowerCase().includes(search) ||
+          contact.phone?.includes(search) ||
+          contact.company?.toLowerCase().includes(search) ||
+          contact.cnpj?.includes(search) ||
+          extContact.campaign?.toLowerCase().includes(search) ||
+          extContact.ownerName?.toLowerCase().includes(search);
+      });
     }
     
     return filtered;
@@ -382,9 +451,33 @@ const Contacts: React.FC = () => {
     setLetterFilter('all');
     setCampaignFilter('all');
     setVerticalFilter('all');
+    setOwnerFilter('all');
+    setPipelineFilter('all');
+    setCreatedDateFilter('all');
   };
   
-  const hasActiveFilters = selectedStatuses.length > 0 || cnpjFilter !== 'all' || channelFilter !== 'all' || dateFilter !== 'all' || letterFilter !== 'all' || campaignFilter !== 'all' || verticalFilter !== 'all';
+  const hasActiveFilters = selectedStatuses.length > 0 || cnpjFilter !== 'all' || channelFilter !== 'all' || dateFilter !== 'all' || letterFilter !== 'all' || campaignFilter !== 'all' || verticalFilter !== 'all' || ownerFilter !== 'all' || pipelineFilter !== 'all' || createdDateFilter !== 'all';
+  
+  const getPipelineBadge = (contact: ExtendedContact) => {
+    if (!contact.pipelineSlug) return <span className="text-slate-600 text-xs">-</span>;
+    
+    const icon = contact.pipelineIcon || '📋';
+    const name = contact.pipelineName || '';
+    const color = contact.pipelineColor || '#3b82f6';
+    
+    return (
+      <span 
+        className="px-2 py-0.5 rounded-full text-[10px] font-medium inline-flex items-center gap-1 border"
+        style={{ 
+          backgroundColor: `${color}15`, 
+          borderColor: `${color}30`,
+          color: color 
+        }}
+      >
+        {icon} {name}
+      </span>
+    );
+  };
   
   const getVerticalBadge = (vertical?: 'transporte' | 'frotas') => {
     if (vertical === 'transporte') {
@@ -530,6 +623,123 @@ const Contacts: React.FC = () => {
                               {option.label}
                             </span>
                             {selectedStatuses.includes(option.value) && <span className="text-cyan-400">✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </th>
+                {/* Pipeline/Tipo Header with Filter */}
+                <th className="px-4 py-4">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors">
+                        Tipo
+                        <ChevronDown className="w-3 h-3" />
+                        {pipelineFilter !== 'all' && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="bg-slate-900 border-slate-700 w-48 p-2">
+                      <div className="space-y-1 max-h-60 overflow-y-auto">
+                        <button
+                          onClick={() => setPipelineFilter('all')}
+                          className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${pipelineFilter === 'all' ? 'bg-slate-800 text-cyan-400' : 'text-slate-300'}`}
+                        >
+                          Todos os tipos
+                          {pipelineFilter === 'all' && <span>✓</span>}
+                        </button>
+                        {availablePipelines.map(pipeline => (
+                          <button
+                            key={pipeline.id}
+                            onClick={() => setPipelineFilter(pipeline.slug)}
+                            className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${pipelineFilter === pipeline.slug ? 'bg-slate-800 text-cyan-400' : 'text-slate-300'}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span>{pipeline.icon || '📋'}</span>
+                              <span>{pipeline.name}</span>
+                            </div>
+                            {pipelineFilter === pipeline.slug && <span>✓</span>}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => setPipelineFilter('none')}
+                          className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${pipelineFilter === 'none' ? 'bg-slate-800 text-cyan-400' : 'text-slate-500'}`}
+                        >
+                          Sem pipeline
+                          {pipelineFilter === 'none' && <span>✓</span>}
+                        </button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </th>
+                {/* Responsável Header with Filter */}
+                <th className="px-4 py-4">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors">
+                        <User className="w-3 h-3" />
+                        Responsável
+                        <ChevronDown className="w-3 h-3" />
+                        {ownerFilter !== 'all' && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="bg-slate-900 border-slate-700 w-48 p-2">
+                      <div className="space-y-1 max-h-60 overflow-y-auto">
+                        <button
+                          onClick={() => setOwnerFilter('all')}
+                          className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${ownerFilter === 'all' ? 'bg-slate-800 text-cyan-400' : 'text-slate-300'}`}
+                        >
+                          Todos
+                          {ownerFilter === 'all' && <span>✓</span>}
+                        </button>
+                        {availableOwners.map(owner => (
+                          <button
+                            key={owner.id}
+                            onClick={() => setOwnerFilter(owner.id)}
+                            className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${ownerFilter === owner.id ? 'bg-slate-800 text-cyan-400' : 'text-slate-300'}`}
+                          >
+                            {owner.name}
+                            {ownerFilter === owner.id && <span>✓</span>}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => setOwnerFilter('none')}
+                          className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${ownerFilter === 'none' ? 'bg-slate-800 text-cyan-400' : 'text-slate-500'}`}
+                        >
+                          Sem responsável
+                          {ownerFilter === 'none' && <span>✓</span>}
+                        </button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </th>
+                {/* Data Criação Header with Filter */}
+                <th className="px-4 py-4">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors">
+                        <CalendarDays className="w-3 h-3" />
+                        Criado em
+                        <ChevronDown className="w-3 h-3" />
+                        {createdDateFilter !== 'all' && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="bg-slate-900 border-slate-700 w-40 p-2">
+                      <div className="space-y-1">
+                        {[
+                          { value: 'all', label: 'Todos' },
+                          { value: 'today', label: 'Hoje' },
+                          { value: 'yesterday', label: 'Ontem' },
+                          { value: 'week', label: 'Última semana' },
+                          { value: 'month', label: 'Último mês' }
+                        ].map(opt => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setCreatedDateFilter(opt.value as typeof createdDateFilter)}
+                            className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${createdDateFilter === opt.value ? 'bg-slate-800 text-cyan-400' : 'text-slate-300'}`}
+                          >
+                            {opt.label}
+                            {createdDateFilter === opt.value && <span>✓</span>}
                           </button>
                         ))}
                       </div>
@@ -773,6 +983,31 @@ const Contacts: React.FC = () => {
                         ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                  </td>
+                  {/* Pipeline/Tipo Cell */}
+                  <td className="px-4 py-4">
+                    {getPipelineBadge(contact as ExtendedContact)}
+                  </td>
+                  {/* Responsável Cell */}
+                  <td className="px-4 py-4">
+                    {(contact as ExtendedContact).ownerName ? (
+                      <span className="text-slate-300 text-xs flex items-center gap-1.5">
+                        <User className="w-3 h-3 text-slate-500" />
+                        {(contact as ExtendedContact).ownerName?.split(' ')[0]}
+                      </span>
+                    ) : (
+                      <span className="text-slate-600 text-xs">-</span>
+                    )}
+                  </td>
+                  {/* Data Criação Cell */}
+                  <td className="px-4 py-4">
+                    {(contact as ExtendedContact).created_at ? (
+                      <span className="text-slate-400 text-xs">
+                        {new Date((contact as ExtendedContact).created_at!).toLocaleDateString('pt-BR')}
+                      </span>
+                    ) : (
+                      <span className="text-slate-600 text-xs">-</span>
+                    )}
                   </td>
                   {/* Campaign Cell - Only show on Outbound tab */}
                   {activeTab === 'outbound' && (
