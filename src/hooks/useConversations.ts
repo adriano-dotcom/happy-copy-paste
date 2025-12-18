@@ -252,6 +252,7 @@ export function useConversations() {
       id: tempId,
       content,
       timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      sentAt: new Date().toISOString(),
       direction: MessageDirection.OUTGOING,
       type: MessageType.TEXT,
       status: 'sent',
