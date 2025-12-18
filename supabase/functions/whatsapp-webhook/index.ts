@@ -347,6 +347,69 @@ serve(async (req) => {
   }
 });
 
+// Extract text from image using Gemini Vision OCR
+async function extractTextFromImage(
+  imageBuffer: ArrayBuffer,
+  mimeType: string,
+  lovableApiKey: string
+): Promise<string | null> {
+  try {
+    console.log('[OCR] Starting image text extraction, size:', imageBuffer.byteLength, 'bytes');
+    
+    // Convert ArrayBuffer to base64
+    const base64Image = base64Encode(imageBuffer);
+    
+    // Call Gemini Vision to extract text
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`
+              }
+            },
+            {
+              type: 'text',
+              text: 'Extraia TODO o texto visível nesta imagem. Se houver números de CNPJ, CPF, telefone ou endereços, extraia-os com precisão. Retorne APENAS o texto extraído, sem explicações ou comentários adicionais. Se não conseguir ler nenhum texto, responda apenas: [imagem sem texto legível]'
+            }
+          ]
+        }],
+        max_tokens: 1000
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[OCR] Gemini Vision error:', response.status, errorText);
+      return null;
+    }
+
+    const data = await response.json();
+    const extractedText = data.choices?.[0]?.message?.content?.trim();
+
+    if (extractedText && extractedText !== '[imagem sem texto legível]') {
+      console.log('[OCR] Texto extraído com sucesso:', extractedText.substring(0, 100) + '...');
+      return extractedText;
+    }
+    
+    console.log('[OCR] Nenhum texto legível encontrado na imagem');
+    return null;
+
+  } catch (error) {
+    console.error('[OCR] Error extracting text from image:', error);
+    return null;
+  }
+}
+
 // Download media from WhatsApp API and upload to Supabase Storage
 async function downloadAndStoreMedia(
   supabase: any, 
@@ -354,10 +417,10 @@ async function downloadAndStoreMedia(
   mediaId: string,
   contactPhone: string,
   messageType: string
-): Promise<{ storageUrl: string | null; audioBuffer: ArrayBuffer | null; mimeType: string | null }> {
+): Promise<{ storageUrl: string | null; mediaBuffer: ArrayBuffer | null; mimeType: string | null }> {
   if (!settings?.whatsapp_access_token) {
     console.error('[Webhook] No WhatsApp access token configured');
-    return { storageUrl: null, audioBuffer: null, mimeType: null };
+    return { storageUrl: null, mediaBuffer: null, mimeType: null };
   }
 
   try {
@@ -375,16 +438,16 @@ async function downloadAndStoreMedia(
     if (!mediaInfoResponse.ok) {
       const errorText = await mediaInfoResponse.text();
       console.error('[Webhook] Failed to get media info:', errorText);
-      return { storageUrl: null, audioBuffer: null, mimeType: null };
+      return { storageUrl: null, mediaBuffer: null, mimeType: null };
     }
 
     const mediaInfo = await mediaInfoResponse.json();
     const mediaUrl = mediaInfo.url;
-    const mimeType = mediaInfo.mime_type || 'audio/ogg';
+    const mimeType = mediaInfo.mime_type || 'application/octet-stream';
 
     if (!mediaUrl) {
       console.error('[Webhook] No media URL in response');
-      return { storageUrl: null, audioBuffer: null, mimeType: null };
+      return { storageUrl: null, mediaBuffer: null, mimeType: null };
     }
 
     // Step 2: Download the actual media from WhatsApp
@@ -398,16 +461,19 @@ async function downloadAndStoreMedia(
     if (!mediaResponse.ok) {
       const errorText = await mediaResponse.text();
       console.error('[Webhook] Failed to download media:', errorText);
-      return { storageUrl: null, audioBuffer: null, mimeType: null };
+      return { storageUrl: null, mediaBuffer: null, mimeType: null };
     }
 
-    const audioBuffer = await mediaResponse.arrayBuffer();
-    console.log('[Webhook] Downloaded media, size:', audioBuffer.byteLength, 'bytes');
+    const mediaBuffer = await mediaResponse.arrayBuffer();
+    console.log('[Webhook] Downloaded media, size:', mediaBuffer.byteLength, 'bytes');
 
     // Step 3: Generate unique filename and upload to Supabase Storage
     const fileExtension = mimeType.includes('ogg') ? 'ogg' : 
                           mimeType.includes('mp4') ? 'mp4' : 
-                          mimeType.includes('mpeg') ? 'mp3' : 'ogg';
+                          mimeType.includes('mpeg') ? 'mp3' :
+                          mimeType.includes('jpeg') ? 'jpg' :
+                          mimeType.includes('png') ? 'png' :
+                          mimeType.includes('webp') ? 'webp' : 'bin';
     const timestamp = Date.now();
     const sanitizedPhone = contactPhone.replace(/\D/g, '');
     const fileName = `${messageType}/${sanitizedPhone}/${timestamp}_${mediaId.substring(0, 8)}.${fileExtension}`;
@@ -415,7 +481,7 @@ async function downloadAndStoreMedia(
     console.log('[Webhook] Uploading to Storage:', fileName);
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('whatsapp-media')
-      .upload(fileName, audioBuffer, {
+      .upload(fileName, mediaBuffer, {
         contentType: mimeType,
         cacheControl: '31536000', // 1 year cache
         upsert: false
@@ -423,7 +489,7 @@ async function downloadAndStoreMedia(
 
     if (uploadError) {
       console.error('[Webhook] Storage upload error:', uploadError);
-      return { storageUrl: null, audioBuffer, mimeType };
+      return { storageUrl: null, mediaBuffer, mimeType };
     }
 
     // Step 4: Get public URL
@@ -434,11 +500,11 @@ async function downloadAndStoreMedia(
     const storageUrl = urlData?.publicUrl || null;
     console.log('[Webhook] Media stored successfully:', storageUrl);
 
-    return { storageUrl, audioBuffer, mimeType };
+    return { storageUrl, mediaBuffer, mimeType };
 
   } catch (error) {
     console.error('[Webhook] Error downloading/storing media:', error);
-    return { storageUrl: null, audioBuffer: null, mimeType: null };
+    return { storageUrl: null, mediaBuffer: null, mimeType: null };
   }
 }
 
@@ -552,18 +618,36 @@ async function processIncomingMessage(
     case 'image':
       messageType = 'image';
       mediaType = 'image';
-      content = message.image?.caption || null;
-      // Download and store the image
+      const imageCaption = message.image?.caption || null;
+      // Download, store, and OCR the image
       const imageMediaId = message.image?.id;
       if (imageMediaId && settings?.whatsapp_access_token) {
         console.log('[Webhook] Processing image message:', imageMediaId);
-        const { storageUrl: imageStorageUrl } = await downloadAndStoreMedia(
-          supabase, settings, imageMediaId, normalizedPhone, 'image'
-        );
+        const { storageUrl: imageStorageUrl, mediaBuffer: imageBuffer, mimeType: imageMimeType } = 
+          await downloadAndStoreMedia(supabase, settings, imageMediaId, normalizedPhone, 'image');
+        
         if (imageStorageUrl) {
           mediaUrl = imageStorageUrl;
           console.log('[Webhook] Image stored at:', imageStorageUrl);
         }
+        
+        // Try to extract text from image via OCR
+        if (imageBuffer && imageMimeType && lovableApiKey) {
+          const extractedText = await extractTextFromImage(imageBuffer, imageMimeType, lovableApiKey);
+          if (extractedText) {
+            // Combine caption (if any) with extracted text
+            content = imageCaption 
+              ? `${imageCaption}\n\n[Texto extraído da imagem: ${extractedText}]`
+              : `[Texto extraído da imagem: ${extractedText}]`;
+            console.log('[Webhook] Image OCR successful');
+          } else {
+            content = imageCaption || '[imagem]';
+          }
+        } else {
+          content = imageCaption || '[imagem]';
+        }
+      } else {
+        content = imageCaption || '[imagem]';
       }
       break;
     case 'audio':
@@ -573,7 +657,7 @@ async function processIncomingMessage(
       const audioMediaId = message.audio?.id;
       if (audioMediaId && settings?.whatsapp_access_token) {
         console.log('[Webhook] Processing audio message:', audioMediaId);
-        const { storageUrl, audioBuffer, mimeType: audioMimeType } = await downloadAndStoreMedia(
+        const { storageUrl, mediaBuffer: audioBuffer, mimeType: audioMimeType } = await downloadAndStoreMedia(
           supabase, settings, audioMediaId, normalizedPhone, 'audio'
         );
         
