@@ -99,11 +99,27 @@ function getPhoneVariants(phone: string): string[] {
   return variants;
 }
 
-// Find contact by phone with flexible matching
+// Find contact by phone OR whatsapp_id with flexible matching
 async function findContactByPhone(supabase: any, phoneNumber: string): Promise<any | null> {
+  // First, try to find by whatsapp_id (most reliable - doesn't change with phone format)
+  const { data: contactByWaId, error: waIdError } = await supabase
+    .from('contacts')
+    .select('*')
+    .eq('whatsapp_id', phoneNumber)
+    .maybeSingle();
+  
+  if (waIdError) {
+    console.error('[Webhook] Error searching contacts by whatsapp_id:', waIdError);
+  }
+  
+  if (contactByWaId) {
+    console.log('[Webhook] Found existing contact by whatsapp_id:', contactByWaId.id);
+    return contactByWaId;
+  }
+  
+  // Then try by phone variants (for backwards compatibility)
   const variants = getPhoneVariants(phoneNumber);
   
-  // Try to find contact with any of the phone variants
   const { data: contacts, error } = await supabase
     .from('contacts')
     .select('*')
@@ -115,9 +131,18 @@ async function findContactByPhone(supabase: any, phoneNumber: string): Promise<a
   }
   
   if (contacts && contacts.length > 0) {
-    // Return the first match (should usually be just one)
     const contact = contacts[0];
     console.log('[Webhook] Found existing contact with phone variant:', contact.phone_number);
+    
+    // Update whatsapp_id if not set (for older contacts)
+    if (!contact.whatsapp_id && phoneNumber) {
+      await supabase
+        .from('contacts')
+        .update({ whatsapp_id: phoneNumber })
+        .eq('id', contact.id);
+      console.log('[Webhook] Updated whatsapp_id for contact:', contact.id);
+    }
+    
     return contact;
   }
   
