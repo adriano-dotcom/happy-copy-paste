@@ -588,29 +588,54 @@ const ChatInterface: React.FC = () => {
         .maybeSingle();
       
       if (deal) {
-        // Find "Perdido" stage for this pipeline
-        const { data: lostStage } = await supabase
-          .from('pipeline_stages')
-          .select('id')
-          .eq('pipeline_id', deal.pipeline_id)
-          .eq('title', 'Perdido')
-          .maybeSingle();
-        
-        if (lostStage) {
-          await supabase
-            .from('deals')
-            .update({
-              stage_id: lostStage.id,
-              lost_at: new Date().toISOString(),
-              lost_reason: closeReason || 'Lead desqualificado/encerrado'
-            })
-            .eq('id', deal.id);
+        if (closeReason === 'Enviado ao Pipedrive') {
+          // Find "Enviado Pipedrive" stage for this pipeline
+          const { data: pipedriveStage } = await supabase
+            .from('pipeline_stages')
+            .select('id')
+            .eq('pipeline_id', deal.pipeline_id)
+            .ilike('title', '%pipedrive%')
+            .maybeSingle();
+          
+          if (pipedriveStage) {
+            await supabase
+              .from('deals')
+              .update({ stage_id: pipedriveStage.id })
+              .eq('id', deal.id);
+          }
+          
+          toast.success('Atendimento encerrado', {
+            description: 'Lead enviado ao Pipedrive - continuar por lá'
+          });
+        } else {
+          // Find "Perdido" stage for this pipeline
+          const { data: lostStage } = await supabase
+            .from('pipeline_stages')
+            .select('id')
+            .eq('pipeline_id', deal.pipeline_id)
+            .eq('title', 'Perdido')
+            .maybeSingle();
+          
+          if (lostStage) {
+            await supabase
+              .from('deals')
+              .update({
+                stage_id: lostStage.id,
+                lost_at: new Date().toISOString(),
+                lost_reason: closeReason || 'Lead desqualificado/encerrado'
+              })
+              .eq('id', deal.id);
+          }
+          
+          toast.success('Atendimento encerrado', {
+            description: 'Lead movido para Perdido e automações desativadas'
+          });
         }
+      } else {
+        toast.success('Atendimento encerrado', {
+          description: 'Conversa encerrada'
+        });
       }
-      
-      toast.success('Atendimento encerrado', {
-        description: 'Lead movido para Perdido e automações desativadas'
-      });
       
       setShowCloseModal(false);
       setCloseReason('');
@@ -2430,7 +2455,10 @@ const ChatInterface: React.FC = () => {
                 Encerrar Atendimento
               </h3>
               <p className="text-sm text-slate-400 mt-1">
-                O lead será marcado como "Perdido" e não receberá mais automações.
+                {closeReason === 'Enviado ao Pipedrive' 
+                  ? 'O lead será movido para "Enviado Pipedrive" e o atendimento continuará por lá.'
+                  : 'O lead será marcado como "Perdido" e não receberá mais automações.'
+                }
               </p>
             </div>
             <div className="p-6 space-y-4">
@@ -2450,6 +2478,7 @@ const ChatInterface: React.FC = () => {
                   <option value="Número errado/inválido">Número errado/inválido</option>
                   <option value="Já tem corretor">Já tem corretor</option>
                   <option value="Sem resposta">Sem resposta</option>
+                  <option value="Enviado ao Pipedrive">Enviado ao Pipedrive</option>
                   <option value="Outro">Outro</option>
                 </select>
               </div>
