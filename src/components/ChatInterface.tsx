@@ -47,6 +47,7 @@ import { QuickQuestionsDropdown } from './QuickQuestionsDropdown';
 import { formatRegionFromPhone } from '@/utils/dddRegionMapper';
 import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, MessageToneAssistant, ConversationSummaryNotes } from './chat';
 import { EmailComposeModal } from './EmailComposeModal';
+import { SendToPipedriveModal } from './chat/SendToPipedriveModal';
 
 interface AgentQuestion {
   order: number;
@@ -130,6 +131,7 @@ const ChatInterface: React.FC = () => {
   const [closeReason, setCloseReason] = useState('');
   const [isClosingConversation, setIsClosingConversation] = useState(false);
   const [isReopeningConversation, setIsReopeningConversation] = useState(false);
+  const [showPipedriveModalFromClose, setShowPipedriveModalFromClose] = useState(false);
   
   // Input refs for keyboard shortcuts
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -587,50 +589,37 @@ const ChatInterface: React.FC = () => {
         .limit(1)
         .maybeSingle();
       
+      // Se for "Enviado ao Pipedrive", abrir o modal do Pipedrive ao invés de encerrar diretamente
+      if (closeReason === 'Enviado ao Pipedrive') {
+        setShowCloseModal(false);
+        setShowPipedriveModalFromClose(true);
+        setIsClosingConversation(false);
+        return;
+      }
+
       if (deal) {
-        if (closeReason === 'Enviado ao Pipedrive') {
-          // Find "Enviado Pipedrive" stage for this pipeline
-          const { data: pipedriveStage } = await supabase
-            .from('pipeline_stages')
-            .select('id')
-            .eq('pipeline_id', deal.pipeline_id)
-            .ilike('title', '%pipedrive%')
-            .maybeSingle();
-          
-          if (pipedriveStage) {
-            await supabase
-              .from('deals')
-              .update({ stage_id: pipedriveStage.id })
-              .eq('id', deal.id);
-          }
-          
-          toast.success('Atendimento encerrado', {
-            description: 'Lead enviado ao Pipedrive - continuar por lá'
-          });
-        } else {
-          // Find "Perdido" stage for this pipeline
-          const { data: lostStage } = await supabase
-            .from('pipeline_stages')
-            .select('id')
-            .eq('pipeline_id', deal.pipeline_id)
-            .eq('title', 'Perdido')
-            .maybeSingle();
-          
-          if (lostStage) {
-            await supabase
-              .from('deals')
-              .update({
-                stage_id: lostStage.id,
-                lost_at: new Date().toISOString(),
-                lost_reason: closeReason || 'Lead desqualificado/encerrado'
-              })
-              .eq('id', deal.id);
-          }
-          
-          toast.success('Atendimento encerrado', {
-            description: 'Lead movido para Perdido e automações desativadas'
-          });
+        // Find "Perdido" stage for this pipeline
+        const { data: lostStage } = await supabase
+          .from('pipeline_stages')
+          .select('id')
+          .eq('pipeline_id', deal.pipeline_id)
+          .eq('title', 'Perdido')
+          .maybeSingle();
+        
+        if (lostStage) {
+          await supabase
+            .from('deals')
+            .update({
+              stage_id: lostStage.id,
+              lost_at: new Date().toISOString(),
+              lost_reason: closeReason || 'Lead desqualificado/encerrado'
+            })
+            .eq('id', deal.id);
         }
+        
+        toast.success('Atendimento encerrado', {
+          description: 'Lead movido para Perdido e automações desativadas'
+        });
       } else {
         toast.success('Atendimento encerrado', {
           description: 'Conversa encerrada'
@@ -646,6 +635,31 @@ const ChatInterface: React.FC = () => {
       toast.error('Erro ao encerrar atendimento');
     } finally {
       setIsClosingConversation(false);
+    }
+  };
+
+  // Handle after Pipedrive modal sends successfully (from close flow)
+  const handlePipedriveSent = async () => {
+    if (!activeChat) return;
+    
+    try {
+      // Encerrar a conversa após envio ao Pipedrive
+      await supabase
+        .from('conversations')
+        .update({ is_active: false, status: 'closed' })
+        .eq('id', activeChat.id);
+      
+      toast.success('Lead enviado ao Pipedrive!', {
+        description: 'Conversa encerrada - continuar atendimento pelo Pipedrive'
+      });
+      
+      setShowPipedriveModalFromClose(false);
+      setCloseReason('');
+      setSelectedChatId(null);
+      refetch();
+    } catch (error) {
+      console.error('Error closing conversation after Pipedrive:', error);
+      toast.error('Erro ao encerrar conversa');
     }
   };
 
@@ -2558,6 +2572,29 @@ const ChatInterface: React.FC = () => {
             toast.success('Email enviado com sucesso!');
             setShowEmailModal(false);
           }}
+        />
+      )}
+
+      {/* Pipedrive Modal (from close flow) */}
+      {activeChat && (
+        <SendToPipedriveModal
+          open={showPipedriveModalFromClose}
+          onOpenChange={(open) => {
+            setShowPipedriveModalFromClose(open);
+            if (!open) setCloseReason('');
+          }}
+          contact={{
+            id: activeChat.contactId,
+            name: activeChat.contactName,
+            phone_number: activeChat.contactPhone,
+            email: activeChat.contactEmail,
+            company: activeChat.contactCompany,
+            tags: activeChat.tags
+          }}
+          dealId={existingDeal?.id}
+          conversationId={activeChat.id}
+          onSent={handlePipedriveSent}
+          initialNotes={activeChat.notes}
         />
       )}
     </div>
