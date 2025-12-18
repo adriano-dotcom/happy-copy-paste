@@ -281,7 +281,7 @@ export const api = {
   },
 
   /**
-   * Fetch contacts from database with deal/owner/pipeline data
+   * Fetch contacts from database with deal/owner/pipeline/conversation data
    */
   fetchContacts: async (): Promise<Contact[]> => {
     // Fetch contacts
@@ -302,25 +302,43 @@ export const api = {
 
     // Fetch deals with owner and pipeline info
     const contactIds = contactsData.map(c => c.id);
-    const { data: dealsData } = await supabase
-      .from('deals')
-      .select(`
-        id,
-        contact_id,
-        owner_id,
-        pipeline_id,
-        created_at,
-        team_members!deals_owner_id_fkey(id, name),
-        pipelines(id, name, slug, icon, color)
-      `)
-      .in('contact_id', contactIds)
-      .order('created_at', { ascending: false });
+    const [dealsResult, conversationsResult] = await Promise.all([
+      supabase
+        .from('deals')
+        .select(`
+          id,
+          contact_id,
+          owner_id,
+          pipeline_id,
+          created_at,
+          team_members!deals_owner_id_fkey(id, name),
+          pipelines(id, name, slug, icon, color)
+        `)
+        .in('contact_id', contactIds)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('conversations')
+        .select('contact_id, is_active, status, updated_at')
+        .in('contact_id', contactIds)
+        .order('updated_at', { ascending: false })
+    ]);
+
+    const dealsData = dealsResult.data;
+    const conversationsData = conversationsResult.data;
 
     // Create a map of contact_id to deal info (most recent deal per contact)
     const dealsByContact = new Map<string, any>();
     (dealsData || []).forEach(deal => {
       if (!dealsByContact.has(deal.contact_id)) {
         dealsByContact.set(deal.contact_id, deal);
+      }
+    });
+
+    // Create a map of contact_id to conversation info (most recent conversation per contact)
+    const conversationsByContact = new Map<string, any>();
+    (conversationsData || []).forEach(conv => {
+      if (!conversationsByContact.has(conv.contact_id)) {
+        conversationsByContact.set(conv.contact_id, conv);
       }
     });
 
@@ -336,6 +354,7 @@ export const api = {
       const deal = dealsByContact.get(c.id);
       const owner = deal?.team_members;
       const pipeline = deal?.pipelines;
+      const conversation = conversationsByContact.get(c.id);
 
       return {
         id: c.id,
@@ -371,6 +390,9 @@ export const api = {
         pipelineSlug: pipeline?.slug || undefined,
         pipelineIcon: pipeline?.icon || undefined,
         pipelineColor: pipeline?.color || undefined,
+        // Conversation data
+        conversationActive: conversation?.is_active ?? null,
+        conversationStatus: conversation?.status || undefined,
       };
     });
   },
