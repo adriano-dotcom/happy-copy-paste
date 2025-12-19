@@ -82,9 +82,12 @@ const ChatInterface: React.FC = () => {
   const [viewingArchived, setViewingArchived] = useState(false);
   const [archivedCount, setArchivedCount] = useState(0);
   
-  // Status filter state - includes 'sofia' as special value
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<ConversationStatus | 'sofia' | null>(null);
+  // Status filter state - includes agent slugs as special values
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<ConversationStatus | string | null>(null);
   const [showClosedConversations, setShowClosedConversations] = useState(false);
+  
+  // Agents for filter (fetched from DB)
+  const [filterAgents, setFilterAgents] = useState<Array<{ id: string; name: string; slug: string }>>([]);
   
   // Owner filter state
   const [selectedOwnerFilter, setSelectedOwnerFilter] = useState<string | null>(null);
@@ -369,14 +372,17 @@ const ChatInterface: React.FC = () => {
     };
     loadExtension();
 
-    // Fetch available agents
+    // Fetch available agents (for both agent selector and status filters)
     supabase
       .from('agents')
       .select('id, name, slug')
       .eq('is_active', true)
       .order('name')
       .then(({ data }) => {
-        if (data) setAvailableAgents(data);
+        if (data) {
+          setAvailableAgents(data);
+          setFilterAgents(data);
+        }
       });
   }, []);
 
@@ -945,13 +951,20 @@ const ChatInterface: React.FC = () => {
         ? conversations.filter(c => c.pipelineId === selectedPipelineFilter)
         : conversations;
     
+    // Calculate counts per agent dynamically
+    const agentCounts: Record<string, number> = {};
+    filterAgents.forEach(agent => {
+      agentCounts[agent.slug] = baseConversations.filter(
+        c => c.status === 'nina' && c.agentSlug === agent.slug
+      ).length;
+    });
+    
     return {
-      nina: baseConversations.filter(c => c.status === 'nina' && c.agentSlug !== 'sofia').length,
-      sofia: baseConversations.filter(c => c.status === 'nina' && c.agentSlug === 'sofia').length,
+      agents: agentCounts,
       human: baseConversations.filter(c => c.status === 'human').length,
       paused: baseConversations.filter(c => c.status === 'paused').length,
     };
-  }, [conversations, selectedPipelineFilter]);
+  }, [conversations, selectedPipelineFilter, filterAgents]);
 
   // Calculate available owners for filter (based on selected pipeline and status)
   const availableOwners = useMemo(() => {
@@ -994,13 +1007,14 @@ const ChatInterface: React.FC = () => {
         return false;
       }
       
-      // Status filter - handle 'sofia' as special case
-      if (selectedStatusFilter === 'sofia') {
-        if (chat.status !== 'nina' || chat.agentSlug !== 'sofia') return false;
-      } else if (selectedStatusFilter === 'nina') {
-        if (chat.status !== 'nina' || chat.agentSlug === 'sofia') return false;
-      } else if (selectedStatusFilter && chat.status !== selectedStatusFilter) {
-        return false;
+      // Status filter - handle agent slugs as special case
+      const agentSlugs = filterAgents.map(a => a.slug);
+      if (selectedStatusFilter && agentSlugs.includes(selectedStatusFilter)) {
+        // Filter by specific agent
+        if (chat.status !== 'nina' || chat.agentSlug !== selectedStatusFilter) return false;
+      } else if (selectedStatusFilter && (selectedStatusFilter === 'human' || selectedStatusFilter === 'paused' || selectedStatusFilter === 'closed')) {
+        // Standard status filter
+        if (chat.status !== selectedStatusFilter) return false;
       }
       
       // Owner filter
@@ -1270,33 +1284,33 @@ const ChatInterface: React.FC = () => {
                 Status
               </button>
               
-              {/* Nina/Adri */}
-              <button
-                onClick={() => setSelectedStatusFilter('nina')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
-                  selectedStatusFilter === 'nina'
-                    ? 'bg-violet-500/20 text-violet-400 border-violet-500/40'
-                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
-                }`}
-              >
-                <Bot className="w-3.5 h-3.5" />
-                {sdrName || 'Nina'}
-                <span className="text-[10px] opacity-70">({statusCounts.nina})</span>
-              </button>
-              
-              {/* Sofia */}
-              <button
-                onClick={() => setSelectedStatusFilter('sofia')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
-                  selectedStatusFilter === 'sofia'
-                    ? 'bg-purple-500/20 text-purple-400 border-purple-500/40'
-                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
-                }`}
-              >
-                <Bot className="w-3.5 h-3.5" />
-                Sofia
-                <span className="text-[10px] opacity-70">({statusCounts.sofia})</span>
-              </button>
+              {/* Agentes IA - renderizado dinamicamente */}
+              {filterAgents.map((agent) => {
+                // Cores específicas por agente
+                const agentColors: Record<string, string> = {
+                  'adri': 'bg-violet-500/20 text-violet-400 border-violet-500/40',
+                  'sofia': 'bg-purple-500/20 text-purple-400 border-purple-500/40',
+                  'leonardo': 'bg-blue-500/20 text-blue-400 border-blue-500/40',
+                  'barbara-saude': 'bg-pink-500/20 text-pink-400 border-pink-500/40',
+                };
+                const activeColor = agentColors[agent.slug] || 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40';
+                
+                return (
+                  <button
+                    key={agent.id}
+                    onClick={() => setSelectedStatusFilter(agent.slug)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                      selectedStatusFilter === agent.slug
+                        ? activeColor
+                        : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                    }`}
+                  >
+                    <Bot className="w-3.5 h-3.5" />
+                    {agent.name}
+                    <span className="text-[10px] opacity-70">({statusCounts.agents[agent.slug] || 0})</span>
+                  </button>
+                );
+              })}
               
               {/* Humano */}
               <button
