@@ -52,6 +52,7 @@ function hasExplicitCargoInterest(messageContent: string): boolean {
 // Insurance types that are NOT handled by transport specialists (Adri, Barbara, Leo)
 // These will be handled by Sofia (generic insurance agent)
 const OUT_OF_SCOPE_INSURANCE_KEYWORDS: Record<string, string[]> = {
+  // Tipos existentes
   'auto': ['seguro auto', 'seguro carro', 'seguro do carro', 'seguro do meu carro', 'seguro veículo particular', 'seguro veiculo particular', 'seguro meu veículo', 'seguro meu veiculo'],
   'residencial': ['seguro residencial', 'seguro residencia', 'seguro da casa', 'seguro casa', 'seguro do apartamento', 'seguro apartamento', 'seguro apto', 'seguro imóvel', 'seguro imovel'],
   'vida': ['seguro de vida', 'seguro vida', 'seguro morte', 'seguro pessoal'],
@@ -62,10 +63,26 @@ const OUT_OF_SCOPE_INSURANCE_KEYWORDS: Record<string, string[]> = {
   'fianca': ['seguro fiança', 'seguro fianca', 'seguro aluguel', 'seguro locatício', 'seguro locaticio'],
   'empresarial': ['seguro empresa', 'seguro empresarial', 'seguro comercial', 'seguro patrimônio', 'seguro patrimonio', 'seguro do negócio', 'seguro do negocio'],
   'frota_geral': ['seguro frota', 'frota de veículos', 'frota de veiculos', 'vários veículos', 'varios veiculos', 'seguro moto', 'seguro motocicleta'],
+  
+  // Novos tipos adicionados
+  'garantia': ['seguro garantia', 'garantia contratual', 'garantia de obra', 'seguro performance', 'garantia licitação', 'garantia licitacao', 'garantia judicial', 'seguro garantia contratual'],
+  'rc': ['responsabilidade civil', 'seguro rc', 'rc profissional', 'rc geral', 'danos a terceiros', 'seguro responsabilidade', 'rc médica', 'rc medica', 'rc advogado', 'rc engenheiro'],
+  'deo': ['seguro d&o', 'd&o', 'directors and officers', 'seguro diretores', 'seguro executivos', 'responsabilidade de gestores', 'd and o'],
+  'equipamentos': ['seguro equipamentos', 'seguro máquinas', 'seguro maquinas', 'seguro eletrônicos', 'seguro eletronicos', 'seguro notebook', 'seguro computador', 'seguro maquinário', 'seguro maquinario'],
+  'condominio': ['seguro condomínio', 'seguro condominio', 'seguro prédio', 'seguro predio', 'seguro do condomínio', 'seguro do condominio', 'seguro predial'],
+  'rural': ['seguro rural', 'seguro agrícola', 'seguro agricola', 'seguro safra', 'seguro fazenda', 'seguro gado', 'seguro pecuário', 'seguro pecuario', 'seguro plantação', 'seguro plantacao', 'seguro colheita'],
+  'nautico': ['seguro barco', 'seguro lancha', 'seguro jet ski', 'seguro jetski', 'seguro embarcação', 'seguro embarcacao', 'seguro iate', 'seguro marítimo', 'seguro maritimo', 'seguro náutico', 'seguro nautico'],
+  'aeronautico': ['seguro avião', 'seguro aviao', 'seguro helicóptero', 'seguro helicoptero', 'seguro aeronave', 'seguro drone', 'seguro aeronáutico', 'seguro aeronautico', 'seguro asa delta', 'seguro parapente'],
+  'saude': ['plano de saúde', 'plano de saude', 'seguro saúde', 'seguro saude', 'convênio médico', 'convenio medico', 'assistência médica', 'assistencia medica', 'plano médico', 'plano medico'],
+  'odonto': ['plano odonto', 'plano odontológico', 'plano odontologico', 'seguro dental', 'plano dentário', 'plano dentario', 'convênio dental', 'convenio dental', 'plano dente'],
+  'previdencia': ['previdência privada', 'previdencia privada', 'pgbl', 'vgbl', 'aposentadoria privada', 'plano de aposentadoria', 'fundo de previdência', 'fundo de previdencia', 'plano previdenciário', 'plano previdenciario'],
+  'consorcio': ['consórcio', 'consorcio', 'consórcio imóvel', 'consorcio imovel', 'consórcio carro', 'consorcio carro', 'consórcio auto', 'consorcio auto', 'carta de crédito', 'carta de credito'],
+  'cyber': ['seguro cyber', 'seguro digital', 'proteção de dados', 'protecao de dados', 'seguro vazamento', 'seguro cibernético', 'seguro cibernetico', 'seguro ataque hacker', 'seguro ransomware', 'lgpd'],
 };
 
 // Map type to friendly name in Portuguese
 const INSURANCE_TYPE_NAMES: Record<string, string> = {
+  // Tipos existentes
   'auto': 'Seguro Auto',
   'residencial': 'Seguro Residencial',
   'vida': 'Seguro de Vida',
@@ -76,6 +93,21 @@ const INSURANCE_TYPE_NAMES: Record<string, string> = {
   'fianca': 'Seguro Fiança',
   'empresarial': 'Seguro Empresarial',
   'frota_geral': 'Seguro de Frota',
+  
+  // Novos tipos adicionados
+  'garantia': 'Seguro Garantia',
+  'rc': 'Responsabilidade Civil',
+  'deo': 'Seguro D&O',
+  'equipamentos': 'Seguro de Equipamentos',
+  'condominio': 'Seguro Condomínio',
+  'rural': 'Seguro Rural/Agrícola',
+  'nautico': 'Seguro Náutico',
+  'aeronautico': 'Seguro Aeronáutico',
+  'saude': 'Plano de Saúde',
+  'odonto': 'Plano Odontológico',
+  'previdencia': 'Previdência Privada',
+  'consorcio': 'Consórcio',
+  'cyber': 'Seguro Cyber',
 };
 
 interface OutOfScopeResult {
