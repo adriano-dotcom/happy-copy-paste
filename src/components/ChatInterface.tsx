@@ -2453,6 +2453,7 @@ const ChatInterface: React.FC = () => {
                   conversationId={activeChat.id}
                   contactId={activeChat.contactId}
                   messages={activeChat.messages}
+                  callHistory={callHistory}
                   initialNotes={activeChat.notes}
                   contactName={activeChat.contactName}
                   agentName={activeChat.agentName || 'Adri'}

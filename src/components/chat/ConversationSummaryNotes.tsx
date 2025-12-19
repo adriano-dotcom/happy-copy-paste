@@ -4,11 +4,13 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { UIMessage } from '@/types';
+import { CallLog } from '@/hooks/useContactCallHistory';
 
 interface ConversationSummaryNotesProps {
   conversationId: string;
   contactId: string;
   messages: UIMessage[];
+  callHistory?: CallLog[];
   initialNotes: string | null;
   contactName: string;
   agentName?: string;
@@ -18,6 +20,7 @@ export function ConversationSummaryNotes({
   conversationId,
   contactId,
   messages,
+  callHistory = [],
   initialNotes,
   contactName,
   agentName = 'Adri'
@@ -39,8 +42,8 @@ export function ConversationSummaryNotes({
   };
 
   const handleGenerateSummary = async () => {
-    if (messages.length === 0) {
-      toast.error('Nenhuma mensagem para resumir');
+    if (messages.length === 0 && callHistory.length === 0) {
+      toast.error('Nenhuma mensagem ou ligação para resumir');
       return;
     }
 
@@ -54,9 +57,20 @@ export function ConversationSummaryNotes({
         sent_at: m.timestamp
       }));
 
+      // Get call transcriptions
+      const callTranscriptions = callHistory
+        .filter(call => call.transcription)
+        .map(call => ({
+          transcription: call.transcription,
+          status: call.status,
+          duration_seconds: call.duration_seconds,
+          started_at: call.started_at
+        }));
+
       const { data, error } = await supabase.functions.invoke('generate-summary', {
         body: {
           messages: recentMessages,
+          callTranscriptions,
           contactName,
           agentName
         }
@@ -127,7 +141,7 @@ export function ConversationSummaryNotes({
           variant="ghost"
           size="sm"
           onClick={handleGenerateSummary}
-          disabled={isGenerating || messages.length === 0}
+          disabled={isGenerating || (messages.length === 0 && callHistory.length === 0)}
           className="h-7 px-2 text-xs gap-1.5 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
         >
           {isGenerating ? (

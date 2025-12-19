@@ -11,11 +11,14 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, contactName, agentName } = await req.json();
+    const { messages, callTranscriptions, contactName, agentName } = await req.json();
 
-    if (!messages || messages.length === 0) {
+    const hasMessages = messages && messages.length > 0;
+    const hasCalls = callTranscriptions && callTranscriptions.length > 0;
+
+    if (!hasMessages && !hasCalls) {
       return new Response(
-        JSON.stringify({ error: 'No messages provided' }),
+        JSON.stringify({ error: 'No messages or calls provided' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -26,12 +29,30 @@ serve(async (req) => {
     }
 
     // Format messages for context
-    const conversationText = messages.map((m: any) => {
-      const sender = m.from_type === 'user' ? contactName : (m.from_type === 'nina' ? agentName : 'Operador');
-      return `${sender}: ${m.content || '[mídia]'}`;
-    }).join('\n');
+    let conversationText = '';
+    
+    if (hasMessages) {
+      conversationText += '📱 CONVERSA WHATSAPP:\n';
+      conversationText += messages.map((m: any) => {
+        const sender = m.from_type === 'user' ? contactName : (m.from_type === 'nina' ? agentName : 'Operador');
+        return `${sender}: ${m.content || '[mídia]'}`;
+      }).join('\n');
+    }
 
-    const systemPrompt = `Você é um especialista em análise de conversas de vendas B2B. Analise a conversa e gere um resumo conciso e estruturado.
+    if (hasCalls) {
+      if (hasMessages) conversationText += '\n\n';
+      conversationText += '📞 LIGAÇÕES TELEFÔNICAS:\n';
+      conversationText += callTranscriptions.map((call: any) => {
+        const date = new Date(call.started_at).toLocaleString('pt-BR');
+        const duration = call.duration_seconds ? `${Math.floor(call.duration_seconds / 60)}:${String(call.duration_seconds % 60).padStart(2, '0')}` : 'N/A';
+        const status = call.status === 'completed' ? 'Concluída' : 
+                      call.status === 'no_answer' ? 'Não atendeu' : 
+                      call.status === 'busy' ? 'Ocupado' : call.status;
+        return `[${date} | ${status} | Duração: ${duration}]\n${call.transcription}`;
+      }).join('\n\n');
+    }
+
+    const systemPrompt = `Você é um especialista em análise de conversas de vendas B2B. Analise TODA a comunicação (WhatsApp e ligações telefônicas) e gere um resumo conciso e estruturado.
 
 Formato do resumo (use exatamente estes cabeçalhos):
 
@@ -44,6 +65,9 @@ Formato do resumo (use exatamente estes cabeçalhos):
 📋 DADOS COLETADOS
 [Informações obtidas: CNPJ, tipo de carga, estados, valores, ANTT, CT-e, etc.]
 
+📞 INFORMAÇÕES DAS LIGAÇÕES
+[Resumo do que foi discutido nas ligações, tom do cliente, compromissos verbais]
+
 ⏭️ PRÓXIMOS PASSOS
 [O que precisa ser feito: cotação, documentos, contato, etc.]
 
@@ -51,11 +75,12 @@ Formato do resumo (use exatamente estes cabeçalhos):
 [Detalhes relevantes, objeções, pontos de atenção]
 
 Regras:
-- Seja conciso, máximo 150 palavras total
+- Seja conciso, máximo 200 palavras total
 - Use bullet points quando apropriado
 - Foque em informações acionáveis
-- Omita seções sem informação relevante
-- Mantenha tom profissional`;
+- Omita seções sem informação relevante (exceto se tiver ligações, sempre inclua 📞)
+- Mantenha tom profissional
+- Integre informações de AMBOS os canais (WhatsApp e ligações) em cada seção relevante`;
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -67,10 +92,9 @@ Regras:
         model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Analise esta conversa e gere o resumo:\n\n${conversationText}` }
+          { role: 'user', content: `Analise esta comunicação completa e gere o resumo:\n\n${conversationText}` }
         ],
-        max_tokens: 500,
-        temperature: 0.3,
+        max_tokens: 600,
       }),
     });
 
@@ -87,7 +111,7 @@ Regras:
       throw new Error('No summary generated');
     }
 
-    console.log('Summary generated successfully for contact:', contactName);
+    console.log('Summary generated successfully for contact:', contactName, '- Messages:', messages?.length || 0, '- Calls:', callTranscriptions?.length || 0);
 
     return new Response(
       JSON.stringify({ summary }),
