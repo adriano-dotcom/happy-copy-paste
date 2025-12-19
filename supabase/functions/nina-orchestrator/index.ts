@@ -1944,26 +1944,32 @@ async function processQueueItem(
         );
         
         if (created) {
-          // Generate response with scheduled time and assignee name
+          // Generate response with scheduled date and period (not exact time)
           const formattedDate = scheduledAt.toLocaleDateString('pt-BR', { 
             weekday: 'long', 
             day: '2-digit', 
             month: 'long',
             timeZone: 'America/Sao_Paulo'
           });
-          const formattedTime = scheduledAt.toLocaleTimeString('pt-BR', { 
-            hour: '2-digit', 
-            minute: '2-digit',
-            timeZone: 'America/Sao_Paulo'
-          });
+          
+          // Determine period of day based on scheduled hour
+          const scheduledHour = scheduledAt.getHours();
+          let periodText = '';
+          if (scheduledHour < 12) {
+            periodText = 'pela manhã';
+          } else if (scheduledHour < 18) {
+            periodText = 'à tarde';
+          } else {
+            periodText = 'no fim do dia';
+          }
           
           const contactName = conversation.contact?.call_name || conversation.contact?.name || 'você';
           let responseText = `Perfeito, ${contactName}! `;
           
           if (assignee) {
-            responseText += `${assignee.name} vai entrar em contato ${formattedDate} às ${formattedTime}.`;
+            responseText += `${assignee.name} vai entrar em contato ${formattedDate}, ${periodText}.`;
           } else {
-            responseText += `Vamos entrar em contato ${formattedDate} às ${formattedTime}.`;
+            responseText += `Vamos entrar em contato ${formattedDate}, ${periodText}.`;
           }
           
           // Calculate delay
