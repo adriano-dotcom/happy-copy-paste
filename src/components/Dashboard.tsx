@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, DollarSign, MessageSquare, Users, Loader2, TrendingUp, TrendingDown, ArrowUpRight, Bot, Phone, Briefcase, Layers, Zap, MessageCircle, Clock } from 'lucide-react';
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Activity, DollarSign, MessageSquare, Users, Loader2, TrendingUp, TrendingDown, ArrowUpRight, Bot, Phone, Briefcase, Layers, Zap, MessageCircle, Clock, PhoneCall, PhoneOff, PhoneMissed, Timer } from 'lucide-react';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, BarChart, Bar } from 'recharts';
 import { StatMetric } from '../types';
 import { api } from '../services/api';
 import { supabase } from '@/integrations/supabase/client';
@@ -51,6 +51,33 @@ interface LeadsChartPoint {
   prospeccao: number;
 }
 
+interface CallMetrics {
+  totalCalls: number;
+  completedCalls: number;
+  noAnswerCalls: number;
+  failedCalls: number;
+  totalDuration: number;
+  avgDuration: number;
+  completionRate: number;
+}
+
+interface SellerCallData {
+  extension: string;
+  sellerName: string | null;
+  total: number;
+  completed: number;
+  noAnswer: number;
+  failed: number;
+  avgDuration: number;
+  completionRate: number;
+}
+
+interface DailyCallData {
+  date: string;
+  total: number;
+  completed: number;
+}
+
 const Dashboard: React.FC = () => {
   const [metrics, setMetrics] = useState<StatMetric[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
@@ -58,6 +85,9 @@ const Dashboard: React.FC = () => {
   const [period, setPeriod] = useState<PeriodFilter>('today');
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics | null>(null);
   const [leadsEvolutionData, setLeadsEvolutionData] = useState<LeadsChartPoint[]>([]);
+  const [callMetrics, setCallMetrics] = useState<CallMetrics | null>(null);
+  const [sellerCallData, setSellerCallData] = useState<SellerCallData[]>([]);
+  const [dailyCallData, setDailyCallData] = useState<DailyCallData[]>([]);
 
   const fetchSystemMetrics = async () => {
     try {
@@ -170,6 +200,109 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const fetchCallMetrics = async () => {
+    try {
+      const days = periodDays[period];
+      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      // Fetch all call logs in period
+      const { data: callLogs } = await supabase
+        .from('call_logs')
+        .select('extension, status, duration_seconds, started_at')
+        .gte('started_at', startDate);
+
+      if (!callLogs || callLogs.length === 0) {
+        setCallMetrics(null);
+        setSellerCallData([]);
+        setDailyCallData([]);
+        return;
+      }
+
+      // Fetch team members to map extensions to names
+      const { data: teamMembers } = await supabase
+        .from('team_members')
+        .select('name, api4com_extension');
+
+      const extensionToName: Record<string, string> = {};
+      teamMembers?.forEach(member => {
+        if (member.api4com_extension) {
+          extensionToName[member.api4com_extension] = member.name;
+        }
+      });
+
+      // Calculate general metrics
+      const totalCalls = callLogs.length;
+      const completedCalls = callLogs.filter(c => c.status === 'completed').length;
+      const noAnswerCalls = callLogs.filter(c => c.status === 'no_answer').length;
+      const failedCalls = callLogs.filter(c => ['failed', 'timeout'].includes(c.status)).length;
+      const totalDuration = callLogs.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
+      const avgDuration = completedCalls > 0 ? Math.round(totalDuration / completedCalls) : 0;
+      const completionRate = totalCalls > 0 ? Math.round((completedCalls / totalCalls) * 100) : 0;
+
+      setCallMetrics({
+        totalCalls,
+        completedCalls,
+        noAnswerCalls,
+        failedCalls,
+        totalDuration,
+        avgDuration,
+        completionRate
+      });
+
+      // Group by extension (seller)
+      const byExtension: Record<string, { total: number; completed: number; noAnswer: number; failed: number; duration: number }> = {};
+      callLogs.forEach(call => {
+        const ext = call.extension || 'unknown';
+        if (!byExtension[ext]) {
+          byExtension[ext] = { total: 0, completed: 0, noAnswer: 0, failed: 0, duration: 0 };
+        }
+        byExtension[ext].total++;
+        if (call.status === 'completed') {
+          byExtension[ext].completed++;
+          byExtension[ext].duration += call.duration_seconds || 0;
+        }
+        if (call.status === 'no_answer') byExtension[ext].noAnswer++;
+        if (['failed', 'timeout'].includes(call.status)) byExtension[ext].failed++;
+      });
+
+      const sellerData: SellerCallData[] = Object.entries(byExtension)
+        .map(([extension, data]) => ({
+          extension,
+          sellerName: extensionToName[extension] || null,
+          total: data.total,
+          completed: data.completed,
+          noAnswer: data.noAnswer,
+          failed: data.failed,
+          avgDuration: data.completed > 0 ? Math.round(data.duration / data.completed) : 0,
+          completionRate: data.total > 0 ? Math.round((data.completed / data.total) * 100) : 0
+        }))
+        .sort((a, b) => b.total - a.total);
+
+      setSellerCallData(sellerData);
+
+      // Group by day for chart
+      const byDay: Record<string, { total: number; completed: number }> = {};
+      callLogs.forEach(call => {
+        const date = new Date(call.started_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        if (!byDay[date]) byDay[date] = { total: 0, completed: 0 };
+        byDay[date].total++;
+        if (call.status === 'completed') byDay[date].completed++;
+      });
+
+      const dailyData = Object.entries(byDay)
+        .map(([date, data]) => ({ date, ...data }))
+        .sort((a, b) => {
+          const [dayA, monthA] = a.date.split('/').map(Number);
+          const [dayB, monthB] = b.date.split('/').map(Number);
+          return monthA !== monthB ? monthA - monthB : dayA - dayB;
+        });
+
+      setDailyCallData(dailyData);
+    } catch (error) {
+      console.error('Erro ao carregar métricas de ligações:', error);
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -179,7 +312,8 @@ const Dashboard: React.FC = () => {
           api.fetchDashboardMetrics(days),
           api.fetchChartData(days),
           fetchSystemMetrics(),
-          fetchLeadsEvolution()
+          fetchLeadsEvolution(),
+          fetchCallMetrics()
         ]);
         setMetrics(metricsData);
         setChartData(chartDataResponse);
@@ -453,6 +587,152 @@ const Dashboard: React.FC = () => {
                 <Area type="monotone" dataKey="prospeccao" name="Prospecção" stroke="#f97316" strokeWidth={2} fill="url(#colorProspeccao)" />
               </AreaChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Seller Calls Section */}
+      {callMetrics && callMetrics.totalCalls > 0 && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-amber-700/50 to-transparent"></div>
+            <h3 className="text-lg font-semibold text-slate-300 flex items-center gap-2">
+              <PhoneCall className="w-5 h-5 text-amber-400" />
+              Ligações dos Vendedores
+            </h3>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-amber-700/50 to-transparent"></div>
+          </div>
+
+          {/* Call KPI Cards */}
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+            <div className="rounded-xl border border-amber-500/20 bg-gradient-to-br from-amber-500/10 to-amber-500/5 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Phone className="w-4 h-4 text-amber-400" />
+                <span className="text-xs text-slate-400">Total Ligações</span>
+              </div>
+              <p className="text-2xl font-bold text-white">{callMetrics.totalCalls}</p>
+            </div>
+            <div className="rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <PhoneCall className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs text-slate-400">Completadas</span>
+              </div>
+              <p className="text-2xl font-bold text-white">{callMetrics.completedCalls}</p>
+              <p className="text-xs text-emerald-400/80 mt-1">{callMetrics.completionRate}% sucesso</p>
+            </div>
+            <div className="rounded-xl border border-rose-500/20 bg-gradient-to-br from-rose-500/10 to-rose-500/5 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <PhoneMissed className="w-4 h-4 text-rose-400" />
+                <span className="text-xs text-slate-400">Não Atendidas</span>
+              </div>
+              <p className="text-2xl font-bold text-white">{callMetrics.noAnswerCalls}</p>
+            </div>
+            <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Timer className="w-4 h-4 text-cyan-400" />
+                <span className="text-xs text-slate-400">Duração Média</span>
+              </div>
+              <p className="text-2xl font-bold text-white">
+                {callMetrics.avgDuration >= 60 
+                  ? `${Math.floor(callMetrics.avgDuration / 60)}m${callMetrics.avgDuration % 60}s`
+                  : `${callMetrics.avgDuration}s`
+                }
+              </p>
+            </div>
+          </div>
+
+          {/* Seller Performance Table and Chart */}
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Performance Table */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-sm p-6 shadow-lg">
+              <h4 className="text-sm font-medium text-amber-400 uppercase tracking-wider mb-4">Performance por Vendedor</h4>
+              <div className="space-y-3 max-h-[280px] overflow-y-auto custom-scrollbar">
+                {sellerCallData.map((seller) => (
+                  <div key={seller.extension} className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 hover:border-amber-500/30 transition-colors">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <span className="text-sm font-medium text-white">
+                          {seller.sellerName || `Ramal ${seller.extension}`}
+                        </span>
+                        {seller.sellerName && (
+                          <span className="ml-2 text-xs text-slate-500">({seller.extension})</span>
+                        )}
+                      </div>
+                      <span className="text-xs px-2 py-1 rounded-full bg-amber-500/20 text-amber-400 font-medium">
+                        {seller.total} ligações
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <PhoneCall className="w-3 h-3 text-emerald-400" />
+                        {seller.completed} ok
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <PhoneMissed className="w-3 h-3 text-rose-400" />
+                        {seller.noAnswer} s/atend
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Timer className="w-3 h-3 text-cyan-400" />
+                        {seller.avgDuration}s média
+                      </span>
+                    </div>
+                    <div className="mt-2 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full"
+                        style={{ width: `${seller.completionRate}%` }}
+                      />
+                    </div>
+                    <div className="mt-1 text-right text-xs text-amber-400/80">{seller.completionRate}% sucesso</div>
+                  </div>
+                ))}
+                {sellerCallData.length === 0 && (
+                  <p className="text-sm text-slate-500 text-center py-4">Nenhuma ligação no período</p>
+                )}
+              </div>
+            </div>
+
+            {/* Daily Calls Chart */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-sm p-6 shadow-lg">
+              <h4 className="text-sm font-medium text-amber-400 uppercase tracking-wider mb-4">Evolução de Ligações</h4>
+              <div className="flex items-center gap-4 text-xs mb-4">
+                <span className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-amber-500"></span>
+                  Total
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
+                  Completadas
+                </span>
+              </div>
+              <div className="h-[220px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={dailyCallData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis 
+                      dataKey="date" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tickMargin={10} 
+                      fontSize={12} 
+                      stroke="#64748b"
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      fontSize={12} 
+                      stroke="#64748b"
+                      allowDecimals={false}
+                    />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', color: '#f8fafc', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)' }}
+                      labelStyle={{ color: '#94a3b8', marginBottom: '8px' }}
+                    />
+                    <Bar dataKey="total" name="Total" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="completed" name="Completadas" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
         </div>
       )}
