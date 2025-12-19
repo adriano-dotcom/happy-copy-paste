@@ -82,8 +82,8 @@ const ChatInterface: React.FC = () => {
   const [viewingArchived, setViewingArchived] = useState(false);
   const [archivedCount, setArchivedCount] = useState(0);
   
-  // Status filter state
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<ConversationStatus | null>(null);
+  // Status filter state - includes 'sofia' as special value
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<ConversationStatus | 'sofia' | null>(null);
   const [showClosedConversations, setShowClosedConversations] = useState(false);
   
   // Owner filter state
@@ -946,7 +946,8 @@ const ChatInterface: React.FC = () => {
         : conversations;
     
     return {
-      nina: baseConversations.filter(c => c.status === 'nina').length,
+      nina: baseConversations.filter(c => c.status === 'nina' && c.agentSlug !== 'sofia').length,
+      sofia: baseConversations.filter(c => c.status === 'nina' && c.agentSlug === 'sofia').length,
       human: baseConversations.filter(c => c.status === 'human').length,
       paused: baseConversations.filter(c => c.status === 'paused').length,
     };
@@ -993,8 +994,12 @@ const ChatInterface: React.FC = () => {
         return false;
       }
       
-      // Status filter
-      if (selectedStatusFilter && chat.status !== selectedStatusFilter) {
+      // Status filter - handle 'sofia' as special case
+      if (selectedStatusFilter === 'sofia') {
+        if (chat.status !== 'nina' || chat.agentSlug !== 'sofia') return false;
+      } else if (selectedStatusFilter === 'nina') {
+        if (chat.status !== 'nina' || chat.agentSlug === 'sofia') return false;
+      } else if (selectedStatusFilter && chat.status !== selectedStatusFilter) {
         return false;
       }
       
@@ -1265,7 +1270,7 @@ const ChatInterface: React.FC = () => {
                 Status
               </button>
               
-              {/* Nina/IA */}
+              {/* Nina/Adri */}
               <button
                 onClick={() => setSelectedStatusFilter('nina')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
@@ -1277,6 +1282,20 @@ const ChatInterface: React.FC = () => {
                 <Bot className="w-3.5 h-3.5" />
                 {sdrName || 'Nina'}
                 <span className="text-[10px] opacity-70">({statusCounts.nina})</span>
+              </button>
+              
+              {/* Sofia */}
+              <button
+                onClick={() => setSelectedStatusFilter('sofia')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                  selectedStatusFilter === 'sofia'
+                    ? 'bg-purple-500/20 text-purple-400 border-purple-500/40'
+                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                }`}
+              >
+                <Bot className="w-3.5 h-3.5" />
+                Sofia
+                <span className="text-[10px] opacity-70">({statusCounts.sofia})</span>
               </button>
               
               {/* Humano */}
