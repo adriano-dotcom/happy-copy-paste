@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { Resend } from "https://esm.sh/resend@2.0.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
@@ -23,6 +24,51 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
+    // Authentication check - allow service role OR authenticated user
+    const authHeader = req.headers.get('Authorization');
+    
+    if (!authHeader) {
+      console.error("Missing authorization header");
+      return new Response(
+        JSON.stringify({ error: "Unauthorized - missing authorization" }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+
+    // Check if this is a service role call (from other edge functions)
+    const isServiceRoleCall = authHeader === `Bearer ${supabaseServiceKey}`;
+    
+    if (!isServiceRoleCall) {
+      // For non-service calls, verify user authentication
+      const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+        global: { headers: { Authorization: authHeader } }
+      });
+
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) {
+        console.error("Invalid user token:", authError?.message);
+        return new Response(
+          JSON.stringify({ error: "Unauthorized - invalid token" }),
+          {
+            status: 401,
+            headers: { "Content-Type": "application/json", ...corsHeaders },
+          }
+        );
+      }
+
+      console.log(`Email request from authenticated user: ${user.id}`);
+    } else {
+      console.log("Email request from service role (internal call)");
+    }
+
     const { to, subject, html, from, bcc }: SendEmailRequest = await req.json();
 
     // Validação de entrada
