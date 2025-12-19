@@ -1178,21 +1178,21 @@ const ChatInterface: React.FC = () => {
             {viewingArchived ? '📦 Arquivados' : 'Chats Ativos'}
           </h2>
           
-          {/* Pipeline Filter Pills */}
+          {/* Pipeline Filter Pills - iOS 26 Style */}
           <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
             {!viewingArchived && (
               <>
                 <button
                   onClick={() => { setSelectedPipelineFilter(null); setSelectedStatusFilter(null); }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all ${
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all duration-300 ${
                     selectedPipelineFilter === null
-                      ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
-                      : 'bg-slate-800/50 text-slate-400 border border-slate-700/50 hover:bg-slate-800'
+                      ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-white shadow-lg shadow-cyan-500/30 scale-[1.02] border-transparent'
+                      : 'bg-slate-800/40 backdrop-blur-xl text-slate-300 border border-white/10 hover:bg-slate-700/50 hover:border-white/20 hover:scale-[1.02]'
                   }`}
                 >
-                  <MessageSquare className="w-3.5 h-3.5" />
+                  <MessageSquare className="w-4 h-4" />
                   Todos
-                  <span className="text-[10px] opacity-70">({conversationCounts.all})</span>
+                  <span className={`text-[10px] ${selectedPipelineFilter === null ? 'text-white/80' : 'opacity-60'}`}>({conversationCounts.all})</span>
                 </button>
                 {/* Pipelines ordenados: Transporte, Saúde, Prospecção */}
                 {[...pipelines].sort((a, b) => {
@@ -1202,26 +1202,34 @@ const ChatInterface: React.FC = () => {
                   const indexA = pipelineOrder.indexOf(slugA);
                   const indexB = pipelineOrder.indexOf(slugB);
                   return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
-                }).map((pipeline) => (
-                  <button
-                    key={pipeline.id}
-                    onClick={() => { setSelectedPipelineFilter(pipeline.id); setSelectedStatusFilter(null); }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
-                      selectedPipelineFilter === pipeline.id
-                        ? ''
-                        : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
-                    }`}
-                    style={selectedPipelineFilter === pipeline.id ? {
-                      backgroundColor: `${pipeline.color}20`,
-                      color: pipeline.color,
-                      borderColor: `${pipeline.color}50`
-                    } : undefined}
-                  >
-                    <span className="text-sm">{pipeline.icon}</span>
-                    {pipeline.name}
-                    <span className="text-[10px] opacity-70">({conversationCounts[pipeline.id] || 0})</span>
-                  </button>
-                ))}
+                }).map((pipeline) => {
+                  // Gradientes vibrantes por pipeline
+                  const pipelineGradients: Record<string, { gradient: string; shadow: string }> = {
+                    'transporte': { gradient: 'from-orange-400 to-amber-500', shadow: 'shadow-orange-500/30' },
+                    'saude': { gradient: 'from-emerald-400 to-teal-500', shadow: 'shadow-emerald-500/30' },
+                    'prospeccao': { gradient: 'from-blue-400 to-indigo-500', shadow: 'shadow-blue-500/30' },
+                    'outros seguros': { gradient: 'from-violet-400 to-purple-500', shadow: 'shadow-violet-500/30' },
+                  };
+                  const slugNormalized = pipeline.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                  const style = pipelineGradients[slugNormalized] || { gradient: 'from-slate-400 to-slate-500', shadow: 'shadow-slate-500/30' };
+                  const isActive = selectedPipelineFilter === pipeline.id;
+                  
+                  return (
+                    <button
+                      key={pipeline.id}
+                      onClick={() => { setSelectedPipelineFilter(pipeline.id); setSelectedStatusFilter(null); }}
+                      className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all duration-300 ${
+                        isActive
+                          ? `bg-gradient-to-r ${style.gradient} text-white shadow-lg ${style.shadow} scale-[1.02] border-transparent`
+                          : 'bg-slate-800/40 backdrop-blur-xl text-slate-300 border border-white/10 hover:bg-slate-700/50 hover:border-white/20 hover:scale-[1.02]'
+                      }`}
+                    >
+                      <span className="text-sm">{pipeline.icon}</span>
+                      {pipeline.name}
+                      <span className={`text-[10px] ${isActive ? 'text-white/80' : 'opacity-60'}`}>({conversationCounts[pipeline.id] || 0})</span>
+                    </button>
+                  );
+                })}
               </>
             )}
             {/* Arquivados */}
@@ -1242,72 +1250,73 @@ const ChatInterface: React.FC = () => {
                   setArchivedCount(count || 0);
                 }
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+              className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all duration-300 ${
                 viewingArchived
-                  ? 'bg-slate-500/20 text-slate-300 border-slate-500/40'
-                  : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                  ? 'bg-gradient-to-r from-slate-500 to-slate-600 text-white shadow-lg shadow-slate-500/30 scale-[1.02] border-transparent'
+                  : 'bg-slate-800/40 backdrop-blur-xl text-slate-300 border border-white/10 hover:bg-slate-700/50 hover:border-white/20 hover:scale-[1.02]'
               }`}
             >
-              <Archive className="w-3.5 h-3.5" />
+              <Archive className="w-4 h-4" />
               {viewingArchived ? 'Voltar aos Ativos' : 'Arquivados'}
-              {!viewingArchived && <span className="text-[10px] opacity-70">({archivedCount})</span>}
+              {!viewingArchived && <span className={`text-[10px] ${viewingArchived ? 'text-white/80' : 'opacity-60'}`}>({archivedCount})</span>}
             </button>
             {/* Sem Funil - depois de Arquivados */}
             {!viewingArchived && (
               <button
                 onClick={() => { setSelectedPipelineFilter('no-pipeline'); setSelectedStatusFilter(null); }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all duration-300 ${
                   selectedPipelineFilter === 'no-pipeline'
-                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                    ? 'bg-gradient-to-r from-yellow-400 to-amber-500 text-white shadow-lg shadow-yellow-500/30 scale-[1.02] border-transparent'
+                    : 'bg-slate-800/40 backdrop-blur-xl text-slate-300 border border-white/10 hover:bg-slate-700/50 hover:border-white/20 hover:scale-[1.02]'
                 }`}
               >
-                <Inbox className="w-3.5 h-3.5" />
+                <Inbox className="w-4 h-4" />
                 Sem Funil
-                <span className="text-[10px] opacity-70">({conversationCounts['no-pipeline']})</span>
+                <span className={`text-[10px] ${selectedPipelineFilter === 'no-pipeline' ? 'text-white/80' : 'opacity-60'}`}>({conversationCounts['no-pipeline']})</span>
               </button>
             )}
           </div>
           
-          {/* Status Filter Pills - Segunda linha */}
+          {/* Status Filter Pills - iOS 26 Style */}
           {!viewingArchived && (
             <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
               {/* Todos os Status */}
               <button
                 onClick={() => setSelectedStatusFilter(null)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all duration-300 ${
                   selectedStatusFilter === null
-                    ? 'bg-slate-500/20 text-slate-300 border-slate-500/40'
-                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                    ? 'bg-gradient-to-r from-slate-400 to-slate-500 text-white shadow-lg shadow-slate-500/30 scale-[1.02] border-transparent'
+                    : 'bg-slate-800/40 backdrop-blur-xl text-slate-300 border border-white/10 hover:bg-slate-700/50 hover:border-white/20 hover:scale-[1.02]'
                 }`}
               >
                 Status
               </button>
               
-              {/* Agentes IA - renderizado dinamicamente */}
+              {/* Agentes IA - renderizado dinamicamente com gradientes vibrantes */}
               {filterAgents.map((agent) => {
-                // Cores específicas por agente
-                const agentColors: Record<string, string> = {
-                  'adri': 'bg-violet-500/20 text-violet-400 border-violet-500/40',
-                  'sofia': 'bg-purple-500/20 text-purple-400 border-purple-500/40',
-                  'leonardo': 'bg-blue-500/20 text-blue-400 border-blue-500/40',
-                  'barbara-saude': 'bg-pink-500/20 text-pink-400 border-pink-500/40',
+                // Gradientes vibrantes por agente
+                const agentGradients: Record<string, { gradient: string; shadow: string }> = {
+                  'adri': { gradient: 'from-violet-500 to-fuchsia-500', shadow: 'shadow-violet-500/40' },
+                  'sofia': { gradient: 'from-purple-500 to-pink-500', shadow: 'shadow-purple-500/40' },
+                  'leonardo': { gradient: 'from-sky-400 to-blue-500', shadow: 'shadow-sky-500/40' },
+                  'barbara-saude': { gradient: 'from-pink-400 to-rose-500', shadow: 'shadow-pink-500/40' },
                 };
-                const activeColor = agentColors[agent.slug] || 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40';
+                const style = agentGradients[agent.slug] || { gradient: 'from-cyan-400 to-teal-500', shadow: 'shadow-cyan-500/40' };
+                const isActive = selectedStatusFilter === agent.slug;
                 
                 return (
                   <button
                     key={agent.id}
                     onClick={() => setSelectedStatusFilter(agent.slug)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
-                      selectedStatusFilter === agent.slug
-                        ? activeColor
-                        : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all duration-300 ${
+                      isActive
+                        ? `bg-gradient-to-r ${style.gradient} text-white shadow-lg ${style.shadow} scale-[1.02] border-transparent`
+                        : 'bg-slate-800/40 backdrop-blur-xl text-slate-300 border border-white/10 hover:bg-slate-700/50 hover:border-white/20 hover:scale-[1.02]'
                     }`}
                   >
-                    <Bot className="w-3.5 h-3.5" />
+                    <Bot className="w-4 h-4" />
                     {agent.name}
-                    <span className="text-[10px] opacity-70">({statusCounts.agents[agent.slug] || 0})</span>
+                    <span className={`text-[10px] ${isActive ? 'text-white/80' : 'opacity-60'}`}>({statusCounts.agents[agent.slug] || 0})</span>
                   </button>
                 );
               })}
@@ -1315,62 +1324,74 @@ const ChatInterface: React.FC = () => {
               {/* Humano */}
               <button
                 onClick={() => setSelectedStatusFilter('human')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all duration-300 ${
                   selectedStatusFilter === 'human'
-                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                    ? 'bg-gradient-to-r from-lime-400 to-emerald-500 text-white shadow-lg shadow-emerald-500/40 scale-[1.02] border-transparent'
+                    : 'bg-slate-800/40 backdrop-blur-xl text-slate-300 border border-white/10 hover:bg-slate-700/50 hover:border-white/20 hover:scale-[1.02]'
                 }`}
               >
-                <User className="w-3.5 h-3.5" />
+                <User className="w-4 h-4" />
                 Humano
-                <span className="text-[10px] opacity-70">({statusCounts.human})</span>
+                <span className={`text-[10px] ${selectedStatusFilter === 'human' ? 'text-white/80' : 'opacity-60'}`}>({statusCounts.human})</span>
               </button>
               
               {/* Pausado */}
               <button
                 onClick={() => setSelectedStatusFilter('paused')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all duration-300 ${
                   selectedStatusFilter === 'paused'
-                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                    ? 'bg-gradient-to-r from-orange-400 to-red-400 text-white shadow-lg shadow-orange-500/40 scale-[1.02] border-transparent'
+                    : 'bg-slate-800/40 backdrop-blur-xl text-slate-300 border border-white/10 hover:bg-slate-700/50 hover:border-white/20 hover:scale-[1.02]'
                 }`}
               >
-              <Pause className="w-3.5 h-3.5" />
+                <Pause className="w-4 h-4" />
                 Pausado
-                <span className="text-[10px] opacity-70">({statusCounts.paused})</span>
+                <span className={`text-[10px] ${selectedStatusFilter === 'paused' ? 'text-white/80' : 'opacity-60'}`}>({statusCounts.paused})</span>
               </button>
             </div>
           )}
           
-          {/* Owner Filter Pills - Terceira linha */}
+          {/* Owner Filter Pills - iOS 26 Style */}
           {!viewingArchived && availableOwners.length > 0 && (
             <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
               <button
                 onClick={() => setSelectedOwnerFilter(null)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all duration-300 ${
                   selectedOwnerFilter === null
-                    ? 'bg-slate-500/20 text-slate-300 border-slate-500/40'
-                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
+                    ? 'bg-gradient-to-r from-slate-400 to-slate-500 text-white shadow-lg shadow-slate-500/30 scale-[1.02] border-transparent'
+                    : 'bg-slate-800/40 backdrop-blur-xl text-slate-300 border border-white/10 hover:bg-slate-700/50 hover:border-white/20 hover:scale-[1.02]'
                 }`}
               >
-                <UserCheck className="w-3.5 h-3.5" />
+                <UserCheck className="w-4 h-4" />
                 Todos
               </button>
-              {availableOwners.map(owner => (
-                <button
-                  key={owner.id}
-                  onClick={() => setSelectedOwnerFilter(owner.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all border ${
-                    selectedOwnerFilter === owner.id
-                      ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
-                      : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'
-                  }`}
-                >
-                  <User className="w-3.5 h-3.5" />
-                  {owner.name.split(' ')[0]}
-                  <span className="text-[10px] opacity-70">({owner.count})</span>
-                </button>
-              ))}
+              {availableOwners.map((owner, index) => {
+                // Cores rotativas para owners
+                const ownerGradients = [
+                  { gradient: 'from-indigo-400 to-blue-500', shadow: 'shadow-indigo-500/40' },
+                  { gradient: 'from-teal-400 to-cyan-500', shadow: 'shadow-teal-500/40' },
+                  { gradient: 'from-rose-400 to-pink-500', shadow: 'shadow-rose-500/40' },
+                  { gradient: 'from-amber-400 to-orange-500', shadow: 'shadow-amber-500/40' },
+                ];
+                const style = ownerGradients[index % ownerGradients.length];
+                const isActive = selectedOwnerFilter === owner.id;
+                
+                return (
+                  <button
+                    key={owner.id}
+                    onClick={() => setSelectedOwnerFilter(owner.id)}
+                    className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all duration-300 ${
+                      isActive
+                        ? `bg-gradient-to-r ${style.gradient} text-white shadow-lg ${style.shadow} scale-[1.02] border-transparent`
+                        : 'bg-slate-800/40 backdrop-blur-xl text-slate-300 border border-white/10 hover:bg-slate-700/50 hover:border-white/20 hover:scale-[1.02]'
+                    }`}
+                  >
+                    <User className="w-4 h-4" />
+                    {owner.name.split(' ')[0]}
+                    <span className={`text-[10px] ${isActive ? 'text-white/80' : 'opacity-60'}`}>({owner.count})</span>
+                  </button>
+                );
+              })}
             </div>
           )}
           
