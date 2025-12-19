@@ -2195,6 +2195,25 @@ const ChatInterface: React.FC = () => {
                   )}
                 </div>
 
+                <div className="h-px bg-slate-800/50 w-full"></div>
+
+                {/* Call History */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                    <PhoneCall className="w-4 h-4" />
+                    Histórico de Ligações
+                  </h4>
+                  <CallHistoryPanel 
+                    calls={callHistory} 
+                    loading={callHistoryLoading}
+                    contactId={activeChat.contactId}
+                    contactName={activeChat.contactName}
+                    onNotesUpdate={(notes) => {
+                      console.log('Notas atualizadas via ligação:', notes.length, 'chars');
+                    }}
+                  />
+                </div>
+
                 {/* Pipeline Stage Selector */}
                 {existingDeal && dealStages.length > 0 && (
                   <div className="space-y-3">
@@ -2339,26 +2358,6 @@ const ChatInterface: React.FC = () => {
                       </option>
                     ))}
                   </select>
-                </div>
-
-                <div className="h-px bg-slate-800/50 w-full"></div>
-
-                {/* Call History */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                    <PhoneCall className="w-4 h-4" />
-                    Histórico de Ligações
-                  </h4>
-                  <CallHistoryPanel 
-                    calls={callHistory} 
-                    loading={callHistoryLoading}
-                    contactId={activeChat.contactId}
-                    contactName={activeChat.contactName}
-                    onNotesUpdate={(notes) => {
-                      // Atualizar estado local das notas se necessário
-                      console.log('Notas atualizadas via ligação:', notes.length, 'chars');
-                    }}
-                  />
                 </div>
 
                 <div className="h-px bg-slate-800/50 w-full"></div>
