@@ -2086,7 +2086,7 @@ async function processQueueItem(
           })
           .eq('id', message.id);
         
-        // Update deal notes
+        // Update deal - move to "Outros Seguros" pipeline
         const { data: currentDeal } = await supabase
           .from('deals')
           .select('id, notes')
@@ -2096,13 +2096,38 @@ async function processQueueItem(
           .maybeSingle();
         
         if (currentDeal) {
+          // Buscar pipeline "Outros Seguros"
+          const { data: outrosSeguros } = await supabase
+            .from('pipelines')
+            .select('id')
+            .eq('slug', 'outros-seguros')
+            .single();
+          
+          let updateData: Record<string, unknown> = {};
           const existingNotes = currentDeal.notes || '';
           const newNote = `[${new Date().toLocaleDateString('pt-BR')}] Lead solicitou ${outOfScopeCheck.friendlyName} - transferido para Sofia`;
+          updateData.notes = existingNotes ? `${existingNotes}\n\n${newNote}` : newNote;
+          
+          if (outrosSeguros) {
+            // Buscar primeiro estágio do pipeline "Outros Seguros"
+            const { data: firstStage } = await supabase
+              .from('pipeline_stages')
+              .select('id')
+              .eq('pipeline_id', outrosSeguros.id)
+              .order('position', { ascending: true })
+              .limit(1)
+              .single();
+            
+            updateData.pipeline_id = outrosSeguros.id;
+            if (firstStage) {
+              updateData.stage_id = firstStage.id;
+            }
+            console.log(`[Nina] 📦 Moving deal to "Outros Seguros" pipeline`);
+          }
+          
           await supabase
             .from('deals')
-            .update({ 
-              notes: existingNotes ? `${existingNotes}\n\n${newNote}` : newNote
-            })
+            .update(updateData)
             .eq('id', currentDeal.id);
         }
         
