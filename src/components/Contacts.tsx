@@ -1125,7 +1125,7 @@ const Contacts: React.FC = () => {
                      <div className="text-[10px] text-slate-600">via WhatsApp</div>
                   </td>
                   <td className="px-4 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
+                    <div className="flex items-center justify-end gap-2">
                       <Button 
                         size="sm" 
                         variant="ghost" 
