@@ -25,6 +25,21 @@ serve(async (req) => {
   }
 
   try {
+    // Validate webhook authentication
+    const webhookKey = Deno.env.get('API4COM_WEBHOOK_KEY');
+    if (webhookKey) {
+      const providedKey = req.headers.get('x-api4com-key') || req.headers.get('X-Api4com-Key');
+      if (!providedKey || providedKey !== webhookKey) {
+        console.error('[api4com-webhook] Unauthorized: Invalid or missing API key');
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    } else {
+      console.warn('[api4com-webhook] Warning: API4COM_WEBHOOK_KEY not configured - webhook accepts all requests');
+    }
+
     const body = await req.json();
     
     console.log('[api4com-webhook] Received webhook:', JSON.stringify(body, null, 2));
