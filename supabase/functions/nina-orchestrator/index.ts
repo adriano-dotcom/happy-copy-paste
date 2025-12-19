@@ -48,6 +48,72 @@ function hasExplicitCargoInterest(messageContent: string): boolean {
   return CARGO_INSURANCE_KEYWORDS.some(keyword => lowerContent.includes(keyword));
 }
 
+// ===== OUT OF SCOPE INSURANCE DETECTION (for Sofia agent) =====
+// Insurance types that are NOT handled by transport specialists (Adri, Barbara, Leo)
+// These will be handled by Sofia (generic insurance agent)
+const OUT_OF_SCOPE_INSURANCE_KEYWORDS: Record<string, string[]> = {
+  'auto': ['seguro auto', 'seguro carro', 'seguro do carro', 'seguro do meu carro', 'seguro veículo particular', 'seguro veiculo particular', 'seguro meu veículo', 'seguro meu veiculo'],
+  'residencial': ['seguro residencial', 'seguro residencia', 'seguro da casa', 'seguro casa', 'seguro do apartamento', 'seguro apartamento', 'seguro apto', 'seguro imóvel', 'seguro imovel'],
+  'vida': ['seguro de vida', 'seguro vida', 'seguro morte', 'seguro pessoal'],
+  'viagem': ['seguro viagem', 'seguro de viagem', 'assistência viagem', 'assistencia viagem'],
+  'pet': ['seguro pet', 'seguro do cachorro', 'seguro do gato', 'seguro animal'],
+  'celular': ['seguro celular', 'seguro do celular', 'seguro smartphone', 'seguro do iphone', 'seguro do telefone'],
+  'bike': ['seguro bike', 'seguro bicicleta', 'seguro da bike'],
+  'fianca': ['seguro fiança', 'seguro fianca', 'seguro aluguel', 'seguro locatício', 'seguro locaticio'],
+  'empresarial': ['seguro empresa', 'seguro empresarial', 'seguro comercial', 'seguro patrimônio', 'seguro patrimonio', 'seguro do negócio', 'seguro do negocio'],
+  'frota_geral': ['seguro frota', 'frota de veículos', 'frota de veiculos', 'vários veículos', 'varios veiculos', 'seguro moto', 'seguro motocicleta'],
+};
+
+// Map type to friendly name in Portuguese
+const INSURANCE_TYPE_NAMES: Record<string, string> = {
+  'auto': 'Seguro Auto',
+  'residencial': 'Seguro Residencial',
+  'vida': 'Seguro de Vida',
+  'viagem': 'Seguro Viagem',
+  'pet': 'Seguro Pet',
+  'celular': 'Seguro Celular',
+  'bike': 'Seguro Bike',
+  'fianca': 'Seguro Fiança',
+  'empresarial': 'Seguro Empresarial',
+  'frota_geral': 'Seguro de Frota',
+};
+
+interface OutOfScopeResult {
+  isOutOfScope: boolean;
+  insuranceType: string | null;
+  friendlyName: string | null;
+  detectedKeyword: string | null;
+}
+
+function detectOutOfScopeInsurance(messageContent: string, currentAgentSlug: string | null): OutOfScopeResult {
+  // Only detect out of scope if NOT already using Sofia or if using transport-specific agents
+  if (currentAgentSlug === 'sofia') {
+    return { isOutOfScope: false, insuranceType: null, friendlyName: null, detectedKeyword: null };
+  }
+  
+  const content = messageContent.toLowerCase().trim();
+  
+  // First check if it's explicitly about transport/cargo insurance - those are IN scope
+  if (hasExplicitCargoInterest(content)) {
+    return { isOutOfScope: false, insuranceType: null, friendlyName: null, detectedKeyword: null };
+  }
+  
+  for (const [type, keywords] of Object.entries(OUT_OF_SCOPE_INSURANCE_KEYWORDS)) {
+    for (const keyword of keywords) {
+      if (content.includes(keyword)) {
+        return { 
+          isOutOfScope: true, 
+          insuranceType: type, 
+          friendlyName: INSURANCE_TYPE_NAMES[type] || type,
+          detectedKeyword: keyword 
+        };
+      }
+    }
+  }
+  
+  return { isOutOfScope: false, insuranceType: null, friendlyName: null, detectedKeyword: null };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -1908,6 +1974,176 @@ async function processQueueItem(
     return;
   }
   // ===== END SOFT REJECTION STEP 1 =====
+
+  // ===== OUT OF SCOPE INSURANCE DETECTION - HANDOFF TO SOFIA =====
+  // Detect when lead asks for insurance types outside transport scope
+  if (message.content && agent) {
+    const outOfScopeCheck = detectOutOfScopeInsurance(message.content, agent.slug);
+    
+    if (outOfScopeCheck.isOutOfScope) {
+      console.log(`[Nina] 🔄 Out of scope insurance detected: ${outOfScopeCheck.insuranceType} - "${outOfScopeCheck.detectedKeyword}"`);
+      
+      // Find Sofia agent
+      const sofiaAgent = agents.find((a: Agent) => a.slug === 'sofia');
+      
+      if (sofiaAgent) {
+        console.log(`[Nina] 🤖 Handoff to Sofia for ${outOfScopeCheck.friendlyName}`);
+        
+        // Update conversation to use Sofia agent and store detected insurance type
+        const updatedContext = {
+          ...ninaContext,
+          out_of_scope_insurance: outOfScopeCheck.insuranceType,
+          out_of_scope_friendly_name: outOfScopeCheck.friendlyName,
+          out_of_scope_detected_at: new Date().toISOString(),
+          handoff_from_agent: agent.name
+        };
+        
+        await supabase
+          .from('conversations')
+          .update({ 
+            current_agent_id: sofiaAgent.id,
+            nina_context: updatedContext
+          })
+          .eq('id', conversation.id);
+        
+        // Generate Sofia's greeting based on insurance type
+        let sofiaGreeting = `Olá! Sou a Sofia, especialista em ${outOfScopeCheck.friendlyName} da Jacometo. `;
+        
+        // Add first qualification question based on type
+        switch (outOfScopeCheck.insuranceType) {
+          case 'auto':
+            sofiaGreeting += 'Qual veículo você quer segurar? (marca/modelo/ano)';
+            break;
+          case 'residencial':
+            sofiaGreeting += 'É casa ou apartamento?';
+            break;
+          case 'vida':
+            sofiaGreeting += 'O seguro seria individual ou para um grupo?';
+            break;
+          case 'viagem':
+            sofiaGreeting += 'Para qual destino você vai viajar e por quantos dias?';
+            break;
+          case 'empresarial':
+            sofiaGreeting += 'Qual tipo de negócio você tem?';
+            break;
+          case 'frota_geral':
+            sofiaGreeting += 'Quantos veículos tem na frota?';
+            break;
+          default:
+            sofiaGreeting += 'Me conta mais sobre o que você precisa proteger?';
+        }
+        
+        // Calculate delay
+        const delayMin = settings?.response_delay_min || 1000;
+        const delayMax = settings?.response_delay_max || 3000;
+        const delay = Math.random() * (delayMax - delayMin) + delayMin;
+        
+        // Get AI settings for metadata
+        const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+        
+        // Queue Sofia's greeting
+        await queueTextResponse(supabase, conversation, message, sofiaGreeting, settings, aiSettings, delay, sofiaAgent);
+        
+        // Mark message as processed
+        const responseTime = Date.now() - new Date(message.sent_at).getTime();
+        await supabase
+          .from('messages')
+          .update({ 
+            processed_by_nina: true,
+            nina_response_time: responseTime
+          })
+          .eq('id', message.id);
+        
+        // Update deal notes
+        const { data: currentDeal } = await supabase
+          .from('deals')
+          .select('id, notes')
+          .eq('contact_id', conversation.contact_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (currentDeal) {
+          const existingNotes = currentDeal.notes || '';
+          const newNote = `[${new Date().toLocaleDateString('pt-BR')}] Lead solicitou ${outOfScopeCheck.friendlyName} - transferido para Sofia`;
+          await supabase
+            .from('deals')
+            .update({ 
+              notes: existingNotes ? `${existingNotes}\n\n${newNote}` : newNote
+            })
+            .eq('id', currentDeal.id);
+        }
+        
+        // Trigger whatsapp-sender
+        try {
+          const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+          fetch(senderUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`
+            },
+            body: JSON.stringify({ triggered_by: 'nina-orchestrator-sofia-handoff' })
+          }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+        } catch (e) {
+          console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+        }
+        
+        console.log(`[Nina] ✅ Out of scope insurance handled, handed off to Sofia`);
+        return;
+      } else {
+        // Sofia not found - fallback to human
+        console.log(`[Nina] ⚠️ Sofia agent not found, transferring to human`);
+        
+        const fallbackMessage = `Obrigada pelo contato! Para ${outOfScopeCheck.friendlyName}, vou encaminhar para um de nossos corretores especializados que vai te ajudar.`;
+        
+        const delayMin = settings?.response_delay_min || 1000;
+        const delayMax = settings?.response_delay_max || 3000;
+        const delay = Math.random() * (delayMax - delayMin) + delayMin;
+        const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+        
+        await queueTextResponse(supabase, conversation, message, fallbackMessage, settings, aiSettings, delay, agent);
+        
+        await supabase
+          .from('conversations')
+          .update({ 
+            status: 'human',
+            nina_context: {
+              ...ninaContext,
+              out_of_scope_insurance: outOfScopeCheck.insuranceType,
+              transferred_to_human_at: new Date().toISOString()
+            }
+          })
+          .eq('id', conversation.id);
+        
+        const responseTime = Date.now() - new Date(message.sent_at).getTime();
+        await supabase
+          .from('messages')
+          .update({ 
+            processed_by_nina: true,
+            nina_response_time: responseTime
+          })
+          .eq('id', message.id);
+        
+        try {
+          const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+          fetch(senderUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`
+            },
+            body: JSON.stringify({ triggered_by: 'nina-orchestrator-out-of-scope-fallback' })
+          }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+        } catch (e) {
+          console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+        }
+        
+        return;
+      }
+    }
+  }
+  // ===== END OUT OF SCOPE INSURANCE DETECTION =====
 
   // ===== CALLBACK REQUEST DETECTION =====
   // Detect when lead wants to be called back at a specific time
