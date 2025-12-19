@@ -934,6 +934,25 @@ async function generateAudioElevenLabs(supabase: any, settings: any, text: strin
   }
 }
 
+// ===== QUALIFICATION COMPLETION CHECK FUNCTION =====
+// Check if all essential qualification fields are collected
+function isQualificationComplete(contact: any, qualificationAnswers: { [key: string]: string }): boolean {
+  // Essential fields for Seguro de Cargas qualification
+  const hasCnpj = !!contact?.cnpj;
+  const hasTipoCarga = !!qualificationAnswers?.tipo_carga;
+  const hasEstados = !!qualificationAnswers?.estados;
+  const hasVolume = !!(qualificationAnswers?.viagens_mes || qualificationAnswers?.valor_medio);
+  const hasTipoFrota = !!qualificationAnswers?.tipo_frota;
+  
+  const isComplete = hasCnpj && hasTipoCarga && hasEstados && hasVolume && hasTipoFrota;
+  
+  if (isComplete) {
+    console.log(`[Nina] 📊 Qualification check: CNPJ=${hasCnpj}, TipoCarga=${hasTipoCarga}, Estados=${hasEstados}, Volume=${hasVolume}, TipoFrota=${hasTipoFrota} -> COMPLETE`);
+  }
+  
+  return isComplete;
+}
+
 // ===== REAL-TIME QUALIFICATION EXTRACTION FUNCTION =====
 // Extract qualification answers from user messages for immediate saving
 function extractQualificationFromMessages(userMessages: string[]): { [key: string]: string | null } {
@@ -2419,6 +2438,94 @@ async function processQueueItem(
     console.log(`[Nina] 📝 Qualification answers extracted in real-time:`, mergedQA);
   }
   // ===== END REAL-TIME QUALIFICATION EXTRACTION =====
+
+  // ===== QUALIFICATION COMPLETE CHECK - HANDOFF TO HUMAN =====
+  // Check if all essential qualification fields are collected - if so, thank and handoff
+  const qualificationComplete = isQualificationComplete(conversation.contact, mergedQA);
+  
+  if (qualificationComplete) {
+    console.log(`[Nina] ✅ Qualificação completa! Dados coletados:`, mergedQA);
+    
+    // Send thank you / transition message
+    const contactName = conversation.contact?.call_name || conversation.contact?.name || '';
+    const thankYouMessage = contactName 
+      ? `Perfeito, ${contactName}! 🎯 Tenho todas as informações para montar sua cotação. Vou encaminhar para o corretor responsável que vai entrar em contato em breve. Obrigada pelo contato!`
+      : `Perfeito! 🎯 Tenho todas as informações para montar sua cotação. Vou encaminhar para o corretor responsável que vai entrar em contato em breve. Obrigada pelo contato!`;
+    
+    // Calculate delay
+    const delayMin = settings?.response_delay_min || 1000;
+    const delayMax = settings?.response_delay_max || 3000;
+    const delay = Math.random() * (delayMax - delayMin) + delayMin;
+    
+    // Get AI settings for metadata
+    const aiSettings = getModelSettings(settings, conversationHistory, message, conversation.contact, clientMemory);
+    
+    // Queue the handoff message
+    await queueTextResponse(supabase, conversation, message, thankYouMessage, settings, aiSettings, delay, agent);
+    
+    // Mark message as processed
+    const responseTime = Date.now() - new Date(message.sent_at).getTime();
+    await markMessagesAsProcessed(supabase, message.id, aggregatedMessageIds, responseTime);
+    
+    // Change conversation status to human
+    await supabase
+      .from('conversations')
+      .update({ 
+        status: 'human',
+        nina_context: {
+          ...conversation.nina_context,
+          qualification_answers: mergedQA,
+          qualification_completed_at: new Date().toISOString()
+        }
+      })
+      .eq('id', conversation.id);
+    
+    // Move deal to "Qualificado" stage if it exists
+    const { data: deal } = await supabase
+      .from('deals')
+      .select('id, pipeline_id')
+      .eq('contact_id', conversation.contact_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    
+    if (deal) {
+      const { data: qualifiedStage } = await supabase
+        .from('pipeline_stages')
+        .select('id')
+        .eq('pipeline_id', deal.pipeline_id)
+        .eq('title', 'Qualificado')
+        .maybeSingle();
+      
+      if (qualifiedStage) {
+        await supabase
+          .from('deals')
+          .update({ stage_id: qualifiedStage.id })
+          .eq('id', deal.id);
+        
+        console.log(`[Nina] 📊 Deal moved to Qualificado stage`);
+      }
+    }
+    
+    // Trigger whatsapp-sender
+    try {
+      const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+      fetch(senderUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({ triggered_by: 'nina-orchestrator-qualification-complete' })
+      }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+    } catch (e) {
+      console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+    }
+    
+    console.log(`[Nina] 🎯 Qualification complete! Conversation handed off to human`);
+    return;
+  }
+  // ===== END QUALIFICATION COMPLETE CHECK =====
 
   // Check if this is the first interaction (only 1 user message, no assistant messages yet)
   const userMessages = conversationHistory.filter((m: any) => m.role === 'user');
