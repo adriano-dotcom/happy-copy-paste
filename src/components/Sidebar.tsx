@@ -23,9 +23,12 @@ const allMenuItems = [
 
 const Logo = () => {
   return (
-    <Link to="/dashboard" className="flex items-center space-x-3 py-1">
-      <div className="relative w-10 h-10 flex items-center justify-center flex-shrink-0">
-        <div className="absolute inset-0 bg-cyan-500/20 blur-lg rounded-full" />
+    <Link to="/dashboard" className="flex items-center space-x-3 py-1 group">
+      <div className="relative w-11 h-11 flex items-center justify-center flex-shrink-0">
+        {/* Glow effect */}
+        <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/30 to-teal-500/30 blur-xl rounded-full animate-pulse" />
+        {/* Ring */}
+        <div className="absolute inset-0 rounded-xl ring-1 ring-white/10 group-hover:ring-cyan-500/30 transition-all" />
         <img src={jacometoLogo} alt="Jacometo" className="relative w-10 h-10 object-contain rounded-xl" />
       </div>
       <motion.div
@@ -34,8 +37,12 @@ const Logo = () => {
         transition={{ duration: 0.2 }}
         className="flex flex-col overflow-hidden"
       >
-        <span className="font-bold text-lg tracking-tight text-white whitespace-nowrap">Jacometo</span>
-        <span className="text-[10px] uppercase tracking-wider text-cyan-500 font-semibold">Adri Sdr</span>
+        <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-white to-slate-300 bg-clip-text text-transparent whitespace-nowrap">
+          Jacometo
+        </span>
+        <span className="text-[10px] uppercase tracking-wider bg-gradient-to-r from-cyan-400 to-teal-400 bg-clip-text text-transparent font-bold">
+          Adri Sdr
+        </span>
       </motion.div>
     </Link>
   );
@@ -43,9 +50,12 @@ const Logo = () => {
 
 const LogoIcon = () => {
   return (
-    <Link to="/dashboard" className="flex items-center py-1">
-      <div className="relative w-10 h-10 flex items-center justify-center flex-shrink-0">
-        <div className="absolute inset-0 bg-cyan-500/20 blur-lg rounded-full" />
+    <Link to="/dashboard" className="flex items-center py-1 group">
+      <div className="relative w-11 h-11 flex items-center justify-center flex-shrink-0">
+        {/* Glow effect */}
+        <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/30 to-teal-500/30 blur-xl rounded-full animate-pulse" />
+        {/* Ring */}
+        <div className="absolute inset-0 rounded-xl ring-1 ring-white/10 group-hover:ring-cyan-500/30 transition-all" />
         <img src={jacometoLogo} alt="Jacometo" className="relative w-10 h-10 object-contain rounded-xl" />
       </div>
     </Link>
@@ -65,19 +75,23 @@ const UnreadPreviewPanel = () => {
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mt-4 border-t border-slate-800/50 pt-4"
+      className="mt-4 pt-4"
     >
-      <h4 className="text-xs text-slate-500 uppercase tracking-wider mb-3 px-2 font-medium">
+      {/* Divider with gradient */}
+      <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mb-4" />
+      
+      <h4 className="text-xs text-slate-400 uppercase tracking-wider mb-3 px-2 font-medium flex items-center gap-2">
+        <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-cyan-400 to-teal-400 animate-pulse" />
         Mensagens não lidas
       </h4>
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         {unreadConversations.slice(0, 5).map(conv => (
           <Link
             key={conv.id}
             to={`/chat?conversation=${conv.id}`}
-            className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-800/60 transition-all group"
+            className="flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.02] hover:bg-gradient-to-r hover:from-cyan-500/10 hover:to-transparent border border-white/[0.03] hover:border-cyan-500/20 backdrop-blur-sm transition-all duration-300 group"
           >
-            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-cyan-900 to-slate-800 flex items-center justify-center text-xs font-bold text-cyan-200 border border-slate-700 flex-shrink-0 group-hover:ring-2 group-hover:ring-cyan-500/30 transition-all">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-cyan-800 to-slate-800 flex items-center justify-center text-xs font-bold text-cyan-200 ring-2 ring-cyan-500/20 group-hover:ring-cyan-400/40 shadow-lg shadow-cyan-500/10 transition-all flex-shrink-0">
               {conv.contactInitials}
             </div>
             <div className="flex-1 min-w-0">
@@ -88,7 +102,7 @@ const UnreadPreviewPanel = () => {
                 {conv.lastMessage.length > 30 ? conv.lastMessage.slice(0, 30) + '...' : conv.lastMessage}
               </p>
             </div>
-            <span className="min-w-[22px] h-[22px] flex items-center justify-center text-[11px] font-bold bg-red-500 text-white rounded-full px-1.5 shadow-lg shadow-red-500/30 flex-shrink-0">
+            <span className="min-w-[22px] h-[22px] flex items-center justify-center text-[11px] font-bold bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full px-1.5 shadow-lg shadow-rose-500/40 ring-2 ring-rose-400/30 flex-shrink-0">
               {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
             </span>
           </Link>
@@ -97,7 +111,7 @@ const UnreadPreviewPanel = () => {
       {unreadConversations.length > 5 && (
         <Link
           to="/chat"
-          className="block text-center text-xs text-cyan-500 hover:text-cyan-400 mt-3 py-2 hover:bg-slate-800/40 rounded-lg transition-colors"
+          className="block text-center text-xs bg-gradient-to-r from-cyan-400 to-teal-400 bg-clip-text text-transparent font-medium hover:from-cyan-300 hover:to-teal-300 mt-3 py-2 hover:bg-white/[0.03] rounded-lg transition-all"
         >
           Ver todas ({totalUnread} mensagens)
         </Link>
@@ -160,9 +174,12 @@ const SidebarContent = () => {
       </div>
 
       {/* User Footer */}
-      <div className="border-t border-slate-800/50 pt-4">
-        <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-800/50 transition-colors group">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-cyan-900 to-slate-800 flex items-center justify-center text-xs font-bold text-cyan-200 border border-slate-700 ring-2 ring-transparent group-hover:ring-cyan-500/20 transition-all flex-shrink-0">
+      <div className="pt-4">
+        {/* Divider with gradient */}
+        <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mb-4" />
+        
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.02] hover:bg-gradient-to-r hover:from-cyan-500/10 hover:to-transparent border border-white/[0.03] hover:border-cyan-500/20 transition-all duration-300 group">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-slate-800 to-slate-900 flex items-center justify-center text-xs font-bold text-cyan-300 border border-white/10 ring-2 ring-transparent group-hover:ring-cyan-500/30 transition-all flex-shrink-0 shadow-lg shadow-black/20">
             {initials}
           </div>
           <motion.div
@@ -173,20 +190,20 @@ const SidebarContent = () => {
             transition={{ duration: 0.2 }}
             className="flex-1 overflow-hidden"
           >
-            <p className="text-sm font-medium text-slate-200 group-hover:text-white whitespace-nowrap">{displayName}</p>
+            <p className="text-sm font-semibold text-slate-200 group-hover:text-white whitespace-nowrap transition-colors">{displayName}</p>
             <p className="text-xs text-slate-500 truncate">{displayEmail}</p>
           </motion.div>
           <motion.button
             animate={{
-              display: open ? "block" : "none",
+              display: open ? "flex" : "none",
               opacity: open ? 1 : 0,
             }}
             transition={{ duration: 0.2 }}
             onClick={handleLogout}
-            className="p-1.5 rounded-lg hover:bg-slate-700/50 transition-colors"
+            className="p-2 rounded-lg bg-white/[0.03] hover:bg-rose-500/20 hover:text-rose-400 border border-transparent hover:border-rose-500/30 transition-all duration-200 flex items-center justify-center"
             title="Sair"
           >
-            <LogOut className="w-4 h-4 text-slate-500 hover:text-red-400 transition-colors" />
+            <LogOut className="w-4 h-4 text-slate-400 group-hover:text-rose-400 transition-colors" />
           </motion.button>
         </div>
       </div>
@@ -199,7 +216,7 @@ const AppSidebar: React.FC = () => {
 
   return (
     <Sidebar open={open} setOpen={setOpen}>
-      <SidebarBody className="justify-between gap-10 bg-slate-950/50 backdrop-blur-xl border-r border-slate-800/50">
+      <SidebarBody className="justify-between gap-6">
         <SidebarContent />
       </SidebarBody>
     </Sidebar>
