@@ -1433,104 +1433,132 @@ const ChatInterface: React.FC = () => {
               <p className="text-xs mt-1 opacity-70">As conversas aparecerão aqui quando receberem mensagens</p>
             </div>
           ) : (
-            filteredConversations.map((chat) => (
-              <div 
-                key={chat.id}
-                onClick={() => setSelectedChatId(chat.id)}
-                className={`flex items-center p-4 cursor-pointer transition-all duration-200 border-b border-slate-800/30 hover:bg-slate-800/50 ${
-                  chat.status === 'closed' ? 'opacity-60' : ''
-                } ${
-                  selectedChatId === chat.id 
-                    ? 'bg-slate-800/80 border-l-2 border-l-cyan-500' 
-                    : chat.unreadCount > 0
-                      ? 'bg-cyan-950/20 border-l-2 border-l-cyan-500/50'
-                      : chat.status === 'closed'
-                        ? 'border-l-2 border-l-slate-600'
-                        : 'border-l-2 border-l-transparent'
-                }`}
-              >
-                <div className="relative">
-                  <div className={`w-12 h-12 rounded-full p-0.5 ${
-                    chat.status === 'closed' 
-                      ? 'bg-gradient-to-tr from-slate-600 to-slate-700' 
-                      : chat.unreadCount > 0 
-                        ? 'bg-gradient-to-tr from-cyan-600 to-teal-600' 
-                        : 'bg-gradient-to-tr from-slate-700 to-slate-900'
-                  }`}>
-                    <img 
-                      src={chat.contactAvatar} 
-                      alt={chat.contactName} 
-                      className="w-full h-full rounded-full object-cover border border-slate-800" 
-                    />
+            filteredConversations.map((chat) => {
+              // Agent colors for vibrant badges - iOS 26 style
+              const agentColors: Record<string, { gradient: string; border: string; text: string; shadow: string }> = {
+                'Adri': { gradient: 'from-violet-500/30 to-fuchsia-500/30', border: 'border-violet-400/50', text: 'text-violet-300', shadow: 'shadow-violet-500/25' },
+                'Sofia': { gradient: 'from-purple-500/30 to-pink-500/30', border: 'border-purple-400/50', text: 'text-purple-300', shadow: 'shadow-purple-500/25' },
+                'Leo': { gradient: 'from-sky-500/30 to-blue-500/30', border: 'border-sky-400/50', text: 'text-sky-300', shadow: 'shadow-sky-500/25' },
+                'Leonardo': { gradient: 'from-sky-500/30 to-blue-500/30', border: 'border-sky-400/50', text: 'text-sky-300', shadow: 'shadow-sky-500/25' },
+                'Barbara': { gradient: 'from-pink-500/30 to-rose-500/30', border: 'border-pink-400/50', text: 'text-pink-300', shadow: 'shadow-pink-500/25' },
+              };
+              const agentStyle = chat.agentName ? (agentColors[chat.agentName] || { gradient: 'from-cyan-500/30 to-teal-500/30', border: 'border-cyan-400/50', text: 'text-cyan-300', shadow: 'shadow-cyan-500/25' }) : null;
+              
+              return (
+                <div 
+                  key={chat.id}
+                  onClick={() => setSelectedChatId(chat.id)}
+                  className={`flex items-center p-4 cursor-pointer transition-all duration-300 border-b border-white/5 hover:bg-white/[0.03] hover:backdrop-blur-xl hover:scale-[1.005] ${
+                    chat.status === 'closed' ? 'opacity-50' : ''
+                  } ${
+                    selectedChatId === chat.id 
+                      ? 'bg-gradient-to-r from-cyan-500/15 via-teal-500/10 to-transparent backdrop-blur-xl border-l-[3px] border-l-cyan-400 shadow-lg shadow-cyan-500/10' 
+                      : chat.unreadCount > 0
+                        ? 'bg-gradient-to-r from-cyan-500/10 via-cyan-500/5 to-transparent border-l-[3px] border-l-cyan-400/70'
+                        : chat.status === 'closed'
+                          ? 'border-l-[3px] border-l-slate-600/50'
+                          : 'border-l-[3px] border-l-transparent'
+                  }`}
+                >
+                  {/* Avatar with vibrant ring */}
+                  <div className="relative">
+                    <div className={`w-12 h-12 rounded-full p-[2px] transition-all duration-300 ${
+                      chat.status === 'closed' 
+                        ? 'bg-gradient-to-tr from-slate-500 to-slate-600' 
+                        : chat.unreadCount > 0 
+                          ? 'bg-gradient-to-tr from-cyan-400 via-teal-400 to-emerald-400 shadow-lg shadow-cyan-500/40 animate-pulse' 
+                          : selectedChatId === chat.id
+                            ? 'bg-gradient-to-tr from-violet-500 via-fuchsia-500 to-pink-500 shadow-lg shadow-violet-500/30'
+                            : 'bg-gradient-to-tr from-slate-600 to-slate-700'
+                    }`}>
+                      <img 
+                        src={chat.contactAvatar} 
+                        alt={chat.contactName} 
+                        className="w-full h-full rounded-full object-cover border-2 border-slate-900" 
+                      />
+                    </div>
+                    {/* Status indicator with glow */}
+                    {chat.status === 'closed' ? (
+                      <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-gradient-to-r from-slate-400 to-slate-500 border-2 border-slate-900 rounded-full flex items-center justify-center">
+                        <XCircle className="w-2.5 h-2.5 text-slate-900" />
+                      </span>
+                    ) : chat.unreadCount > 0 ? (
+                      <span className="absolute bottom-0 right-0 w-4 h-4 bg-gradient-to-r from-emerald-400 to-green-400 border-2 border-slate-900 rounded-full shadow-lg shadow-emerald-400/60 animate-pulse"></span>
+                    ) : (
+                      <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-gradient-to-r from-slate-500 to-slate-600 border-2 border-slate-900 rounded-full"></span>
+                    )}
                   </div>
-                  {chat.status === 'closed' ? (
-                    <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-slate-500 border-2 border-slate-900 rounded-full flex items-center justify-center">
-                      <XCircle className="w-2.5 h-2.5 text-slate-900" />
-                    </span>
-                  ) : chat.unreadCount > 0 ? (
-                    <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-cyan-500 border-2 border-slate-900 rounded-full animate-pulse"></span>
-                  ) : (
-                    <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-slate-600 border-2 border-slate-900 rounded-full"></span>
-                  )}
-                </div>
-                
-                <div className="ml-3 flex-1 min-w-0">
-                  <div className="flex justify-between items-baseline mb-1">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <h3 className={`text-sm truncate ${chat.unreadCount > 0 ? 'font-bold text-white' : selectedChatId === chat.id ? 'font-semibold text-white' : 'font-semibold text-slate-300'}`}>
-                        {chat.contactName}
-                      </h3>
-                      {chat.agentName && (
-                        <span className="px-2 py-0.5 bg-gradient-to-r from-violet-500/20 to-purple-500/20 backdrop-blur-sm text-violet-300 border border-violet-400/30 text-[9px] rounded-full font-medium flex items-center gap-1 shrink-0 shadow-lg shadow-violet-500/10">
-                          <Sparkles className="w-2.5 h-2.5" />
-                          {chat.agentName}
+                  
+                  <div className="ml-3 flex-1 min-w-0">
+                    <div className="flex justify-between items-baseline mb-1">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {/* Contact name with glow for unread */}
+                        <h3 className={`text-sm truncate transition-all ${
+                          chat.unreadCount > 0 
+                            ? 'font-bold text-white drop-shadow-[0_0_8px_rgba(6,182,212,0.4)]' 
+                            : selectedChatId === chat.id 
+                              ? 'font-semibold text-white' 
+                              : 'font-semibold text-slate-300'
+                        }`}>
+                          {chat.contactName}
+                        </h3>
+                        {/* Agent badge with vibrant colors */}
+                        {chat.agentName && agentStyle && (
+                          <span className={`px-2 py-0.5 bg-gradient-to-r ${agentStyle.gradient} backdrop-blur-md ${agentStyle.text} border ${agentStyle.border} text-[9px] rounded-full font-semibold flex items-center gap-1 shrink-0 shadow-lg ${agentStyle.shadow}`}>
+                            <Sparkles className="w-2.5 h-2.5" />
+                            {chat.agentName}
+                          </span>
+                        )}
+                        {/* Pipeline badge */}
+                        {chat.pipelineName && (
+                          <span 
+                            className="px-2 py-0.5 text-[9px] rounded-full font-semibold flex items-center gap-1 shrink-0 border backdrop-blur-md shadow-lg"
+                            style={{ 
+                              background: `linear-gradient(to right, ${chat.pipelineColor}25, ${chat.pipelineColor}15)`,
+                              color: chat.pipelineColor || '#3b82f6',
+                              borderColor: `${chat.pipelineColor}50`,
+                              boxShadow: `0 4px 14px -3px ${chat.pipelineColor}30`
+                            }}
+                          >
+                            <span className="text-[10px]">{chat.pipelineIcon}</span>
+                            {chat.pipelineName}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-medium shrink-0 ml-2">{chat.lastMessageTime}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 truncate">
+                      {chat.messages[chat.messages.length - 1]?.type === MessageType.IMAGE ? '📷 Imagem' : 
+                       chat.messages[chat.messages.length - 1]?.type === MessageType.AUDIO ? '🎵 Áudio' : 
+                       chat.lastMessage || 'Sem mensagens'}
+                    </p>
+                    
+                    {/* Status badges and tags with glassmorphism */}
+                    <div className="flex items-center mt-2 gap-1.5 flex-wrap">
+                      {renderStatusBadge(chat.status, chat.assignedUserName)}
+                      <LeadScoreBadge clientMemory={chat.clientMemory} compact />
+                      <WaitingTimeBadge 
+                        lastMessageAt={chat.lastMessageAt} 
+                        lastMessageFromUser={chat.lastMessageFromUser} 
+                        compact 
+                      />
+                      {/* Tags with glass effect */}
+                      {chat.tags.slice(0, 1).map(tag => (
+                        <span key={tag} className="px-2 py-0.5 bg-slate-700/40 backdrop-blur-sm border border-white/10 text-slate-300 text-[10px] rounded-lg font-medium hover:bg-slate-600/40 transition-all">
+                          {tag}
                         </span>
-                      )}
-                      {chat.pipelineName && (
-                        <span 
-                          className="px-2 py-0.5 text-[9px] rounded-full font-medium flex items-center gap-1 shrink-0 border backdrop-blur-sm shadow-lg"
-                          style={{ 
-                            background: `linear-gradient(to right, ${chat.pipelineColor}20, ${chat.pipelineColor}15)`,
-                            color: chat.pipelineColor || '#3b82f6',
-                            borderColor: `${chat.pipelineColor}40`,
-                            boxShadow: `0 4px 14px -3px ${chat.pipelineColor}20`
-                          }}
-                        >
-                          <span className="text-[10px]">{chat.pipelineIcon}</span>
-                          {chat.pipelineName}
+                      ))}
+                      {/* Unread badge with pulsing glow */}
+                      {chat.unreadCount > 0 && (
+                        <span className="ml-auto bg-gradient-to-r from-cyan-400 to-teal-400 text-slate-900 text-[10px] font-bold px-2 h-5 min-w-[1.25rem] flex items-center justify-center rounded-full shadow-lg shadow-cyan-400/50 animate-pulse ring-2 ring-cyan-400/30">
+                          {chat.unreadCount}
                         </span>
                       )}
                     </div>
-                    <span className="text-[10px] text-slate-500 font-medium shrink-0 ml-2">{chat.lastMessageTime}</span>
-                  </div>
-                  <p className="text-xs text-slate-500 truncate">
-                    {chat.messages[chat.messages.length - 1]?.type === MessageType.IMAGE ? '📷 Imagem' : 
-                     chat.messages[chat.messages.length - 1]?.type === MessageType.AUDIO ? '🎵 Áudio' : 
-                     chat.lastMessage || 'Sem mensagens'}
-                  </p>
-                  
-                  <div className="flex items-center mt-2 gap-1.5 flex-wrap">
-                    {renderStatusBadge(chat.status, chat.assignedUserName)}
-                    <LeadScoreBadge clientMemory={chat.clientMemory} compact />
-                    <WaitingTimeBadge 
-                      lastMessageAt={chat.lastMessageAt} 
-                      lastMessageFromUser={chat.lastMessageFromUser} 
-                      compact 
-                    />
-                    {chat.tags.slice(0, 1).map(tag => (
-                      <span key={tag} className="px-2 py-0.5 bg-slate-800/80 border border-slate-700 text-slate-400 text-[10px] rounded-md font-medium">
-                        {tag}
-                      </span>
-                    ))}
-                    {chat.unreadCount > 0 && (
-                      <span className="ml-auto bg-gradient-to-r from-cyan-600 to-teal-600 text-white text-[10px] font-bold px-1.5 h-4 min-w-[1rem] flex items-center justify-center rounded-full shadow-lg shadow-cyan-500/20">
-                        {chat.unreadCount}
-                      </span>
-                    )}
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
