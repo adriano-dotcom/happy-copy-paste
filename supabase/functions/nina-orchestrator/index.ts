@@ -2505,6 +2505,114 @@ async function processQueueItem(
         
         console.log(`[Nina] 📊 Deal moved to Qualificado stage`);
       }
+      
+      // Send email notification to deal owner with admin in BCC
+      try {
+        // Fetch deal owner email
+        const { data: dealWithOwner } = await supabase
+          .from('deals')
+          .select('owner_id')
+          .eq('id', deal.id)
+          .single();
+        
+        let ownerEmail = 'atendimento@jacometo.com.br'; // fallback
+        let ownerName = 'Equipe';
+        
+        if (dealWithOwner?.owner_id) {
+          const { data: owner } = await supabase
+            .from('team_members')
+            .select('email, name')
+            .eq('id', dealWithOwner.owner_id)
+            .single();
+          
+          if (owner?.email) {
+            ownerEmail = owner.email;
+            ownerName = owner.name || 'Equipe';
+          }
+        }
+        
+        const adminEmail = 'adriano@jacometo.com.br';
+        const contactName = conversation.contact?.name || conversation.contact?.phone_number || 'Lead';
+        const contactPhone = conversation.contact?.phone_number || '-';
+        const contactCnpj = conversation.contact?.cnpj || '-';
+        const contactCompany = conversation.contact?.company || '-';
+        const contactEmail = conversation.contact?.email || '-';
+        
+        // Build qualification info
+        const qa = mergedQA;
+        const tipoCarga = qa.tipo_carga || '-';
+        const estados = qa.estados || '-';
+        const viagensMes = qa.viagens_mes || qa.valor_medio || '-';
+        const tipoFrota = qa.tipo_frota || '-';
+        const contratacao = qa.contratacao || '-';
+        
+        const emailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #1e40af;">🎯 Novo Lead Qualificado!</h2>
+            <p>Olá ${ownerName},</p>
+            <p>Um novo lead foi qualificado pela Nina e está aguardando seu atendimento.</p>
+            
+            <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 16px 0;">
+              <h3 style="color: #334155; margin-top: 0;">📋 Informações do Contato</h3>
+              <ul style="list-style: none; padding: 0;">
+                <li><strong>Nome:</strong> ${contactName}</li>
+                <li><strong>Telefone:</strong> ${contactPhone}</li>
+                <li><strong>Email:</strong> ${contactEmail}</li>
+                <li><strong>CNPJ:</strong> ${contactCnpj}</li>
+                <li><strong>Empresa:</strong> ${contactCompany}</li>
+              </ul>
+            </div>
+            
+            <div style="background: #f0fdf4; padding: 16px; border-radius: 8px; margin: 16px 0;">
+              <h3 style="color: #166534; margin-top: 0;">🚛 Informações de Qualificação</h3>
+              <ul style="list-style: none; padding: 0;">
+                <li><strong>Tipo de Carga:</strong> ${tipoCarga}</li>
+                <li><strong>Estados Atendidos:</strong> ${estados}</li>
+                <li><strong>Volume/Viagens por Mês:</strong> ${viagensMes}</li>
+                <li><strong>Tipo de Frota:</strong> ${tipoFrota}</li>
+                <li><strong>Tipo de Contratação:</strong> ${contratacao}</li>
+              </ul>
+            </div>
+            
+            <p style="margin-top: 24px;">
+              <a href="https://jacometo.lovable.app/chat" style="background: #1e40af; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; display: inline-block;">
+                Acessar Sistema
+              </a>
+            </p>
+            
+            <p style="color: #64748b; font-size: 12px; margin-top: 24px;">
+              Este email foi enviado automaticamente pelo sistema Nina.
+            </p>
+          </div>
+        `;
+        
+        const emailPayload = {
+          to: ownerEmail,
+          bcc: [adminEmail],
+          subject: `🎯 Novo Lead Qualificado: ${contactName}`,
+          html: emailHtml
+        };
+        
+        // Send email via edge function
+        const emailUrl = `${supabaseUrl}/functions/v1/send-email`;
+        fetch(emailUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`
+          },
+          body: JSON.stringify(emailPayload)
+        }).then(res => {
+          if (res.ok) {
+            console.log(`[Nina] 📧 Email notification sent to ${ownerEmail} (BCC: ${adminEmail})`);
+          } else {
+            console.error(`[Nina] ❌ Failed to send email notification: ${res.status}`);
+          }
+        }).catch(err => console.error('[Nina] Error sending email notification:', err));
+        
+      } catch (emailError) {
+        console.error('[Nina] Error preparing email notification:', emailError);
+      }
     }
     
     // Trigger whatsapp-sender
