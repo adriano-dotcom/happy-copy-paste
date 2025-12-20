@@ -85,7 +85,7 @@ const FREE_TEXT_VARIABLES = [
 // Sugestões de mensagens pré-preenchidas por agente (baseadas no contexto do produto)
 const AGENT_MESSAGE_SUGGESTIONS: Record<string, string> = {
   'adri': 'Oi {nome}! Nossa conversa sobre seguro de carga está prestes a expirar. Me responde qualquer coisa pra gente continuar falando sobre a proteção da sua operação de transporte!',
-  'barbara': 'Oi {nome}! Nossa conversa sobre plano de saúde está prestes a expirar. Me responde qualquer coisa pra gente continuar com a cotação!',
+  'clara': 'Oi {nome}! Nossa conversa sobre plano de saúde está prestes a expirar. Me responde qualquer coisa pra gente continuar com a cotação!',
   'default': 'Oi {nome}! Nossa conversa está prestes a expirar. Me responde qualquer coisa pra gente continuar!',
 };
 
@@ -695,7 +695,7 @@ export default function FollowupAutomationsSettings() {
                     return (
                       <div key={agent.id} className="space-y-2 p-3 border rounded-lg bg-muted/20">
                         <Label className="flex items-center gap-2">
-                          <span className="text-lg">{agent.slug === 'adri' ? '🚛' : agent.slug === 'barbara' ? '🏥' : '🤖'}</span>
+                          <span className="text-lg">{agent.slug === 'adri' ? '🚛' : agent.slug === 'clara' ? '🏥' : '🤖'}</span>
                           {agent.name}
                         </Label>
                         <Textarea

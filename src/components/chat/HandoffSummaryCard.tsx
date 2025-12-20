@@ -69,7 +69,7 @@ export const HandoffSummaryCard: React.FC<HandoffSummaryCardProps> = ({ ninaCont
   ];
 
   // Choose fields based on agent
-  const fields = agentSlug === 'barbara' ? healthFields : transportFields;
+  const fields = agentSlug === 'clara' ? healthFields : transportFields;
 
   return (
     <div className="space-y-3">
