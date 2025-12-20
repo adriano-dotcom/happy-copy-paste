@@ -73,8 +73,9 @@ const OUT_OF_SCOPE_INSURANCE_KEYWORDS: Record<string, string[]> = {
   'rural': ['seguro rural', 'seguro agrícola', 'seguro agricola', 'seguro safra', 'seguro fazenda', 'seguro gado', 'seguro pecuário', 'seguro pecuario', 'seguro plantação', 'seguro plantacao', 'seguro colheita'],
   'nautico': ['seguro barco', 'seguro lancha', 'seguro jet ski', 'seguro jetski', 'seguro embarcação', 'seguro embarcacao', 'seguro iate', 'seguro marítimo', 'seguro maritimo', 'seguro náutico', 'seguro nautico'],
   'aeronautico': ['seguro avião', 'seguro aviao', 'seguro helicóptero', 'seguro helicoptero', 'seguro aeronave', 'seguro drone', 'seguro aeronáutico', 'seguro aeronautico', 'seguro asa delta', 'seguro parapente'],
-  'saude': ['plano de saúde', 'plano de saude', 'seguro saúde', 'seguro saude', 'convênio médico', 'convenio medico', 'assistência médica', 'assistencia medica', 'plano médico', 'plano medico'],
-  'odonto': ['plano odonto', 'plano odontológico', 'plano odontologico', 'seguro dental', 'plano dentário', 'plano dentario', 'convênio dental', 'convenio dental', 'plano dente'],
+  // 'saude' e 'odonto' REMOVIDOS - Barbara (agente especialista) atende esses tipos
+  // 'saude': [...] - Atendido por Barbara
+  // 'odonto': [...] - Atendido por Barbara
   'previdencia': ['previdência privada', 'previdencia privada', 'pgbl', 'vgbl', 'aposentadoria privada', 'plano de aposentadoria', 'fundo de previdência', 'fundo de previdencia', 'plano previdenciário', 'plano previdenciario'],
   'consorcio': ['consórcio', 'consorcio', 'consórcio imóvel', 'consorcio imovel', 'consórcio carro', 'consorcio carro', 'consórcio auto', 'consorcio auto', 'carta de crédito', 'carta de credito'],
   'cyber': ['seguro cyber', 'seguro digital', 'proteção de dados', 'protecao de dados', 'seguro vazamento', 'seguro cibernético', 'seguro cibernetico', 'seguro ataque hacker', 'seguro ransomware', 'lgpd'],
@@ -103,8 +104,7 @@ const INSURANCE_TYPE_NAMES: Record<string, string> = {
   'rural': 'Seguro Rural/Agrícola',
   'nautico': 'Seguro Náutico',
   'aeronautico': 'Seguro Aeronáutico',
-  'saude': 'Plano de Saúde',
-  'odonto': 'Plano Odontológico',
+  // 'saude' e 'odonto' removidos - Barbara atende esses tipos
   'previdencia': 'Previdência Privada',
   'consorcio': 'Consórcio',
   'cyber': 'Seguro Cyber',
