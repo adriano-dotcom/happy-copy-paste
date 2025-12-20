@@ -63,6 +63,28 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        status: {
+          success: {
+            DEFAULT: "hsl(var(--status-success))",
+            foreground: "hsl(var(--status-success-foreground))",
+          },
+          info: {
+            DEFAULT: "hsl(var(--status-info))",
+            foreground: "hsl(var(--status-info-foreground))",
+          },
+          warning: {
+            DEFAULT: "hsl(var(--status-warning))",
+            foreground: "hsl(var(--status-warning-foreground))",
+          },
+          brand: {
+            DEFAULT: "hsl(var(--status-brand))",
+            foreground: "hsl(var(--status-brand-foreground))",
+          },
+          window: {
+            DEFAULT: "hsl(var(--status-window))",
+            foreground: "hsl(var(--status-window-foreground))",
+          },
+        },
         chart: {
           1: "hsl(var(--chart-1))",
           2: "hsl(var(--chart-2))",

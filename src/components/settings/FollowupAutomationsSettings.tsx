@@ -386,14 +386,14 @@ export default function FollowupAutomationsSettings() {
     );
   }
 
-  return (
+    return (
     <Tabs defaultValue="rules" className="space-y-6">
-      <TabsList className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl">
-        <TabsTrigger value="rules" className="data-[state=active]:bg-white/10">
+      <TabsList className="bg-card/40 backdrop-blur-md border border-border/60 rounded-xl">
+        <TabsTrigger value="rules" className="data-[state=active]:bg-accent/50">
           <Zap className="h-4 w-4 mr-2" />
           Regras
         </TabsTrigger>
-        <TabsTrigger value="dashboard" className="data-[state=active]:bg-white/10">
+        <TabsTrigger value="dashboard" className="data-[state=active]:bg-accent/50">
           <BarChart3 className="h-4 w-4 mr-2" />
           Dashboard
         </TabsTrigger>
@@ -408,26 +408,29 @@ export default function FollowupAutomationsSettings() {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-xl font-semibold tracking-tight">Automações de Follow-up</h3>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-foreground/70">
               Configure disparos automáticos quando leads ficam sem responder
             </p>
           </div>
           <div className="flex gap-2">
-            <Button 
-              variant="secondary" 
-              size="sm" 
-              onClick={() => { loadLogs(); setIsLogsModalOpen(true); }}
-              className="bg-white/10 hover:bg-white/20 border border-white/20 text-foreground"
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                loadLogs();
+                setIsLogsModalOpen(true);
+              }}
+              className="bg-card/40 hover:bg-card/55 border border-border/60 text-foreground"
             >
               <History className="h-4 w-4 mr-2" />
               Histórico
             </Button>
-            <Button 
-              variant="secondary" 
-              size="sm" 
-              onClick={handleRunNow} 
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleRunNow}
               disabled={isRunning}
-              className="bg-white/10 hover:bg-white/20 border border-white/20 text-foreground"
+              className="bg-card/40 hover:bg-card/55 border border-border/60 text-foreground"
             >
               <Play className="h-4 w-4 mr-2" />
               {isRunning ? 'Executando...' : 'Executar Agora'}
@@ -441,10 +444,10 @@ export default function FollowupAutomationsSettings() {
 
       {/* List */}
       {automations.length === 0 ? (
-        <div className="text-center py-12 border border-white/10 rounded-2xl bg-white/5 backdrop-blur-sm">
+        <div className="text-center py-12 border border-border/60 rounded-2xl bg-card/40 backdrop-blur-md">
           <Zap className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">Nenhuma automação configurada</p>
-          <Button onClick={openCreateModal} variant="secondary" className="mt-4 bg-white/10 hover:bg-white/20 border border-white/20">
+          <p className="text-foreground/70">Nenhuma automação configurada</p>
+          <Button onClick={openCreateModal} variant="secondary" className="mt-4 bg-card/40 hover:bg-card/55 border border-border/60">
             Criar primeira automação
           </Button>
         </div>
@@ -453,43 +456,53 @@ export default function FollowupAutomationsSettings() {
           {automations.map(automation => (
             <div
               key={automation.id}
-              className="border border-white/10 rounded-2xl p-5 flex items-center justify-between bg-white/5 backdrop-blur-sm hover:bg-white/10 transition-all duration-300 shadow-lg shadow-black/5"
+              className="border border-border/60 rounded-2xl p-5 flex items-center justify-between bg-card/40 backdrop-blur-md hover:bg-card/55 transition-all duration-300 shadow-lg shadow-black/5"
             >
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
                   <h4 className="font-semibold text-foreground">{automation.name}</h4>
-                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                    automation.is_active 
-                      ? 'bg-emerald-500/30 text-emerald-400' 
-                      : 'bg-white/10 text-muted-foreground'
-                  }`}>
+                  <span className={
+                    `text-xs px-2.5 py-1 rounded-full font-semibold border ${
+                      automation.is_active
+                        ? 'bg-status-success text-status-success-foreground border-status-success/60'
+                        : 'bg-secondary text-secondary-foreground border-border/60'
+                    }`
+                  }>
                     {automation.is_active ? 'Ativa' : 'Inativa'}
                   </span>
-                  <span className={`text-xs px-2.5 py-1 rounded-full flex items-center gap-1 font-medium ${
-                    automation.automation_type === 'free_text' 
-                      ? 'bg-blue-500/30 text-blue-400' 
-                      : automation.automation_type === 'window_expiring'
-                        ? 'bg-amber-500/30 text-amber-400'
-                        : 'bg-purple-500/30 text-purple-400'
-                  }`}>
+                  <span className={
+                    `text-xs px-2.5 py-1 rounded-full flex items-center gap-1 font-semibold border ${
+                      automation.automation_type === 'free_text'
+                        ? 'bg-status-info text-status-info-foreground border-status-info/60'
+                        : automation.automation_type === 'window_expiring'
+                          ? 'bg-status-warning text-status-warning-foreground border-status-warning/60'
+                          : 'bg-status-brand text-status-brand-foreground border-status-brand/60'
+                    }`
+                  }>
                     {automation.automation_type === 'free_text' ? (
-                      <><MessageSquare className="h-3 w-3" /> Texto Livre</>
+                      <>
+                        <MessageSquare className="h-3 w-3" /> Texto Livre
+                      </>
                     ) : automation.automation_type === 'window_expiring' ? (
-                      <><Timer className="h-3 w-3" /> Última Chance</>
+                      <>
+                        <Timer className="h-3 w-3" /> Última Chance
+                      </>
                     ) : (
-                      <><FileText className="h-3 w-3" /> Template</>
+                      <>
+                        <FileText className="h-3 w-3" /> Template
+                      </>
                     )}
                   </span>
                   {automation.within_window_only && (
-                    <span className="text-xs px-2.5 py-1 rounded-full bg-orange-500/30 text-orange-400 font-medium">
+                    <span className="text-xs px-2.5 py-1 rounded-full font-semibold border bg-status-window text-status-window-foreground border-status-window/60">
                       Janela 24h
                     </span>
                   )}
                 </div>
                 {automation.description && (
-                  <p className="text-sm text-muted-foreground mb-2">{automation.description}</p>
+                  <p className="text-sm text-foreground/70 mb-2">{automation.description}</p>
                 )}
-                <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                <div className="flex flex-wrap gap-4 text-xs text-foreground/70">
                   <span className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
                     {formatTimeDisplay(automation)}
@@ -502,15 +515,22 @@ export default function FollowupAutomationsSettings() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Switch
-                  checked={automation.is_active}
-                  onCheckedChange={() => handleToggleActive(automation)}
-                />
-                <Button variant="ghost" size="icon" onClick={() => openEditModal(automation)}>
+                <Switch checked={automation.is_active} onCheckedChange={() => handleToggleActive(automation)} />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => openEditModal(automation)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
                   <Pencil className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="icon" onClick={() => handleDelete(automation)}>
-                  <Trash2 className="h-4 w-4 text-destructive" />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleDelete(automation)}
+                  className="text-destructive hover:text-destructive/90"
+                >
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
             </div>
