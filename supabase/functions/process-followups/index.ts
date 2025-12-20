@@ -6,6 +6,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface MessageSequenceItem {
+  attempt: number;
+  type: 'manual' | 'ai_generated';
+  content?: string;
+  ai_prompt_type?: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance';
+  delay_hours?: number;
+}
+
 interface Automation {
   id: string;
   name: string;
@@ -28,6 +36,7 @@ interface Automation {
   is_active: boolean;
   minutes_before_expiry: number;
   only_if_no_client_response: boolean;
+  messages_sequence: MessageSequenceItem[] | null;
 }
 
 interface EligibleConversation {
@@ -75,6 +84,98 @@ function replaceVariables(message: string, conv: EligibleConversation): string {
     .replace(/{call_name}/gi, callName)
     .replace(/{empresa}/gi, company)
     .replace(/{company}/gi, company);
+}
+
+// Generate AI message using edge function
+async function generateAIMessage(
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  conv: EligibleConversation,
+  promptType: string,
+  attemptNumber: number,
+  hoursWaiting: number,
+  agentName?: string,
+  agentSpecialty?: string
+): Promise<string> {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/generate-followup-message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({
+        contact_name: conv.contact_name || conv.contact_call_name || 'Cliente',
+        contact_company: conv.contact_company,
+        agent_name: agentName,
+        agent_specialty: agentSpecialty,
+        prompt_type: promptType,
+        hours_waiting: hoursWaiting,
+        attempt_number: attemptNumber,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('[process-followups] AI message generation failed:', response.status);
+      return `Oi ${conv.contact_name || 'Cliente'}! Tudo bem? Ainda estou por aqui caso precise de ajuda.`;
+    }
+
+    const data = await response.json();
+    return data.message || `Oi ${conv.contact_name || 'Cliente'}! Posso ajudar com algo?`;
+  } catch (error) {
+    console.error('[process-followups] Error generating AI message:', error);
+    return `Oi ${conv.contact_name || 'Cliente'}! Tudo bem? Ainda estou por aqui caso precise de ajuda.`;
+  }
+}
+
+// Get message for current attempt from sequence
+async function getMessageForAttempt(
+  automation: Automation,
+  attemptNumber: number,
+  conv: EligibleConversation,
+  hoursWaiting: number,
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  agentName?: string,
+  agentSpecialty?: string
+): Promise<string> {
+  const sequence = automation.messages_sequence;
+  
+  // If no sequence configured, use the legacy free_text_message
+  if (!sequence || sequence.length === 0) {
+    return replaceVariables(automation.free_text_message || 'Oi {nome}, ainda consegue continuar?', conv);
+  }
+
+  // Find the message for this attempt
+  const sequenceItem = sequence.find(s => s.attempt === attemptNumber);
+  
+  if (!sequenceItem) {
+    // Fallback to the last message in sequence or free_text_message
+    const lastItem = sequence[sequence.length - 1];
+    if (lastItem) {
+      if (lastItem.type === 'ai_generated' && lastItem.ai_prompt_type) {
+        return await generateAIMessage(
+          supabaseUrl, supabaseServiceKey, conv,
+          lastItem.ai_prompt_type, attemptNumber, hoursWaiting,
+          agentName, agentSpecialty
+        );
+      }
+      return replaceVariables(lastItem.content || automation.free_text_message || 'Oi {nome}!', conv);
+    }
+    return replaceVariables(automation.free_text_message || 'Oi {nome}, ainda consegue continuar?', conv);
+  }
+
+  // Generate AI message or use manual content
+  if (sequenceItem.type === 'ai_generated' && sequenceItem.ai_prompt_type) {
+    console.log(`[process-followups] Generating AI message for attempt ${attemptNumber}, type: ${sequenceItem.ai_prompt_type}`);
+    return await generateAIMessage(
+      supabaseUrl, supabaseServiceKey, conv,
+      sequenceItem.ai_prompt_type, attemptNumber, hoursWaiting,
+      agentName, agentSpecialty
+    );
+  }
+
+  return replaceVariables(sequenceItem.content || automation.free_text_message || 'Oi {nome}!', conv);
 }
 
 serve(async (req) => {
@@ -174,11 +275,14 @@ serve(async (req) => {
         template = templateData;
       }
 
-      // For free_text automations, verify message exists
-      if (automation.automation_type === 'free_text' && !automation.free_text_message) {
-        console.log(`[process-followups] No free text message configured, skipping`);
-        results.push({ automation: automation.name, sent: 0, skipped: 0, failed: 0 });
-        continue;
+      // For free_text automations, verify message exists (or has sequence)
+      if (automation.automation_type === 'free_text') {
+        const hasSequence = automation.messages_sequence && automation.messages_sequence.length > 0;
+        if (!hasSequence && !automation.free_text_message?.trim()) {
+          console.log(`[process-followups] No free text message or sequence configured, skipping`);
+          results.push({ automation: automation.name, sent: 0, skipped: 0, failed: 0 });
+          continue;
+        }
       }
 
       // Calculate the cutoff time based on time_unit
@@ -195,6 +299,7 @@ serve(async (req) => {
           last_message_at,
           status,
           whatsapp_window_start,
+          current_agent_id,
           contacts!inner (
             name,
             call_name,
@@ -222,6 +327,19 @@ serve(async (req) => {
 
       console.log(`[process-followups] Found ${conversationsRaw.length} potential conversations`);
 
+      // Fetch agent info for AI message generation
+      const { data: agentsData } = await supabase
+        .from('agents')
+        .select('id, name, specialty')
+        .eq('is_active', true);
+      
+      const agentsMap: Record<string, { name: string; specialty: string | null }> = {};
+      if (agentsData) {
+        for (const agent of agentsData) {
+          agentsMap[agent.id] = { name: agent.name, specialty: agent.specialty };
+        }
+      }
+
       let sent = 0;
       let skipped = 0;
       let failed = 0;
@@ -237,7 +355,7 @@ serve(async (req) => {
           contact_call_name: (convRaw.contacts as any)?.call_name,
           contact_company: (convRaw.contacts as any)?.company,
           contact_phone: (convRaw.contacts as any)?.phone_number,
-          current_agent_id: null,
+          current_agent_id: convRaw.current_agent_id,
           pipeline_id: null,
         };
 
@@ -308,8 +426,11 @@ serve(async (req) => {
           continue;
         }
 
+        // Determine current attempt number
+        const attemptNumber = (previousLogs?.length || 0) + 1;
+
         // Check max attempts
-        if (previousLogs && previousLogs.length >= automation.max_attempts) {
+        if (attemptNumber > automation.max_attempts) {
           console.log(`[process-followups] Max attempts reached for conversation ${conv.id}`);
           skipped++;
           continue;
@@ -329,12 +450,24 @@ serve(async (req) => {
         const msWaited = now.getTime() - new Date(conv.last_message_at).getTime();
         const hoursWaited = msWaited / (1000 * 60 * 60);
 
+        // Get agent info for AI generation
+        const agentInfo = conv.current_agent_id ? agentsMap[conv.current_agent_id] : null;
+
         try {
           if (automation.automation_type === 'free_text') {
-            // Send free text message directly via send_queue
-            const messageContent = replaceVariables(automation.free_text_message!, conv);
+            // Get message content based on attempt number and sequence
+            const messageContent = await getMessageForAttempt(
+              automation,
+              attemptNumber,
+              conv,
+              hoursWaited,
+              supabaseUrl,
+              supabaseServiceKey,
+              agentInfo?.name,
+              agentInfo?.specialty || undefined
+            );
             
-            console.log(`[process-followups] Sending free text message to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
+            console.log(`[process-followups] Sending message (attempt ${attemptNumber}) to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
 
             // Insert into send_queue
             const { data: queueItem, error: queueError } = await supabase
@@ -358,7 +491,7 @@ serve(async (req) => {
                 automation_id: automation.id,
                 conversation_id: conv.id,
                 contact_id: conv.contact_id,
-                template_name: `[Texto Livre] ${automation.name}`,
+                template_name: `[Tentativa ${attemptNumber}] ${automation.name}`,
                 status: 'failed',
                 error_message: queueError.message,
                 hours_waited: hoursWaited,
@@ -373,12 +506,12 @@ serve(async (req) => {
               automation_id: automation.id,
               conversation_id: conv.id,
               contact_id: conv.contact_id,
-              template_name: `[Texto Livre] ${automation.name}`,
+              template_name: `[Tentativa ${attemptNumber}] ${automation.name}`,
               status: 'sent',
               hours_waited: hoursWaited,
             });
 
-            console.log(`[process-followups] Queued free text follow-up for conversation ${conv.id}`);
+            console.log(`[process-followups] Queued follow-up (attempt ${attemptNumber}) for conversation ${conv.id}`);
             
             // Trigger whatsapp-sender to process the queue immediately
             try {
@@ -781,5 +914,3 @@ async function processWindowExpiringAutomation(
   console.log(`[process-followups] Window expiring automation ${automation.name}: sent=${sent}, skipped=${skipped}, failed=${failed}`);
   return { automation: automation.name, sent, skipped, failed };
 }
-
-// Note: EligibleConversation interface is defined at the top of the file

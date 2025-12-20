@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Clock, Zap, History, Play, BarChart3, MessageSquare, FileText, Timer, Sparkles } from 'lucide-react';
+import { Plus, Pencil, Trash2, Clock, Zap, History, Play, BarChart3, MessageSquare, FileText, Timer, Sparkles, Bot, Wand2, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import AutomationsDashboard from './AutomationsDashboard';
@@ -18,6 +18,13 @@ interface Template {
   id: string;
   name: string;
   status: string;
+}
+
+interface MessageSequenceItem {
+  attempt: number;
+  type: 'manual' | 'ai_generated';
+  content?: string;
+  ai_prompt_type?: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance';
 }
 
 interface Automation {
@@ -42,6 +49,7 @@ interface Automation {
   created_at: string;
   minutes_before_expiry: number;
   only_if_no_client_response: boolean;
+  messages_sequence: MessageSequenceItem[] | null;
 }
 
 interface Agent {
@@ -113,14 +121,24 @@ export default function FollowupAutomationsSettings() {
     agent_messages: {} as Record<string, string>,
     within_window_only: true,
     conversation_statuses: ['nina', 'human'],
-    max_attempts: 2,
+    max_attempts: 3,
     cooldown_hours: 4,
     active_hours_start: '09:00',
     active_hours_end: '18:00',
     active_days: [1, 2, 3, 4, 5],
     minutes_before_expiry: 10,
     only_if_no_client_response: true,
+    messages_sequence: [] as MessageSequenceItem[],
   });
+  
+  const [isGeneratingMessage, setIsGeneratingMessage] = useState<number | null>(null);
+
+  const AI_PROMPT_TYPES = [
+    { value: 'qualification', label: 'Qualificação', desc: 'Pergunta sobre necessidade/dor' },
+    { value: 'urgency', label: 'Urgência', desc: 'Pergunta sobre prazo' },
+    { value: 'soft_reengagement', label: 'Retomada Suave', desc: 'Mensagem amigável' },
+    { value: 'last_chance', label: 'Última Chance', desc: 'Encerramento amigável' },
+  ];
 
   useEffect(() => {
     loadData();
@@ -149,6 +167,7 @@ export default function FollowupAutomationsSettings() {
         within_window_only: a.within_window_only ?? false,
         minutes_before_expiry: a.minutes_before_expiry ?? 10,
         only_if_no_client_response: a.only_if_no_client_response ?? true,
+        messages_sequence: Array.isArray(a.messages_sequence) ? (a.messages_sequence as unknown as MessageSequenceItem[]) : null,
       }));
 
       setAutomations(mappedAutomations);
