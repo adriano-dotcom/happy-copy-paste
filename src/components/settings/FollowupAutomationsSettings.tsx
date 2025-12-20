@@ -21,10 +21,11 @@ interface Template {
 }
 
 interface MessageSequenceItem {
-  attempt: number;
+  attempt?: number;
   type: 'manual' | 'ai_generated';
   content?: string;
   ai_prompt_type?: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance';
+  [key: string]: string | number | undefined;
 }
 
 interface Automation {
@@ -56,6 +57,7 @@ interface Agent {
   id: string;
   name: string;
   slug: string;
+  specialty?: string;
   is_active: boolean;
 }
 
@@ -218,6 +220,7 @@ export default function FollowupAutomationsSettings() {
       active_days: [1, 2, 3, 4, 5],
       minutes_before_expiry: 10,
       only_if_no_client_response: true,
+      messages_sequence: [],
     });
     setIsModalOpen(true);
   };
@@ -243,6 +246,7 @@ export default function FollowupAutomationsSettings() {
       active_days: automation.active_days,
       minutes_before_expiry: automation.minutes_before_expiry ?? 10,
       only_if_no_client_response: automation.only_if_no_client_response ?? true,
+      messages_sequence: (automation.messages_sequence as MessageSequenceItem[]) || [],
     });
     setIsModalOpen(true);
   };
@@ -276,13 +280,14 @@ export default function FollowupAutomationsSettings() {
         agent_messages: formData.automation_type === 'window_expiring' ? formData.agent_messages : {},
         within_window_only: formData.automation_type === 'window_expiring' ? true : formData.within_window_only,
         conversation_statuses: formData.conversation_statuses,
-        max_attempts: formData.max_attempts,
+        max_attempts: formData.messages_sequence.length > 0 ? formData.messages_sequence.length : formData.max_attempts,
         cooldown_hours: formData.cooldown_hours,
         active_hours_start: formData.active_hours_start,
         active_hours_end: formData.active_hours_end,
         active_days: formData.active_days,
         minutes_before_expiry: formData.automation_type === 'window_expiring' ? formData.minutes_before_expiry : 10,
         only_if_no_client_response: formData.automation_type === 'window_expiring' ? formData.only_if_no_client_response : true,
+        messages_sequence: formData.messages_sequence,
       };
 
       if (editingAutomation) {
@@ -703,30 +708,258 @@ export default function FollowupAutomationsSettings() {
 
               {/* Free Text Message - for free_text only */}
               {formData.automation_type === 'free_text' && (
-                <div className="col-span-2">
-                  <Label>Mensagem *</Label>
-                  <Textarea
-                    value={formData.free_text_message}
-                    onChange={e => setFormData(prev => ({ ...prev, free_text_message: e.target.value }))}
-                    placeholder="Oi {nome}, ainda consegue continuar?"
-                    rows={3}
-                  />
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    <span className="text-xs text-muted-foreground">Variáveis disponíveis:</span>
-                    {FREE_TEXT_VARIABLES.map(v => (
-                      <span 
-                        key={v.placeholder} 
-                        className="text-xs px-2 py-0.5 bg-muted rounded cursor-pointer hover:bg-muted/80"
-                        onClick={() => setFormData(prev => ({ 
-                          ...prev, 
-                          free_text_message: prev.free_text_message + ' ' + v.placeholder 
+                <div className="col-span-2 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-base font-medium">Sequência de Mensagens</Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Configure até 3 mensagens diferentes para tentativas de retomada. Pode usar texto manual ou gerado por IA.
+                      </p>
+                    </div>
+                    {formData.messages_sequence.length < 3 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setFormData(prev => ({
+                          ...prev,
+                          messages_sequence: [
+                            ...prev.messages_sequence,
+                            { type: 'manual', content: '', ai_prompt_type: 'qualification' }
+                          ]
                         }))}
-                        title={`Clique para inserir: ${v.description}`}
+                        className="gap-1"
                       >
-                        {v.placeholder}
-                      </span>
-                    ))}
+                        <Plus className="h-4 w-4" />
+                        Adicionar Mensagem
+                      </Button>
+                    )}
                   </div>
+
+                  {formData.messages_sequence.length === 0 ? (
+                    <div className="border border-dashed border-white/20 rounded-lg p-6 text-center">
+                      <MessageSquare className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Nenhuma mensagem na sequência. Adicione mensagens para criar um fluxo de retomada.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setFormData(prev => ({
+                          ...prev,
+                          messages_sequence: [
+                            { type: 'manual', content: 'Oi {nome}, ainda consegue continuar?', ai_prompt_type: 'qualification' }
+                          ]
+                        }))}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Adicionar primeira mensagem
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {formData.messages_sequence.map((item, index) => (
+                        <div key={index} className="border border-white/10 rounded-lg p-4 bg-white/[0.02] space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="bg-primary/20 text-primary text-xs font-bold px-2 py-1 rounded">
+                                Mensagem {index + 1}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {index === 0 
+                                  ? `Após ${formData.hours_without_response}${formData.time_unit === 'hours' ? 'h' : 'min'} sem resposta`
+                                  : `+${formData.cooldown_hours}h após tentativa anterior`
+                                }
+                              </span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setFormData(prev => ({
+                                ...prev,
+                                messages_sequence: prev.messages_sequence.filter((_, i) => i !== index)
+                              }))}
+                              className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              variant={item.type === 'manual' ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => {
+                                const updated = [...formData.messages_sequence];
+                                updated[index] = { ...updated[index], type: 'manual' };
+                                setFormData(prev => ({ ...prev, messages_sequence: updated }));
+                              }}
+                              className="gap-1"
+                            >
+                              <MessageSquare className="h-3 w-3" />
+                              Manual
+                            </Button>
+                            <Button
+                              type="button"
+                              variant={item.type === 'ai_generated' ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => {
+                                const updated = [...formData.messages_sequence];
+                                updated[index] = { ...updated[index], type: 'ai_generated' };
+                                setFormData(prev => ({ ...prev, messages_sequence: updated }));
+                              }}
+                              className="gap-1"
+                            >
+                              <Bot className="h-3 w-3" />
+                              Gerada por IA
+                            </Button>
+                          </div>
+
+                          {item.type === 'manual' ? (
+                            <div>
+                              <Textarea
+                                value={item.content || ''}
+                                onChange={e => {
+                                  const updated = [...formData.messages_sequence];
+                                  updated[index] = { ...updated[index], content: e.target.value };
+                                  setFormData(prev => ({ ...prev, messages_sequence: updated }));
+                                }}
+                                placeholder="Digite a mensagem de retomada..."
+                                rows={2}
+                              />
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {FREE_TEXT_VARIABLES.map(v => (
+                                  <span 
+                                    key={v.placeholder} 
+                                    className="text-xs px-1.5 py-0.5 bg-muted rounded cursor-pointer hover:bg-muted/80"
+                                    onClick={() => {
+                                      const updated = [...formData.messages_sequence];
+                                      updated[index] = { 
+                                        ...updated[index], 
+                                        content: (updated[index].content || '') + ' ' + v.placeholder 
+                                      };
+                                      setFormData(prev => ({ ...prev, messages_sequence: updated }));
+                                    }}
+                                  >
+                                    {v.placeholder}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              <div>
+                                <Label className="text-xs">Tipo de pergunta</Label>
+                                <Select
+                                  value={item.ai_prompt_type || 'qualification'}
+                                  onValueChange={(value: MessageSequenceItem['ai_prompt_type']) => {
+                                    const updated = [...formData.messages_sequence];
+                                    updated[index] = { ...updated[index], ai_prompt_type: value };
+                                    setFormData(prev => ({ ...prev, messages_sequence: updated }));
+                                  }}
+                                >
+                                  <SelectTrigger className="mt-1">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="qualification">🎯 Qualificação - "Qual sua principal necessidade?"</SelectItem>
+                                    <SelectItem value="urgency">⏰ Urgência - "Precisa resolver em quanto tempo?"</SelectItem>
+                                    <SelectItem value="budget">💰 Budget - "Qual seu orçamento aproximado?"</SelectItem>
+                                    <SelectItem value="decision">👔 Decisão - "Você decide sobre isso?"</SelectItem>
+                                    <SelectItem value="soft_reengagement">💬 Retomada suave - "Posso ajudar com mais algo?"</SelectItem>
+                                    <SelectItem value="last_chance">🔔 Última chance - "Vou encerrar, posso te ligar?"</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled={isGeneratingMessage === index}
+                                onClick={async () => {
+                                  setIsGeneratingMessage(index);
+                                  try {
+                                    const { data, error } = await supabase.functions.invoke('generate-followup-message', {
+                                      body: {
+                                        promptType: item.ai_prompt_type || 'qualification',
+                                        contactName: 'João',
+                                        agentName: agents[0]?.name || 'Assistente',
+                                        agentSpecialty: agents[0]?.specialty || 'atendimento',
+                                        hoursWithoutResponse: formData.hours_without_response
+                                      }
+                                    });
+                                    if (error) throw error;
+                                    const updated = [...formData.messages_sequence];
+                                    updated[index] = { ...updated[index], content: data.message };
+                                    setFormData(prev => ({ ...prev, messages_sequence: updated }));
+                                    toast.success('Mensagem gerada com sucesso!');
+                                  } catch (error) {
+                                    console.error('Error generating message:', error);
+                                    toast.error('Erro ao gerar mensagem');
+                                  } finally {
+                                    setIsGeneratingMessage(null);
+                                  }
+                                }}
+                                className="gap-1"
+                              >
+                                {isGeneratingMessage === index ? (
+                                  <>
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Gerando...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Wand2 className="h-3 w-3" />
+                                    Gerar Preview com IA
+                                  </>
+                                )}
+                              </Button>
+
+                              {item.content && (
+                                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                                  <p className="text-xs text-emerald-400 font-medium mb-1">Preview da mensagem:</p>
+                                  <p className="text-sm text-white/80">{item.content}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Legacy single message fallback */}
+                  {formData.messages_sequence.length === 0 && (
+                    <div className="border-t border-white/10 pt-4 mt-4">
+                      <Label>Mensagem única (legado) *</Label>
+                      <Textarea
+                        value={formData.free_text_message}
+                        onChange={e => setFormData(prev => ({ ...prev, free_text_message: e.target.value }))}
+                        placeholder="Oi {nome}, ainda consegue continuar?"
+                        rows={3}
+                      />
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <span className="text-xs text-muted-foreground">Variáveis disponíveis:</span>
+                        {FREE_TEXT_VARIABLES.map(v => (
+                          <span 
+                            key={v.placeholder} 
+                            className="text-xs px-2 py-0.5 bg-muted rounded cursor-pointer hover:bg-muted/80"
+                            onClick={() => setFormData(prev => ({ 
+                              ...prev, 
+                              free_text_message: prev.free_text_message + ' ' + v.placeholder 
+                            }))}
+                            title={`Clique para inserir: ${v.description}`}
+                          >
+                            {v.placeholder}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
