@@ -1299,7 +1299,7 @@ const ChatInterface: React.FC = () => {
                   'adri': { gradient: 'from-violet-500 to-fuchsia-500', shadow: 'shadow-violet-500/40' },
                   'sofia': { gradient: 'from-purple-500 to-pink-500', shadow: 'shadow-purple-500/40' },
                   'leonardo': { gradient: 'from-sky-400 to-blue-500', shadow: 'shadow-sky-500/40' },
-                  'barbara-saude': { gradient: 'from-pink-400 to-rose-500', shadow: 'shadow-pink-500/40' },
+                  'clara': { gradient: 'from-pink-400 to-rose-500', shadow: 'shadow-pink-500/40' },
                 };
                 const style = agentGradients[agent.slug] || { gradient: 'from-cyan-400 to-teal-500', shadow: 'shadow-cyan-500/40' };
                 const isActive = selectedStatusFilter === agent.slug;
@@ -1440,7 +1440,7 @@ const ChatInterface: React.FC = () => {
                 'Sofia': { gradient: 'from-purple-500/30 to-pink-500/30', border: 'border-purple-400/50', text: 'text-purple-300', shadow: 'shadow-purple-500/25' },
                 'Leo': { gradient: 'from-sky-500/30 to-blue-500/30', border: 'border-sky-400/50', text: 'text-sky-300', shadow: 'shadow-sky-500/25' },
                 'Leonardo': { gradient: 'from-sky-500/30 to-blue-500/30', border: 'border-sky-400/50', text: 'text-sky-300', shadow: 'shadow-sky-500/25' },
-                'Barbara': { gradient: 'from-pink-500/30 to-rose-500/30', border: 'border-pink-400/50', text: 'text-pink-300', shadow: 'shadow-pink-500/25' },
+                'Clara': { gradient: 'from-pink-500/30 to-rose-500/30', border: 'border-pink-400/50', text: 'text-pink-300', shadow: 'shadow-pink-500/25' },
               };
               const agentStyle = chat.agentName ? (agentColors[chat.agentName] || { gradient: 'from-cyan-500/30 to-teal-500/30', border: 'border-cyan-400/50', text: 'text-cyan-300', shadow: 'shadow-cyan-500/25' }) : null;
               

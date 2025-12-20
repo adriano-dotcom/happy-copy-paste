@@ -49,7 +49,7 @@ function hasExplicitCargoInterest(messageContent: string): boolean {
 }
 
 // ===== OUT OF SCOPE INSURANCE DETECTION (for Sofia agent) =====
-// Insurance types that are NOT handled by transport specialists (Adri, Barbara, Leo)
+// Insurance types that are NOT handled by transport specialists (Adri, Clara, Leo)
 // These will be handled by Sofia (generic insurance agent)
 const OUT_OF_SCOPE_INSURANCE_KEYWORDS: Record<string, string[]> = {
   // Tipos existentes
@@ -73,9 +73,9 @@ const OUT_OF_SCOPE_INSURANCE_KEYWORDS: Record<string, string[]> = {
   'rural': ['seguro rural', 'seguro agrícola', 'seguro agricola', 'seguro safra', 'seguro fazenda', 'seguro gado', 'seguro pecuário', 'seguro pecuario', 'seguro plantação', 'seguro plantacao', 'seguro colheita'],
   'nautico': ['seguro barco', 'seguro lancha', 'seguro jet ski', 'seguro jetski', 'seguro embarcação', 'seguro embarcacao', 'seguro iate', 'seguro marítimo', 'seguro maritimo', 'seguro náutico', 'seguro nautico'],
   'aeronautico': ['seguro avião', 'seguro aviao', 'seguro helicóptero', 'seguro helicoptero', 'seguro aeronave', 'seguro drone', 'seguro aeronáutico', 'seguro aeronautico', 'seguro asa delta', 'seguro parapente'],
-  // 'saude' e 'odonto' REMOVIDOS - Barbara (agente especialista) atende esses tipos
-  // 'saude': [...] - Atendido por Barbara
-  // 'odonto': [...] - Atendido por Barbara
+  // 'saude' e 'odonto' REMOVIDOS - Clara (agente especialista) atende esses tipos
+  // 'saude': [...] - Atendido por Clara
+  // 'odonto': [...] - Atendido por Clara
   'previdencia': ['previdência privada', 'previdencia privada', 'pgbl', 'vgbl', 'aposentadoria privada', 'plano de aposentadoria', 'fundo de previdência', 'fundo de previdencia', 'plano previdenciário', 'plano previdenciario'],
   'consorcio': ['consórcio', 'consorcio', 'consórcio imóvel', 'consorcio imovel', 'consórcio carro', 'consorcio carro', 'consórcio auto', 'consorcio auto', 'carta de crédito', 'carta de credito'],
   'cyber': ['seguro cyber', 'seguro digital', 'proteção de dados', 'protecao de dados', 'seguro vazamento', 'seguro cibernético', 'seguro cibernetico', 'seguro ataque hacker', 'seguro ransomware', 'lgpd'],
