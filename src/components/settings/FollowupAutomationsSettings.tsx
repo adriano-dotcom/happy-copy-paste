@@ -388,12 +388,12 @@ export default function FollowupAutomationsSettings() {
 
     return (
     <Tabs defaultValue="rules" className="space-y-6">
-      <TabsList className="bg-card/40 backdrop-blur-md border border-border/60 rounded-xl">
-        <TabsTrigger value="rules" className="data-[state=active]:bg-accent/50">
+      <TabsList className="bg-white/[0.06] backdrop-blur-xl border border-white/10 rounded-xl">
+        <TabsTrigger value="rules" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
           <Zap className="h-4 w-4 mr-2" />
           Regras
         </TabsTrigger>
-        <TabsTrigger value="dashboard" className="data-[state=active]:bg-accent/50">
+        <TabsTrigger value="dashboard" className="data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-400">
           <BarChart3 className="h-4 w-4 mr-2" />
           Dashboard
         </TabsTrigger>
@@ -420,7 +420,7 @@ export default function FollowupAutomationsSettings() {
                 loadLogs();
                 setIsLogsModalOpen(true);
               }}
-              className="bg-card/40 hover:bg-card/55 border border-border/60 text-foreground"
+              className="bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-foreground backdrop-blur-xl"
             >
               <History className="h-4 w-4 mr-2" />
               Histórico
@@ -430,12 +430,12 @@ export default function FollowupAutomationsSettings() {
               size="sm"
               onClick={handleRunNow}
               disabled={isRunning}
-              className="bg-card/40 hover:bg-card/55 border border-border/60 text-foreground"
+              className="bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-foreground backdrop-blur-xl"
             >
               <Play className="h-4 w-4 mr-2" />
               {isRunning ? 'Executando...' : 'Executar Agora'}
             </Button>
-            <Button onClick={openCreateModal}>
+            <Button onClick={openCreateModal} className="bg-emerald-500 hover:bg-emerald-600 text-black font-semibold shadow-lg shadow-emerald-500/25">
               <Plus className="h-4 w-4 mr-2" />
               Nova Automação
             </Button>
@@ -444,10 +444,10 @@ export default function FollowupAutomationsSettings() {
 
       {/* List */}
       {automations.length === 0 ? (
-        <div className="text-center py-12 border border-border/60 rounded-2xl bg-card/40 backdrop-blur-md">
-          <Zap className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <p className="text-foreground/70">Nenhuma automação configurada</p>
-          <Button onClick={openCreateModal} variant="secondary" className="mt-4 bg-card/40 hover:bg-card/55 border border-border/60">
+        <div className="text-center py-12 border border-white/10 rounded-2xl bg-white/[0.04] backdrop-blur-xl">
+          <Zap className="h-12 w-12 mx-auto text-emerald-400 mb-4" />
+          <p className="text-gray-400">Nenhuma automação configurada</p>
+          <Button onClick={openCreateModal} className="mt-4 bg-emerald-500 hover:bg-emerald-600 text-black font-semibold shadow-lg shadow-emerald-500/25">
             Criar primeira automação
           </Button>
         </div>
@@ -456,27 +456,27 @@ export default function FollowupAutomationsSettings() {
           {automations.map(automation => (
             <div
               key={automation.id}
-              className="border border-border/60 rounded-2xl p-5 flex items-center justify-between bg-card/40 backdrop-blur-md hover:bg-card/55 transition-all duration-300 shadow-lg shadow-black/5"
+              className="border border-white/10 rounded-2xl p-5 flex items-center justify-between bg-white/[0.04] backdrop-blur-xl hover:bg-white/[0.08] transition-all duration-300 shadow-xl shadow-black/10"
             >
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
                   <h4 className="font-semibold text-foreground">{automation.name}</h4>
                   <span className={
-                    `text-xs px-2.5 py-1 rounded-full font-semibold border ${
+                    `text-xs px-2.5 py-1 rounded-full font-bold shadow-sm ${
                       automation.is_active
-                        ? 'bg-status-success text-status-success-foreground border-status-success/60'
-                        : 'bg-secondary text-secondary-foreground border-border/60'
+                        ? 'bg-emerald-500 text-black shadow-emerald-500/30'
+                        : 'bg-gray-600 text-gray-200'
                     }`
                   }>
                     {automation.is_active ? 'Ativa' : 'Inativa'}
                   </span>
                   <span className={
-                    `text-xs px-2.5 py-1 rounded-full flex items-center gap-1 font-semibold border ${
+                    `text-xs px-2.5 py-1 rounded-full flex items-center gap-1 font-bold shadow-sm ${
                       automation.automation_type === 'free_text'
-                        ? 'bg-status-info text-status-info-foreground border-status-info/60'
+                        ? 'bg-blue-500 text-black shadow-blue-500/30'
                         : automation.automation_type === 'window_expiring'
-                          ? 'bg-status-warning text-status-warning-foreground border-status-warning/60'
-                          : 'bg-status-brand text-status-brand-foreground border-status-brand/60'
+                          ? 'bg-amber-400 text-black shadow-amber-400/30'
+                          : 'bg-violet-500 text-black shadow-violet-500/30'
                     }`
                   }>
                     {automation.automation_type === 'free_text' ? (
@@ -494,15 +494,15 @@ export default function FollowupAutomationsSettings() {
                     )}
                   </span>
                   {automation.within_window_only && (
-                    <span className="text-xs px-2.5 py-1 rounded-full font-semibold border bg-status-window text-status-window-foreground border-status-window/60">
+                    <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-orange-500 text-black shadow-sm shadow-orange-500/30">
                       Janela 24h
                     </span>
                   )}
                 </div>
                 {automation.description && (
-                  <p className="text-sm text-foreground/70 mb-2">{automation.description}</p>
+                  <p className="text-sm text-gray-400 mb-2">{automation.description}</p>
                 )}
-                <div className="flex flex-wrap gap-4 text-xs text-foreground/70">
+                <div className="flex flex-wrap gap-4 text-xs text-gray-400">
                   <span className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
                     {formatTimeDisplay(automation)}
@@ -514,13 +514,13 @@ export default function FollowupAutomationsSettings() {
                   <span>Horário: {automation.active_hours_start}-{automation.active_hours_end}</span>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <Switch checked={automation.is_active} onCheckedChange={() => handleToggleActive(automation)} />
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => openEditModal(automation)}
-                  className="text-muted-foreground hover:text-foreground"
+                  className="text-gray-400 hover:text-white hover:bg-white/10"
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
@@ -528,7 +528,7 @@ export default function FollowupAutomationsSettings() {
                   variant="ghost"
                   size="icon"
                   onClick={() => handleDelete(automation)}
-                  className="text-destructive hover:text-destructive/90"
+                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
