@@ -420,7 +420,7 @@ export default function FollowupAutomationsSettings() {
                 loadLogs();
                 setIsLogsModalOpen(true);
               }}
-              className="bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-foreground backdrop-blur-xl"
+              className="bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-white backdrop-blur-xl"
             >
               <History className="h-4 w-4 mr-2" />
               Histórico
@@ -430,12 +430,12 @@ export default function FollowupAutomationsSettings() {
               size="sm"
               onClick={handleRunNow}
               disabled={isRunning}
-              className="bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-foreground backdrop-blur-xl"
+              className="bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-white backdrop-blur-xl"
             >
               <Play className="h-4 w-4 mr-2" />
               {isRunning ? 'Executando...' : 'Executar Agora'}
             </Button>
-            <Button onClick={openCreateModal} className="bg-emerald-500 hover:bg-emerald-600 text-black font-semibold shadow-lg shadow-emerald-500/25">
+            <Button onClick={openCreateModal} className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold shadow-lg shadow-emerald-500/25">
               <Plus className="h-4 w-4 mr-2" />
               Nova Automação
             </Button>
@@ -447,7 +447,7 @@ export default function FollowupAutomationsSettings() {
         <div className="text-center py-12 border border-white/10 rounded-2xl bg-white/[0.04] backdrop-blur-xl">
           <Zap className="h-12 w-12 mx-auto text-emerald-400 mb-4" />
           <p className="text-gray-300">Nenhuma automação configurada</p>
-          <Button onClick={openCreateModal} className="mt-4 bg-emerald-500 hover:bg-emerald-600 text-black font-semibold shadow-lg shadow-emerald-500/25">
+          <Button onClick={openCreateModal} className="mt-4 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold shadow-lg shadow-emerald-500/25">
             Criar primeira automação
           </Button>
         </div>
@@ -460,12 +460,12 @@ export default function FollowupAutomationsSettings() {
             >
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
-                  <h4 className="font-semibold text-foreground">{automation.name}</h4>
+                  <h4 className="font-semibold text-white">{automation.name}</h4>
                   <span className={
                     `text-xs px-2.5 py-1 rounded-full font-bold shadow-sm ${
                       automation.is_active
-                        ? 'bg-emerald-500 text-black shadow-emerald-500/30'
-                        : 'bg-gray-600 text-gray-200'
+                        ? 'bg-emerald-600 text-white shadow-emerald-500/30'
+                        : 'bg-gray-600 text-white'
                     }`
                   }>
                     {automation.is_active ? 'Ativa' : 'Inativa'}
@@ -473,10 +473,10 @@ export default function FollowupAutomationsSettings() {
                   <span className={
                     `text-xs px-2.5 py-1 rounded-full flex items-center gap-1 font-bold shadow-sm ${
                       automation.automation_type === 'free_text'
-                        ? 'bg-blue-500 text-black shadow-blue-500/30'
+                        ? 'bg-blue-600 text-white shadow-blue-500/30'
                         : automation.automation_type === 'window_expiring'
-                          ? 'bg-amber-400 text-black shadow-amber-400/30'
-                          : 'bg-violet-500 text-black shadow-violet-500/30'
+                          ? 'bg-amber-500 text-white shadow-amber-400/30'
+                          : 'bg-violet-600 text-white shadow-violet-500/30'
                     }`
                   }>
                     {automation.automation_type === 'free_text' ? (
@@ -494,7 +494,7 @@ export default function FollowupAutomationsSettings() {
                     )}
                   </span>
                   {automation.within_window_only && (
-                    <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-orange-500 text-black shadow-sm shadow-orange-500/30">
+                    <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-orange-600 text-white shadow-sm shadow-orange-500/30">
                       Janela 24h
                     </span>
                   )}
