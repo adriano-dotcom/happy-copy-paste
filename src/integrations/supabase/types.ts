@@ -797,6 +797,7 @@ export type Database = {
           id: string
           is_active: boolean | null
           max_attempts: number | null
+          messages_sequence: Json | null
           minutes_before_expiry: number | null
           name: string
           only_if_no_client_response: boolean | null
@@ -823,6 +824,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           max_attempts?: number | null
+          messages_sequence?: Json | null
           minutes_before_expiry?: number | null
           name: string
           only_if_no_client_response?: boolean | null
@@ -849,6 +851,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           max_attempts?: number | null
+          messages_sequence?: Json | null
           minutes_before_expiry?: number | null
           name?: string
           only_if_no_client_response?: boolean | null
