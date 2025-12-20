@@ -118,8 +118,13 @@ interface OutOfScopeResult {
 }
 
 function detectOutOfScopeInsurance(messageContent: string, currentAgentSlug: string | null): OutOfScopeResult {
+  console.log('[Nina][OutOfScope] ========== VERIFICANDO OUT OF SCOPE ==========');
+  console.log('[Nina][OutOfScope] Mensagem:', messageContent.substring(0, 80) + (messageContent.length > 80 ? '...' : ''));
+  console.log('[Nina][OutOfScope] Agente atual slug:', currentAgentSlug || 'nenhum');
+  
   // Only detect out of scope if NOT already using Sofia or if using transport-specific agents
   if (currentAgentSlug === 'sofia') {
+    console.log('[Nina][OutOfScope] ⏭️ Já está com Sofia - pulando verificação');
     return { isOutOfScope: false, insuranceType: null, friendlyName: null, detectedKeyword: null };
   }
   
@@ -127,12 +132,20 @@ function detectOutOfScopeInsurance(messageContent: string, currentAgentSlug: str
   
   // First check if it's explicitly about transport/cargo insurance - those are IN scope
   if (hasExplicitCargoInterest(content)) {
+    console.log('[Nina][OutOfScope] ✅ Interesse explícito em CARGA - NÃO é out of scope');
     return { isOutOfScope: false, insuranceType: null, friendlyName: null, detectedKeyword: null };
   }
+  
+  console.log('[Nina][OutOfScope] Verificando', Object.keys(OUT_OF_SCOPE_INSURANCE_KEYWORDS).length, 'tipos de seguro...');
   
   for (const [type, keywords] of Object.entries(OUT_OF_SCOPE_INSURANCE_KEYWORDS)) {
     for (const keyword of keywords) {
       if (content.includes(keyword)) {
+        console.log('[Nina][OutOfScope] ⚠️ OUT OF SCOPE DETECTADO!');
+        console.log('[Nina][OutOfScope] Tipo:', type);
+        console.log('[Nina][OutOfScope] Keyword encontrada:', `"${keyword}"`);
+        console.log('[Nina][OutOfScope] Nome amigável:', INSURANCE_TYPE_NAMES[type] || type);
+        console.log('[Nina][OutOfScope] ========== FIM OUT OF SCOPE ==========');
         return { 
           isOutOfScope: true, 
           insuranceType: type, 
@@ -143,6 +156,8 @@ function detectOutOfScopeInsurance(messageContent: string, currentAgentSlug: str
     }
   }
   
+  console.log('[Nina][OutOfScope] ✅ Mensagem está IN SCOPE (não é seguro fora do escopo)');
+  console.log('[Nina][OutOfScope] ========== FIM OUT OF SCOPE ==========');
   return { isOutOfScope: false, insuranceType: null, friendlyName: null, detectedKeyword: null };
 }
 
@@ -312,41 +327,75 @@ function detectAgent(
 ): { agent: Agent | null; isHandoff: boolean } {
   const content = messageContent.toLowerCase();
   
+  console.log('[Nina][Routing] ========== INÍCIO ROTEAMENTO DE AGENTE ==========');
+  console.log('[Nina][Routing] Mensagem analisada:', content.substring(0, 100) + (content.length > 100 ? '...' : ''));
+  console.log('[Nina][Routing] Conversation ID:', conversation.id);
+  console.log('[Nina][Routing] Agente atual ID:', conversation.current_agent_id || 'nenhum');
+  console.log('[Nina][Routing] Total de agentes ativos:', agents.length);
+  console.log('[Nina][Routing] Agentes disponíveis:', agents.map(a => `${a.name} (${a.slug})`).join(', '));
+  
   // PRIORIDADE 1: Se conversa é de prospecção ativa, usar Leonardo
   const conversationMetadata = conversation.metadata || {};
+  console.log('[Nina][Routing] Metadata da conversa:', JSON.stringify(conversationMetadata));
+  
   if (conversationMetadata.origin === 'prospeccao') {
+    console.log('[Nina][Routing] 🎯 Conversa de PROSPECÇÃO detectada!');
     const leonardoAgent = agents.find(a => a.slug === 'leonardo');
     if (leonardoAgent) {
-      console.log(`[Nina] Prospecting conversation - using Leonardo agent`);
+      console.log('[Nina][Routing] → Roteando para Leonardo (agente de prospecção)');
+      console.log('[Nina][Routing] ========== FIM ROTEAMENTO ==========');
       return { agent: leonardoAgent, isHandoff: false };
+    } else {
+      console.log('[Nina][Routing] ⚠️ Leonardo não encontrado, continuando verificação...');
     }
   }
   
   // PRIORIDADE 2: Verificar keywords para permitir handoffs pós-triagem
+  console.log('[Nina][Routing] --- Checando keywords dos agentes especializados ---');
+  
   for (const agent of agents) {
-    if (agent.is_default) continue;
+    if (agent.is_default) {
+      console.log(`[Nina][Routing] ⏭️ Pulando agente default: ${agent.name}`);
+      continue;
+    }
     
-    const hasKeywordMatch = agent.detection_keywords.some(keyword => 
+    const agentKeywords = agent.detection_keywords || [];
+    console.log(`[Nina][Routing] Testando agente: ${agent.name} (${agent.slug})`);
+    console.log(`[Nina][Routing] Keywords configuradas (${agentKeywords.length} total): [${agentKeywords.slice(0, 5).join(', ')}${agentKeywords.length > 5 ? '...' : ''}]`);
+    
+    const matchedKeyword = agentKeywords.find(keyword => 
       content.includes(keyword.toLowerCase())
     );
     
-    if (hasKeywordMatch) {
-      console.log(`[Nina] Detected keyword match for agent: ${agent.name}`);
+    if (matchedKeyword) {
+      console.log(`[Nina][Routing] ✅ MATCH! Keyword encontrada: "${matchedKeyword}"`);
+      console.log(`[Nina][Routing] Agente selecionado: ${agent.name} (${agent.slug})`);
       const isNewHandoff = conversation.current_agent_id !== agent.id;
+      console.log(`[Nina][Routing] É handoff novo?: ${isNewHandoff}`);
+      console.log('[Nina][Routing] ========== FIM ROTEAMENTO ==========');
       return { agent, isHandoff: isNewHandoff };
+    } else {
+      console.log(`[Nina][Routing] ❌ Nenhuma keyword de ${agent.name} encontrada`);
     }
   }
+  
+  console.log('[Nina][Routing] --- Nenhum match de keyword encontrado ---');
   
   // Se não houver match de keyword, continuar com agente atual
   if (conversation.current_agent_id) {
     const currentAgent = agents.find(a => a.id === conversation.current_agent_id);
     if (currentAgent) {
-      console.log(`[Nina] Continuing with assigned agent: ${currentAgent.name}`);
+      console.log(`[Nina][Routing] 🔄 Continuando com agente já atribuído: ${currentAgent.name} (${currentAgent.slug})`);
+      console.log('[Nina][Routing] ========== FIM ROTEAMENTO ==========');
       return { agent: currentAgent, isHandoff: false };
+    } else {
+      console.log(`[Nina][Routing] ⚠️ Agente atual ${conversation.current_agent_id} não encontrado na lista ativa`);
     }
   }
   
   // Return default agent
+  console.log(`[Nina][Routing] 📌 Usando agente DEFAULT: ${defaultAgent?.name || 'NENHUM'} (${defaultAgent?.slug || 'n/a'})`);
+  console.log('[Nina][Routing] ========== FIM ROTEAMENTO ==========');
   return { agent: defaultAgent || null, isHandoff: false };
 }
 
