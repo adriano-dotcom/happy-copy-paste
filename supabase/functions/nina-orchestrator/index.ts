@@ -104,7 +104,7 @@ const INSURANCE_TYPE_NAMES: Record<string, string> = {
   'rural': 'Seguro Rural/Agrícola',
   'nautico': 'Seguro Náutico',
   'aeronautico': 'Seguro Aeronáutico',
-  // 'saude' e 'odonto' removidos - Barbara atende esses tipos
+  // 'saude' e 'odonto' removidos - Clara atende esses tipos
   'previdencia': 'Previdência Privada',
   'consorcio': 'Consórcio',
   'cyber': 'Seguro Cyber',
