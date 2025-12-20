@@ -388,12 +388,12 @@ export default function FollowupAutomationsSettings() {
 
   return (
     <Tabs defaultValue="rules" className="space-y-6">
-      <TabsList>
-        <TabsTrigger value="rules">
+      <TabsList className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl">
+        <TabsTrigger value="rules" className="data-[state=active]:bg-white/10">
           <Zap className="h-4 w-4 mr-2" />
           Regras
         </TabsTrigger>
-        <TabsTrigger value="dashboard">
+        <TabsTrigger value="dashboard" className="data-[state=active]:bg-white/10">
           <BarChart3 className="h-4 w-4 mr-2" />
           Dashboard
         </TabsTrigger>
@@ -407,17 +407,28 @@ export default function FollowupAutomationsSettings() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-medium">Automações de Follow-up</h3>
+            <h3 className="text-xl font-semibold tracking-tight">Automações de Follow-up</h3>
             <p className="text-sm text-muted-foreground">
               Configure disparos automáticos quando leads ficam sem responder
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => { loadLogs(); setIsLogsModalOpen(true); }}>
+            <Button 
+              variant="secondary" 
+              size="sm" 
+              onClick={() => { loadLogs(); setIsLogsModalOpen(true); }}
+              className="bg-white/10 hover:bg-white/20 border border-white/20 text-foreground"
+            >
               <History className="h-4 w-4 mr-2" />
               Histórico
             </Button>
-            <Button variant="outline" size="sm" onClick={handleRunNow} disabled={isRunning}>
+            <Button 
+              variant="secondary" 
+              size="sm" 
+              onClick={handleRunNow} 
+              disabled={isRunning}
+              className="bg-white/10 hover:bg-white/20 border border-white/20 text-foreground"
+            >
               <Play className="h-4 w-4 mr-2" />
               {isRunning ? 'Executando...' : 'Executar Agora'}
             </Button>
@@ -430,10 +441,10 @@ export default function FollowupAutomationsSettings() {
 
       {/* List */}
       {automations.length === 0 ? (
-        <div className="text-center py-12 border rounded-lg bg-muted/20">
+        <div className="text-center py-12 border border-white/10 rounded-2xl bg-white/5 backdrop-blur-sm">
           <Zap className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
           <p className="text-muted-foreground">Nenhuma automação configurada</p>
-          <Button onClick={openCreateModal} variant="outline" className="mt-4">
+          <Button onClick={openCreateModal} variant="secondary" className="mt-4 bg-white/10 hover:bg-white/20 border border-white/20">
             Criar primeira automação
           </Button>
         </div>
@@ -442,24 +453,24 @@ export default function FollowupAutomationsSettings() {
           {automations.map(automation => (
             <div
               key={automation.id}
-              className="border rounded-lg p-4 flex items-center justify-between bg-card"
+              className="border border-white/10 rounded-2xl p-5 flex items-center justify-between bg-white/5 backdrop-blur-sm hover:bg-white/10 transition-all duration-300 shadow-lg shadow-black/5"
             >
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
-                  <h4 className="font-medium">{automation.name}</h4>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  <h4 className="font-semibold text-foreground">{automation.name}</h4>
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
                     automation.is_active 
-                      ? 'bg-green-500/20 text-green-600' 
-                      : 'bg-muted text-muted-foreground'
+                      ? 'bg-emerald-500/30 text-emerald-400' 
+                      : 'bg-white/10 text-muted-foreground'
                   }`}>
                     {automation.is_active ? 'Ativa' : 'Inativa'}
                   </span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                  <span className={`text-xs px-2.5 py-1 rounded-full flex items-center gap-1 font-medium ${
                     automation.automation_type === 'free_text' 
-                      ? 'bg-blue-500/20 text-blue-600' 
+                      ? 'bg-blue-500/30 text-blue-400' 
                       : automation.automation_type === 'window_expiring'
-                        ? 'bg-amber-500/20 text-amber-600'
-                        : 'bg-purple-500/20 text-purple-600'
+                        ? 'bg-amber-500/30 text-amber-400'
+                        : 'bg-purple-500/30 text-purple-400'
                   }`}>
                     {automation.automation_type === 'free_text' ? (
                       <><MessageSquare className="h-3 w-3" /> Texto Livre</>
@@ -470,7 +481,7 @@ export default function FollowupAutomationsSettings() {
                     )}
                   </span>
                   {automation.within_window_only && (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-600">
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-orange-500/30 text-orange-400 font-medium">
                       Janela 24h
                     </span>
                   )}
