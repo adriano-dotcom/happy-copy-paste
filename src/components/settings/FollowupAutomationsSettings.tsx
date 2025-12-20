@@ -389,11 +389,11 @@ export default function FollowupAutomationsSettings() {
     return (
     <Tabs defaultValue="rules" className="space-y-6">
       <TabsList className="bg-white/[0.06] backdrop-blur-xl border border-white/10 rounded-xl">
-        <TabsTrigger value="rules" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
+        <TabsTrigger value="rules" className="text-gray-300 data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
           <Zap className="h-4 w-4 mr-2" />
           Regras
         </TabsTrigger>
-        <TabsTrigger value="dashboard" className="data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-400">
+        <TabsTrigger value="dashboard" className="text-gray-300 data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-400">
           <BarChart3 className="h-4 w-4 mr-2" />
           Dashboard
         </TabsTrigger>
@@ -408,7 +408,7 @@ export default function FollowupAutomationsSettings() {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-xl font-semibold tracking-tight">Automações de Follow-up</h3>
-            <p className="text-sm text-foreground/70">
+            <p className="text-sm text-gray-300">
               Configure disparos automáticos quando leads ficam sem responder
             </p>
           </div>
@@ -446,7 +446,7 @@ export default function FollowupAutomationsSettings() {
       {automations.length === 0 ? (
         <div className="text-center py-12 border border-white/10 rounded-2xl bg-white/[0.04] backdrop-blur-xl">
           <Zap className="h-12 w-12 mx-auto text-emerald-400 mb-4" />
-          <p className="text-gray-400">Nenhuma automação configurada</p>
+          <p className="text-gray-300">Nenhuma automação configurada</p>
           <Button onClick={openCreateModal} className="mt-4 bg-emerald-500 hover:bg-emerald-600 text-black font-semibold shadow-lg shadow-emerald-500/25">
             Criar primeira automação
           </Button>
@@ -500,9 +500,9 @@ export default function FollowupAutomationsSettings() {
                   )}
                 </div>
                 {automation.description && (
-                  <p className="text-sm text-gray-400 mb-2">{automation.description}</p>
+                  <p className="text-sm text-gray-300 mb-2">{automation.description}</p>
                 )}
-                <div className="flex flex-wrap gap-4 text-xs text-gray-400">
+                <div className="flex flex-wrap gap-4 text-xs text-gray-300">
                   <span className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
                     {formatTimeDisplay(automation)}
