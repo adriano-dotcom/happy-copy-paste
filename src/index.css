@@ -85,6 +85,18 @@
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* iOS 26 Vibrant Status Colors for Dark Mode */
+    --status-success: 142 76% 52%;
+    --status-success-foreground: 0 0% 0%;
+    --status-info: 210 100% 60%;
+    --status-info-foreground: 0 0% 0%;
+    --status-warning: 45 100% 55%;
+    --status-warning-foreground: 0 0% 0%;
+    --status-brand: 270 90% 70%;
+    --status-brand-foreground: 0 0% 0%;
+    --status-window: 24 100% 58%;
+    --status-window-foreground: 0 0% 0%;
   }
 }
 
