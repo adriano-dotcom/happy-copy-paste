@@ -192,7 +192,7 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
         type: "function",
         function: {
           name: "extract_qualification_answers",
-          description: "Extrair respostas específicas de qualificação dadas pelo cliente na conversa. Use para identificar informações já coletadas.",
+          description: "Extrair respostas específicas de qualificação dadas pelo cliente na conversa. Use para identificar informações já coletadas. IMPORTANTE: Interprete as respostas semanticamente - se o cliente diz 'CTE em meu nome', 'emito CTE', 'faço CTE próprio', isso significa que ELE EMITE CT-e, então cte='sim'. Só use cte='nao' se ele disser explicitamente que NÃO emite ou que outro faz por ele.",
           parameters: {
             type: "object",
             properties: {
@@ -232,11 +232,19 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
               cte: {
                 type: "string",
                 enum: ["sim", "nao", "as_vezes"],
-                description: "Se emite CT-e"
+                description: "Se o cliente emite CT-e. IMPORTANTE: 'CTE em meu nome', 'faço CTE próprio', 'emito CTE' = 'sim'. 'CTE do embarcador', 'não emito', 'terceiro faz' = 'nao'"
               },
               sinistros: {
                 type: "string",
                 description: "Histórico de sinistros (roubo, acidente)"
+              },
+              cnpj: {
+                type: "string",
+                description: "CNPJ da empresa do cliente (ex: 12.345.678/0001-90)"
+              },
+              email: {
+                type: "string",
+                description: "Email do cliente"
               },
               plano_tipo: {
                 type: "string",
@@ -302,8 +310,13 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
     const systemPrompt = hasAiManagedStages 
       ? `Você é um analista de conversas de vendas. Analise a interação e:
 1. Extraia insights estruturados para atualizar a memória do cliente
-2. Determine para qual estágio do pipeline o deal deve ir com base nos critérios fornecidos`
-      : `Você é um analista de conversas de vendas. Analise a interação e extraia insights estruturados para atualizar a memória do cliente.`;
+2. Extraia TODAS as informações de qualificação mencionadas (CNPJ, email, tipo de contratação, carga, estados, etc)
+3. IMPORTANTE sobre CT-e: Se o cliente disser "CTE em meu nome", "faço meu próprio CTE", "emito CTE", isso significa que ELE EMITE CT-e, então cte="sim". Só use cte="nao" se ele explicitamente disser que não emite.
+4. Determine para qual estágio do pipeline o deal deve ir com base nos critérios fornecidos`
+      : `Você é um analista de conversas de vendas. Analise a interação e:
+1. Extraia insights estruturados para atualizar a memória do cliente
+2. Extraia TODAS as informações de qualificação mencionadas (CNPJ, email, tipo de contratação, carga, estados, etc)
+3. IMPORTANTE sobre CT-e: Se o cliente disser "CTE em meu nome", "faço meu próprio CTE", "emito CTE", isso significa que ELE EMITE CT-e, então cte="sim". Só use cte="nao" se ele explicitamente disser que não emite.`;
 
     // Call AI to extract insights AND determine deal stage (if applicable)
     const analysisResponse = await fetch(LOVABLE_AI_URL, {
@@ -499,6 +512,59 @@ ESTÁGIO ATUAL DO DEAL: ${currentDeal?.stage || 'Sem estágio'}` : ''}
 
       console.log('[Analyze] Memory updated successfully');
     }
+
+    // ===== ENHANCED QUALIFICATION CHECK =====
+    // Fetch contact data to supplement qualification answers
+    const { data: contactRecord } = await supabase
+      .from('contacts')
+      .select('cnpj, email, company, name')
+      .eq('id', contact_id)
+      .maybeSingle();
+    
+    // Get qualification answers from conversation
+    const { data: convDataForQualification } = await supabase
+      .from('conversations')
+      .select('nina_context')
+      .eq('id', conversation_id)
+      .maybeSingle();
+    
+    const currentQualificationAnswers = (convDataForQualification?.nina_context as any)?.qualification_answers || {};
+    
+    // Supplement qualification answers with contact data
+    const enrichedQualificationAnswers = { ...currentQualificationAnswers };
+    
+    // Add CNPJ from contacts table if not in qualification_answers
+    if (contactRecord?.cnpj && !enrichedQualificationAnswers.cnpj) {
+      enrichedQualificationAnswers.cnpj = contactRecord.cnpj;
+      console.log('[Analyze] 📋 CNPJ suplementado da tabela contacts:', contactRecord.cnpj);
+    }
+    
+    // Add email from contacts table if not in qualification_answers
+    if (contactRecord?.email && !enrichedQualificationAnswers.email) {
+      enrichedQualificationAnswers.email = contactRecord.email;
+      console.log('[Analyze] 📋 Email suplementado da tabela contacts:', contactRecord.email);
+    }
+    
+    // Count total qualification fields
+    const qualificationFieldsFilled = Object.keys(enrichedQualificationAnswers).filter(k => enrichedQualificationAnswers[k]).length;
+    console.log('[Analyze] 📊 Total de campos de qualificação preenchidos (incluindo dados do contato):', qualificationFieldsFilled);
+    console.log('[Analyze] 📊 Campos preenchidos:', Object.keys(enrichedQualificationAnswers).filter(k => enrichedQualificationAnswers[k]).join(', '));
+    
+    // Check key qualification criteria for "Qualificado pela IA"
+    const hasKeyQualificationData = !!(
+      enrichedQualificationAnswers.cnpj || 
+      enrichedQualificationAnswers.email ||
+      enrichedQualificationAnswers.contratacao ||
+      enrichedQualificationAnswers.tipo_carga ||
+      enrichedQualificationAnswers.estados
+    );
+    
+    console.log('[Analyze] 🔑 Tem dados-chave de qualificação:', hasKeyQualificationData);
+    console.log('[Analyze] 🔑 Detalhes: CNPJ:', !!enrichedQualificationAnswers.cnpj, 
+      '| Email:', !!enrichedQualificationAnswers.email,
+      '| Contratação:', !!enrichedQualificationAnswers.contratacao,
+      '| Carga:', !!enrichedQualificationAnswers.tipo_carga,
+      '| Estados:', !!enrichedQualificationAnswers.estados);
 
     // Move deal if confidence > 70% and stage is different
     let dealMoved = false;
