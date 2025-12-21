@@ -1,10 +1,13 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet';
 import { Button } from './ui/button';
-import { User, Building2, MapPin, Phone, Mail, FileText, Calendar, Edit, MessageSquare, Target } from 'lucide-react';
+import { Input } from './ui/input';
+import { User, Building2, MapPin, Phone, Mail, FileText, Calendar, Edit, MessageSquare, Target, Pencil, Check, X, Loader2 } from 'lucide-react';
 import { displayPhoneInternational } from '@/utils/phoneFormatter';
 import { CallHistoryPanel } from './CallHistoryPanel';
 import { useContactCallHistory } from '@/hooks/useContactCallHistory';
+import { api } from '@/services/api';
+import { toast } from 'sonner';
 
 interface ContactData {
   id: string;
@@ -36,6 +39,7 @@ interface ContactDetailsDrawerProps {
   contact: ContactData | null;
   onEdit?: () => void;
   onConverse?: () => void;
+  onContactUpdate?: (updatedContact: ContactData) => void;
 }
 
 const formatCNPJ = (cnpj: string | undefined) => {
@@ -52,8 +56,61 @@ const formatCEP = (cep: string | undefined) => {
   return `${digits.slice(0,5)}-${digits.slice(5,8)}`;
 };
 
-const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpenChange, contact, onEdit, onConverse }) => {
+const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpenChange, contact, onEdit, onConverse, onContactUpdate }) => {
   const { callHistory, loading: callsLoading } = useContactCallHistory(contact?.id || null);
+  
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Reset editing state when contact changes or drawer closes
+  useEffect(() => {
+    if (!open) {
+      setIsEditingName(false);
+      setEditedName('');
+    }
+  }, [open, contact?.id]);
+
+  const handleStartEditing = () => {
+    setEditedName(contact?.name || '');
+    setIsEditingName(true);
+  };
+
+  const handleCancelEditing = () => {
+    setIsEditingName(false);
+    setEditedName('');
+  };
+
+  const handleSaveName = async () => {
+    if (!editedName.trim() || !contact?.id) return;
+    if (editedName.trim() === contact.name) {
+      handleCancelEditing();
+      return;
+    }
+    
+    setIsSaving(true);
+    try {
+      await api.updateContact(contact.id, { name: editedName.trim() });
+      toast.success('Nome atualizado com sucesso!');
+      setIsEditingName(false);
+      onContactUpdate?.({ ...contact, name: editedName.trim() });
+    } catch (error) {
+      console.error('Error updating name:', error);
+      toast.error('Erro ao atualizar nome');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSaveName();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handleCancelEditing();
+    }
+  };
 
   if (!contact) return null;
 
@@ -112,9 +169,45 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
               </div>
             </div>
             
-            <SheetTitle className="text-2xl font-bold bg-gradient-to-r from-white via-white to-slate-300 bg-clip-text text-transparent">
-              {contact.name}
-            </SheetTitle>
+            {isEditingName ? (
+              <div className="flex items-center gap-2 w-full max-w-xs">
+                <Input
+                  value={editedName}
+                  onChange={(e) => setEditedName(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  autoFocus
+                  disabled={isSaving}
+                  className="text-center text-lg font-bold bg-white/5 border-cyan-500/30 text-white focus:border-cyan-400"
+                  placeholder="Nome do lead"
+                />
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={handleSaveName}
+                  disabled={isSaving || !editedName.trim()}
+                  className="h-8 w-8 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/20"
+                >
+                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={handleCancelEditing}
+                  disabled={isSaving}
+                  className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-500/20"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            ) : (
+              <SheetTitle 
+                className="text-2xl font-bold bg-gradient-to-r from-white via-white to-slate-300 bg-clip-text text-transparent flex items-center gap-2 cursor-pointer group"
+                onClick={handleStartEditing}
+              >
+                {contact.name}
+                <Pencil className="w-4 h-4 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </SheetTitle>
+            )}
             
             <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold border mt-2 bg-gradient-to-r ${statusBadge.gradient} ${statusBadge.text} ${statusBadge.border} shadow-lg ${statusBadge.glow} backdrop-blur-sm`}>
               {statusBadge.label}
