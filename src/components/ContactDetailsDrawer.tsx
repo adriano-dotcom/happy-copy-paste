@@ -200,12 +200,17 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
                 </Button>
               </div>
             ) : (
-              <SheetTitle 
-                className="text-2xl font-bold bg-gradient-to-r from-white via-white to-slate-300 bg-clip-text text-transparent flex items-center gap-2 cursor-pointer group"
-                onClick={handleStartEditing}
-              >
-                {contact.name}
-                <Pencil className="w-4 h-4 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <SheetTitle className="text-2xl font-bold bg-gradient-to-r from-white via-white to-slate-300 bg-clip-text text-transparent">
+                <span
+                  className="inline-flex items-center gap-2 cursor-pointer group"
+                  onClick={handleStartEditing}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && handleStartEditing()}
+                >
+                  {contact.name}
+                  <Pencil className="w-4 h-4 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </span>
               </SheetTitle>
             )}
             
