@@ -2462,7 +2462,7 @@ const ChatInterface: React.FC = () => {
                     Responsável
                   </h4>
                   <select
-                    value={activeChat.assignedUserId || ''}
+                    value={activeChat.assignedUserId || existingDeal?.ownerId || ''}
                     onChange={(e) => {
                       const userId = e.target.value || null;
                       assignConversation(activeChat.id, userId);
