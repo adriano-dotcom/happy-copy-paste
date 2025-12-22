@@ -34,6 +34,12 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers, enabled = true)
       return;
     }
 
+    // Ignore shortcuts when modifier keys are active (Ctrl, Cmd, Alt)
+    // This allows Ctrl+C, Ctrl+V, Cmd+C, Cmd+V, etc. to work normally
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      return;
+    }
+
     // Prevent default for handled keys
     const handledKeys = ['j', 'k', '/', 'm', '1', '2', '3', 'i', 'c', 't', 'a', '?', 'ArrowDown', 'ArrowUp'];
     
