@@ -111,3 +111,7 @@ verify_jwt = true
 
 [functions.generate-followup-message]
 verify_jwt = true
+
+# Função de limpeza automática de filas (pode ser chamada via cron)
+[functions.cleanup-queues]
+verify_jwt = false

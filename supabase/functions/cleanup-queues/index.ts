@@ -1,0 +1,88 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+Deno.serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  console.log('[CleanupQueues] Starting queue cleanup...');
+
+  try {
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    // Execute cleanup_processed_queues (removes completed >24h, failed >7d from nina_processing_queue and send_queue)
+    console.log('[CleanupQueues] Running cleanup_processed_queues...');
+    const { error: cleanupError1 } = await supabase.rpc('cleanup_processed_queues');
+    if (cleanupError1) {
+      console.error('[CleanupQueues] Error in cleanup_processed_queues:', cleanupError1);
+    } else {
+      console.log('[CleanupQueues] cleanup_processed_queues completed successfully');
+    }
+
+    // Execute cleanup_processed_message_queue (removes processed >1h from message_grouping_queue)
+    console.log('[CleanupQueues] Running cleanup_processed_message_queue...');
+    const { error: cleanupError2 } = await supabase.rpc('cleanup_processed_message_queue');
+    if (cleanupError2) {
+      console.error('[CleanupQueues] Error in cleanup_processed_message_queue:', cleanupError2);
+    } else {
+      console.log('[CleanupQueues] cleanup_processed_message_queue completed successfully');
+    }
+
+    // Get current queue stats for reporting
+    const { data: ninaStats } = await supabase
+      .from('nina_processing_queue')
+      .select('status', { count: 'exact' });
+    
+    const { data: sendStats } = await supabase
+      .from('send_queue')
+      .select('status', { count: 'exact' });
+    
+    const { data: messageStats } = await supabase
+      .from('message_grouping_queue')
+      .select('id', { count: 'exact' });
+
+    const stats = {
+      nina_processing_queue: ninaStats?.length || 0,
+      send_queue: sendStats?.length || 0,
+      message_grouping_queue: messageStats?.length || 0,
+      cleaned_at: new Date().toISOString()
+    };
+
+    console.log('[CleanupQueues] Cleanup completed. Current stats:', stats);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: 'Queue cleanup completed successfully',
+        stats
+      }),
+      { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200 
+      }
+    );
+
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('[CleanupQueues] Unexpected error:', error);
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: errorMessage
+      }),
+      { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500 
+      }
+    );
+  }
+});
