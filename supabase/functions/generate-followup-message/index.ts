@@ -11,7 +11,7 @@ interface GenerateMessageRequest {
   contact_company?: string;
   agent_name?: string;
   agent_specialty?: string;
-  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance';
+  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call';
   hours_waiting?: number;
   attempt_number: number;
   conversation_context?: string;
@@ -55,6 +55,14 @@ Envie uma mensagem de encerramento amigável que:
 - Deixe claro que você está disponível
 - Ofereça uma alternativa (ligação, outro momento)
 Exemplo de estrutura: "Oi [nome], vou encerrar nosso atendimento por aqui, mas fico à disposição caso precise..."`,
+
+  schedule_call: `O cliente não respondeu à primeira mensagem.
+Sua missão é perguntar qual o melhor horário para uma conversa.
+Seja direto e natural, ofereça opções flexíveis:
+- Pergunte se prefere manhã, tarde ou noite
+- Ou deixe ele escolher o melhor momento
+- Seja breve e objetivo
+Exemplo de estrutura: "Oi [nome]! Qual seria o melhor horário pra gente conversar? Posso te ligar de manhã ou prefere à tarde?"`,
 };
 
 serve(async (req) => {

@@ -10,7 +10,7 @@ interface MessageSequenceItem {
   attempt: number;
   type: 'manual' | 'ai_generated';
   content?: string;
-  ai_prompt_type?: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance';
+  ai_prompt_type?: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call';
   delay_hours?: number;
 }
 
@@ -146,8 +146,14 @@ async function getMessageForAttempt(
     return replaceVariables(automation.free_text_message || 'Oi {nome}, ainda consegue continuar?', conv);
   }
 
-  // Find the message for this attempt
-  const sequenceItem = sequence.find(s => s.attempt === attemptNumber);
+  // Find the message for this attempt using array index (attempt 1 = index 0, attempt 2 = index 1, etc.)
+  // Also try to find by attempt field if present
+  let sequenceItem = sequence[attemptNumber - 1];
+  
+  // Fallback: try to find by attempt field if index doesn't have the right attempt
+  if (!sequenceItem || (sequenceItem.attempt && sequenceItem.attempt !== attemptNumber)) {
+    sequenceItem = sequence.find(s => s.attempt === attemptNumber) || sequenceItem;
+  }
   
   if (!sequenceItem) {
     // Fallback to the last message in sequence or free_text_message
@@ -164,6 +170,8 @@ async function getMessageForAttempt(
     }
     return replaceVariables(automation.free_text_message || 'Oi {nome}, ainda consegue continuar?', conv);
   }
+  
+  console.log(`[process-followups] Using sequence item for attempt ${attemptNumber}:`, JSON.stringify(sequenceItem));
 
   // Generate AI message or use manual content
   if (sequenceItem.type === 'ai_generated' && sequenceItem.ai_prompt_type) {
