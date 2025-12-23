@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Clock, Zap, History, Play, BarChart3, MessageSquare, FileText, Timer, Sparkles, Bot, Wand2, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Clock, Zap, History, Play, BarChart3, MessageSquare, FileText, Timer, Sparkles, Bot, Wand2, Loader2, ChevronUp, ChevronDown, ArrowRight, ListChecks } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import AutomationsDashboard from './AutomationsDashboard';
@@ -24,9 +24,26 @@ interface MessageSequenceItem {
   attempt?: number;
   type: 'manual' | 'ai_generated';
   content?: string;
-  ai_prompt_type?: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance';
+  ai_prompt_type?: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call';
   [key: string]: string | number | undefined;
 }
+
+// Template de sequência recomendada
+const RECOMMENDED_SEQUENCE: MessageSequenceItem[] = [
+  { attempt: 1, type: 'manual', content: 'Oi {nome}! Vi que você tinha interesse em nossos serviços. Qual sua principal necessidade hoje?' },
+  { attempt: 2, type: 'ai_generated', ai_prompt_type: 'schedule_call' },
+  { attempt: 3, type: 'ai_generated', ai_prompt_type: 'last_chance' },
+];
+
+const AI_PROMPT_TYPE_LABELS: Record<string, { emoji: string; label: string; short: string }> = {
+  'qualification': { emoji: '🎯', label: 'Qualificação', short: 'Qualifica' },
+  'urgency': { emoji: '⏰', label: 'Urgência', short: 'Urgência' },
+  'budget': { emoji: '💰', label: 'Budget', short: 'Orçamento' },
+  'decision': { emoji: '👔', label: 'Decisão', short: 'Decisão' },
+  'soft_reengagement': { emoji: '💬', label: 'Retomada suave', short: 'Retomada' },
+  'last_chance': { emoji: '🔔', label: 'Última chance', short: 'Encerramento' },
+  'schedule_call': { emoji: '📞', label: 'Agendar conversa', short: 'Ligação' },
+};
 
 interface Automation {
   id: string;
@@ -140,7 +157,73 @@ export default function FollowupAutomationsSettings() {
     { value: 'urgency', label: 'Urgência', desc: 'Pergunta sobre prazo' },
     { value: 'soft_reengagement', label: 'Retomada Suave', desc: 'Mensagem amigável' },
     { value: 'last_chance', label: 'Última Chance', desc: 'Encerramento amigável' },
+    { value: 'schedule_call', label: 'Agendar Conversa', desc: 'Perguntar melhor horário para ligar' },
   ];
+
+  // Função para mover item na sequência
+  const moveSequenceItem = (index: number, direction: 'up' | 'down') => {
+    const newSequence = [...formData.messages_sequence];
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    
+    if (newIndex < 0 || newIndex >= newSequence.length) return;
+    
+    // Swap items
+    [newSequence[index], newSequence[newIndex]] = [newSequence[newIndex], newSequence[index]];
+    
+    // Update attempt numbers
+    const updatedSequence = newSequence.map((item, i) => ({
+      ...item,
+      attempt: i + 1
+    }));
+    
+    setFormData(prev => ({ ...prev, messages_sequence: updatedSequence }));
+  };
+
+  // Função para aplicar template recomendado
+  const applyRecommendedTemplate = () => {
+    setFormData(prev => ({
+      ...prev,
+      messages_sequence: RECOMMENDED_SEQUENCE.map((item, index) => ({
+        ...item,
+        attempt: index + 1
+      })),
+      max_attempts: 3
+    }));
+    toast.success('Template recomendado aplicado!');
+  };
+
+  // Renderizar resumo visual do fluxo
+  const renderFlowSummary = () => {
+    if (formData.messages_sequence.length === 0) return null;
+    
+    return (
+      <div className="flex items-center gap-2 flex-wrap p-3 bg-white/[0.04] rounded-lg border border-white/10 mb-4">
+        <span className="text-xs text-muted-foreground">Fluxo:</span>
+        {formData.messages_sequence.map((item, index) => {
+          const promptInfo = item.type === 'ai_generated' && item.ai_prompt_type 
+            ? AI_PROMPT_TYPE_LABELS[item.ai_prompt_type] || { emoji: '🤖', short: 'IA' }
+            : { emoji: '✏️', short: 'Manual' };
+          
+          return (
+            <div key={index} className="flex items-center gap-1">
+              <div className="flex items-center gap-1 px-2 py-1 bg-primary/10 rounded text-xs">
+                <span>{promptInfo.emoji}</span>
+                <span className="font-medium">Msg {index + 1}</span>
+                <span className="text-muted-foreground">({promptInfo.short})</span>
+              </div>
+              {index < formData.messages_sequence.length - 1 && (
+                <div className="flex items-center gap-1 text-muted-foreground">
+                  <ArrowRight className="h-3 w-3" />
+                  <span className="text-xs">+{formData.cooldown_hours}h</span>
+                  <ArrowRight className="h-3 w-3" />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   useEffect(() => {
     loadData();
@@ -716,46 +799,80 @@ export default function FollowupAutomationsSettings() {
                         Configure até 3 mensagens diferentes para tentativas de retomada. Pode usar texto manual ou gerado por IA.
                       </p>
                     </div>
-                    {formData.messages_sequence.length < 3 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setFormData(prev => ({
-                          ...prev,
-                          messages_sequence: [
-                            ...prev.messages_sequence,
-                            { type: 'manual', content: '', ai_prompt_type: 'qualification' }
-                          ]
-                        }))}
-                        className="gap-1"
-                      >
-                        <Plus className="h-4 w-4" />
-                        Adicionar Mensagem
-                      </Button>
-                    )}
+                    <div className="flex gap-2">
+                      {formData.messages_sequence.length === 0 && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={applyRecommendedTemplate}
+                          className="gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                        >
+                          <ListChecks className="h-4 w-4" />
+                          Usar Template Recomendado
+                        </Button>
+                      )}
+                      {formData.messages_sequence.length < 3 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setFormData(prev => ({
+                            ...prev,
+                            messages_sequence: [
+                              ...prev.messages_sequence,
+                              { 
+                                attempt: prev.messages_sequence.length + 1,
+                                type: 'manual', 
+                                content: '', 
+                                ai_prompt_type: 'qualification' 
+                              }
+                            ]
+                          }))}
+                          className="gap-1"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Adicionar Mensagem
+                        </Button>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Visual Flow Summary */}
+                  {renderFlowSummary()}
 
                   {formData.messages_sequence.length === 0 ? (
                     <div className="border border-dashed border-white/20 rounded-lg p-6 text-center">
                       <MessageSquare className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
                       <p className="text-sm text-muted-foreground mb-3">
-                        Nenhuma mensagem na sequência. Adicione mensagens para criar um fluxo de retomada.
+                        Nenhuma mensagem na sequência. Use o template recomendado ou adicione mensagens manualmente.
                       </p>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setFormData(prev => ({
-                          ...prev,
-                          messages_sequence: [
-                            { type: 'manual', content: 'Oi {nome}, ainda consegue continuar?', ai_prompt_type: 'qualification' }
-                          ]
-                        }))}
-                      >
-                        <Plus className="h-4 w-4 mr-1" />
-                        Adicionar primeira mensagem
-                      </Button>
+                      <div className="flex gap-2 justify-center">
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          onClick={applyRecommendedTemplate}
+                          className="gap-1 bg-emerald-500 hover:bg-emerald-600"
+                        >
+                          <ListChecks className="h-4 w-4" />
+                          Usar Template Recomendado
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setFormData(prev => ({
+                            ...prev,
+                            messages_sequence: [
+                              { attempt: 1, type: 'manual', content: 'Oi {nome}, ainda consegue continuar?', ai_prompt_type: 'qualification' }
+                            ]
+                          }))}
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          Criar do zero
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -773,18 +890,50 @@ export default function FollowupAutomationsSettings() {
                                 }
                               </span>
                             </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setFormData(prev => ({
-                                ...prev,
-                                messages_sequence: prev.messages_sequence.filter((_, i) => i !== index)
-                              }))}
-                              className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              {/* Move Up Button */}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => moveSequenceItem(index, 'up')}
+                                disabled={index === 0}
+                                className="h-8 w-8 text-muted-foreground hover:text-white hover:bg-white/10 disabled:opacity-30"
+                                title="Mover para cima"
+                              >
+                                <ChevronUp className="h-4 w-4" />
+                              </Button>
+                              {/* Move Down Button */}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => moveSequenceItem(index, 'down')}
+                                disabled={index === formData.messages_sequence.length - 1}
+                                className="h-8 w-8 text-muted-foreground hover:text-white hover:bg-white/10 disabled:opacity-30"
+                                title="Mover para baixo"
+                              >
+                                <ChevronDown className="h-4 w-4" />
+                              </Button>
+                              {/* Delete Button */}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  const newSequence = formData.messages_sequence.filter((_, i) => i !== index);
+                                  // Re-number attempts after deletion
+                                  const updatedSequence = newSequence.map((item, i) => ({
+                                    ...item,
+                                    attempt: i + 1
+                                  }));
+                                  setFormData(prev => ({ ...prev, messages_sequence: updatedSequence }));
+                                }}
+                                className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </div>
 
                           <div className="flex gap-2">
@@ -871,6 +1020,7 @@ export default function FollowupAutomationsSettings() {
                                     <SelectItem value="decision">👔 Decisão - "Você decide sobre isso?"</SelectItem>
                                     <SelectItem value="soft_reengagement">💬 Retomada suave - "Posso ajudar com mais algo?"</SelectItem>
                                     <SelectItem value="last_chance">🔔 Última chance - "Vou encerrar, posso te ligar?"</SelectItem>
+                                    <SelectItem value="schedule_call">📞 Agendar conversa - "Qual melhor horário pra gente conversar?"</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </div>
