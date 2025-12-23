@@ -3151,7 +3151,7 @@ async function processQueueItem(
   if (isFirstInteraction && agent?.greeting_message) {
     // Check if lead already mentioned cargo insurance (from campaigns)
     const firstUserMessage = userMessages[0]?.content || '';
-    const hasCargoInterest = agent.slug === 'adri' && hasExplicitCargoInterest(firstUserMessage);
+    const hasCargoInterest = agent.slug === 'iris' && hasExplicitCargoInterest(firstUserMessage);
     
     let greetingContent: string;
     

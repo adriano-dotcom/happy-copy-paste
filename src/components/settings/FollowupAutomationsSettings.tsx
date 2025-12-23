@@ -1128,7 +1128,7 @@ export default function FollowupAutomationsSettings() {
                     return (
                       <div key={agent.id} className="space-y-2 p-3 border rounded-lg bg-muted/20">
                         <Label className="flex items-center gap-2">
-                          <span className="text-lg">{agent.slug === 'adri' ? '🚛' : agent.slug === 'clara' ? '🏥' : '🤖'}</span>
+                          <span className="text-lg">{agent.slug === 'iris' ? '🚛' : agent.slug === 'clara' ? '🏥' : '🤖'}</span>
                           {agent.name}
                         </Label>
                         <Textarea
