@@ -496,6 +496,14 @@ const AGENT_CLOSURE_PATTERNS = [
   /estamos.*à.*disposição/i,
   /conte.*conosco/i,
   /até.*próxima/i,
+  // Handoff patterns - quando transfere para equipe humana
+  /vou\s*(passar|encaminhar).*dados.*equipe/i,
+  /breve.*entrar.*(em)?\s*contato/i,
+  /encaminh.*(para|pra).*(corretor|equipe|especialista)/i,
+  /passando.*informações.*para/i,
+  /nosso.*especialista.*entrar.*contato/i,
+  /equipe.*comercial.*entrar.*contato/i,
+  /aguarde.*retorno/i,
 ];
 
 // Patterns for minimalist client responses confirming closure
@@ -505,6 +513,12 @@ const CLIENT_CLOSURE_PATTERNS = [
   /^(pode\s*ser|tranquilo|de\s*boa|suave)\.?$/i,
   /^(brigad|obg|grato|grata)\.?$/i,
   /^👍$/,
+  // Variações de agradecimento abreviado
+  /^(obgda|obgd|obgg|obgdo|obga)\.?$/i,
+  /^(entendido|anotado|perfeito|show)\.?$/i,
+  // Reações do WhatsApp são confirmações implícitas
+  /^\[reaction\].*$/i,
+  /^👌|👍|✅|🙏|💪$/,
 ];
 
 // Detect if conversation should be closed based on agent's last message and client's response
@@ -1495,6 +1509,24 @@ async function processQueueItem(
       .eq('id', message.id);
     return;
   }
+
+  // ===== SKIP WHATSAPP REACTIONS =====
+  // Reactions like [reaction] or emoji reactions should not trigger AI responses
+  const messageContent = message.content?.trim() || '';
+  const isReactionMessage = 
+    messageContent === '[reaction]' || 
+    messageContent.startsWith('[reaction') ||
+    /^\[reaction.*\]$/i.test(messageContent);
+    
+  if (isReactionMessage) {
+    console.log('[Nina] ⏭️ WhatsApp reaction detected, skipping AI response');
+    await supabase
+      .from('messages')
+      .update({ processed_by_nina: true })
+      .eq('id', message.id);
+    return;
+  }
+  // ===== END SKIP WHATSAPP REACTIONS =====
 
   // Detect which agent should handle this conversation
   const { agent, isHandoff } = detectAgent(
@@ -3430,7 +3462,7 @@ async function processQueueItem(
   }).catch(err => console.error('[Nina] Error triggering analyze-conversation:', err));
 }
 
-// Helper function to queue text response with chunking
+// Helper function to queue text response with chunking and duplicate check
 async function queueTextResponse(
   supabase: any,
   conversation: any,
@@ -3441,6 +3473,52 @@ async function queueTextResponse(
   delay: number,
   agent?: Agent | null
 ) {
+  // ===== DUPLICATE MESSAGE CHECK =====
+  // Check if the same message was sent in the last 5 minutes to prevent repetition
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  
+  const { data: recentMessages } = await supabase
+    .from('messages')
+    .select('content')
+    .eq('conversation_id', conversation.id)
+    .in('from_type', ['nina', 'human'])
+    .gte('sent_at', fiveMinutesAgo)
+    .order('sent_at', { ascending: false })
+    .limit(5);
+
+  const normalizedNewContent = aiContent.toLowerCase().trim();
+  const isDuplicate = recentMessages?.some((m: any) => {
+    if (!m.content) return false;
+    const normalizedExisting = m.content.toLowerCase().trim();
+    // Check for exact match or very similar (>90% similarity)
+    return normalizedExisting === normalizedNewContent || 
+           (normalizedExisting.length > 20 && normalizedNewContent.includes(normalizedExisting.substring(0, 50)));
+  });
+
+  if (isDuplicate) {
+    console.log('[Nina] ⚠️ Mensagem duplicada detectada, não enviando:', aiContent.substring(0, 50) + '...');
+    return;
+  }
+  
+  // Also check send_queue for pending duplicates
+  const { data: pendingMessages } = await supabase
+    .from('send_queue')
+    .select('content')
+    .eq('conversation_id', conversation.id)
+    .in('status', ['pending', 'processing'])
+    .limit(5);
+    
+  const isPendingDuplicate = pendingMessages?.some((m: any) => {
+    if (!m.content) return false;
+    return m.content.toLowerCase().trim() === normalizedNewContent;
+  });
+  
+  if (isPendingDuplicate) {
+    console.log('[Nina] ⚠️ Mensagem já está na fila de envio, não duplicando');
+    return;
+  }
+  // ===== END DUPLICATE MESSAGE CHECK =====
+
   const messageChunks = settings?.message_breaking_enabled 
     ? breakMessageIntoChunks(aiContent)
     : [aiContent];
