@@ -3220,13 +3220,33 @@ async function processQueueItem(
     .slice(-8)
     .map((m: any) => m.content);
   
+  // ===== FETCH RECENT CALL LOGS WITH TRANSCRIPTIONS FOR RETURNING LEADS =====
+  let recentCallLogs: any[] = [];
+  try {
+    const { data: callLogs } = await supabase
+      .from('call_logs')
+      .select('started_at, status, transcription, duration_seconds')
+      .eq('contact_id', conversation.contact_id)
+      .not('transcription', 'is', null)
+      .order('started_at', { ascending: false })
+      .limit(3);
+    
+    if (callLogs && callLogs.length > 0) {
+      recentCallLogs = callLogs;
+      console.log(`[Nina] 📞 Loaded ${callLogs.length} call logs with transcriptions for context`);
+    }
+  } catch (err) {
+    console.error('[Nina] Error fetching call logs:', err);
+  }
+  
   const enhancedSystemPrompt = buildEnhancedPrompt(
     systemPrompt, 
     conversation.contact, 
     clientMemory,
     agent,
     conversation.nina_context,
-    recentUserMsgs
+    recentUserMsgs,
+    recentCallLogs
   );
 
   // Process template variables
@@ -3620,7 +3640,8 @@ function buildEnhancedPrompt(
   memory: any,
   agent?: Agent | null,
   ninaContext?: any,
-  recentUserMessages?: string[]
+  recentUserMessages?: string[],
+  recentCallLogs?: any[]
 ): string {
   let contextInfo = '';
 
@@ -3635,6 +3656,28 @@ function buildEnhancedPrompt(
     if (contact.name) contextInfo += `\n- Nome: ${contact.name}`;
     if (contact.call_name) contextInfo += ` (trate por: ${contact.call_name})`;
     if (contact.tags?.length) contextInfo += `\n- Tags: ${contact.tags.join(', ')}`;
+    
+    // ===== NOTAS/RESUMO ANTERIOR DO CLIENTE (HISTÓRICO) =====
+    if (contact.notes && contact.notes.trim()) {
+      contextInfo += `\n\n## NOTAS/RESUMO ANTERIOR (HISTÓRICO DO CLIENTE):
+${contact.notes}
+
+⚠️ IMPORTANTE: Este cliente já entrou em contato antes. Use essas informações para dar continuidade sem repetir perguntas já respondidas.`;
+    }
+  }
+  
+  // ===== HISTÓRICO DE LIGAÇÕES COM TRANSCRIÇÕES =====
+  if (recentCallLogs && recentCallLogs.length > 0) {
+    contextInfo += `\n\n## RESUMO DE LIGAÇÕES ANTERIORES:`;
+    for (const call of recentCallLogs) {
+      const date = new Date(call.started_at).toLocaleDateString('pt-BR');
+      const status = call.status === 'completed' ? 'Atendida' : call.status;
+      const transcription = call.transcription 
+        ? call.transcription.substring(0, 500) + (call.transcription.length > 500 ? '...' : '')
+        : 'Sem transcrição disponível';
+      contextInfo += `\n[${date} - ${status}]: ${transcription}`;
+    }
+    contextInfo += `\n\n⚠️ Use o histórico de ligações para contextualizar a conversa e não repetir perguntas.`;
   }
 
   // ===== QUALIFICATION ANSWERS - CRITICAL ANTI-REPETITION =====
