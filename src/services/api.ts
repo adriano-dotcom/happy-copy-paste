@@ -1971,9 +1971,9 @@ export const api = {
 
     if (!agents || !pipelines) return;
 
-    // Map agents to pipelines by slug (adri -> transporte, barbara -> saude)
+    // Map agents to pipelines by slug (iris -> transporte, barbara -> saude)
     const agentPipelineMap: Record<string, string> = {
-      'adri': 'transporte',
+      'iris': 'transporte',
       'barbara': 'saude'
     };
 

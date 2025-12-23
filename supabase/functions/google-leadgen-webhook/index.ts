@@ -216,18 +216,18 @@ serve(async (req) => {
       
       console.log('[google-leadgen-webhook] Channel settings:', { whatsappEnabled, emailEnabled });
       
-      // Buscar agente Adri (default agent)
-      const { data: adri, error: adriError } = await supabase
+      // Buscar agente Íris (default agent)
+      const { data: irisAgent, error: irisError } = await supabase
         .from('agents')
         .select('id')
         .eq('is_default', true)
         .eq('is_active', true)
         .single();
       
-      if (adriError || !adri) {
-        console.error('[google-leadgen-webhook] Could not find default agent:', adriError);
+      if (irisError || !irisAgent) {
+        console.error('[google-leadgen-webhook] Could not find default agent:', irisError);
       } else {
-        console.log('[google-leadgen-webhook] Found Adri agent:', adri.id);
+        console.log('[google-leadgen-webhook] Found Íris agent:', irisAgent.id);
         
         // Verificar se já existe conversa ativa para este contato
         const { data: existingConversations } = await supabase
@@ -250,7 +250,7 @@ serve(async (req) => {
               contact_id: contactId,
               status: 'nina',
               is_active: true,
-              current_agent_id: adri.id,
+              current_agent_id: irisAgent.id,
               metadata: { 
                 origin: 'google_landing_page', // ← DIFERENÇA: origin é 'google_landing_page'
                 utm_source: utm_source || 'google',
