@@ -41,7 +41,7 @@ const Logo = () => {
           Jacometo
         </span>
         <span className="text-[10px] uppercase tracking-wider bg-gradient-to-r from-cyan-400 to-teal-400 bg-clip-text text-transparent font-bold">
-          Adri Sdr
+          Íris Sdr
         </span>
       </motion.div>
     </Link>

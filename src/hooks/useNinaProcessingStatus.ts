@@ -48,7 +48,7 @@ export const useNinaProcessingStatus = (conversationId: string | null): Processi
         .eq('id', conversationId)
         .single();
 
-      const agentName = (conversation?.agents as any)?.name || 'Adri';
+      const agentName = (conversation?.agents as any)?.name || 'Íris';
 
       setStatus({
         isAggregating: item.status === 'pending' && isScheduledInFuture,
