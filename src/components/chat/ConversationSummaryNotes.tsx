@@ -23,7 +23,7 @@ export function ConversationSummaryNotes({
   callHistory = [],
   initialNotes,
   contactName,
-  agentName = 'Adri'
+  agentName = 'Íris'
 }: ConversationSummaryNotesProps) {
   const [notes, setNotes] = useState(initialNotes || '');
   const [isGenerating, setIsGenerating] = useState(false);

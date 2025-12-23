@@ -1436,7 +1436,7 @@ const ChatInterface: React.FC = () => {
             filteredConversations.map((chat) => {
               // Agent colors for vibrant badges - iOS 26 style
               const agentColors: Record<string, { gradient: string; border: string; text: string; shadow: string }> = {
-                'Adri': { gradient: 'from-violet-500/30 to-fuchsia-500/30', border: 'border-violet-400/50', text: 'text-violet-300', shadow: 'shadow-violet-500/25' },
+                'Íris': { gradient: 'from-violet-500/30 to-fuchsia-500/30', border: 'border-violet-400/50', text: 'text-violet-300', shadow: 'shadow-violet-500/25' },
                 'Sofia': { gradient: 'from-purple-500/30 to-pink-500/30', border: 'border-purple-400/50', text: 'text-purple-300', shadow: 'shadow-purple-500/25' },
                 'Leo': { gradient: 'from-sky-500/30 to-blue-500/30', border: 'border-sky-400/50', text: 'text-sky-300', shadow: 'shadow-sky-500/25' },
                 'Leonardo': { gradient: 'from-sky-500/30 to-blue-500/30', border: 'border-sky-400/50', text: 'text-sky-300', shadow: 'shadow-sky-500/25' },
