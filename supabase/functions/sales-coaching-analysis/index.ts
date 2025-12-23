@@ -73,7 +73,7 @@ Você tem profundo conhecimento em:
 - Mercado de seguros de transporte
 
 # OBJETIVO
-Analisar as interações de prospecção ativa do agente Leonardo para:
+Analisar as interações de prospecção ativa do agente Atlas para:
 1. Avaliar taxa de resposta aos templates de abertura
 2. Medir qualidade da abordagem inicial
 3. Verificar rapidez na detecção de rejeição vs interesse

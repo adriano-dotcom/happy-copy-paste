@@ -166,7 +166,7 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
 
   const getVertical = () => {
     if (agentSlug === 'clara') return 'saude';
-    if (agentSlug === 'leonardo') return 'prospeccao';
+    if (agentSlug === 'atlas') return 'prospeccao';
     return 'transporte';
   };
 

@@ -358,7 +358,7 @@ export default function SalesCoachingSettings() {
                     ))}
                   </div>
 
-                  {/* Prospecting Metrics for Leonardo */}
+                  {/* Prospecting Metrics for Atlas */}
                   {agent.specialty === 'prospeccao_ativa' && latestReport.prospecting_metrics && (
                     <div className="mt-3 pt-3 border-t border-slate-700/30">
                       <p className="text-xs font-medium text-slate-400 mb-2 flex items-center gap-1">

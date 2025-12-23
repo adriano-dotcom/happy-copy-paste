@@ -273,7 +273,7 @@ export const SendWhatsAppTemplateModal: React.FC<SendWhatsAppTemplateModalProps>
                   <Phone className="w-5 h-5 text-amber-400" />
                   <div>
                     <p className="text-sm font-medium text-white">Prospecção Ativa</p>
-                    <p className="text-xs text-slate-400">Ativar agente Leonardo para qualificação</p>
+                    <p className="text-xs text-slate-400">Ativar agente Atlas para qualificação</p>
                   </div>
                 </div>
                 <Switch

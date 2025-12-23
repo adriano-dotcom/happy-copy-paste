@@ -1296,9 +1296,9 @@ const ChatInterface: React.FC = () => {
               {filterAgents.map((agent) => {
                 // Gradientes vibrantes por agente
                 const agentGradients: Record<string, { gradient: string; shadow: string }> = {
-                  'adri': { gradient: 'from-violet-500 to-fuchsia-500', shadow: 'shadow-violet-500/40' },
+                  'iris': { gradient: 'from-violet-500 to-fuchsia-500', shadow: 'shadow-violet-500/40' },
                   'sofia': { gradient: 'from-purple-500 to-pink-500', shadow: 'shadow-purple-500/40' },
-                  'leonardo': { gradient: 'from-sky-400 to-blue-500', shadow: 'shadow-sky-500/40' },
+                  'atlas': { gradient: 'from-amber-500 to-yellow-500', shadow: 'shadow-amber-500/40' },
                   'clara': { gradient: 'from-pink-400 to-rose-500', shadow: 'shadow-pink-500/40' },
                 };
                 const style = agentGradients[agent.slug] || { gradient: 'from-cyan-400 to-teal-500', shadow: 'shadow-cyan-500/40' };
@@ -1438,8 +1438,7 @@ const ChatInterface: React.FC = () => {
               const agentColors: Record<string, { gradient: string; border: string; text: string; shadow: string }> = {
                 'Íris': { gradient: 'from-violet-500/30 to-fuchsia-500/30', border: 'border-violet-400/50', text: 'text-violet-300', shadow: 'shadow-violet-500/25' },
                 'Sofia': { gradient: 'from-purple-500/30 to-pink-500/30', border: 'border-purple-400/50', text: 'text-purple-300', shadow: 'shadow-purple-500/25' },
-                'Leo': { gradient: 'from-sky-500/30 to-blue-500/30', border: 'border-sky-400/50', text: 'text-sky-300', shadow: 'shadow-sky-500/25' },
-                'Leonardo': { gradient: 'from-sky-500/30 to-blue-500/30', border: 'border-sky-400/50', text: 'text-sky-300', shadow: 'shadow-sky-500/25' },
+                'Atlas': { gradient: 'from-amber-500/30 to-yellow-500/30', border: 'border-amber-400/50', text: 'text-amber-300', shadow: 'shadow-amber-500/25' },
                 'Clara': { gradient: 'from-pink-500/30 to-rose-500/30', border: 'border-pink-400/50', text: 'text-pink-300', shadow: 'shadow-pink-500/25' },
               };
               const agentStyle = chat.agentName ? (agentColors[chat.agentName] || { gradient: 'from-cyan-500/30 to-teal-500/30', border: 'border-cyan-400/50', text: 'text-cyan-300', shadow: 'shadow-cyan-500/25' }) : null;

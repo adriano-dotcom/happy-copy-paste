@@ -334,19 +334,19 @@ function detectAgent(
   console.log('[Nina][Routing] Total de agentes ativos:', agents.length);
   console.log('[Nina][Routing] Agentes disponíveis:', agents.map(a => `${a.name} (${a.slug})`).join(', '));
   
-  // PRIORIDADE 1: Se conversa é de prospecção ativa, usar Leonardo
+  // PRIORIDADE 1: Se conversa é de prospecção ativa, usar Atlas
   const conversationMetadata = conversation.metadata || {};
   console.log('[Nina][Routing] Metadata da conversa:', JSON.stringify(conversationMetadata));
   
   if (conversationMetadata.origin === 'prospeccao') {
     console.log('[Nina][Routing] 🎯 Conversa de PROSPECÇÃO detectada!');
-    const leonardoAgent = agents.find(a => a.slug === 'leonardo');
-    if (leonardoAgent) {
-      console.log('[Nina][Routing] → Roteando para Leonardo (agente de prospecção)');
+    const atlasAgent = agents.find(a => a.slug === 'atlas');
+    if (atlasAgent) {
+      console.log('[Nina][Routing] → Roteando para Atlas (agente de prospecção)');
       console.log('[Nina][Routing] ========== FIM ROTEAMENTO ==========');
-      return { agent: leonardoAgent, isHandoff: false };
+      return { agent: atlasAgent, isHandoff: false };
     } else {
-      console.log('[Nina][Routing] ⚠️ Leonardo não encontrado, continuando verificação...');
+      console.log('[Nina][Routing] ⚠️ Atlas não encontrado, continuando verificação...');
     }
   }
   
