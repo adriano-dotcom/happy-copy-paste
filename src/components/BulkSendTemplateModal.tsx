@@ -438,7 +438,7 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
               <Zap className="w-4 h-4 text-amber-400" />
               <div>
                 <Label className="text-white">Prospecção Ativa</Label>
-                <p className="text-xs text-slate-400">Ativar agente Leonardo para qualificação</p>
+                <p className="text-xs text-slate-400">Ativar agente Atlas para qualificação</p>
               </div>
             </div>
             <Switch

@@ -218,11 +218,11 @@ serve(async (req) => {
     if (is_prospecting) {
       console.log('Marking conversation as prospecting...');
       
-      // Get Leonardo agent
-      const { data: leonardoAgent } = await supabase
+      // Get Atlas agent
+      const { data: atlasAgent } = await supabase
         .from('agents')
         .select('id')
-        .eq('slug', 'leonardo')
+        .eq('slug', 'atlas')
         .single();
 
       // Get prospecting pipeline and "Aguardando Resposta" stage
@@ -240,16 +240,16 @@ serve(async (req) => {
           .eq('title', 'Aguardando Resposta')
           .single();
 
-        // Update conversation with prospecting metadata and Leonardo agent
+        // Update conversation with prospecting metadata and Atlas agent
         // CRITICAL: Set status to 'nina' to keep AI agent active (not open to human)
         await supabase
           .from('conversations')
           .update({
             status: 'nina',
-            current_agent_id: leonardoAgent?.id || null,
+            current_agent_id: atlasAgent?.id || null,
             metadata: {
               origin: 'prospeccao',
-              agent_slug: 'leonardo',
+              agent_slug: 'atlas',
               template_sent: template_name,
               template_sent_at: new Date().toISOString()
             }
