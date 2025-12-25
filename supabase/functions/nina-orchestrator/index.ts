@@ -3392,6 +3392,19 @@ async function processQueueItem(
     const incomingWasAudio = message.type === 'audio';
     const agentAudioEnabled = agent?.audio_response_enabled ?? false;
     
+    // ===== DETAILED AUDIO DECISION LOGGING =====
+    console.log('[Nina] 🎵 ========== AUDIO DECISION CHECK ==========');
+    console.log(`[Nina] 🎵 Message type: ${message.type}`);
+    console.log(`[Nina] 🎵 Incoming was audio: ${incomingWasAudio}`);
+    console.log(`[Nina] 🎵 Global audio_response_enabled: ${settings?.audio_response_enabled}`);
+    console.log(`[Nina] 🎵 Agent audio_response_enabled: ${agentAudioEnabled}`);
+    console.log(`[Nina] 🎵 Agent name: ${agent?.name || 'nenhum'}`);
+    console.log(`[Nina] 🎵 Agent ID: ${agent?.id || 'nenhum'}`);
+    console.log(`[Nina] 🎵 Has ElevenLabs API key in table: ${!!settings?.elevenlabs_api_key}`);
+    console.log(`[Nina] 🎵 ElevenLabs key in Vault flag: ${settings?.elevenlabs_key_in_vault}`);
+    console.log(`[Nina] 🎵 Agent voice ID: ${agent?.elevenlabs_voice_id || 'usando global'}`);
+    console.log(`[Nina] 🎵 Global voice ID: ${settings?.elevenlabs_voice_id || 'não configurado'}`);
+    
     // Logic: respond with audio IF:
     // 1. Global audio_response_enabled is ON, OR
     // 2. Incoming was audio AND agent allows audio response
@@ -3401,17 +3414,30 @@ async function processQueueItem(
       (incomingWasAudio && agentAudioEnabled)
     ) && settings?.elevenlabs_api_key;
 
-    console.log(`[Nina] Audio decision - Global: ${settings?.audio_response_enabled}, Agent (${agent?.name}): ${agentAudioEnabled}, Incoming audio: ${incomingWasAudio} -> Send audio: ${shouldSendAudio}`);
+    console.log(`[Nina] 🎵 → Condition 1 (Global enabled): ${settings?.audio_response_enabled}`);
+    console.log(`[Nina] 🎵 → Condition 2 (Incoming audio + Agent enabled): ${incomingWasAudio && agentAudioEnabled}`);
+    console.log(`[Nina] 🎵 → Has ElevenLabs key: ${!!settings?.elevenlabs_api_key}`);
+    console.log(`[Nina] 🎵 → FINAL DECISION - Should send audio: ${shouldSendAudio}`);
+    console.log('[Nina] 🎵 ========== FIM AUDIO DECISION ==========');
 
     if (shouldSendAudio) {
+      console.log('[Nina] 🎤 Attempting audio generation...');
+      
       // Sanitize text for natural TTS pronunciation (simplify URLs)
       const sanitizedText = sanitizeTextForAudio(aiContent);
+      console.log(`[Nina] 🎤 Text sanitized for TTS (${sanitizedText.length} chars)`);
+      
       const audioResult = await generateAudioElevenLabs(supabase, settings, sanitizedText, agent);
       
       if (audioResult) {
+        console.log(`[Nina] ✅ Audio generated successfully: ${audioResult.buffer.byteLength} bytes, format: ${audioResult.format}`);
+        console.log('[Nina] 🎤 Uploading audio to storage (bucket: nina-audio)...');
+        
         const audioUrl = await uploadAudioToStorage(supabase, audioResult.buffer, conversation.id, audioResult.format);
         
         if (audioUrl) {
+          console.log(`[Nina] ✅ Audio uploaded successfully: ${audioUrl}`);
+          
           const { error: sendQueueError } = await supabase
             .from('send_queue')
             .insert({
@@ -3434,18 +3460,21 @@ async function processQueueItem(
             });
 
           if (sendQueueError) {
-            console.error('[Nina] Error queuing audio response:', sendQueueError);
+            console.error('[Nina] ❌ Error queuing audio response:', sendQueueError);
             throw sendQueueError;
           }
 
-          console.log('[Nina] Audio response queued for sending');
+          console.log('[Nina] ✅ Audio response queued for sending via WhatsApp');
         } else {
+          console.error('[Nina] ❌ Failed to upload audio to storage (bucket may not exist or upload failed), falling back to TEXT');
           await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay, agent);
         }
       } else {
+        console.error('[Nina] ❌ Failed to generate audio from ElevenLabs (API error or no key), falling back to TEXT');
         await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay, agent);
       }
     } else {
+      console.log('[Nina] 📝 Sending TEXT response (audio not enabled for this case)');
       await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay, agent);
     }
   }
