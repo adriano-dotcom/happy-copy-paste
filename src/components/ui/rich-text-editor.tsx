@@ -1,4 +1,5 @@
 import React, { useRef, useCallback, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { Button } from './button';
 import { 
   Bold, 
@@ -16,6 +17,13 @@ import {
   Redo
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+// DOMPurify configuration for allowed HTML elements in the editor
+const SANITIZE_CONFIG = {
+  ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'h2', 'a', 'ul', 'ol', 'li', 'b', 'i', 'div', 'span'],
+  ALLOWED_ATTR: ['href', 'target', 'style', 'class'],
+  ALLOW_DATA_ATTR: false,
+};
 
 interface RichTextEditorProps {
   value: string;
@@ -35,11 +43,12 @@ export const RichTextEditor = ({
   const editorRef = useRef<HTMLDivElement>(null);
   const isInternalChange = useRef(false);
 
-  // Sync external value changes to editor
+  // Sync external value changes to editor (with sanitization)
   useEffect(() => {
     if (editorRef.current && !isInternalChange.current) {
-      if (editorRef.current.innerHTML !== value) {
-        editorRef.current.innerHTML = value;
+      const sanitized = DOMPurify.sanitize(value, SANITIZE_CONFIG);
+      if (editorRef.current.innerHTML !== sanitized) {
+        editorRef.current.innerHTML = sanitized;
       }
     }
     isInternalChange.current = false;
@@ -48,7 +57,9 @@ export const RichTextEditor = ({
   const handleInput = useCallback(() => {
     if (editorRef.current) {
       isInternalChange.current = true;
-      onChange(editorRef.current.innerHTML);
+      // Sanitize user input to prevent XSS attacks
+      const sanitized = DOMPurify.sanitize(editorRef.current.innerHTML, SANITIZE_CONFIG);
+      onChange(sanitized);
     }
   }, [onChange]);
 
