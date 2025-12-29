@@ -1195,12 +1195,18 @@ async function uploadAudioToStorage(
       return null;
     }
 
-    const { data: urlData } = supabase.storage
+    // Use signed URL for security (bucket is private)
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
       .from('nina-audio')
-      .getPublicUrl(fileName);
+      .createSignedUrl(fileName, 3600 * 24); // 24 hours expiry
 
-    console.log(`[Nina] Audio uploaded (${format}):`, urlData.publicUrl);
-    return urlData.publicUrl;
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      console.error('[Nina] Error creating signed URL:', signedUrlError);
+      return null;
+    }
+
+    console.log(`[Nina] Audio uploaded (${format}):`, signedUrlData.signedUrl);
+    return signedUrlData.signedUrl;
   } catch (error) {
     console.error('[Nina] Error uploading audio to storage:', error);
     return null;
