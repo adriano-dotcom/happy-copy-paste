@@ -64,10 +64,10 @@ serve(async (req) => {
     const expectedKey = Deno.env.get('ZAPIER_LEADGEN_KEY');
     
     if (!expectedKey) {
-      console.error('[zapier-leadgen-webhook] ZAPIER_LEADGEN_KEY not configured');
+      console.error('[zapier-leadgen-webhook] CRITICAL: ZAPIER_LEADGEN_KEY not configured');
       return new Response(
-        JSON.stringify({ error: 'Webhook not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Webhook authentication not configured' }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     
