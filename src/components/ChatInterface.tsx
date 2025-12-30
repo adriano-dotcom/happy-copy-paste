@@ -94,6 +94,7 @@ const ChatInterface: React.FC = () => {
   
   // Editable contact fields
   const [isEditingContact, setIsEditingContact] = useState(false);
+  const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editCnpj, setEditCnpj] = useState('');
   const [editCompany, setEditCompany] = useState('');
@@ -426,12 +427,13 @@ const ChatInterface: React.FC = () => {
 
   useEffect(() => {
     if (activeChat) {
+      setEditName(activeChat.contactName || '');
       setEditEmail(activeChat.contactEmail || '');
       setEditCnpj(activeChat.contactCnpj || '');
       setEditCompany(activeChat.contactCompany || '');
       setIsEditingContact(false);
     }
-  }, [activeChat?.id, activeChat?.contactEmail, activeChat?.contactCnpj, activeChat?.contactCompany]);
+  }, [activeChat?.id, activeChat?.contactName, activeChat?.contactEmail, activeChat?.contactCnpj, activeChat?.contactCompany]);
 
   // Check for existing deal when chat changes
   useEffect(() => {
@@ -863,6 +865,7 @@ const ChatInterface: React.FC = () => {
     setIsSavingContact(true);
     try {
       await api.updateContact(activeChat.contactId, {
+        name: editName.trim() || null,
         email: editEmail.trim() || null,
         cnpj: editCnpj.replace(/\D/g, '') || null,
         company: editCompany.trim() || null
@@ -2163,7 +2166,17 @@ const ChatInterface: React.FC = () => {
                   <div className="w-24 h-24 rounded-full p-1 bg-gradient-to-tr from-cyan-500 to-teal-600 shadow-xl mb-4">
                     <img src={activeChat.contactAvatar} alt={activeChat.contactName} className="w-full h-full rounded-full object-cover border-2 border-slate-900" />
                   </div>
-                  <h3 className="text-xl font-bold text-white mb-1">{activeChat.contactName}</h3>
+                  {isEditingContact ? (
+                    <Input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="Nome do lead"
+                      className="text-xl font-bold text-center bg-slate-950/50 border-slate-700 mb-1 max-w-[200px]"
+                    />
+                  ) : (
+                    <h3 className="text-xl font-bold text-white mb-1">{activeChat.contactName}</h3>
+                  )}
                   <p className="text-sm text-slate-400 mb-4">
                     {activeChat.clientMemory.lead_profile.lead_stage === 'new' ? 'Novo Lead' : 
                      activeChat.clientMemory.lead_profile.lead_stage === 'qualified' ? 'Lead Qualificado' :
