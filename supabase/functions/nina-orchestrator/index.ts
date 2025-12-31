@@ -3776,6 +3776,15 @@ function buildEnhancedPrompt(
     if (contact.call_name) contextInfo += ` (trate por: ${contact.call_name})`;
     if (contact.tags?.length) contextInfo += `\n- Tags: ${contact.tags.join(', ')}`;
     
+    // Cidade/Estado do lead (extraído do DDD do telefone)
+    if (contact.city && contact.state) {
+      contextInfo += `\n- Localização (pelo DDD): ${contact.city} - ${contact.state}`;
+      contextInfo += `\n  ⚠️ CONFIRME a cidade ao invés de perguntar! Ex: "Você está em ${contact.city}?" ou use diretamente.`;
+    } else if (contact.state) {
+      contextInfo += `\n- Estado (pelo DDD): ${contact.state}`;
+      contextInfo += `\n  ⚠️ Use esta informação e pergunte apenas a cidade.`;
+    }
+    
     // ===== NOTAS/RESUMO ANTERIOR DO CLIENTE (HISTÓRICO) =====
     if (contact.notes && contact.notes.trim()) {
       contextInfo += `\n\n## NOTAS/RESUMO ANTERIOR (HISTÓRICO DO CLIENTE):
