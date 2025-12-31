@@ -3319,23 +3319,58 @@ async function processQueueItem(
     const aiData = await aiResponse.json();
     aiContent = aiData.choices?.[0]?.message?.content;
     
-    // Queue AI response with additional delay after handoff
-    if (aiContent) {
-      const responseTime = Date.now() - new Date(message.sent_at).getTime();
-      await supabase
-        .from('messages')
-        .update({ 
-          processed_by_nina: true,
-          nina_response_time: responseTime
+    // Fallback to alternative model if primary returns empty response
+    if (!aiContent) {
+      console.warn('[Nina] ⚠️ Empty response from primary model in handoff, retrying with gemini-2.5-flash...');
+      console.warn('[Nina] Original model was:', aiSettings.model);
+      
+      const fallbackResponse = await fetch(LOVABLE_AI_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            { role: 'system', content: processedPrompt },
+            ...conversationHistory
+          ],
+          temperature: 0.8,
+          max_tokens: 1000
         })
-        .eq('id', message.id);
+      });
 
-      const delayMin = settings?.response_delay_min || 1000;
-      const delayMax = settings?.response_delay_max || 3000;
-      const delay = Math.random() * (delayMax - delayMin) + delayMin + 2000; // Extra 2s after handoff
-
-      await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay);
+      if (fallbackResponse.ok) {
+        const fallbackData = await fallbackResponse.json();
+        aiContent = fallbackData.choices?.[0]?.message?.content;
+        console.log('[Nina] Fallback model response:', aiContent ? 'success' : 'also empty');
+      } else {
+        console.error('[Nina] Fallback model also failed:', fallbackResponse.status);
+      }
     }
+    
+    // If still no content, use generic fallback message
+    if (!aiContent) {
+      console.error('[Nina] All models returned empty response in handoff, using fallback message');
+      aiContent = 'Desculpe, não consegui processar sua mensagem. Pode repetir de outra forma?';
+    }
+    
+    // Queue AI response with additional delay after handoff
+    const responseTime = Date.now() - new Date(message.sent_at).getTime();
+    await supabase
+      .from('messages')
+      .update({ 
+        processed_by_nina: true,
+        nina_response_time: responseTime
+      })
+      .eq('id', message.id);
+
+    const delayMin = settings?.response_delay_min || 1000;
+    const delayMax = settings?.response_delay_max || 3000;
+    const delay = Math.random() * (delayMax - delayMin) + delayMin + 2000; // Extra 2s after handoff
+
+    await queueTextResponse(supabase, conversation, message, aiContent, settings, aiSettings, delay);
   } else {
     // Normal flow - no handoff
     const aiResponse = await fetch(LOVABLE_AI_URL, {
@@ -3371,8 +3406,57 @@ async function processQueueItem(
     const aiData = await aiResponse.json();
     aiContent = aiData.choices?.[0]?.message?.content;
 
+    // Log AI response details for debugging
+    console.log('[Nina] AI Response Debug:', JSON.stringify({
+      status: aiResponse.status,
+      model: aiSettings.model,
+      hasChoices: !!aiData.choices,
+      choicesLength: aiData.choices?.length,
+      finishReason: aiData.choices?.[0]?.finish_reason,
+      contentLength: aiData.choices?.[0]?.message?.content?.length || 0,
+      messageContent: message.content?.substring(0, 50)
+    }));
+
+    // Fallback to alternative model if primary returns empty response
     if (!aiContent) {
-      throw new Error('Empty AI response');
+      console.warn('[Nina] ⚠️ Empty response from primary model, retrying with gemini-2.5-flash...');
+      console.warn('[Nina] Original model was:', aiSettings.model);
+      
+      const fallbackResponse = await fetch(LOVABLE_AI_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            { role: 'system', content: processedPrompt },
+            ...conversationHistory
+          ],
+          temperature: 0.8,
+          max_tokens: 1000
+        })
+      });
+
+      if (fallbackResponse.ok) {
+        const fallbackData = await fallbackResponse.json();
+        aiContent = fallbackData.choices?.[0]?.message?.content;
+        console.log('[Nina] Fallback model response:', aiContent ? 'success' : 'also empty');
+      } else {
+        console.error('[Nina] Fallback model also failed:', fallbackResponse.status);
+      }
+    }
+    
+    // If still no content, use generic fallback message instead of failing
+    if (!aiContent) {
+      console.error('[Nina] All models returned empty response, using fallback message');
+      console.error('[Nina] Message that caused empty response:', JSON.stringify({
+        content: message.content?.substring(0, 100),
+        from: message.from_type,
+        conversationId: conversation.id
+      }));
+      aiContent = 'Desculpe, não consegui processar sua mensagem. Pode repetir de outra forma?';
     }
 
     console.log('[Nina] AI response received, length:', aiContent.length);
