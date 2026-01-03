@@ -393,12 +393,32 @@ const ChatInterface: React.FC = () => {
     const conversationParam = urlParams.get('conversation');
     const phoneParam = urlParams.get('phone');
     
-    // Only use URL param if no chat is selected yet
-    if (!selectedChatId) {
-      if (conversationParam && conversations.some(c => c.id === conversationParam)) {
-        setSelectedChatId(conversationParam);
-        // Clear URL param after initial selection
+    // Function to fetch a specific conversation not in cache
+    const fetchAndSelectConversation = async (conversationId: string) => {
+      try {
+        // Refetch conversations including the specific one
+        await refetch(conversationId);
+        setSelectedChatId(conversationId);
         window.history.replaceState({}, '', window.location.pathname);
+      } catch (error) {
+        console.error('[ChatInterface] Erro ao buscar conversa:', error);
+        if (conversations.length > 0 && !isMobile) {
+          setSelectedChatId(conversations[0].id);
+        }
+      }
+    };
+    
+    // Only use URL param if no chat is selected yet
+    if (!selectedChatId && !loading) {
+      if (conversationParam) {
+        // Check if conversation is in cache
+        if (conversations.some(c => c.id === conversationParam)) {
+          setSelectedChatId(conversationParam);
+          window.history.replaceState({}, '', window.location.pathname);
+        } else {
+          // Conversation not in cache, fetch it directly
+          fetchAndSelectConversation(conversationParam);
+        }
       } else if (phoneParam) {
         // Find conversation by phone number
         const cleanPhone = phoneParam.replace(/\D/g, '');
@@ -416,7 +436,7 @@ const ChatInterface: React.FC = () => {
         setSelectedChatId(conversations[0].id);
       }
     }
-  }, [conversations, selectedChatId]);
+  }, [conversations, selectedChatId, loading, refetch, isMobile]);
 
   // Reopen profile panel when pinned and chat changes
   useEffect(() => {

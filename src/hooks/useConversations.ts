@@ -18,11 +18,11 @@ export function useConversations() {
   const [error, setError] = useState<string | null>(null);
 
   // Initial fetch
-  const fetchConversations = useCallback(async () => {
+  const fetchConversations = useCallback(async (includeConversationId?: string) => {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.fetchConversations();
+      const data = await api.fetchConversations(includeConversationId);
       setConversations(data);
     } catch (err) {
       console.error('[useConversations] Error fetching:', err);

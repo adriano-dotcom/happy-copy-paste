@@ -1467,11 +1467,11 @@ export const api = {
   /**
    * Fetch conversations with messages from database
    */
-  fetchConversations: async (): Promise<UIConversation[]> => {
+  fetchConversations: async (includeConversationId?: string): Promise<UIConversation[]> => {
     console.log('[API] Fetching conversations from Supabase...');
     
     // Fetch active conversations with contact data and agent data
-    const { data: conversations, error: convError } = await supabase
+    let query = supabase
       .from('conversations')
       .select(`
         *,
@@ -1483,20 +1483,41 @@ export const api = {
       .order('last_message_at', { ascending: false })
       .limit(50);
 
+    const { data: conversations, error: convError } = await query;
+    
+    // If we need to include a specific conversation that might not be in the top 50
+    let allConversations = conversations || [];
+    if (includeConversationId && !allConversations.some(c => c.id === includeConversationId)) {
+      const { data: specificConv } = await supabase
+        .from('conversations')
+        .select(`
+          *,
+          contact:contacts(*),
+          agent:agents(id, name, slug),
+          whatsapp_window_start
+        `)
+        .eq('id', includeConversationId)
+        .single();
+      
+      if (specificConv) {
+        allConversations = [specificConv, ...allConversations];
+      }
+    }
+
     if (convError) {
       console.error('[API] Error fetching conversations:', convError);
       throw convError;
     }
 
-    if (!conversations || conversations.length === 0) {
+    if (allConversations.length === 0) {
       console.log('[API] No conversations found');
       return [];
     }
 
-    console.log(`[API] Found ${conversations.length} conversations`);
+    console.log(`[API] Found ${allConversations.length} conversations`);
 
     // Fetch deals with pipeline and owner data for all contacts
-    const contactIds = conversations.map(c => c.contact_id).filter(Boolean);
+    const contactIds = allConversations.map(c => c.contact_id).filter(Boolean);
     const { data: deals } = await supabase
       .from('deals')
       .select(`
@@ -1525,7 +1546,7 @@ export const api = {
 
     // Fetch messages for each conversation
     const conversationsWithMessages: UIConversation[] = await Promise.all(
-      conversations.map(async (conv) => {
+      allConversations.map(async (conv) => {
         const { data: messages, error: msgError } = await supabase
           .from('messages')
           .select('*')
