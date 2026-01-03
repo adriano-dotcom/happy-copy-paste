@@ -134,8 +134,121 @@ const LearningInsightsCard = ({ agents }: LearningInsightsCardProps) => {
     return agent?.name || 'Desconhecido';
   };
 
+  const integrateInsightToPrompt = async (insight: LearningInsight): Promise<boolean> => {
+    if (!insight.agent_id || !insight.suggestion) {
+      console.log('[LearningInsights] Insight sem agent_id ou suggestion, pulando integração');
+      return false;
+    }
+
+    try {
+      // Buscar prompt atual do agente
+      const { data: agent, error: agentError } = await supabase
+        .from('agents')
+        .select('id, name, system_prompt')
+        .eq('id', insight.agent_id)
+        .single();
+
+      if (agentError || !agent) {
+        console.error('[LearningInsights] Erro ao buscar agente:', agentError);
+        throw new Error('Agente não encontrado');
+      }
+
+      // Preparar novo aprendizado formatado
+      const newLearning = `### ${insight.title}\n${insight.suggestion}`;
+      
+      // Atualizar ou criar seção de aprendizados
+      let updatedPrompt = agent.system_prompt || '';
+      const learningsHeader = '## APRENDIZADOS APLICADOS';
+      const dateStr = new Date().toLocaleDateString('pt-BR');
+      
+      if (updatedPrompt.includes(learningsHeader)) {
+        // Seção existe - verificar se insight já foi adicionado
+        if (updatedPrompt.includes(`### ${insight.title}`)) {
+          console.log('[LearningInsights] Insight já existe no prompt, pulando');
+          return true;
+        }
+        
+        // Encontrar o final da seção e adicionar novo insight
+        const sectionStart = updatedPrompt.indexOf(learningsHeader);
+        const sectionEndMarker = updatedPrompt.indexOf('\n---', sectionStart + learningsHeader.length);
+        
+        if (sectionEndMarker !== -1) {
+          // Inserir antes do marcador de fim
+          updatedPrompt = 
+            updatedPrompt.slice(0, sectionEndMarker) + 
+            `\n\n${newLearning}` + 
+            updatedPrompt.slice(sectionEndMarker);
+        } else {
+          // Adicionar no final
+          updatedPrompt = updatedPrompt.trim() + `\n\n${newLearning}`;
+        }
+        
+        // Atualizar data
+        updatedPrompt = updatedPrompt.replace(
+          /Última atualização: .*/,
+          `Última atualização: ${dateStr}`
+        );
+      } else {
+        // Seção não existe - criar no final do prompt
+        const learningsSection = `
+
+---
+
+## APRENDIZADOS APLICADOS
+
+> Seção gerada automaticamente a partir de insights aprovados.
+> Última atualização: ${dateStr}
+
+${newLearning}
+
+---`;
+        
+        updatedPrompt = updatedPrompt.trim() + learningsSection;
+      }
+
+      // Salvar prompt atualizado
+      const { error: updateError } = await supabase
+        .from('agents')
+        .update({ 
+          system_prompt: updatedPrompt,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', insight.agent_id);
+
+      if (updateError) {
+        console.error('[LearningInsights] Erro ao atualizar prompt:', updateError);
+        throw new Error('Falha ao integrar insight ao prompt');
+      }
+
+      console.log(`[LearningInsights] Insight "${insight.title}" integrado ao prompt do agente ${agent.name}`);
+      return true;
+    } catch (error) {
+      console.error('[LearningInsights] Erro na integração:', error);
+      throw error;
+    }
+  };
+
   const handleUpdateStatus = async (insightId: string, newStatus: string, rejectionReason?: string) => {
     try {
+      // Se for aplicação, buscar dados completos do insight primeiro
+      let insightData: LearningInsight | null = null;
+      
+      if (newStatus === 'applied') {
+        const { data, error: fetchError } = await supabase
+          .from('learning_insights')
+          .select('*')
+          .eq('id', insightId)
+          .single();
+        
+        if (fetchError) throw fetchError;
+        insightData = data as LearningInsight;
+        
+        // Se for insight de prompt com agent_id e suggestion, integrar ao prompt
+        if (insightData.category === 'prompt' && insightData.agent_id && insightData.suggestion) {
+          await integrateInsightToPrompt(insightData);
+        }
+      }
+
       const updateData: any = { 
         status: newStatus,
         updated_at: new Date().toISOString()
@@ -156,7 +269,15 @@ const LearningInsightsCard = ({ agents }: LearningInsightsCardProps) => {
 
       if (error) throw error;
 
-      toast.success(`Insight ${newStatus === 'applied' ? 'aplicado' : newStatus === 'rejected' ? 'rejeitado' : 'atualizado'} com sucesso`);
+      const successMessage = newStatus === 'applied' && insightData?.category === 'prompt' && insightData?.agent_id
+        ? 'Insight aplicado e integrado ao prompt do agente!'
+        : newStatus === 'applied' 
+          ? 'Insight aplicado com sucesso'
+          : newStatus === 'rejected' 
+            ? 'Insight rejeitado' 
+            : 'Insight atualizado';
+
+      toast.success(successMessage);
       fetchInsights();
       setShowModal(false);
     } catch (error) {
