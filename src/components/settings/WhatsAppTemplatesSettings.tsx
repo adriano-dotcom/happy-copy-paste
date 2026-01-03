@@ -1,8 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Loader2, Check, Clock, X, AlertCircle, MessageSquare, FileText } from 'lucide-react';
+import { RefreshCw, Loader2, Check, Clock, X, AlertCircle, MessageSquare, FileText, Trash2 } from 'lucide-react';
 import { Button } from '../Button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 interface WhatsAppTemplate {
   id: string;
@@ -20,7 +31,10 @@ const WhatsAppTemplatesSettings: React.FC = () => {
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<WhatsAppTemplate | null>(null);
+
+  const disabledCount = templates.filter(t => t.status === 'DISABLED').length;
 
   useEffect(() => {
     fetchTemplates();
@@ -62,6 +76,26 @@ const WhatsAppTemplatesSettings: React.FC = () => {
       toast.error(error instanceof Error ? error.message : 'Erro ao sincronizar templates');
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleDeleteDisabled = async () => {
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from('whatsapp_templates')
+        .delete()
+        .eq('status', 'DISABLED');
+
+      if (error) throw error;
+
+      toast.success(`${disabledCount} templates desativados excluídos`);
+      await fetchTemplates();
+    } catch (error) {
+      console.error('Error deleting disabled templates:', error);
+      toast.error('Erro ao excluir templates desativados');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -156,19 +190,59 @@ const WhatsAppTemplatesSettings: React.FC = () => {
             Gerencie templates de mensagem aprovados pela Meta para campanhas ativas
           </p>
         </div>
-        <Button
-          variant="secondary"
-          onClick={handleSync}
-          disabled={syncing}
-          className="gap-2"
-        >
-          {syncing ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <RefreshCw className="w-4 h-4" />
+        <div className="flex gap-2">
+          {disabledCount > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="secondary"
+                  disabled={deleting}
+                  className="gap-2 border-red-500/30 text-red-400 hover:bg-red-500/10"
+                >
+                  {deleting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  Excluir Desativados ({disabledCount})
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="bg-slate-900 border-slate-700">
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="text-white">Excluir templates desativados?</AlertDialogTitle>
+                  <AlertDialogDescription className="text-slate-400">
+                    Isso irá excluir permanentemente {disabledCount} template{disabledCount > 1 ? 's' : ''} desativado{disabledCount > 1 ? 's' : ''} do banco de dados.
+                    Eles podem ser reimportados sincronizando com a Meta novamente.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700">
+                    Cancelar
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDeleteDisabled}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    Excluir {disabledCount} template{disabledCount > 1 ? 's' : ''}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
-          Sincronizar com Meta
-        </Button>
+          <Button
+            variant="secondary"
+            onClick={handleSync}
+            disabled={syncing}
+            className="gap-2"
+          >
+            {syncing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            Sincronizar com Meta
+          </Button>
+        </div>
       </div>
 
       {/* Info Card */}
@@ -257,6 +331,9 @@ const WhatsAppTemplatesSettings: React.FC = () => {
           <span>Total: {templates.length}</span>
           <span>Aprovados: {templates.filter(t => t.status === 'APPROVED').length}</span>
           <span>Pendentes: {templates.filter(t => t.status === 'PENDING').length}</span>
+          {disabledCount > 0 && (
+            <span className="text-red-400/70">Desativados: {disabledCount}</span>
+          )}
         </div>
       )}
     </div>
