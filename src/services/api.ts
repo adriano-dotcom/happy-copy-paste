@@ -1481,7 +1481,7 @@ export const api = {
       `)
       .eq('is_active', true)
       .order('last_message_at', { ascending: false })
-      .limit(50);
+      .limit(100);
 
     const { data: conversations, error: convError } = await query;
     
@@ -2113,7 +2113,7 @@ export const api = {
       `)
       .eq('is_active', false)
       .order('last_message_at', { ascending: false })
-      .limit(50);
+      .limit(100);
 
     if (convError) {
       console.error('[API] Error fetching archived conversations:', convError);
