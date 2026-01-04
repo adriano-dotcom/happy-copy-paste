@@ -37,6 +37,30 @@ Deno.serve(async (req) => {
       console.log('[CleanupQueues] cleanup_processed_message_queue completed successfully');
     }
 
+    // Reset stuck processing items (processing for more than 5 minutes)
+    console.log('[CleanupQueues] Checking for stuck processing items...');
+    const stuckThreshold = new Date(Date.now() - 5 * 60 * 1000).toISOString(); // 5 minutes ago
+    
+    const { data: stuckItems, error: stuckError } = await supabase
+      .from('nina_processing_queue')
+      .update({ 
+        status: 'pending',
+        error_message: 'Reset from stuck processing state',
+        scheduled_for: new Date().toISOString()
+      })
+      .eq('status', 'processing')
+      .lt('updated_at', stuckThreshold)
+      .select('id, conversation_id');
+    
+    if (stuckError) {
+      console.error('[CleanupQueues] Error resetting stuck items:', stuckError);
+    } else if (stuckItems && stuckItems.length > 0) {
+      console.warn(`[CleanupQueues] Reset ${stuckItems.length} stuck processing items:`, 
+        stuckItems.map(i => i.id));
+    } else {
+      console.log('[CleanupQueues] No stuck processing items found');
+    }
+
     // Get current queue stats for reporting
     const { data: ninaStats } = await supabase
       .from('nina_processing_queue')
