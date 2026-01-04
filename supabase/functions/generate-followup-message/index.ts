@@ -54,7 +54,8 @@ Envie uma mensagem de encerramento amigável que:
 - Não seja agressiva ou culpabilizadora
 - Deixe claro que você está disponível
 - Ofereça uma alternativa (ligação, outro momento)
-Exemplo de estrutura: "Oi [nome], vou encerrar nosso atendimento por aqui, mas fico à disposição caso precise..."`,
+- SEMPRE termine a mensagem com: "Acesse nosso site: https://jacometoseguros.com.br/"
+Exemplo de estrutura: "Oi [nome], vou encerrar nosso atendimento por aqui, mas fico à disposição caso precise... Acesse nosso site: https://jacometoseguros.com.br/"`,
 
   schedule_call: `O cliente não respondeu à primeira mensagem.
 Sua missão é perguntar qual o melhor horário para uma conversa.
