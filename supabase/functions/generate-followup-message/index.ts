@@ -11,7 +11,8 @@ interface GenerateMessageRequest {
   contact_company?: string;
   agent_name?: string;
   agent_specialty?: string;
-  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call';
+  agent_slug?: string;
+  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador';
   hours_waiting?: number;
   attempt_number: number;
   conversation_context?: string;
@@ -64,6 +65,19 @@ Seja direto e natural, ofereça opções flexíveis:
 - Ou deixe ele escolher o melhor momento
 - Seja breve e objetivo
 Exemplo de estrutura: "Oi [nome]! Qual seria o melhor horário pra gente conversar? Posso te ligar de manhã ou prefere à tarde?"`,
+
+  schedule_call_transportador: `O cliente é um TRANSPORTADOR que não respondeu.
+Transportadores são pessoas MUITO ocupadas e práticas que preferem resolver por TELEFONE.
+Ofereça uma ligação rápida de forma DIRETA e PROATIVA:
+- Destaque que é uma ligação RÁPIDA (5-10 min no máximo)
+- Ofereça ligar AGORA ou pergunte o melhor horário
+- Use linguagem objetiva, sem enrolação
+- Mostre que você respeita o tempo dele
+- NUNCA peça e-mail (transportadores não usam)
+Exemplos:
+- "Oi [nome]! Posso te ligar rapidinho? 5 minutinhos e já resolvemos sobre seu seguro de carga."
+- "E aí [nome]! Me diz um horário que te ligo. Resolvo tudo em 5 min, sem enrolação."
+- "Oi [nome]! Que tal uma ligação rápida? Posso te ligar agora ou prefere outro horário?"`,
 };
 
 serve(async (req) => {
