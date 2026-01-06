@@ -95,9 +95,17 @@ async function generateAIMessage(
   attemptNumber: number,
   hoursWaiting: number,
   agentName?: string,
-  agentSpecialty?: string
+  agentSpecialty?: string,
+  agentSlug?: string
 ): Promise<string> {
   try {
+    // Se o agente é Íris (transportadores) e o prompt é schedule_call, usar prompt específico
+    let finalPromptType = promptType;
+    if (agentSlug === 'iris' && promptType === 'schedule_call') {
+      finalPromptType = 'schedule_call_transportador';
+      console.log(`[process-followups] Using transportador-specific prompt for Íris`);
+    }
+    
     const response = await fetch(`${supabaseUrl}/functions/v1/generate-followup-message`, {
       method: 'POST',
       headers: {
@@ -109,7 +117,8 @@ async function generateAIMessage(
         contact_company: conv.contact_company,
         agent_name: agentName,
         agent_specialty: agentSpecialty,
-        prompt_type: promptType,
+        agent_slug: agentSlug,
+        prompt_type: finalPromptType,
         hours_waiting: hoursWaiting,
         attempt_number: attemptNumber,
       }),
@@ -137,7 +146,8 @@ async function getMessageForAttempt(
   supabaseUrl: string,
   supabaseServiceKey: string,
   agentName?: string,
-  agentSpecialty?: string
+  agentSpecialty?: string,
+  agentSlug?: string
 ): Promise<string> {
   const sequence = automation.messages_sequence;
   
@@ -163,7 +173,7 @@ async function getMessageForAttempt(
         return await generateAIMessage(
           supabaseUrl, supabaseServiceKey, conv,
           lastItem.ai_prompt_type, attemptNumber, hoursWaiting,
-          agentName, agentSpecialty
+          agentName, agentSpecialty, agentSlug
         );
       }
       return replaceVariables(lastItem.content || automation.free_text_message || 'Oi {nome}!', conv);
@@ -179,7 +189,7 @@ async function getMessageForAttempt(
     return await generateAIMessage(
       supabaseUrl, supabaseServiceKey, conv,
       sequenceItem.ai_prompt_type, attemptNumber, hoursWaiting,
-      agentName, agentSpecialty
+      agentName, agentSpecialty, agentSlug
     );
   }
 
@@ -338,13 +348,13 @@ serve(async (req) => {
       // Fetch agent info for AI message generation
       const { data: agentsData } = await supabase
         .from('agents')
-        .select('id, name, specialty')
+        .select('id, name, specialty, slug')
         .eq('is_active', true);
       
-      const agentsMap: Record<string, { name: string; specialty: string | null }> = {};
+      const agentsMap: Record<string, { name: string; specialty: string | null; slug: string }> = {};
       if (agentsData) {
         for (const agent of agentsData) {
-          agentsMap[agent.id] = { name: agent.name, specialty: agent.specialty };
+          agentsMap[agent.id] = { name: agent.name, specialty: agent.specialty, slug: agent.slug };
         }
       }
 
@@ -472,7 +482,8 @@ serve(async (req) => {
               supabaseUrl,
               supabaseServiceKey,
               agentInfo?.name,
-              agentInfo?.specialty || undefined
+              agentInfo?.specialty || undefined,
+              agentInfo?.slug
             );
             
             console.log(`[process-followups] Sending message (attempt ${attemptNumber}) to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
