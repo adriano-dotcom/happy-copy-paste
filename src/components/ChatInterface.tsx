@@ -6,7 +6,7 @@ import {
   Smile, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
   Tag, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
   Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle,
-  ArrowLeft, Keyboard, XCircle, PlayCircle, Pin, Sparkles, UserCheck, PauseCircle, Bot, AlertCircle, Download
+  ArrowLeft, Keyboard, XCircle, PlayCircle, Pin, Sparkles, UserCheck, PauseCircle, Bot, AlertCircle, Download, Eye
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -46,7 +46,7 @@ import { SendWhatsAppTemplateModal } from './SendWhatsAppTemplateModal';
 import { AudioPlayer } from './AudioPlayer';
 import { QuickQuestionsDropdown } from './QuickQuestionsDropdown';
 import { formatRegionFromPhone } from '@/utils/dddRegionMapper';
-import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, MessageToneAssistant, ConversationSummaryNotes } from './chat';
+import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, MessageToneAssistant, ConversationSummaryNotes, PDFPreviewModal } from './chat';
 import { EmailComposeModal } from './EmailComposeModal';
 import { SendToPipedriveModal } from './chat/SendToPipedriveModal';
 
@@ -137,6 +137,9 @@ const ChatInterface: React.FC = () => {
   const [isClosingConversation, setIsClosingConversation] = useState(false);
   const [isReopeningConversation, setIsReopeningConversation] = useState(false);
   const [showPipedriveModalFromClose, setShowPipedriveModalFromClose] = useState(false);
+  
+  // PDF preview state
+  const [pdfPreview, setPdfPreview] = useState<{ url: string; filename: string } | null>(null);
   
   // Input refs for keyboard shortcuts
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -1180,24 +1183,36 @@ const ChatInterface: React.FC = () => {
     if (msg.type === MessageType.DOCUMENT) {
       const filename = msg.content || 'documento';
       const hasDownloadUrl = msg.mediaUrl && msg.mediaUrl.length > 0;
+      const isPDF = msg.mediaUrl?.toLowerCase().includes('.pdf');
       
       return (
         <div className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 max-w-xs">
-          <div className="bg-red-500/20 p-2.5 rounded-lg shrink-0">
-            <FileText className="w-5 h-5 text-red-400" />
+          <div className={`${isPDF ? 'bg-red-500/20' : 'bg-blue-500/20'} p-2.5 rounded-lg shrink-0`}>
+            <FileText className={`w-5 h-5 ${isPDF ? 'text-red-400' : 'text-blue-400'}`} />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-white truncate" title={filename}>{filename}</p>
             {hasDownloadUrl ? (
-              <a 
-                href={msg.mediaUrl!} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 mt-1 transition-colors"
-              >
-                <Download className="w-3 h-3" />
-                Baixar documento
-              </a>
+              <div className="flex items-center gap-2 mt-1.5">
+                {isPDF && (
+                  <button
+                    onClick={() => setPdfPreview({ url: msg.mediaUrl!, filename })}
+                    className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors"
+                  >
+                    <Eye className="w-3 h-3" />
+                    Visualizar
+                  </button>
+                )}
+                <a 
+                  href={msg.mediaUrl!} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition-colors"
+                >
+                  <Download className="w-3 h-3" />
+                  Baixar
+                </a>
+              </div>
             ) : (
               <span className="text-xs text-slate-500 flex items-center gap-1 mt-1">
                 <AlertCircle className="w-3 h-3" />
@@ -2668,6 +2683,14 @@ const ChatInterface: React.FC = () => {
           onSent={() => setShowTemplateModal(false)}
         />
       )}
+
+      {/* PDF Preview Modal */}
+      <PDFPreviewModal
+        isOpen={!!pdfPreview}
+        onClose={() => setPdfPreview(null)}
+        pdfUrl={pdfPreview?.url || ''}
+        filename={pdfPreview?.filename || ''}
+      />
 
       {/* Keyboard Shortcuts Help Modal */}
       <KeyboardShortcutsHelp 
