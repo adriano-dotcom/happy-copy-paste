@@ -86,6 +86,35 @@ function replaceVariables(message: string, conv: EligibleConversation): string {
     .replace(/{company}/gi, company);
 }
 
+// Varied fallback messages to never repeat the same one
+const FALLBACK_MESSAGES = [
+  "Oi {nome}! Ficou alguma dúvida? Estou por aqui pra ajudar.",
+  "{nome}, posso te ajudar com algo mais?",
+  "E aí {nome}, precisa de mais alguma informação?",
+  "Oi {nome}! Qualquer dúvida, me chama aqui.",
+  "{nome}, me avisa se tiver qualquer dúvida!",
+  "Oi {nome}! Quer que eu te explique algo melhor?",
+  "E aí {nome}! Conseguiu pensar sobre o que conversamos?",
+  "{nome}, estou disponível se quiser continuar!",
+  "Oi {nome}! Se precisar, é só me chamar.",
+  "{nome}, posso esclarecer algo?",
+];
+
+// Get a varied fallback that's different from the last message
+function getVariedFallback(contactName: string, lastMessage?: string): string {
+  const name = contactName || 'Cliente';
+  let attempts = 0;
+  let fallback: string;
+  
+  do {
+    const randomIndex = Math.floor(Math.random() * FALLBACK_MESSAGES.length);
+    fallback = FALLBACK_MESSAGES[randomIndex].replace('{nome}', name);
+    attempts++;
+  } while (lastMessage && fallback === lastMessage && attempts < 10);
+  
+  return fallback;
+}
+
 // Generate AI message using edge function
 async function generateAIMessage(
   supabaseUrl: string,
@@ -96,7 +125,8 @@ async function generateAIMessage(
   hoursWaiting: number,
   agentName?: string,
   agentSpecialty?: string,
-  agentSlug?: string
+  agentSlug?: string,
+  lastMessageSent?: string // NEW: Anti-repetition
 ): Promise<string> {
   try {
     // Se o agente é Íris (transportadores) e o prompt é schedule_call, usar prompt específico
@@ -105,6 +135,8 @@ async function generateAIMessage(
       finalPromptType = 'schedule_call_transportador';
       console.log(`[process-followups] Using transportador-specific prompt for Íris`);
     }
+    
+    console.log(`[process-followups] Generating AI message, last_message_sent: ${lastMessageSent ? lastMessageSent.substring(0, 30) + '...' : 'none'}`);
     
     const response = await fetch(`${supabaseUrl}/functions/v1/generate-followup-message`, {
       method: 'POST',
@@ -121,19 +153,20 @@ async function generateAIMessage(
         prompt_type: finalPromptType,
         hours_waiting: hoursWaiting,
         attempt_number: attemptNumber,
+        last_message_sent: lastMessageSent, // Pass last message for anti-repetition
       }),
     });
 
     if (!response.ok) {
       console.error('[process-followups] AI message generation failed:', response.status);
-      return `Oi ${conv.contact_name || 'Cliente'}! Tudo bem? Ainda estou por aqui caso precise de ajuda.`;
+      return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent);
     }
 
     const data = await response.json();
-    return data.message || `Oi ${conv.contact_name || 'Cliente'}! Posso ajudar com algo?`;
+    return data.message || getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent);
   } catch (error) {
     console.error('[process-followups] Error generating AI message:', error);
-    return `Oi ${conv.contact_name || 'Cliente'}! Tudo bem? Ainda estou por aqui caso precise de ajuda.`;
+    return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent);
   }
 }
 
@@ -147,7 +180,8 @@ async function getMessageForAttempt(
   supabaseServiceKey: string,
   agentName?: string,
   agentSpecialty?: string,
-  agentSlug?: string
+  agentSlug?: string,
+  lastMessageSent?: string // NEW: Anti-repetition
 ): Promise<string> {
   const sequence = automation.messages_sequence;
   
@@ -173,7 +207,7 @@ async function getMessageForAttempt(
         return await generateAIMessage(
           supabaseUrl, supabaseServiceKey, conv,
           lastItem.ai_prompt_type, attemptNumber, hoursWaiting,
-          agentName, agentSpecialty, agentSlug
+          agentName, agentSpecialty, agentSlug, lastMessageSent
         );
       }
       return replaceVariables(lastItem.content || automation.free_text_message || 'Oi {nome}!', conv);
@@ -189,7 +223,7 @@ async function getMessageForAttempt(
     return await generateAIMessage(
       supabaseUrl, supabaseServiceKey, conv,
       sequenceItem.ai_prompt_type, attemptNumber, hoursWaiting,
-      agentName, agentSpecialty, agentSlug
+      agentName, agentSpecialty, agentSlug, lastMessageSent
     );
   }
 
@@ -430,10 +464,10 @@ serve(async (req) => {
           continue;
         }
 
-        // Check previous follow-ups from this automation
+        // Check previous follow-ups from this automation (now including message_content for anti-repetition)
         const { data: previousLogs, error: logsError } = await supabase
           .from('followup_logs')
-          .select('id, created_at')
+          .select('id, created_at, message_content')
           .eq('automation_id', automation.id)
           .eq('conversation_id', conv.id)
           .order('created_at', { ascending: false });
@@ -473,6 +507,12 @@ serve(async (req) => {
 
         try {
           if (automation.automation_type === 'free_text') {
+            // Get last message sent for anti-repetition
+            const lastMessageSent = previousLogs?.[0]?.message_content || undefined;
+            if (lastMessageSent) {
+              console.log(`[process-followups] Last message for anti-repetition: "${lastMessageSent.substring(0, 40)}..."`);
+            }
+            
             // Get message content based on attempt number and sequence
             const messageContent = await getMessageForAttempt(
               automation,
@@ -483,7 +523,8 @@ serve(async (req) => {
               supabaseServiceKey,
               agentInfo?.name,
               agentInfo?.specialty || undefined,
-              agentInfo?.slug
+              agentInfo?.slug,
+              lastMessageSent // Pass last message for anti-repetition
             );
             
             console.log(`[process-followups] Sending message (attempt ${attemptNumber}) to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
@@ -514,13 +555,14 @@ serve(async (req) => {
                 status: 'failed',
                 error_message: queueError.message,
                 hours_waited: hoursWaited,
+                message_content: messageContent, // Save for anti-repetition
               });
               
               failed++;
               continue;
             }
 
-            // Log success
+            // Log success with message_content for future anti-repetition
             await supabase.from('followup_logs').insert({
               automation_id: automation.id,
               conversation_id: conv.id,
@@ -528,6 +570,7 @@ serve(async (req) => {
               template_name: `[Tentativa ${attemptNumber}] ${automation.name}`,
               status: 'sent',
               hours_waited: hoursWaited,
+              message_content: messageContent, // Save for anti-repetition
             });
 
             console.log(`[process-followups] Queued follow-up (attempt ${attemptNumber}) for conversation ${conv.id}`);
