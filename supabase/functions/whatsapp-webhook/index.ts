@@ -746,7 +746,19 @@ async function processIncomingMessage(
     case 'video':
       messageType = 'video';
       mediaType = 'video';
-      content = message.video?.caption || null;
+      const videoCaption = message.video?.caption || null;
+      const videoMediaId = message.video?.id;
+      if (videoMediaId && settings?.whatsapp_access_token) {
+        console.log('[Webhook] Processing video message:', videoMediaId);
+        const { storageUrl: videoStorageUrl } = await downloadAndStoreMedia(
+          supabase, settings, videoMediaId, normalizedPhone, 'video'
+        );
+        if (videoStorageUrl) {
+          mediaUrl = videoStorageUrl;
+          console.log('[Webhook] Video stored at:', videoStorageUrl);
+        }
+      }
+      content = videoCaption || '[vídeo]';
       break;
     case 'document':
       messageType = 'document';
