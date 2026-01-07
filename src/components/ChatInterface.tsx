@@ -46,7 +46,7 @@ import { SendWhatsAppTemplateModal } from './SendWhatsAppTemplateModal';
 import { AudioPlayer } from './AudioPlayer';
 import { QuickQuestionsDropdown } from './QuickQuestionsDropdown';
 import { formatRegionFromPhone } from '@/utils/dddRegionMapper';
-import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, MessageToneAssistant, ConversationSummaryNotes, PDFPreviewModal } from './chat';
+import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, MessageToneAssistant, ConversationSummaryNotes, PDFPreviewModal, VideoThumbnailPreview } from './chat';
 import { EmailComposeModal } from './EmailComposeModal';
 import { SendToPipedriveModal } from './chat/SendToPipedriveModal';
 
@@ -1649,10 +1649,18 @@ const ChatInterface: React.FC = () => {
                       </div>
                       <span className="text-[10px] text-slate-500 font-medium shrink-0 ml-2">{chat.lastMessageTime}</span>
                     </div>
-                    <p className="text-xs text-slate-500 truncate">
-                      {chat.messages[chat.messages.length - 1]?.type === MessageType.IMAGE ? '📷 Imagem' : 
-                       chat.messages[chat.messages.length - 1]?.type === MessageType.AUDIO ? '🎵 Áudio' : 
-                       chat.lastMessage || 'Sem mensagens'}
+                    <p className="text-xs text-slate-500 truncate flex items-center">
+                      {(() => {
+                        const lastMsg = chat.messages[chat.messages.length - 1];
+                        if (lastMsg?.type === MessageType.VIDEO && lastMsg?.mediaUrl) {
+                          return <VideoThumbnailPreview videoUrl={lastMsg.mediaUrl} />;
+                        }
+                        if (lastMsg?.type === MessageType.VIDEO) return '🎬 Vídeo';
+                        if (lastMsg?.type === MessageType.IMAGE) return '📷 Imagem';
+                        if (lastMsg?.type === MessageType.AUDIO) return '🎵 Áudio';
+                        if (lastMsg?.type === MessageType.DOCUMENT) return '📄 Documento';
+                        return chat.lastMessage || 'Sem mensagens';
+                      })()}
                     </p>
                     
                     {/* Status badges and tags with glassmorphism */}
