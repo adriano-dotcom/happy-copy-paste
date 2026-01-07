@@ -115,3 +115,7 @@ verify_jwt = true
 # Função de limpeza automática de filas (pode ser chamada via cron)
 [functions.cleanup-queues]
 verify_jwt = false
+
+# Script para re-baixar documentos antigos do WhatsApp
+[functions.redownload-documents]
+verify_jwt = true
