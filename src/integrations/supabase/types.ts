@@ -882,6 +882,7 @@ export type Database = {
           error_message: string | null
           hours_waited: number | null
           id: string
+          message_content: string | null
           message_id: string | null
           status: string | null
           template_name: string | null
@@ -894,6 +895,7 @@ export type Database = {
           error_message?: string | null
           hours_waited?: number | null
           id?: string
+          message_content?: string | null
           message_id?: string | null
           status?: string | null
           template_name?: string | null
@@ -906,6 +908,7 @@ export type Database = {
           error_message?: string | null
           hours_waited?: number | null
           id?: string
+          message_content?: string | null
           message_id?: string | null
           status?: string | null
           template_name?: string | null
