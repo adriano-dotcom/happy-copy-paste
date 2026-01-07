@@ -493,7 +493,12 @@ async function downloadAndStoreMedia(
     console.log('[Webhook] Downloaded media, size:', mediaBuffer.byteLength, 'bytes');
 
     // Step 3: Generate unique filename and upload to Supabase Storage
-    const fileExtension = mimeType.includes('ogg') ? 'ogg' : 
+    const fileExtension = mimeType.includes('pdf') ? 'pdf' :
+                          mimeType.includes('msword') ? 'doc' :
+                          mimeType.includes('wordprocessingml') ? 'docx' :
+                          mimeType.includes('spreadsheetml') ? 'xlsx' :
+                          mimeType.includes('ms-excel') ? 'xls' :
+                          mimeType.includes('ogg') ? 'ogg' : 
                           mimeType.includes('mp4') ? 'mp4' : 
                           mimeType.includes('mpeg') ? 'mp3' :
                           mimeType.includes('jpeg') ? 'jpg' :
@@ -746,7 +751,19 @@ async function processIncomingMessage(
     case 'document':
       messageType = 'document';
       mediaType = 'document';
-      content = message.document?.filename || null;
+      const docFilename = message.document?.filename || '[documento]';
+      const docMediaId = message.document?.id;
+      if (docMediaId && settings?.whatsapp_access_token) {
+        console.log('[Webhook] Processing document message:', docMediaId, 'filename:', docFilename);
+        const { storageUrl: docStorageUrl } = await downloadAndStoreMedia(
+          supabase, settings, docMediaId, normalizedPhone, 'document'
+        );
+        if (docStorageUrl) {
+          mediaUrl = docStorageUrl;
+          console.log('[Webhook] Document stored at:', docStorageUrl);
+        }
+      }
+      content = docFilename;
       break;
     default:
       content = `[${message.type}]`;
