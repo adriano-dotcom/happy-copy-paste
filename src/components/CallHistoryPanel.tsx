@@ -32,7 +32,11 @@ const formatDuration = (seconds: number | null): string => {
 
 const formatTime = (dateString: string): string => {
   const date = new Date(dateString);
-  return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString('pt-BR', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo'
+  });
 };
 
 const formatDate = (dateString: string): string => {

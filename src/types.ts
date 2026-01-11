@@ -486,7 +486,11 @@ function formatRelativeTime(dateStr: string): string {
 
 function formatMessageTime(dateStr: string): string {
   const date = new Date(dateStr);
-  return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString('pt-BR', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo'
+  });
 }
 
 function getDefaultClientMemory(): ClientMemory {
