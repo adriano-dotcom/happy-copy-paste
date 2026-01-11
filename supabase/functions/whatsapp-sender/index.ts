@@ -6,6 +6,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ===== TIMEZONE UTILITY =====
+const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
+function toBRT(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return d.toLocaleString('pt-BR', { timeZone: BRAZIL_TIMEZONE });
+}
+// ===== END TIMEZONE UTILITY =====
+
 const WHATSAPP_API_URL = "https://graph.facebook.com/v18.0";
 
 serve(async (req) => {
@@ -118,7 +126,7 @@ serve(async (req) => {
           );
           
           if (waitTime > 0 && (Date.now() - startTime + waitTime) < MAX_EXECUTION_TIME) {
-            console.log(`[Sender] Waiting ${waitTime}ms for scheduled message at ${upcoming[0].scheduled_at}`);
+            console.log(`[Sender] Waiting ${waitTime}ms for scheduled message at ${toBRT(upcoming[0].scheduled_at)}`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
             continue;
           }

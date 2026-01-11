@@ -7,7 +7,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Mapeamento de DDDs brasileiros para estados e cidades
+// ===== TIMEZONE UTILITY =====
+const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
+function toBRT(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return d.toLocaleString('pt-BR', { timeZone: BRAZIL_TIMEZONE });
+}
+// ===== END TIMEZONE UTILITY =====
 const dddMap: Record<string, { city: string; state: string }> = {
   '11': { city: 'São Paulo', state: 'SP' }, '12': { city: 'São José dos Campos', state: 'SP' },
   '13': { city: 'Santos', state: 'SP' }, '14': { city: 'Bauru', state: 'SP' },

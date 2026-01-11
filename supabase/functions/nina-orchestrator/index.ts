@@ -135,6 +135,14 @@ function isFallbackMessage(content: string): boolean {
 }
 // ===== END FALLBACK MESSAGE DETECTION =====
 
+// ===== TIMEZONE UTILITY =====
+const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
+function toBRT(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return d.toLocaleString('pt-BR', { timeZone: BRAZIL_TIMEZONE });
+}
+// ===== END TIMEZONE UTILITY =====
+
 function detectOutOfScopeInsurance(messageContent: string, currentAgentSlug: string | null): OutOfScopeResult {
   console.log('[Nina][OutOfScope] ========== VERIFICANDO OUT OF SCOPE ==========');
   console.log('[Nina][OutOfScope] Mensagem:', messageContent.substring(0, 80) + (messageContent.length > 80 ? '...' : ''));
