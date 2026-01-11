@@ -117,6 +117,24 @@ interface OutOfScopeResult {
   detectedKeyword: string | null;
 }
 
+// ===== FALLBACK MESSAGE DETECTION =====
+// Used to prevent sending fallback/error messages as audio
+const FALLBACK_PATTERNS = [
+  'desculpe, não consegui processar',
+  'pode repetir de outra forma',
+  'não entendi sua mensagem',
+  'houve um erro ao processar',
+  'desculpe, houve um problema',
+  'tente novamente'
+];
+
+function isFallbackMessage(content: string): boolean {
+  if (!content) return false;
+  const lowerContent = content.toLowerCase();
+  return FALLBACK_PATTERNS.some(pattern => lowerContent.includes(pattern));
+}
+// ===== END FALLBACK MESSAGE DETECTION =====
+
 function detectOutOfScopeInsurance(messageContent: string, currentAgentSlug: string | null): OutOfScopeResult {
   console.log('[Nina][OutOfScope] ========== VERIFICANDO OUT OF SCOPE ==========');
   console.log('[Nina][OutOfScope] Mensagem:', messageContent.substring(0, 80) + (messageContent.length > 80 ? '...' : ''));
@@ -1533,6 +1551,31 @@ async function processQueueItem(
     return;
   }
   // ===== END SKIP WHATSAPP REACTIONS =====
+
+  // ===== ANTI-DUPLICATION: Check if response already exists =====
+  // Prevent duplicate responses when the same message is processed twice
+  const { data: existingResponse } = await supabase
+    .from('messages')
+    .select('id, content, sent_at')
+    .eq('conversation_id', conversation.id)
+    .in('from_type', ['nina', 'human'])
+    .gt('sent_at', message.sent_at)
+    .order('sent_at', { ascending: true })
+    .limit(1);
+
+  if (existingResponse && existingResponse.length > 0) {
+    const timeDiff = new Date(existingResponse[0].sent_at).getTime() - new Date(message.sent_at).getTime();
+    // If response exists within 2 minutes, skip processing
+    if (timeDiff < 120000) {
+      console.log(`[Nina] ⏭️ Já existe resposta para esta mensagem (${Math.round(timeDiff/1000)}s depois), pulando processamento duplicado`);
+      await supabase
+        .from('messages')
+        .update({ processed_by_nina: true })
+        .eq('id', message.id);
+      return;
+    }
+  }
+  // ===== END ANTI-DUPLICATION =====
 
   // Detect which agent should handle this conversation
   const { agent, isHandoff } = detectAgent(
@@ -3448,15 +3491,28 @@ async function processQueueItem(
       }
     }
     
-    // If still no content, use generic fallback message instead of failing
+    // If still no content, use CONTEXTUAL fallback message instead of generic error
     if (!aiContent) {
-      console.error('[Nina] All models returned empty response, using fallback message');
+      console.error('[Nina] All models returned empty response, using contextual fallback');
       console.error('[Nina] Message that caused empty response:', JSON.stringify({
         content: message.content?.substring(0, 100),
         from: message.from_type,
         conversationId: conversation.id
       }));
-      aiContent = 'Desculpe, não consegui processar sua mensagem. Pode repetir de outra forma?';
+      
+      // Use contextual fallbacks that continue the conversation naturally
+      const contextualFallbacks = [
+        'Entendi! Me conta mais sobre sua operação de transporte.',
+        'Certo! E qual seria o valor médio das cargas transportadas?',
+        'Anotado! Sua frota é própria ou agregada?',
+        'Ok! Em quais estados vocês fazem entregas?',
+        'Perfeito! Me passa o CNPJ da empresa para eu buscar mais informações.'
+      ];
+      
+      // Select based on hash of conversation_id for consistency
+      const hash = conversation.id.charCodeAt(0) % contextualFallbacks.length;
+      aiContent = contextualFallbacks[hash];
+      console.log(`[Nina] Using contextual fallback #${hash}: ${aiContent}`);
     }
 
     console.log('[Nina] AI response received, length:', aiContent.length);
@@ -3499,18 +3555,46 @@ async function processQueueItem(
     // 1. Global audio_response_enabled is ON, OR
     // 2. Incoming was audio AND agent allows audio response
     // AND always: ElevenLabs is configured
+    // AND NEVER: if it's a fallback/error message (those should always be text!)
+    const isFallback = isFallbackMessage(aiContent);
     const shouldSendAudio = (
       settings?.audio_response_enabled || 
       (incomingWasAudio && agentAudioEnabled)
-    ) && settings?.elevenlabs_api_key;
+    ) && settings?.elevenlabs_api_key && !isFallback;
 
     console.log(`[Nina] 🎵 → Condition 1 (Global enabled): ${settings?.audio_response_enabled}`);
     console.log(`[Nina] 🎵 → Condition 2 (Incoming audio + Agent enabled): ${incomingWasAudio && agentAudioEnabled}`);
     console.log(`[Nina] 🎵 → Has ElevenLabs key: ${!!settings?.elevenlabs_api_key}`);
+    console.log(`[Nina] 🎵 → Is fallback message: ${isFallback}`);
     console.log(`[Nina] 🎵 → FINAL DECISION - Should send audio: ${shouldSendAudio}`);
     console.log('[Nina] 🎵 ========== FIM AUDIO DECISION ==========');
 
     if (shouldSendAudio) {
+      // ===== ANTI-DUPLICATION FOR AUDIO =====
+      // Check if similar message was already sent recently
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      
+      const { data: recentAudioMessages } = await supabase
+        .from('messages')
+        .select('content')
+        .eq('conversation_id', conversation.id)
+        .in('from_type', ['nina', 'human'])
+        .gte('sent_at', fiveMinutesAgo)
+        .order('sent_at', { ascending: false })
+        .limit(5);
+
+      const normalizedAudioContent = aiContent.toLowerCase().trim();
+      const isAudioDuplicate = recentAudioMessages?.some((m: any) => {
+        if (!m.content) return false;
+        return m.content.toLowerCase().trim() === normalizedAudioContent;
+      });
+
+      if (isAudioDuplicate) {
+        console.log('[Nina] ⚠️ Áudio duplicado detectado, não enviando resposta repetida');
+        return;
+      }
+      // ===== END ANTI-DUPLICATION FOR AUDIO =====
+      
       console.log('[Nina] 🎤 Attempting audio generation...');
       
       // Sanitize text for natural TTS pronunciation (simplify URLs)
