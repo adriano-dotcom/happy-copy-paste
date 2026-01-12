@@ -11,11 +11,12 @@ interface GenerateMessageRequest {
   agent_name?: string;
   agent_specialty?: string;
   agent_slug?: string;
-  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador';
+  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'unanswered_question' | 're_qualify';
   hours_waiting?: number;
   attempt_number: number;
   conversation_context?: string;
-  last_message_sent?: string; // NEW: Anti-repetition
+  unanswered_question?: string; // NEW: The specific question that went unanswered
+  last_message_sent?: string; // Anti-repetition
 }
 
 const PROMPT_TEMPLATES: Record<string, string> = {
@@ -72,6 +73,23 @@ Ofereça uma ligação rápida de forma DIRETA e PROATIVA:
 - Use linguagem objetiva, sem enrolação
 - Mostre que você respeita o tempo dele
 - NUNCA peça e-mail (transportadores não usam)`,
+
+  unanswered_question: `O cliente NÃO respondeu sua última pergunta.
+VOCÊ TEM O CONTEXTO DA PERGUNTA - use isso!
+Você DEVE retomar a MESMA pergunta de forma DIFERENTE:
+- Reformule com outras palavras
+- Seja mais direto OU mais casual (varie)
+- Ofereça opções prontas se fizer sentido (ex: "É mais frota própria ou terceirizada?")
+- NÃO pergunte "o que achou" ou "conseguiu pensar" - NÃO HOUVE CONVERSA!
+- Foque em obter a informação que você PRECISA
+- Mostre que responder é rápido e fácil`,
+
+  re_qualify: `O cliente mostrou interesse inicial mas não respondeu sua pergunta de qualificação.
+Retome de forma mais DIRETA e oferecendo valor:
+- Reforce o benefício de responder (ex: "Com isso te passo um valor na hora")
+- Seja mais específico nas opções
+- Ofereça fazer uma ligação rápida se necessário
+- Não seja genérico - use o contexto da conversa`,
 };
 
 // Varied fallback messages to never repeat the same one
@@ -143,10 +161,14 @@ serve(async (req) => {
       hours_waiting,
       attempt_number,
       conversation_context,
+      unanswered_question,
       last_message_sent
     } = body;
 
     console.log(`[generate-followup-message] Generating ${prompt_type} message for ${contact_name}, attempt ${attempt_number}`);
+    if (unanswered_question) {
+      console.log(`[generate-followup-message] Unanswered question detected: "${unanswered_question.substring(0, 80)}..."`);
+    }
     if (last_message_sent) {
       console.log(`[generate-followup-message] Last message to avoid: "${last_message_sent.substring(0, 50)}..."`);
     }
@@ -182,12 +204,25 @@ ${antiRepetitionRule}
 
 ${promptInstruction}`;
 
+    // Build context-aware user prompt
+    let contextSection = '';
+    if (unanswered_question) {
+      contextSection = `
+🎯 CONTEXTO CRÍTICO - PERGUNTA SEM RESPOSTA:
+Você fez esta pergunta e o cliente NÃO respondeu: "${unanswered_question}"
+Sua missão é RETOMAR essa mesma pergunta de outra forma.
+NÃO pergunte "conseguiu pensar?" ou "o que achou?" - ele não respondeu NADA!
+Reformule a pergunta de forma mais direta ou ofereça opções.`;
+    } else if (conversation_context) {
+      contextSection = `\n- Contexto da conversa: ${conversation_context}`;
+    }
+
     const userPrompt = `Gere uma mensagem de follow-up para:
 - Nome do cliente: ${contact_name}
 ${contact_company ? `- Empresa: ${contact_company}` : ''}
 ${hours_waiting ? `- Horas sem resposta: ${Math.round(hours_waiting)}h` : ''}
 - Tentativa número: ${attempt_number}
-${conversation_context ? `- Contexto da conversa: ${conversation_context}` : ''}
+${contextSection}
 ${last_message_sent ? `\n❌ NÃO repita nem pareça com: "${last_message_sent}"` : ''}
 
 Responda APENAS com a mensagem, sem explicações ou aspas.`;
