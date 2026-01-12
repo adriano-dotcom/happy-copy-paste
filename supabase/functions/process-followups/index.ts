@@ -126,7 +126,9 @@ async function generateAIMessage(
   agentName?: string,
   agentSpecialty?: string,
   agentSlug?: string,
-  lastMessageSent?: string // NEW: Anti-repetition
+  lastMessageSent?: string,
+  conversationContext?: string,
+  unansweredQuestion?: string
 ): Promise<string> {
   try {
     // Se o agente é Íris (transportadores) e o prompt é schedule_call, usar prompt específico
@@ -136,7 +138,13 @@ async function generateAIMessage(
       console.log(`[process-followups] Using transportador-specific prompt for Íris`);
     }
     
-    console.log(`[process-followups] Generating AI message, last_message_sent: ${lastMessageSent ? lastMessageSent.substring(0, 30) + '...' : 'none'}`);
+    // Se há pergunta sem resposta, sobrescrever o prompt type
+    if (unansweredQuestion && promptType !== 'last_chance') {
+      finalPromptType = 'unanswered_question';
+      console.log(`[process-followups] Overriding prompt to unanswered_question due to pending question`);
+    }
+    
+    console.log(`[process-followups] Generating AI message, prompt: ${finalPromptType}, context: ${conversationContext ? 'yes' : 'no'}, unanswered: ${unansweredQuestion ? 'yes' : 'no'}`);
     
     const response = await fetch(`${supabaseUrl}/functions/v1/generate-followup-message`, {
       method: 'POST',
@@ -153,7 +161,9 @@ async function generateAIMessage(
         prompt_type: finalPromptType,
         hours_waiting: hoursWaiting,
         attempt_number: attemptNumber,
-        last_message_sent: lastMessageSent, // Pass last message for anti-repetition
+        last_message_sent: lastMessageSent,
+        conversation_context: conversationContext,
+        unanswered_question: unansweredQuestion,
       }),
     });
 
@@ -170,6 +180,65 @@ async function generateAIMessage(
   }
 }
 
+// Analyze conversation history to detect unanswered questions
+interface ConversationAnalysis {
+  hasUserResponse: boolean;
+  unansweredQuestion: string | null;
+  conversationContext: string;
+  lastNinaMessage: string | null;
+}
+
+function analyzeConversationHistory(messages: Array<{ content: string | null; from_type: string; sent_at: string }>): ConversationAnalysis {
+  if (!messages || messages.length === 0) {
+    return { hasUserResponse: false, unansweredQuestion: null, conversationContext: '', lastNinaMessage: null };
+  }
+  
+  // Messages are ordered desc (most recent first)
+  const hasUserResponse = messages.some(m => m.from_type === 'user');
+  const lastMessage = messages[0];
+  const isLastFromNina = lastMessage?.from_type !== 'user';
+  
+  let unansweredQuestion: string | null = null;
+  let lastNinaMessage: string | null = null;
+  
+  // Find the last Nina message
+  const ninaMessages = messages.filter(m => m.from_type !== 'user');
+  if (ninaMessages.length > 0) {
+    lastNinaMessage = ninaMessages[0]?.content || null;
+    
+    // Check if last Nina message was a question
+    if (isLastFromNina && lastNinaMessage) {
+      const content = lastNinaMessage.toLowerCase();
+      const isQuestion = content.includes('?') || 
+                        content.includes('qual') ||
+                        content.includes('como') ||
+                        content.includes('quando') ||
+                        content.includes('quanto') ||
+                        content.includes('onde') ||
+                        content.includes('quem') ||
+                        content.includes('precisa') ||
+                        content.includes('gostaria');
+      
+      if (isQuestion) {
+        unansweredQuestion = lastNinaMessage;
+      }
+    }
+  }
+  
+  // Build context summary
+  let conversationContext = '';
+  if (!hasUserResponse && isLastFromNina) {
+    conversationContext = `IMPORTANTE: Cliente NÃO respondeu nenhuma mensagem ainda. Última mensagem da Nina: "${lastNinaMessage?.substring(0, 100)}..."`;
+  } else if (hasUserResponse) {
+    const lastUserMessage = messages.find(m => m.from_type === 'user');
+    if (lastUserMessage?.content) {
+      conversationContext = `Última resposta do cliente: "${lastUserMessage.content.substring(0, 100)}"`;
+    }
+  }
+  
+  return { hasUserResponse, unansweredQuestion, conversationContext, lastNinaMessage };
+}
+
 // Get message for current attempt from sequence
 async function getMessageForAttempt(
   automation: Automation,
@@ -181,7 +250,9 @@ async function getMessageForAttempt(
   agentName?: string,
   agentSpecialty?: string,
   agentSlug?: string,
-  lastMessageSent?: string // NEW: Anti-repetition
+  lastMessageSent?: string,
+  conversationContext?: string,
+  unansweredQuestion?: string
 ): Promise<string> {
   const sequence = automation.messages_sequence;
   
@@ -207,7 +278,8 @@ async function getMessageForAttempt(
         return await generateAIMessage(
           supabaseUrl, supabaseServiceKey, conv,
           lastItem.ai_prompt_type, attemptNumber, hoursWaiting,
-          agentName, agentSpecialty, agentSlug, lastMessageSent
+          agentName, agentSpecialty, agentSlug, lastMessageSent,
+          conversationContext, unansweredQuestion
         );
       }
       return replaceVariables(lastItem.content || automation.free_text_message || 'Oi {nome}!', conv);
@@ -219,11 +291,12 @@ async function getMessageForAttempt(
 
   // Generate AI message or use manual content
   if (sequenceItem.type === 'ai_generated' && sequenceItem.ai_prompt_type) {
-    console.log(`[process-followups] Generating AI message for attempt ${attemptNumber}, type: ${sequenceItem.ai_prompt_type}`);
+    console.log(`[process-followups] Generating AI message for attempt ${attemptNumber}, type: ${sequenceItem.ai_prompt_type}, has context: ${!!conversationContext}, has unanswered: ${!!unansweredQuestion}`);
     return await generateAIMessage(
       supabaseUrl, supabaseServiceKey, conv,
       sequenceItem.ai_prompt_type, attemptNumber, hoursWaiting,
-      agentName, agentSpecialty, agentSlug, lastMessageSent
+      agentName, agentSpecialty, agentSlug, lastMessageSent,
+      conversationContext, unansweredQuestion
     );
   }
 
@@ -449,19 +522,26 @@ serve(async (req) => {
           }
         }
 
-        // Check if last message was from user (skip if user sent last message)
-        const { data: lastMessage } = await supabase
+        // Fetch recent messages for context analysis (up to 8 messages)
+        const { data: recentMessages } = await supabase
           .from('messages')
-          .select('from_type')
+          .select('content, from_type, sent_at')
           .eq('conversation_id', conv.id)
           .order('sent_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (lastMessage?.from_type === 'user') {
+          .limit(8);
+        
+        // Check if last message was from user (skip if user sent last message)
+        const lastMessageFromType = recentMessages?.[0]?.from_type;
+        if (lastMessageFromType === 'user') {
           console.log(`[process-followups] Last message from user, skipping conversation ${conv.id}`);
           skipped++;
           continue;
+        }
+        
+        // Analyze conversation to detect unanswered questions
+        const conversationAnalysis = analyzeConversationHistory(recentMessages || []);
+        if (conversationAnalysis.unansweredQuestion) {
+          console.log(`[process-followups] Detected unanswered question in ${conv.id}: "${conversationAnalysis.unansweredQuestion.substring(0, 60)}..."`);
         }
 
         // Check previous follow-ups from this automation (now including message_content for anti-repetition)
@@ -513,7 +593,7 @@ serve(async (req) => {
               console.log(`[process-followups] Last message for anti-repetition: "${lastMessageSent.substring(0, 40)}..."`);
             }
             
-            // Get message content based on attempt number and sequence
+            // Get message content based on attempt number, sequence, and conversation context
             const messageContent = await getMessageForAttempt(
               automation,
               attemptNumber,
@@ -524,7 +604,9 @@ serve(async (req) => {
               agentInfo?.name,
               agentInfo?.specialty || undefined,
               agentInfo?.slug,
-              lastMessageSent // Pass last message for anti-repetition
+              lastMessageSent,
+              conversationAnalysis.conversationContext,
+              conversationAnalysis.unansweredQuestion || undefined
             );
             
             console.log(`[process-followups] Sending message (attempt ${attemptNumber}) to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
