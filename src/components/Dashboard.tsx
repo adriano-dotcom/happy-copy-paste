@@ -97,6 +97,21 @@ interface SellerLeadStats {
   periodAttended: number;      // Efetivamente atendidos no período
 }
 
+interface IADistributionStats {
+  sellerId: string;
+  sellerName: string;
+  totalDeals: number;
+  periodDeals: number;
+}
+
+interface AgentDistributionConfig {
+  agentId: string;
+  agentName: string;
+  distributionType: string;
+  defaultOwnerId: string | null;
+  rotationIds: string[] | null;
+}
+
 const Dashboard: React.FC = () => {
   const [metrics, setMetrics] = useState<StatMetric[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
@@ -111,6 +126,8 @@ const Dashboard: React.FC = () => {
   const [sellerLeadStats, setSellerLeadStats] = useState<SellerLeadStats[]>([]);
   const [sellerStatsBaselineDate, setSellerStatsBaselineDate] = useState<string | null>(null);
   const [excludedConversationsCount, setExcludedConversationsCount] = useState<number>(0);
+  const [iaDistributionStats, setIADistributionStats] = useState<IADistributionStats[]>([]);
+  const [agentDistributionConfig, setAgentDistributionConfig] = useState<AgentDistributionConfig[]>([]);
 
   const fetchSystemMetrics = async () => {
     try {
@@ -498,6 +515,74 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const fetchIADistributionStats = async () => {
+    try {
+      // Get baseline date from settings
+      const { data: settings } = await supabase
+        .from('nina_settings')
+        .select('seller_stats_baseline_date')
+        .single();
+
+      const baselineDate = settings?.seller_stats_baseline_date;
+
+      // Fetch all team members
+      const { data: teamMembers } = await supabase
+        .from('team_members')
+        .select('id, name');
+
+      if (!teamMembers) return;
+
+      // Fetch all deals with owner_id
+      const { data: allDeals } = await supabase
+        .from('deals')
+        .select('id, owner_id, created_at')
+        .not('owner_id', 'is', null);
+
+      // Fetch deals in period (using baseline date)
+      let periodDealsQuery = supabase
+        .from('deals')
+        .select('id, owner_id, created_at')
+        .not('owner_id', 'is', null);
+      
+      if (baselineDate) {
+        periodDealsQuery = periodDealsQuery.gte('created_at', baselineDate);
+      }
+
+      const { data: periodDeals } = await periodDealsQuery;
+
+      // Fetch agent distribution config
+      const { data: agents } = await supabase
+        .from('agents')
+        .select('id, name, owner_distribution_type, default_owner_id, owner_rotation_ids')
+        .eq('is_active', true);
+
+      if (agents) {
+        setAgentDistributionConfig(agents.map(a => ({
+          agentId: a.id,
+          agentName: a.name,
+          distributionType: a.owner_distribution_type || 'fixed',
+          defaultOwnerId: a.default_owner_id,
+          rotationIds: a.owner_rotation_ids
+        })));
+      }
+
+      // Calculate stats per seller
+      const stats: IADistributionStats[] = teamMembers
+        .map(member => ({
+          sellerId: member.id,
+          sellerName: member.name,
+          totalDeals: allDeals?.filter(d => d.owner_id === member.id).length || 0,
+          periodDeals: periodDeals?.filter(d => d.owner_id === member.id).length || 0
+        }))
+        .filter(s => s.totalDeals > 0 || s.periodDeals > 0)
+        .sort((a, b) => b.totalDeals - a.totalDeals);
+
+      setIADistributionStats(stats);
+    } catch (error) {
+      console.error('Erro ao carregar estatísticas de distribuição IA:', error);
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -510,7 +595,8 @@ const Dashboard: React.FC = () => {
           fetchLeadsEvolution(),
           fetchCallMetrics(),
           fetchAgentStats(),
-          fetchSellerLeadStats()
+          fetchSellerLeadStats(),
+          fetchIADistributionStats()
         ]);
         setMetrics(metricsData);
         setChartData(chartDataResponse);
@@ -914,6 +1000,110 @@ const Dashboard: React.FC = () => {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* IA Distribution Stats Section */}
+      {iaDistributionStats.length > 0 && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-purple-700/50 to-transparent"></div>
+            <h3 className="text-lg font-semibold text-slate-300 flex items-center gap-2">
+              <Bot className="w-5 h-5 text-purple-400" />
+              Distribuição pela IA
+            </h3>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-purple-700/50 to-transparent"></div>
+          </div>
+
+          {/* Distribution Mode Badge */}
+          {agentDistributionConfig.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {agentDistributionConfig.map(config => (
+                <div 
+                  key={config.agentId}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-purple-500/10 rounded-lg border border-purple-500/20"
+                >
+                  <span className="text-sm text-slate-300">{config.agentName}:</span>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                    config.distributionType === 'round_robin' 
+                      ? 'bg-emerald-500/20 text-emerald-400' 
+                      : 'bg-blue-500/20 text-blue-400'
+                  }`}>
+                    {config.distributionType === 'round_robin' ? 'Round Robin' : 'Fixo'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Summary Stats */}
+          {(() => {
+            const totalDistributedIA = iaDistributionStats.reduce((sum, s) => sum + s.totalDeals, 0);
+            const periodDistributedIA = iaDistributionStats.reduce((sum, s) => sum + s.periodDeals, 0);
+            const maxDeals = Math.max(...iaDistributionStats.map(s => s.totalDeals));
+
+            return (
+              <>
+                {/* Summary Card */}
+                <div className="rounded-xl border border-purple-500/20 bg-gradient-to-br from-purple-500/10 to-slate-800/50 p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Zap className="w-5 h-5 text-purple-400" />
+                      <h4 className="text-base font-semibold text-white">Total Distribuído</h4>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-white">{periodDistributedIA}</p>
+                      <p className="text-xs text-slate-500">{totalDistributedIA} total</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                    {iaDistributionStats.map((seller, index) => {
+                      const percentage = totalDistributedIA > 0 
+                        ? Math.round((seller.totalDeals / totalDistributedIA) * 100) 
+                        : 0;
+                      const barWidth = maxDeals > 0 
+                        ? Math.round((seller.totalDeals / maxDeals) * 100) 
+                        : 0;
+                      
+                      const colorSchemes = [
+                        { bg: 'from-purple-500/20 to-purple-500/5', border: 'border-purple-500/30', accent: 'text-purple-400', bar: 'bg-purple-500' },
+                        { bg: 'from-violet-500/20 to-violet-500/5', border: 'border-violet-500/30', accent: 'text-violet-400', bar: 'bg-violet-500' },
+                        { bg: 'from-indigo-500/20 to-indigo-500/5', border: 'border-indigo-500/30', accent: 'text-indigo-400', bar: 'bg-indigo-500' },
+                        { bg: 'from-fuchsia-500/20 to-fuchsia-500/5', border: 'border-fuchsia-500/30', accent: 'text-fuchsia-400', bar: 'bg-fuchsia-500' },
+                      ];
+                      const colors = colorSchemes[index % colorSchemes.length];
+
+                      return (
+                        <div
+                          key={seller.sellerId}
+                          className={`rounded-lg border ${colors.border} bg-gradient-to-br ${colors.bg} p-4`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-white truncate">{seller.sellerName}</span>
+                            <span className={`text-xs ${colors.accent}`}>{percentage}%</span>
+                          </div>
+                          <div className="flex items-baseline gap-2 mb-2">
+                            <span className="text-2xl font-bold text-white">{seller.totalDeals}</span>
+                            <span className="text-xs text-slate-400">deals</span>
+                            {seller.periodDeals > 0 && (
+                              <span className="text-xs text-emerald-400">+{seller.periodDeals}</span>
+                            )}
+                          </div>
+                          <div className="w-full bg-slate-700/50 rounded-full h-1.5">
+                            <div 
+                              className={`h-1.5 rounded-full transition-all ${colors.bar}`}
+                              style={{ width: `${barWidth}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
 
