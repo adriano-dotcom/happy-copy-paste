@@ -274,11 +274,6 @@ const Dashboard: React.FC = () => {
         .from('team_members')
         .select('id, name');
 
-      if (!teamMembers || teamMembers.length === 0) {
-        setSellerLeadStats([]);
-        return;
-      }
-
       // Fetch all conversations with assigned users
       const { data: allConversations } = await supabase
         .from('conversations')
@@ -291,7 +286,11 @@ const Dashboard: React.FC = () => {
         .not('assigned_user_id', 'is', null)
         .gte('created_at', startDate);
 
-      const stats: SellerLeadStats[] = teamMembers
+      // Create set of known team member IDs
+      const knownIds = new Set(teamMembers?.map(m => m.id) || []);
+
+      // Calculate stats for known team members
+      const stats: SellerLeadStats[] = (teamMembers || [])
         .map(member => {
           const totalLeads = allConversations?.filter(c => c.assigned_user_id === member.id).length || 0;
           const periodLeads = periodConversations?.filter(c => c.assigned_user_id === member.id).length || 0;
@@ -303,8 +302,29 @@ const Dashboard: React.FC = () => {
             periodLeads
           };
         })
-        .filter(s => s.totalLeads > 0 || s.periodLeads > 0)
-        .sort((a, b) => b.periodLeads - a.periodLeads);
+        .filter(s => s.totalLeads > 0 || s.periodLeads > 0);
+
+      // Calculate leads from unknown/removed sellers
+      const unknownTotalLeads = allConversations?.filter(
+        c => c.assigned_user_id && !knownIds.has(c.assigned_user_id)
+      ).length || 0;
+      
+      const unknownPeriodLeads = periodConversations?.filter(
+        c => c.assigned_user_id && !knownIds.has(c.assigned_user_id)
+      ).length || 0;
+
+      // Add unknown sellers category if there are any
+      if (unknownTotalLeads > 0 || unknownPeriodLeads > 0) {
+        stats.push({
+          memberId: 'unknown',
+          sellerName: 'Vendedor Removido/Desconhecido',
+          totalLeads: unknownTotalLeads,
+          periodLeads: unknownPeriodLeads
+        });
+      }
+
+      // Sort by period leads descending
+      stats.sort((a, b) => b.periodLeads - a.periodLeads);
 
       setSellerLeadStats(stats);
     } catch (error) {
