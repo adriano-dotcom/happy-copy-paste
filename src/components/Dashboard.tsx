@@ -78,6 +78,21 @@ interface DailyCallData {
   completed: number;
 }
 
+interface AgentLeadStats {
+  agentId: string;
+  agentName: string;
+  agentSlug: string;
+  totalLeads: number;
+  periodLeads: number;
+}
+
+interface SellerLeadStats {
+  memberId: string;
+  sellerName: string;
+  totalLeads: number;
+  periodLeads: number;
+}
+
 const Dashboard: React.FC = () => {
   const [metrics, setMetrics] = useState<StatMetric[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
@@ -88,6 +103,8 @@ const Dashboard: React.FC = () => {
   const [callMetrics, setCallMetrics] = useState<CallMetrics | null>(null);
   const [sellerCallData, setSellerCallData] = useState<SellerCallData[]>([]);
   const [dailyCallData, setDailyCallData] = useState<DailyCallData[]>([]);
+  const [agentStats, setAgentStats] = useState<AgentLeadStats[]>([]);
+  const [sellerLeadStats, setSellerLeadStats] = useState<SellerLeadStats[]>([]);
 
   const fetchSystemMetrics = async () => {
     try {
@@ -197,6 +214,101 @@ const Dashboard: React.FC = () => {
       setLeadsEvolutionData(chartData);
     } catch (error) {
       console.error('Erro ao carregar evolução de leads:', error);
+    }
+  };
+
+  const fetchAgentStats = async () => {
+    try {
+      const days = periodDays[period];
+      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      // Fetch all agents
+      const { data: agents } = await supabase
+        .from('agents')
+        .select('id, name, slug')
+        .eq('is_active', true);
+
+      if (!agents) {
+        setAgentStats([]);
+        return;
+      }
+
+      // Fetch all conversations with agent assignment
+      const { data: allConversations } = await supabase
+        .from('conversations')
+        .select('id, current_agent_id, created_at')
+        .not('current_agent_id', 'is', null);
+
+      const { data: periodConversations } = await supabase
+        .from('conversations')
+        .select('id, current_agent_id, created_at')
+        .not('current_agent_id', 'is', null)
+        .gte('created_at', startDate);
+
+      const stats: AgentLeadStats[] = agents.map(agent => {
+        const totalLeads = allConversations?.filter(c => c.current_agent_id === agent.id).length || 0;
+        const periodLeads = periodConversations?.filter(c => c.current_agent_id === agent.id).length || 0;
+        
+        return {
+          agentId: agent.id,
+          agentName: agent.name,
+          agentSlug: agent.slug,
+          totalLeads,
+          periodLeads
+        };
+      }).sort((a, b) => b.periodLeads - a.periodLeads);
+
+      setAgentStats(stats);
+    } catch (error) {
+      console.error('Erro ao carregar estatísticas de agentes:', error);
+    }
+  };
+
+  const fetchSellerLeadStats = async () => {
+    try {
+      const days = periodDays[period];
+      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      // Fetch team members (sellers)
+      const { data: teamMembers } = await supabase
+        .from('team_members')
+        .select('id, name');
+
+      if (!teamMembers || teamMembers.length === 0) {
+        setSellerLeadStats([]);
+        return;
+      }
+
+      // Fetch all conversations with assigned users
+      const { data: allConversations } = await supabase
+        .from('conversations')
+        .select('id, assigned_user_id, created_at')
+        .not('assigned_user_id', 'is', null);
+
+      const { data: periodConversations } = await supabase
+        .from('conversations')
+        .select('id, assigned_user_id, created_at')
+        .not('assigned_user_id', 'is', null)
+        .gte('created_at', startDate);
+
+      const stats: SellerLeadStats[] = teamMembers
+        .map(member => {
+          const totalLeads = allConversations?.filter(c => c.assigned_user_id === member.id).length || 0;
+          const periodLeads = periodConversations?.filter(c => c.assigned_user_id === member.id).length || 0;
+          
+          return {
+            memberId: member.id,
+            sellerName: member.name,
+            totalLeads,
+            periodLeads
+          };
+        })
+        .filter(s => s.totalLeads > 0 || s.periodLeads > 0)
+        .sort((a, b) => b.periodLeads - a.periodLeads);
+
+      setSellerLeadStats(stats);
+    } catch (error) {
+      console.error('Erro ao carregar estatísticas de vendedores:', error);
     }
   };
 
@@ -313,7 +425,9 @@ const Dashboard: React.FC = () => {
           api.fetchChartData(days),
           fetchSystemMetrics(),
           fetchLeadsEvolution(),
-          fetchCallMetrics()
+          fetchCallMetrics(),
+          fetchAgentStats(),
+          fetchSellerLeadStats()
         ]);
         setMetrics(metricsData);
         setChartData(chartDataResponse);
@@ -587,6 +701,99 @@ const Dashboard: React.FC = () => {
                 <Area type="monotone" dataKey="prospeccao" name="Prospecção" stroke="#f97316" strokeWidth={2} fill="url(#colorProspeccao)" />
               </AreaChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Agent Lead Stats Section */}
+      {agentStats.length > 0 && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-violet-700/50 to-transparent"></div>
+            <h3 className="text-lg font-semibold text-slate-300 flex items-center gap-2">
+              <Bot className="w-5 h-5 text-violet-400" />
+              Leads por Agente IA
+            </h3>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-violet-700/50 to-transparent"></div>
+          </div>
+
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+            {agentStats.map((agent) => {
+              const getAgentColor = (slug: string) => {
+                if (slug.includes('iris')) return { border: 'border-violet-500/20', bg: 'from-violet-500/10 to-violet-500/5', text: 'text-violet-400', accent: 'text-violet-400/80' };
+                if (slug.includes('clara')) return { border: 'border-cyan-500/20', bg: 'from-cyan-500/10 to-cyan-500/5', text: 'text-cyan-400', accent: 'text-cyan-400/80' };
+                if (slug.includes('sofia')) return { border: 'border-rose-500/20', bg: 'from-rose-500/10 to-rose-500/5', text: 'text-rose-400', accent: 'text-rose-400/80' };
+                if (slug.includes('atlas')) return { border: 'border-amber-500/20', bg: 'from-amber-500/10 to-amber-500/5', text: 'text-amber-400', accent: 'text-amber-400/80' };
+                return { border: 'border-emerald-500/20', bg: 'from-emerald-500/10 to-emerald-500/5', text: 'text-emerald-400', accent: 'text-emerald-400/80' };
+              };
+              
+              const colors = getAgentColor(agent.agentSlug.toLowerCase());
+              
+              return (
+                <div 
+                  key={agent.agentId} 
+                  className={`rounded-xl border ${colors.border} bg-gradient-to-br ${colors.bg} p-4 transition-all hover:scale-[1.02]`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Bot className={`w-4 h-4 ${colors.text}`} />
+                    <span className="text-sm font-medium text-white">{agent.agentName}</span>
+                  </div>
+                  <p className="text-2xl font-bold text-white">{agent.periodLeads}</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {period === 'today' ? 'leads hoje' : `leads (${periodLabels[period]})`}
+                  </p>
+                  <p className={`text-xs ${colors.accent} mt-2`}>
+                    {agent.totalLeads} total
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Seller Lead Stats Section */}
+      {sellerLeadStats.length > 0 && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-orange-700/50 to-transparent"></div>
+            <h3 className="text-lg font-semibold text-slate-300 flex items-center gap-2">
+              <Users className="w-5 h-5 text-orange-400" />
+              Atendimentos por Vendedor
+            </h3>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-orange-700/50 to-transparent"></div>
+          </div>
+
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-4 lg:grid-cols-5">
+            {sellerLeadStats.map((seller, index) => {
+              const colorSchemes = [
+                { border: 'border-orange-500/20', bg: 'from-orange-500/10 to-orange-500/5', text: 'text-orange-400', accent: 'text-orange-400/80' },
+                { border: 'border-amber-500/20', bg: 'from-amber-500/10 to-amber-500/5', text: 'text-amber-400', accent: 'text-amber-400/80' },
+                { border: 'border-yellow-500/20', bg: 'from-yellow-500/10 to-yellow-500/5', text: 'text-yellow-400', accent: 'text-yellow-400/80' },
+                { border: 'border-lime-500/20', bg: 'from-lime-500/10 to-lime-500/5', text: 'text-lime-400', accent: 'text-lime-400/80' },
+                { border: 'border-teal-500/20', bg: 'from-teal-500/10 to-teal-500/5', text: 'text-teal-400', accent: 'text-teal-400/80' }
+              ];
+              const colors = colorSchemes[index % colorSchemes.length];
+              
+              return (
+                <div 
+                  key={seller.memberId} 
+                  className={`rounded-xl border ${colors.border} bg-gradient-to-br ${colors.bg} p-4 transition-all hover:scale-[1.02]`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Users className={`w-4 h-4 ${colors.text}`} />
+                    <span className="text-sm font-medium text-white truncate">{seller.sellerName}</span>
+                  </div>
+                  <p className="text-2xl font-bold text-white">{seller.periodLeads}</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {period === 'today' ? 'leads hoje' : `leads (${periodLabels[period]})`}
+                  </p>
+                  <p className={`text-xs ${colors.accent} mt-2`}>
+                    {seller.totalLeads} total
+                  </p>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
