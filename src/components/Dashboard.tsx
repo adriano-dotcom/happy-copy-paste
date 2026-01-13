@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, DollarSign, MessageSquare, Users, Loader2, TrendingUp, TrendingDown, ArrowUpRight, Bot, Phone, Briefcase, Layers, Zap, MessageCircle, Clock, PhoneCall, PhoneOff, PhoneMissed, Timer, AlertTriangle, Info } from 'lucide-react';
+import { Activity, DollarSign, MessageSquare, Users, Loader2, TrendingUp, TrendingDown, ArrowUpRight, Bot, Phone, Briefcase, Layers, Zap, MessageCircle, Clock, PhoneCall, PhoneOff, PhoneMissed, Timer, AlertTriangle, Info, BarChart3 } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, BarChart, Bar } from 'recharts';
 import { StatMetric } from '../types';
 import { api } from '../services/api';
@@ -946,6 +946,72 @@ const Dashboard: React.FC = () => {
               )}
             </div>
           )}
+
+          {/* Summary Card */}
+          {(() => {
+            const totalDistributed = sellerLeadStats.reduce((sum, s) => sum + s.totalLeads, 0);
+            const periodDistributed = sellerLeadStats.reduce((sum, s) => sum + s.periodLeads, 0);
+            const totalAttended = sellerLeadStats.reduce((sum, s) => sum + s.effectivelyAttended, 0);
+            const periodAttended = sellerLeadStats.reduce((sum, s) => sum + s.periodAttended, 0);
+            const overallAttendanceRate = totalDistributed > 0 
+              ? Math.round((totalAttended / totalDistributed) * 100) 
+              : 0;
+            const periodAttendanceRate = periodDistributed > 0 
+              ? Math.round((periodAttended / periodDistributed) * 100) 
+              : 0;
+            
+            const getRateColor = (rate: number) => {
+              if (rate >= 50) return 'text-emerald-400';
+              if (rate >= 20) return 'text-yellow-400';
+              return 'text-red-400';
+            };
+            
+            const getRateBarColor = (rate: number) => {
+              if (rate >= 50) return 'bg-emerald-500';
+              if (rate >= 20) return 'bg-yellow-500';
+              return 'bg-red-500';
+            };
+
+            return (
+              <div className="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-slate-800/50 p-6 mb-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <BarChart3 className="w-5 h-5 text-blue-400" />
+                  <h4 className="text-base font-semibold text-white">Resumo Geral</h4>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-6">
+                  {/* Distribuídos */}
+                  <div className="text-center">
+                    <p className="text-3xl font-bold text-white">{periodDistributed}</p>
+                    <p className="text-sm text-slate-400">Distribuídos</p>
+                    <p className="text-xs text-slate-500 mt-1">{totalDistributed} total</p>
+                  </div>
+                  
+                  {/* Atendidos */}
+                  <div className="text-center">
+                    <p className="text-3xl font-bold text-emerald-400">{periodAttended}</p>
+                    <p className="text-sm text-slate-400">Atendidos</p>
+                    <p className="text-xs text-slate-500 mt-1">{totalAttended} total</p>
+                  </div>
+                  
+                  {/* Taxa de Atendimento */}
+                  <div className="text-center">
+                    <p className={`text-3xl font-bold ${getRateColor(periodAttendanceRate)}`}>
+                      {periodAttendanceRate}%
+                    </p>
+                    <p className="text-sm text-slate-400">Taxa de Atendimento</p>
+                    <div className="w-full bg-slate-700 rounded-full h-2 mt-2">
+                      <div 
+                        className={`h-2 rounded-full transition-all ${getRateBarColor(periodAttendanceRate)}`} 
+                        style={{ width: `${Math.min(periodAttendanceRate, 100)}%` }} 
+                      />
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">{overallAttendanceRate}% total</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {sellerLeadStats.map((seller, index) => {
