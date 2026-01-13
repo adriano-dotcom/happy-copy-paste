@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, DollarSign, MessageSquare, Users, Loader2, TrendingUp, TrendingDown, ArrowUpRight, Bot, Phone, Briefcase, Layers, Zap, MessageCircle, Clock, PhoneCall, PhoneOff, PhoneMissed, Timer } from 'lucide-react';
+import { Activity, DollarSign, MessageSquare, Users, Loader2, TrendingUp, TrendingDown, ArrowUpRight, Bot, Phone, Briefcase, Layers, Zap, MessageCircle, Clock, PhoneCall, PhoneOff, PhoneMissed, Timer, AlertTriangle } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, BarChart, Bar } from 'recharts';
 import { StatMetric } from '../types';
 import { api } from '../services/api';
@@ -725,6 +725,80 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Summary Cards - Lead Attribution Overview */}
+      {(agentStats.length > 0 || sellerLeadStats.length > 0) && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-700/50 to-transparent"></div>
+            <h3 className="text-lg font-semibold text-slate-300 flex items-center gap-2">
+              <Layers className="w-5 h-5 text-slate-400" />
+              Resumo de Atribuição de Leads
+            </h3>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-700/50 to-transparent"></div>
+          </div>
+
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+            {/* Total Conversations */}
+            <div className="rounded-xl border border-slate-700/50 bg-gradient-to-br from-slate-800/50 to-slate-900/50 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <MessageCircle className="w-4 h-4 text-slate-400" />
+                <span className="text-xs text-slate-400">Total de Leads</span>
+              </div>
+              <p className="text-2xl font-bold text-white">{systemMetrics?.totalConversations || 0}</p>
+              <p className="text-xs text-slate-500 mt-1">conversas no sistema</p>
+            </div>
+
+            {/* AI Attended */}
+            <div className="rounded-xl border border-violet-500/20 bg-gradient-to-br from-violet-500/10 to-violet-500/5 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Bot className="w-4 h-4 text-violet-400" />
+                <span className="text-xs text-slate-400">Atendidos por IA</span>
+              </div>
+              <p className="text-2xl font-bold text-violet-400">
+                {agentStats.reduce((sum, a) => sum + a.totalLeads, 0)}
+              </p>
+              <p className="text-xs text-violet-400/60 mt-1">
+                {systemMetrics?.totalConversations 
+                  ? `${Math.round((agentStats.reduce((sum, a) => sum + a.totalLeads, 0) / systemMetrics.totalConversations) * 100)}%`
+                  : '0%'
+                } do total
+              </p>
+            </div>
+
+            {/* Seller Attended */}
+            <div className="rounded-xl border border-orange-500/20 bg-gradient-to-br from-orange-500/10 to-orange-500/5 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="w-4 h-4 text-orange-400" />
+                <span className="text-xs text-slate-400">Atribuídos a Vendedores</span>
+              </div>
+              <p className="text-2xl font-bold text-orange-400">
+                {sellerLeadStats.reduce((sum, s) => sum + s.totalLeads, 0)}
+              </p>
+              <p className="text-xs text-orange-400/60 mt-1">
+                {systemMetrics?.totalConversations 
+                  ? `${Math.round((sellerLeadStats.reduce((sum, s) => sum + s.totalLeads, 0) / systemMetrics.totalConversations) * 100)}%`
+                  : '0%'
+                } do total
+              </p>
+            </div>
+
+            {/* Unknown/Removed Sellers */}
+            {sellerLeadStats.find(s => s.memberId === 'unknown') && (
+              <div className="rounded-xl border border-red-500/30 bg-gradient-to-br from-red-500/15 to-slate-800/50 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4 text-red-400" />
+                  <span className="text-xs text-slate-400">Vendedores Removidos</span>
+                </div>
+                <p className="text-2xl font-bold text-red-400">
+                  {sellerLeadStats.find(s => s.memberId === 'unknown')?.totalLeads || 0}
+                </p>
+                <p className="text-xs text-red-400/60 mt-1">leads órfãos</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Agent Lead Stats Section */}
       {agentStats.length > 0 && (
         <div className="space-y-6">
@@ -748,6 +822,7 @@ const Dashboard: React.FC = () => {
               };
               
               const colors = getAgentColor(agent.agentSlug.toLowerCase());
+              const isInactiveInPeriod = agent.periodLeads === 0 && agent.totalLeads > 0;
               
               return (
                 <div 
@@ -759,9 +834,16 @@ const Dashboard: React.FC = () => {
                     <span className="text-sm font-medium text-white">{agent.agentName}</span>
                   </div>
                   <p className="text-2xl font-bold text-white">{agent.periodLeads}</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {period === 'today' ? 'leads hoje' : `leads (${periodLabels[period]})`}
-                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-xs text-slate-400">
+                      {period === 'today' ? 'leads hoje' : `leads (${periodLabels[period]})`}
+                    </p>
+                    {isInactiveInPeriod && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-700/50 text-slate-400">
+                        inativo no período
+                      </span>
+                    )}
+                  </div>
                   <p className={`text-xs ${colors.accent} mt-2`}>
                     {agent.totalLeads} total
                   </p>
@@ -787,27 +869,49 @@ const Dashboard: React.FC = () => {
           <div className="grid gap-4 grid-cols-2 md:grid-cols-4 lg:grid-cols-5">
             {sellerLeadStats.map((seller, index) => {
               const colorSchemes = [
-                { border: 'border-orange-500/20', bg: 'from-orange-500/10 to-orange-500/5', text: 'text-orange-400', accent: 'text-orange-400/80' },
-                { border: 'border-amber-500/20', bg: 'from-amber-500/10 to-amber-500/5', text: 'text-amber-400', accent: 'text-amber-400/80' },
-                { border: 'border-yellow-500/20', bg: 'from-yellow-500/10 to-yellow-500/5', text: 'text-yellow-400', accent: 'text-yellow-400/80' },
-                { border: 'border-lime-500/20', bg: 'from-lime-500/10 to-lime-500/5', text: 'text-lime-400', accent: 'text-lime-400/80' },
-                { border: 'border-teal-500/20', bg: 'from-teal-500/10 to-teal-500/5', text: 'text-teal-400', accent: 'text-teal-400/80' }
+                { border: 'border-orange-500/20', bg: 'from-orange-500/10 to-orange-500/5', text: 'text-orange-400', accent: 'text-orange-400/80', icon: Users },
+                { border: 'border-amber-500/20', bg: 'from-amber-500/10 to-amber-500/5', text: 'text-amber-400', accent: 'text-amber-400/80', icon: Users },
+                { border: 'border-yellow-500/20', bg: 'from-yellow-500/10 to-yellow-500/5', text: 'text-yellow-400', accent: 'text-yellow-400/80', icon: Users },
+                { border: 'border-lime-500/20', bg: 'from-lime-500/10 to-lime-500/5', text: 'text-lime-400', accent: 'text-lime-400/80', icon: Users },
+                { border: 'border-teal-500/20', bg: 'from-teal-500/10 to-teal-500/5', text: 'text-teal-400', accent: 'text-teal-400/80', icon: Users }
               ];
-              const colors = colorSchemes[index % colorSchemes.length];
+              
+              // Special styling for unknown/removed sellers
+              const isUnknown = seller.memberId === 'unknown';
+              const colors = isUnknown 
+                ? { border: 'border-red-500/30', bg: 'from-red-500/15 to-slate-800/50', text: 'text-red-400', accent: 'text-red-400/80', icon: AlertTriangle }
+                : colorSchemes[index % colorSchemes.length];
+              
+              const isInactiveInPeriod = seller.periodLeads === 0 && seller.totalLeads > 0;
+              const IconComponent = colors.icon;
               
               return (
                 <div 
                   key={seller.memberId} 
-                  className={`rounded-xl border ${colors.border} bg-gradient-to-br ${colors.bg} p-4 transition-all hover:scale-[1.02]`}
+                  className={`rounded-xl border ${colors.border} bg-gradient-to-br ${colors.bg} p-4 transition-all hover:scale-[1.02] ${isUnknown ? 'ring-1 ring-red-500/20' : ''}`}
                 >
                   <div className="flex items-center gap-2 mb-2">
-                    <Users className={`w-4 h-4 ${colors.text}`} />
-                    <span className="text-sm font-medium text-white truncate">{seller.sellerName}</span>
+                    <IconComponent className={`w-4 h-4 ${colors.text}`} />
+                    <span className={`text-sm font-medium truncate ${isUnknown ? 'text-red-300' : 'text-white'}`}>
+                      {seller.sellerName}
+                    </span>
                   </div>
-                  <p className="text-2xl font-bold text-white">{seller.periodLeads}</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {period === 'today' ? 'leads hoje' : `leads (${periodLabels[period]})`}
-                  </p>
+                  <p className={`text-2xl font-bold ${isUnknown ? 'text-red-400' : 'text-white'}`}>{seller.periodLeads}</p>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <p className="text-xs text-slate-400">
+                      {period === 'today' ? 'leads hoje' : `leads (${periodLabels[period]})`}
+                    </p>
+                    {isInactiveInPeriod && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-700/50 text-slate-400">
+                        inativo no período
+                      </span>
+                    )}
+                    {isUnknown && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-red-500/20 text-red-400">
+                        verificar
+                      </span>
+                    )}
+                  </div>
                   <p className={`text-xs ${colors.accent} mt-2`}>
                     {seller.totalLeads} total
                   </p>
