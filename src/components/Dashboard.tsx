@@ -89,8 +89,10 @@ interface AgentLeadStats {
 interface SellerLeadStats {
   memberId: string;
   sellerName: string;
-  totalLeads: number;
-  periodLeads: number;
+  totalLeads: number;      // Total distribuídos
+  periodLeads: number;     // Distribuídos no período
+  effectivelyAttended: number; // Efetivamente atendidos (total)
+  periodAttended: number;      // Efetivamente atendidos no período
 }
 
 const Dashboard: React.FC = () => {
@@ -286,32 +288,63 @@ const Dashboard: React.FC = () => {
         .not('assigned_user_id', 'is', null)
         .gte('created_at', startDate);
 
+      // Fetch conversation IDs that have at least one human message (effectively attended)
+      const { data: humanMessages } = await supabase
+        .from('messages')
+        .select('conversation_id')
+        .eq('from_type', 'human');
+
+      const humanConversationIds = new Set(humanMessages?.map(m => m.conversation_id) || []);
+
+      // Fetch human messages in period to determine period attendance
+      const { data: periodHumanMessages } = await supabase
+        .from('messages')
+        .select('conversation_id, sent_at')
+        .eq('from_type', 'human')
+        .gte('sent_at', startDate);
+
+      const periodHumanConversationIds = new Set(periodHumanMessages?.map(m => m.conversation_id) || []);
+
       // Create set of known team member IDs
       const knownIds = new Set(teamMembers?.map(m => m.id) || []);
 
       // Calculate stats for known team members
       const stats: SellerLeadStats[] = (teamMembers || [])
         .map(member => {
-          const totalLeads = allConversations?.filter(c => c.assigned_user_id === member.id).length || 0;
-          const periodLeads = periodConversations?.filter(c => c.assigned_user_id === member.id).length || 0;
+          const memberConversations = allConversations?.filter(c => c.assigned_user_id === member.id) || [];
+          const memberPeriodConversations = periodConversations?.filter(c => c.assigned_user_id === member.id) || [];
+          
+          const totalLeads = memberConversations.length;
+          const periodLeads = memberPeriodConversations.length;
+          
+          // Calculate effectively attended (conversations with at least one human message)
+          const effectivelyAttended = memberConversations.filter(c => humanConversationIds.has(c.id)).length;
+          const periodAttended = memberPeriodConversations.filter(c => periodHumanConversationIds.has(c.id)).length;
           
           return {
             memberId: member.id,
             sellerName: member.name,
             totalLeads,
-            periodLeads
+            periodLeads,
+            effectivelyAttended,
+            periodAttended
           };
         })
         .filter(s => s.totalLeads > 0 || s.periodLeads > 0);
 
       // Calculate leads from unknown/removed sellers
-      const unknownTotalLeads = allConversations?.filter(
+      const unknownConversations = allConversations?.filter(
         c => c.assigned_user_id && !knownIds.has(c.assigned_user_id)
-      ).length || 0;
+      ) || [];
       
-      const unknownPeriodLeads = periodConversations?.filter(
+      const unknownPeriodConversations = periodConversations?.filter(
         c => c.assigned_user_id && !knownIds.has(c.assigned_user_id)
-      ).length || 0;
+      ) || [];
+
+      const unknownTotalLeads = unknownConversations.length;
+      const unknownPeriodLeads = unknownPeriodConversations.length;
+      const unknownEffectivelyAttended = unknownConversations.filter(c => humanConversationIds.has(c.id)).length;
+      const unknownPeriodAttended = unknownPeriodConversations.filter(c => periodHumanConversationIds.has(c.id)).length;
 
       // Add unknown sellers category if there are any
       if (unknownTotalLeads > 0 || unknownPeriodLeads > 0) {
@@ -319,7 +352,9 @@ const Dashboard: React.FC = () => {
           memberId: 'unknown',
           sellerName: 'Vendedor Removido/Desconhecido',
           totalLeads: unknownTotalLeads,
-          periodLeads: unknownPeriodLeads
+          periodLeads: unknownPeriodLeads,
+          effectivelyAttended: unknownEffectivelyAttended,
+          periodAttended: unknownPeriodAttended
         });
       }
 
@@ -866,55 +901,124 @@ const Dashboard: React.FC = () => {
             <div className="h-px flex-1 bg-gradient-to-r from-transparent via-orange-700/50 to-transparent"></div>
           </div>
 
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-4 lg:grid-cols-5">
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {sellerLeadStats.map((seller, index) => {
               const colorSchemes = [
-                { border: 'border-orange-500/20', bg: 'from-orange-500/10 to-orange-500/5', text: 'text-orange-400', accent: 'text-orange-400/80', icon: Users },
-                { border: 'border-amber-500/20', bg: 'from-amber-500/10 to-amber-500/5', text: 'text-amber-400', accent: 'text-amber-400/80', icon: Users },
-                { border: 'border-yellow-500/20', bg: 'from-yellow-500/10 to-yellow-500/5', text: 'text-yellow-400', accent: 'text-yellow-400/80', icon: Users },
-                { border: 'border-lime-500/20', bg: 'from-lime-500/10 to-lime-500/5', text: 'text-lime-400', accent: 'text-lime-400/80', icon: Users },
-                { border: 'border-teal-500/20', bg: 'from-teal-500/10 to-teal-500/5', text: 'text-teal-400', accent: 'text-teal-400/80', icon: Users }
+                { border: 'border-orange-500/20', bg: 'from-orange-500/10 to-orange-500/5', text: 'text-orange-400', accent: 'text-orange-400/80', progressBg: 'bg-orange-500', icon: Users },
+                { border: 'border-amber-500/20', bg: 'from-amber-500/10 to-amber-500/5', text: 'text-amber-400', accent: 'text-amber-400/80', progressBg: 'bg-amber-500', icon: Users },
+                { border: 'border-yellow-500/20', bg: 'from-yellow-500/10 to-yellow-500/5', text: 'text-yellow-400', accent: 'text-yellow-400/80', progressBg: 'bg-yellow-500', icon: Users },
+                { border: 'border-lime-500/20', bg: 'from-lime-500/10 to-lime-500/5', text: 'text-lime-400', accent: 'text-lime-400/80', progressBg: 'bg-lime-500', icon: Users },
+                { border: 'border-teal-500/20', bg: 'from-teal-500/10 to-teal-500/5', text: 'text-teal-400', accent: 'text-teal-400/80', progressBg: 'bg-teal-500', icon: Users }
               ];
               
               // Special styling for unknown/removed sellers
               const isUnknown = seller.memberId === 'unknown';
               const colors = isUnknown 
-                ? { border: 'border-red-500/30', bg: 'from-red-500/15 to-slate-800/50', text: 'text-red-400', accent: 'text-red-400/80', icon: AlertTriangle }
+                ? { border: 'border-red-500/30', bg: 'from-red-500/15 to-slate-800/50', text: 'text-red-400', accent: 'text-red-400/80', progressBg: 'bg-red-500', icon: AlertTriangle }
                 : colorSchemes[index % colorSchemes.length];
               
               const isInactiveInPeriod = seller.periodLeads === 0 && seller.totalLeads > 0;
               const IconComponent = colors.icon;
               
+              // Calculate attendance rate
+              const attendanceRate = seller.totalLeads > 0 
+                ? Math.round((seller.effectivelyAttended / seller.totalLeads) * 100) 
+                : 0;
+              const periodAttendanceRate = seller.periodLeads > 0 
+                ? Math.round((seller.periodAttended / seller.periodLeads) * 100) 
+                : 0;
+
+              // Determine attendance color based on rate
+              const getAttendanceColor = (rate: number) => {
+                if (rate >= 50) return { text: 'text-emerald-400', bg: 'bg-emerald-500' };
+                if (rate >= 20) return { text: 'text-yellow-400', bg: 'bg-yellow-500' };
+                return { text: 'text-red-400', bg: 'bg-red-500' };
+              };
+              const attendanceColors = getAttendanceColor(attendanceRate);
+              
               return (
                 <div 
                   key={seller.memberId} 
-                  className={`rounded-xl border ${colors.border} bg-gradient-to-br ${colors.bg} p-4 transition-all hover:scale-[1.02] ${isUnknown ? 'ring-1 ring-red-500/20' : ''}`}
+                  className={`rounded-xl border ${colors.border} bg-gradient-to-br ${colors.bg} p-4 transition-all hover:scale-[1.01] ${isUnknown ? 'ring-1 ring-red-500/20' : ''}`}
                 >
-                  <div className="flex items-center gap-2 mb-2">
-                    <IconComponent className={`w-4 h-4 ${colors.text}`} />
-                    <span className={`text-sm font-medium truncate ${isUnknown ? 'text-red-300' : 'text-white'}`}>
-                      {seller.sellerName}
-                    </span>
-                  </div>
-                  <p className={`text-2xl font-bold ${isUnknown ? 'text-red-400' : 'text-white'}`}>{seller.periodLeads}</p>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <p className="text-xs text-slate-400">
-                      {period === 'today' ? 'leads hoje' : `leads (${periodLabels[period]})`}
-                    </p>
-                    {isInactiveInPeriod && (
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-700/50 text-slate-400">
-                        inativo no período
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <IconComponent className={`w-4 h-4 ${colors.text}`} />
+                      <span className={`text-sm font-medium truncate ${isUnknown ? 'text-red-300' : 'text-white'}`}>
+                        {seller.sellerName}
                       </span>
-                    )}
-                    {isUnknown && (
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-red-500/20 text-red-400">
-                        verificar
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {isInactiveInPeriod && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-700/50 text-slate-400">
+                          inativo
+                        </span>
+                      )}
+                      {isUnknown && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-red-500/20 text-red-400">
+                          verificar
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Main Stats Grid */}
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    {/* Distributed */}
+                    <div className="space-y-1">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide">Distribuídos</p>
+                      <div className="flex items-baseline gap-2">
+                        <span className={`text-2xl font-bold ${isUnknown ? 'text-red-400' : 'text-white'}`}>
+                          {seller.periodLeads}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          ({seller.totalLeads} ∑)
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">
+                        {period === 'today' ? 'hoje' : periodLabels[period]}
+                      </p>
+                    </div>
+
+                    {/* Attended */}
+                    <div className="space-y-1">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide">Atendidos</p>
+                      <div className="flex items-baseline gap-2">
+                        <span className={`text-2xl font-bold ${attendanceColors.text}`}>
+                          {seller.periodAttended}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          ({seller.effectivelyAttended} ∑)
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">
+                        c/ interação humana
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Attendance Progress Bar */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Taxa de Atendimento</span>
+                      <span className={`font-semibold ${attendanceColors.text}`}>
+                        {attendanceRate}%
                       </span>
+                    </div>
+                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full ${attendanceColors.bg} rounded-full transition-all duration-500`}
+                        style={{ width: `${attendanceRate}%` }}
+                      />
+                    </div>
+                    {seller.periodLeads > 0 && seller.periodAttended === 0 && (
+                      <p className="text-[10px] text-amber-400/80 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        Nenhum atendimento humano no período
+                      </p>
                     )}
                   </div>
-                  <p className={`text-xs ${colors.accent} mt-2`}>
-                    {seller.totalLeads} total
-                  </p>
                 </div>
               );
             })}
