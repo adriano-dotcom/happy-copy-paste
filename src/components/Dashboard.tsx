@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, DollarSign, MessageSquare, Users, Loader2, TrendingUp, TrendingDown, ArrowUpRight, Bot, Phone, Briefcase, Layers, Zap, MessageCircle, Clock, PhoneCall, PhoneOff, PhoneMissed, Timer, AlertTriangle } from 'lucide-react';
+import { Activity, DollarSign, MessageSquare, Users, Loader2, TrendingUp, TrendingDown, ArrowUpRight, Bot, Phone, Briefcase, Layers, Zap, MessageCircle, Clock, PhoneCall, PhoneOff, PhoneMissed, Timer, AlertTriangle, Info } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, BarChart, Bar } from 'recharts';
 import { StatMetric } from '../types';
 import { api } from '../services/api';
 import { supabase } from '@/integrations/supabase/client';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 type PeriodFilter = 'today' | '7days' | '30days';
 
@@ -107,6 +109,8 @@ const Dashboard: React.FC = () => {
   const [dailyCallData, setDailyCallData] = useState<DailyCallData[]>([]);
   const [agentStats, setAgentStats] = useState<AgentLeadStats[]>([]);
   const [sellerLeadStats, setSellerLeadStats] = useState<SellerLeadStats[]>([]);
+  const [sellerStatsBaselineDate, setSellerStatsBaselineDate] = useState<string | null>(null);
+  const [excludedConversationsCount, setExcludedConversationsCount] = useState<number>(0);
 
   const fetchSystemMetrics = async () => {
     try {
@@ -271,28 +275,52 @@ const Dashboard: React.FC = () => {
       const days = periodDays[period];
       const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
+      // Fetch baseline date from settings
+      const { data: settings } = await supabase
+        .from('nina_settings')
+        .select('seller_stats_baseline_date')
+        .limit(1)
+        .maybeSingle();
+
+      const baselineDate = settings?.seller_stats_baseline_date || new Date().toISOString();
+      setSellerStatsBaselineDate(baselineDate);
+
       // Fetch team members (sellers)
       const { data: teamMembers } = await supabase
         .from('team_members')
         .select('id, name');
 
-      // Fetch all conversations with assigned users
+      // Fetch all conversations with assigned users BEFORE baseline (to count excluded)
+      const { count: excludedCount } = await supabase
+        .from('conversations')
+        .select('*', { count: 'exact', head: true })
+        .not('assigned_user_id', 'is', null)
+        .lt('created_at', baselineDate);
+
+      setExcludedConversationsCount(excludedCount || 0);
+
+      // Fetch all conversations with assigned users AFTER baseline date
       const { data: allConversations } = await supabase
         .from('conversations')
         .select('id, assigned_user_id, created_at')
-        .not('assigned_user_id', 'is', null);
+        .not('assigned_user_id', 'is', null)
+        .gte('created_at', baselineDate);
+
+      // Get the effective start date for period (whichever is more recent)
+      const effectivePeriodStart = new Date(startDate) > new Date(baselineDate) ? startDate : baselineDate;
 
       const { data: periodConversations } = await supabase
         .from('conversations')
         .select('id, assigned_user_id, created_at')
         .not('assigned_user_id', 'is', null)
-        .gte('created_at', startDate);
+        .gte('created_at', effectivePeriodStart);
 
-      // Fetch conversation IDs that have at least one human message (effectively attended)
+      // Fetch conversation IDs that have at least one human message (after baseline)
       const { data: humanMessages } = await supabase
         .from('messages')
-        .select('conversation_id')
-        .eq('from_type', 'human');
+        .select('conversation_id, sent_at')
+        .eq('from_type', 'human')
+        .gte('sent_at', baselineDate);
 
       const humanConversationIds = new Set(humanMessages?.map(m => m.conversation_id) || []);
 
@@ -301,7 +329,7 @@ const Dashboard: React.FC = () => {
         .from('messages')
         .select('conversation_id, sent_at')
         .eq('from_type', 'human')
-        .gte('sent_at', startDate);
+        .gte('sent_at', effectivePeriodStart);
 
       const periodHumanConversationIds = new Set(periodHumanMessages?.map(m => m.conversation_id) || []);
 
@@ -900,6 +928,24 @@ const Dashboard: React.FC = () => {
             </h3>
             <div className="h-px flex-1 bg-gradient-to-r from-transparent via-orange-700/50 to-transparent"></div>
           </div>
+
+          {/* Baseline Date Notice */}
+          {sellerStatsBaselineDate && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-slate-800/50 rounded-lg border border-slate-700/50">
+              <Info className="h-4 w-4 text-blue-400 flex-shrink-0" />
+              <span className="text-sm text-slate-300">
+                Estatísticas a partir de{' '}
+                <span className="font-medium text-blue-400">
+                  {format(new Date(sellerStatsBaselineDate), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                </span>
+              </span>
+              {excludedConversationsCount > 0 && (
+                <span className="text-xs text-slate-500 ml-2">
+                  ({excludedConversationsCount} conversas anteriores não contabilizadas)
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {sellerLeadStats.map((seller, index) => {
