@@ -1258,6 +1258,7 @@ export type Database = {
           response_delay_min: number
           route_all_to_receiver_enabled: boolean
           sdr_name: string | null
+          seller_stats_baseline_date: string | null
           system_prompt_override: string | null
           test_phone_numbers: Json | null
           test_system_prompt: string | null
@@ -1321,6 +1322,7 @@ export type Database = {
           response_delay_min?: number
           route_all_to_receiver_enabled?: boolean
           sdr_name?: string | null
+          seller_stats_baseline_date?: string | null
           system_prompt_override?: string | null
           test_phone_numbers?: Json | null
           test_system_prompt?: string | null
@@ -1384,6 +1386,7 @@ export type Database = {
           response_delay_min?: number
           route_all_to_receiver_enabled?: boolean
           sdr_name?: string | null
+          seller_stats_baseline_date?: string | null
           system_prompt_override?: string | null
           test_phone_numbers?: Json | null
           test_system_prompt?: string | null
