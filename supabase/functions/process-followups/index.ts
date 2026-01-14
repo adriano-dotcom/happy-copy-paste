@@ -86,18 +86,16 @@ function replaceVariables(message: string, conv: EligibleConversation): string {
     .replace(/{company}/gi, company);
 }
 
-// Varied fallback messages to never repeat the same one
+// Varied fallback messages - mais proativas e focadas em ligação
 const FALLBACK_MESSAGES = [
-  "Oi {nome}! Ficou alguma dúvida? Estou por aqui pra ajudar.",
-  "{nome}, posso te ajudar com algo mais?",
-  "E aí {nome}, precisa de mais alguma informação?",
-  "Oi {nome}! Qualquer dúvida, me chama aqui.",
-  "{nome}, me avisa se tiver qualquer dúvida!",
-  "Oi {nome}! Quer que eu te explique algo melhor?",
-  "E aí {nome}! Conseguiu pensar sobre o que conversamos?",
-  "{nome}, estou disponível se quiser continuar!",
-  "Oi {nome}! Se precisar, é só me chamar.",
-  "{nome}, posso esclarecer algo?",
+  "{nome}, posso te ligar rapidinho pra resolver sobre o seguro? 5 min e já te passo tudo!",
+  "E aí {nome}! Quer que eu te ligue pra explicar melhor sobre a cobertura?",
+  "{nome}, me passa o melhor horário que te ligo. Resolvo tudo em 5 minutinhos!",
+  "Oi {nome}! Tô por aqui pra te ajudar com o seguro. Posso te ligar agora?",
+  "{nome}, ainda precisa do seguro de carga? Me avisa que te ligo!",
+  "E aí {nome}! Sua cotação tá quase pronta, só preciso confirmar uns dados. Posso ligar?",
+  "{nome}, tô no aguardo. Se quiser, me manda um horário que te ligo!",
+  "Oi {nome}! Que tal uma ligação rápida pra resolvermos seu seguro?",
 ];
 
 // Get a varied fallback that's different from the last message

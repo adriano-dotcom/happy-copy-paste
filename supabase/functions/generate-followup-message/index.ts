@@ -51,12 +51,15 @@ Envie uma mensagem leve e amigável para retomar:
 - Deixando a porta aberta
 VARIE a abordagem: pergunte sobre dúvidas, ofereça ajuda específica, ou mencione disponibilidade.`,
 
-  last_chance: `Esta é provavelmente a última tentativa de contato.
-Envie uma mensagem de encerramento amigável que:
-- Não seja agressiva ou culpabilizadora
-- Deixe claro que você está disponível
-- Ofereça uma alternativa (ligação, outro momento)
-- SEMPRE termine a mensagem com: "Acesse nosso site: https://jacometoseguros.com.br/"`,
+  last_chance: `Esta é a ÚLTIMA tentativa de contato com o lead.
+Envie uma mensagem de encerramento que:
+- Mencione especificamente SEGURO DE CARGA ou o produto discutido
+- Ofereça algo de VALOR (cotação sem compromisso, análise gratuita)
+- Dê uma última oportunidade de ligação
+- NÃO seja passivo ("fico no aguardo" - NÃO!)
+- Seja DIRETO e ofereça ação concreta
+- SEMPRE termine com: "Acesse nosso site: https://jacometoseguros.com.br/"
+Exemplo: "{nome}, posso te enviar uma cotação sem compromisso por aqui. Ou se preferir, me manda seu horário que te ligo. Acesse nosso site: https://jacometoseguros.com.br/"`,
 
   schedule_call: `O cliente não respondeu à primeira mensagem.
 Sua missão é perguntar qual o melhor horário para uma conversa.
@@ -65,14 +68,16 @@ Seja direto e natural, ofereça opções flexíveis:
 - Ou deixe ele escolher o melhor momento
 - Seja breve e objetivo`,
 
-  schedule_call_transportador: `O cliente é um TRANSPORTADOR que não respondeu.
-Transportadores são pessoas MUITO ocupadas e práticas que preferem resolver por TELEFONE.
-Ofereça uma ligação rápida de forma DIRETA e PROATIVA:
-- Destaque que é uma ligação RÁPIDA (5-10 min no máximo)
-- Ofereça ligar AGORA ou pergunte o melhor horário
-- Use linguagem objetiva, sem enrolação
+  schedule_call_transportador: `O cliente é um TRANSPORTADOR que não respondeu sua pergunta de qualificação.
+Transportadores são MUITO ocupados e preferem resolver RÁPIDO por telefone.
+OFEREÇA uma ligação rápida de forma PROATIVA e DIRETA:
+- Mencione que é sobre o SEGURO DE CARGA/RCTR-C
+- Destaque: "5 minutinhos resolvo seu seguro"
+- Fale que você pode ligar AGORA ou pergunte o melhor horário
+- NUNCA seja genérico - vá direto ao ponto
 - Mostre que você respeita o tempo dele
-- NUNCA peça e-mail (transportadores não usam)`,
+- NUNCA peça e-mail (transportadores não usam)
+Exemplo: "{nome}, te ligo em 5 min pra resolver seu seguro de carga? Me manda um 'pode ligar' ou me diz o horário."`,
 
   unanswered_question: `O cliente NÃO respondeu sua última pergunta.
 VOCÊ TEM O CONTEXTO DA PERGUNTA - use isso!
@@ -94,14 +99,14 @@ Retome de forma mais DIRETA e oferecendo valor:
 
 // Varied fallback messages to never repeat the same one
 const FALLBACK_MESSAGES = [
-  "Oi {nome}! Ficou alguma dúvida? Estou por aqui pra ajudar.",
-  "{nome}, posso te ajudar com algo mais?",
-  "E aí {nome}, precisa de mais alguma informação?",
-  "Oi {nome}! Qualquer dúvida, me chama aqui.",
-  "{nome}, me avisa se tiver qualquer dúvida!",
-  "Oi {nome}! Quer que eu te explique algo melhor?",
-  "E aí {nome}! Conseguiu pensar sobre o que conversamos?",
-  "{nome}, estou disponível se quiser continuar!",
+  "{nome}, posso te ligar rapidinho pra resolver sobre o seguro? 5 min e já te passo tudo!",
+  "E aí {nome}! Quer que eu te ligue pra explicar melhor sobre a cobertura?",
+  "{nome}, me passa o melhor horário que te ligo. Resolvo tudo em 5 minutinhos!",
+  "Oi {nome}! Tô por aqui pra te ajudar com o seguro. Posso te ligar agora?",
+  "{nome}, ainda precisa do seguro de carga? Me avisa que te ligo!",
+  "E aí {nome}! Sua cotação tá quase pronta, só preciso confirmar uns dados. Posso ligar?",
+  "{nome}, tô no aguardo. Se quiser, me manda um horário que te ligo!",
+  "Oi {nome}! Que tal uma ligação rápida pra resolvermos seu seguro?",
 ];
 
 // Get a fallback message that's different from the last one
