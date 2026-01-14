@@ -441,6 +441,81 @@ async function extractTextFromImage(
   }
 }
 
+// Extract text from PDF document using Gemini Vision OCR
+async function extractTextFromPDF(
+  pdfBuffer: ArrayBuffer,
+  lovableApiKey: string
+): Promise<string | null> {
+  try {
+    console.log('[OCR] Starting PDF text extraction, size:', pdfBuffer.byteLength, 'bytes');
+    
+    // Convert PDF to base64 - Gemini can process PDF directly
+    const base64PDF = base64Encode(pdfBuffer);
+    
+    // Call Gemini Vision with PDF
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:application/pdf;base64,${base64PDF}`
+              }
+            },
+            {
+              type: 'text',
+              text: `Extraia TODO o texto visível deste documento PDF.
+
+Se for um CRLV (Certificado de Registro e Licenciamento de Veículo), extraia com precisão:
+- Placa do veículo
+- RENAVAM
+- Marca/Modelo
+- Ano de fabricação e ano do modelo
+- Combustível
+- Nome do proprietário
+- CPF/CNPJ do proprietário
+- Cor do veículo
+- Chassi (se visível)
+
+Formate os dados de forma estruturada.
+Se não conseguir ler, responda: [documento sem texto legível]`
+            }
+          ]
+        }],
+        max_tokens: 2000
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[OCR] Gemini PDF Vision error:', response.status, errorText);
+      return null;
+    }
+
+    const data = await response.json();
+    const extractedText = data.choices?.[0]?.message?.content?.trim();
+
+    if (extractedText && extractedText !== '[documento sem texto legível]') {
+      console.log('[OCR] PDF texto extraído com sucesso:', extractedText.substring(0, 100) + '...');
+      return extractedText;
+    }
+    
+    console.log('[OCR] Nenhum texto legível encontrado no PDF');
+    return null;
+  } catch (error) {
+    console.error('[OCR] Error extracting text from PDF:', error);
+    return null;
+  }
+}
+
 // Download media from WhatsApp API and upload to Supabase Storage
 async function downloadAndStoreMedia(
   supabase: any, 
@@ -771,17 +846,39 @@ async function processIncomingMessage(
       mediaType = 'document';
       const docFilename = message.document?.filename || '[documento]';
       const docMediaId = message.document?.id;
+      const docMimeType = message.document?.mime_type || '';
+      
       if (docMediaId && settings?.whatsapp_access_token) {
-        console.log('[Webhook] Processing document message:', docMediaId, 'filename:', docFilename);
-        const { storageUrl: docStorageUrl } = await downloadAndStoreMedia(
+        console.log('[Webhook] Processing document message:', docMediaId, 'filename:', docFilename, 'mimeType:', docMimeType);
+        const { storageUrl: docStorageUrl, mediaBuffer: docBuffer, mimeType: actualDocMimeType } = await downloadAndStoreMedia(
           supabase, settings, docMediaId, normalizedPhone, 'document'
         );
+        
         if (docStorageUrl) {
           mediaUrl = docStorageUrl;
           console.log('[Webhook] Document stored at:', docStorageUrl);
         }
+        
+        // Check if it's a PDF and try OCR
+        const isPdf = docFilename.toLowerCase().endsWith('.pdf') || 
+                      docMimeType.includes('pdf') ||
+                      (actualDocMimeType && actualDocMimeType.includes('pdf'));
+        
+        if (isPdf && docBuffer && lovableApiKey) {
+          console.log('[Webhook] PDF detected, attempting OCR...');
+          const extractedText = await extractTextFromPDF(docBuffer, lovableApiKey);
+          if (extractedText) {
+            content = `${docFilename}\n\n[Texto extraído do documento: ${extractedText}]`;
+            console.log('[Webhook] PDF OCR successful');
+          } else {
+            content = docFilename;
+          }
+        } else {
+          content = docFilename;
+        }
+      } else {
+        content = docFilename;
       }
-      content = docFilename;
       break;
     default:
       content = `[${message.type}]`;
