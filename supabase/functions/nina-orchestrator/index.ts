@@ -3101,6 +3101,7 @@ async function processQueueItem(
   }
   // ===== END ATLAS VEHICLE HANDOFF CHECK =====
 
+  // ===== REAL-TIME QUALIFICATION EXTRACTION =====
   // Extract qualification answers from user messages immediately and save to nina_context
   const userMessagesContent = (recentMessages || [])
     .filter((m: any) => m.from_type === 'user' && m.content)
