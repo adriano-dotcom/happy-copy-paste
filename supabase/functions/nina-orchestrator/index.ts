@@ -1140,13 +1140,67 @@ function isQualificationComplete(contact: any, qualificationAnswers: { [key: str
   return isComplete;
 }
 
+// ===== ATLAS VEHICLE QUALIFICATION HANDOFF CHECK =====
+// Check if Atlas vehicle lead is ready for handoff (name + phone + email)
+interface AtlasHandoffResult {
+  readyForHandoff: boolean;
+  missingField: string | null;
+  qualificationData: { [key: string]: string };
+}
+
+function detectAtlasVehicleHandoff(
+  agent: Agent | null,
+  contact: any,
+  ninaContext: any
+): AtlasHandoffResult {
+  // Only applies to Atlas agent
+  if (!agent || agent.slug !== 'atlas') {
+    return { readyForHandoff: false, missingField: null, qualificationData: {} };
+  }
+  
+  const qa = ninaContext?.qualification_answers || {};
+  
+  // Check if this is a vehicle lead (based on context/keywords)
+  const isVehicleLead = 
+    qa?.tipo_veiculo ||
+    qa?.quantidade_veiculos ||
+    qa?.modelo_veiculo ||
+    qa?.uso_veiculo ||
+    qa?.ano_veiculo ||
+    ninaContext?.detected_vehicle_interest === true ||
+    ninaContext?.vehicle_qualification_started === true;
+  
+  if (!isVehicleLead) {
+    console.log('[Nina][Atlas] Not a vehicle lead, skipping handoff check');
+    return { readyForHandoff: false, missingField: null, qualificationData: qa };
+  }
+  
+  console.log('[Nina][Atlas] 🚗 Checking vehicle lead handoff requirements...');
+  
+  // Check essential data for vehicle leads
+  const hasName = !!(contact?.name && contact.name.trim().length > 1);
+  const hasPhone = !!(contact?.phone_number && contact.phone_number.length >= 10);
+  const hasEmail = !!(contact?.email && contact.email.includes('@'));
+  
+  console.log(`[Nina][Atlas] Name: ${hasName ? '✓' : '✗'} (${contact?.name || 'N/A'})`);
+  console.log(`[Nina][Atlas] Phone: ${hasPhone ? '✓' : '✗'} (${contact?.phone_number || 'N/A'})`);
+  console.log(`[Nina][Atlas] Email: ${hasEmail ? '✓' : '✗'} (${contact?.email || 'N/A'})`);
+  
+  if (!hasName) return { readyForHandoff: false, missingField: 'nome', qualificationData: qa };
+  if (!hasPhone) return { readyForHandoff: false, missingField: 'telefone', qualificationData: qa };
+  if (!hasEmail) return { readyForHandoff: false, missingField: 'email', qualificationData: qa };
+  
+  console.log('[Nina][Atlas] ✅ All vehicle lead requirements met - ready for handoff!');
+  return { readyForHandoff: true, missingField: null, qualificationData: qa };
+}
+
 // ===== REAL-TIME QUALIFICATION EXTRACTION FUNCTION =====
 // Extract qualification answers from user messages for immediate saving
 function extractQualificationFromMessages(userMessages: string[]): { [key: string]: string | null } {
   const extracted: { [key: string]: string | null } = {};
   const allText = userMessages.join(' ').toLowerCase();
   
-  // Patterns for qualification fields
+  // Patterns for cargo qualification fields
   const patterns: { [key: string]: RegExp } = {
     contratacao: /\b(direto|subcontratado|ambos|contratado direto|subcontrata|sub-contratado)\b/i,
     tipo_carga: /\b(alumínio|aluminio|ferro|grão|grãos|graos|grao|alimento|alimentos|químico|quimicos|químicos|madeira|cimento|frigorific|refrigerad|seca|geral|carga geral|paletizada|granel|container|containers|bebidas?|perecíveis|pereciveis|eletrônicos|eletronicos|máquinas|maquinas|equipamentos?)\b/i,
@@ -1154,6 +1208,24 @@ function extractQualificationFromMessages(userMessages: string[]): { [key: strin
     antt: /\b(regularizada|pessoa física|pessoa fisica|ativa|não tenho antt|nao tenho antt|em processo|sim tenho|tenho sim|antt ok|antt ativa)\b/i,
     cte: /\b(sim|não|nao|emito|emite|vou começar|vou comecar|já emito|ja emito|emitimos|não emito|nao emito|emissão|emissao)\b/i,
   };
+  
+  // Patterns for vehicle/fleet qualification fields (Atlas agent)
+  const vehiclePatterns: { [key: string]: RegExp } = {
+    tipo_veiculo: /\b(carro|carros|moto|motos|caminhão|caminhao|caminhões|caminhoes|van|vans|utilitário|utilitario|pickup|picape|sedan|suv|hatch|veículo|veiculo|veículos|veiculos|automóvel|automovel|automóveis|automoveis)\b/i,
+    quantidade_veiculos: /\b(\d+)\s*(veículo|veiculo|carro|moto|caminhão|caminhao|unidade|automóvel|automovel)s?\b/i,
+    uso_veiculo: /\b(particular|comercial|trabalho|táxi|taxi|uber|app|aplicativo|entrega|delivery|frota|empresa|pessoal|passeio|lazer)\b/i,
+    ano_veiculo: /\b(20[0-2][0-9]|19[89][0-9])\b/,
+    modelo_veiculo: /(civic|corolla|onix|hb20|gol|uno|argo|polo|creta|kicks|compass|renegade|hilux|s10|ranger|toro|strada|saveiro|fiat|volkswagen|chevrolet|ford|toyota|honda|hyundai|jeep|renault|nissan|mitsubishi|peugeot|citroen)/i,
+    cobertura_desejada: /\b(completo|completa|básico|basico|terceiros?|roubo|furto|colisão|colisao|incêndio|incendio|perda total|franquia)\b/i,
+  };
+  
+  // Apply vehicle patterns
+  for (const [key, regex] of Object.entries(vehiclePatterns)) {
+    const match = allText.match(regex);
+    if (match) {
+      extracted[key] = match[0];
+    }
+  }
   
   // Extract estados (can be multiple)
   const estadosRegex = /(SP|PR|MG|MT|MS|GO|RS|SC|RJ|BA|ES|DF|TO|PA|AM|CE|PE|MA|PI|RN|PB|AL|SE|RO|RR|AP|AC|São Paulo|Paraná|Minas|Mato Grosso|Goiás|Rio Grande|Santa Catarina|Rio de Janeiro|Bahia|Ceará|Pernambuco)/gi;
@@ -2834,7 +2906,201 @@ async function processQueueItem(
   }
   // ===== END EMAIL DETECTION =====
 
-  // ===== REAL-TIME QUALIFICATION EXTRACTION =====
+  // ===== ATLAS VEHICLE HANDOFF CHECK =====
+  // Check if Atlas agent vehicle lead is ready for automatic handoff
+  if (agent?.slug === 'atlas' && message.content) {
+    // Re-read contact to get latest email after detection above
+    const { data: updatedContact } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('id', conversation.contact_id)
+      .single();
+    
+    const vehicleHandoffCheck = detectAtlasVehicleHandoff(agent, updatedContact, ninaContext);
+    
+    if (vehicleHandoffCheck.readyForHandoff) {
+      console.log('[Nina] 🚗 Atlas vehicle lead ready for handoff!');
+      
+      const contactName = updatedContact?.call_name || updatedContact?.name || 'Cliente';
+      const contactPhone = updatedContact?.phone_number || '-';
+      const contactEmail = updatedContact?.email || '-';
+      
+      // Build handoff farewell message
+      const handoffMessage = `Perfeito, ${contactName}! 🎯 Já tenho todas as informações necessárias. Vou encaminhar para nossa equipe comercial que vai preparar a cotação e entrar em contato em breve. Obrigado pelo contato!`;
+      
+      // Calculate delay
+      const delayMin = settings?.response_delay_min || 1000;
+      const delayMax = settings?.response_delay_max || 3000;
+      const delay = Math.random() * (delayMax - delayMin) + delayMin;
+      
+      // Get AI settings
+      const aiSettings = getModelSettings(settings, [], message, updatedContact, {});
+      
+      // Queue the handoff message
+      await queueTextResponse(supabase, conversation, message, handoffMessage, settings, aiSettings, delay, agent);
+      
+      // Mark message as processed
+      const responseTime = Date.now() - new Date(message.sent_at).getTime();
+      await supabase
+        .from('messages')
+        .update({ 
+          processed_by_nina: true,
+          nina_response_time: responseTime
+        })
+        .eq('id', message.id);
+      
+      // Update conversation: set status to 'human', save handoff context
+      await supabase
+        .from('conversations')
+        .update({ 
+          status: 'human',
+          nina_context: {
+            ...ninaContext,
+            vehicle_handoff_at: new Date().toISOString(),
+            vehicle_handoff_type: 'auto_complete',
+            vehicle_qualification_data: vehicleHandoffCheck.qualificationData
+          }
+        })
+        .eq('id', conversation.id);
+      
+      console.log('[Nina] 🚗 Conversation status changed to human');
+      
+      // Move deal to "Qualificado" stage
+      const { data: deal } = await supabase
+        .from('deals')
+        .select('id, pipeline_id, owner_id')
+        .eq('contact_id', conversation.contact_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (deal) {
+        const { data: qualifiedStage } = await supabase
+          .from('pipeline_stages')
+          .select('id')
+          .eq('pipeline_id', deal.pipeline_id)
+          .eq('title', 'Qualificado')
+          .maybeSingle();
+        
+        if (qualifiedStage) {
+          await supabase
+            .from('deals')
+            .update({ stage_id: qualifiedStage.id })
+            .eq('id', deal.id);
+          
+          console.log(`[Nina] 🚗 Deal moved to Qualificado stage`);
+        }
+        
+        // Send email notification to deal owner
+        try {
+          let ownerEmail = 'atendimento@jacometo.com.br';
+          let ownerName = 'Equipe';
+          
+          if (deal.owner_id) {
+            const { data: owner } = await supabase
+              .from('team_members')
+              .select('email, name')
+              .eq('id', deal.owner_id)
+              .single();
+            
+            if (owner?.email) {
+              ownerEmail = owner.email;
+              ownerName = owner.name || 'Equipe';
+            }
+          }
+          
+          const adminEmail = 'adriano@jacometo.com.br';
+          const qa = vehicleHandoffCheck.qualificationData;
+          
+          const vehicleEmailHtml = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #1e40af;">🚗 Novo Lead de Veículos Qualificado!</h2>
+              <p>Olá ${ownerName},</p>
+              <p>Um novo lead de veículos/frota foi qualificado pelo Atlas e está aguardando atendimento.</p>
+              
+              <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                <h3 style="color: #334155; margin-top: 0;">📋 Dados do Contato</h3>
+                <ul style="list-style: none; padding: 0;">
+                  <li><strong>Nome:</strong> ${contactName}</li>
+                  <li><strong>Telefone:</strong> ${contactPhone}</li>
+                  <li><strong>Email:</strong> ${contactEmail}</li>
+                  <li><strong>Empresa:</strong> ${updatedContact?.company || '-'}</li>
+                </ul>
+              </div>
+              
+              <div style="background: #fef3c7; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                <h3 style="color: #92400e; margin-top: 0;">🚙 Informações do Veículo</h3>
+                <ul style="list-style: none; padding: 0;">
+                  <li><strong>Tipo:</strong> ${qa.tipo_veiculo || '-'}</li>
+                  <li><strong>Quantidade:</strong> ${qa.quantidade_veiculos || '-'}</li>
+                  <li><strong>Modelo:</strong> ${qa.modelo_veiculo || '-'}</li>
+                  <li><strong>Ano:</strong> ${qa.ano_veiculo || '-'}</li>
+                  <li><strong>Uso:</strong> ${qa.uso_veiculo || '-'}</li>
+                  <li><strong>Cobertura:</strong> ${qa.cobertura_desejada || '-'}</li>
+                </ul>
+              </div>
+              
+              <p style="margin-top: 24px;">
+                <a href="https://jacometo.lovable.app/chat" style="background: #1e40af; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; display: inline-block;">
+                  Acessar Sistema
+                </a>
+              </p>
+              
+              <p style="color: #64748b; font-size: 12px; margin-top: 24px;">
+                Este email foi enviado automaticamente pelo agente Atlas.
+              </p>
+            </div>
+          `;
+          
+          const emailPayload = {
+            to: ownerEmail,
+            bcc: [adminEmail],
+            subject: `🚗 Novo Lead de Veículos: ${contactName}`,
+            html: vehicleEmailHtml
+          };
+          
+          const emailUrl = `${supabaseUrl}/functions/v1/send-email`;
+          fetch(emailUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`
+            },
+            body: JSON.stringify(emailPayload)
+          }).then(res => {
+            if (res.ok) {
+              console.log(`[Nina] 📧 Vehicle lead email sent to ${ownerEmail}`);
+            } else {
+              console.error(`[Nina] ❌ Failed to send vehicle email: ${res.status}`);
+            }
+          }).catch(err => console.error('[Nina] Error sending vehicle email:', err));
+          
+        } catch (emailError) {
+          console.error('[Nina] Error preparing vehicle email notification:', emailError);
+        }
+      }
+      
+      // Trigger whatsapp-sender
+      try {
+        const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+        fetch(senderUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`
+          },
+          body: JSON.stringify({ triggered_by: 'nina-orchestrator-atlas-vehicle-handoff' })
+        }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+      } catch (e) {
+        console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+      }
+      
+      console.log(`[Nina] 🚗 Atlas vehicle handoff complete!`);
+      return;
+    }
+  }
+  // ===== END ATLAS VEHICLE HANDOFF CHECK =====
+
   // Extract qualification answers from user messages immediately and save to nina_context
   const userMessagesContent = (recentMessages || [])
     .filter((m: any) => m.from_type === 'user' && m.content)
