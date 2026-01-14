@@ -3101,6 +3101,168 @@ async function processQueueItem(
   }
   // ===== END ATLAS VEHICLE HANDOFF CHECK =====
 
+  // ===== CRLV DOCUMENT DETECTION AND DATA EXTRACTION =====
+  interface CRLVData {
+    placa: string | null;
+    renavam: string | null;
+    marca_modelo: string | null;
+    ano_fab: string | null;
+    ano_mod: string | null;
+    combustivel: string | null;
+    cor: string | null;
+    proprietario: string | null;
+    cpf_cnpj: string | null;
+    chassi: string | null;
+  }
+
+  function extractCRLVData(text: string): CRLVData | null {
+    if (!text) return null;
+    
+    const upperText = text.toUpperCase();
+    
+    // Check if this looks like a CRLV
+    const crlvIndicators = [
+      'CRLV', 'CERTIFICADO DE REGISTRO', 'LICENCIAMENTO',
+      'RENAVAM', 'DETRAN', 'REGISTRO NACIONAL', 'CRV'
+    ];
+    
+    const isCRLV = crlvIndicators.some(indicator => upperText.includes(indicator));
+    if (!isCRLV) return null;
+    
+    console.log('[Nina] CRLV document detected, extracting data...');
+    
+    const data: CRLVData = {
+      placa: null,
+      renavam: null,
+      marca_modelo: null,
+      ano_fab: null,
+      ano_mod: null,
+      combustivel: null,
+      cor: null,
+      proprietario: null,
+      cpf_cnpj: null,
+      chassi: null
+    };
+    
+    // Placa patterns (old: ABC-1234, Mercosul: ABC1D23)
+    const placaMatch = upperText.match(/\b([A-Z]{3}[-\s]?\d{4}|[A-Z]{3}\d[A-Z]\d{2})\b/);
+    if (placaMatch) {
+      data.placa = placaMatch[1].replace(/[-\s]/g, '');
+    }
+    
+    // RENAVAM (11 digits)
+    const renavamMatch = text.match(/RENAVAM[:\s]*(\d{11})/i) || 
+                         text.match(/\b(\d{11})\b/);
+    if (renavamMatch) {
+      data.renavam = renavamMatch[1];
+    }
+    
+    // Marca/Modelo (after MARCA/MODELO label or common patterns)
+    const marcaModeloMatch = text.match(/MARCA[\/\s]*MODELO[:\s]*([A-Z0-9\/\s\-\.]+?)(?:\n|$)/i) ||
+                             text.match(/(FIAT|VW|VOLKSWAGEN|CHEVROLET|GM|FORD|TOYOTA|HONDA|HYUNDAI|RENAULT|NISSAN|JEEP|BMW|MERCEDES|AUDI|KIA|MITSUBISHI|PEUGEOT|CITROEN)[\/\s]+([A-Z0-9\s\-\.]+?)(?:\n|$)/i);
+    if (marcaModeloMatch) {
+      data.marca_modelo = (marcaModeloMatch[1] + (marcaModeloMatch[2] ? '/' + marcaModeloMatch[2] : '')).trim().substring(0, 50);
+    }
+    
+    // Ano fabricação/modelo
+    const anoMatch = text.match(/ANO[:\s]*FAB(?:RICA[CÇ][AÃ]O)?[:\s]*(\d{4})[\/\s]*(?:MOD(?:ELO)?)?[:\s]*(\d{4})?/i) ||
+                     text.match(/(\d{4})[\/\s](\d{4})/);
+    if (anoMatch) {
+      data.ano_fab = anoMatch[1];
+      data.ano_mod = anoMatch[2] || anoMatch[1];
+    }
+    
+    // Combustível
+    const combustivelMatch = text.match(/COMBUST[ÍVEL]*[:\s]*(GASOLINA|ÁLCOOL|ALCOOL|ETANOL|FLEX|DIESEL|GNV|ELÉTRICO|ELETRICO|HÍBRIDO|HIBRIDO)/i);
+    if (combustivelMatch) {
+      data.combustivel = combustivelMatch[1].toUpperCase();
+    }
+    
+    // Cor
+    const corMatch = text.match(/COR[:\s]*(PRATA|PRETO|PRETO|BRANCO|CINZA|VERMELHO|AZUL|VERDE|AMARELO|BEGE|MARROM|DOURADO|PRAT[AO]|PRET[OA]|BRANC[OA])/i);
+    if (corMatch) {
+      data.cor = corMatch[1].toUpperCase();
+    }
+    
+    // Proprietário
+    const proprietarioMatch = text.match(/PROPRIET[ÁARIO]*[:\s]*([A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇ\s]+?)(?:\n|CPF|CNPJ)/i) ||
+                              text.match(/NOME[:\s]*([A-ZÁÉÍÓÚÃÕÂÊÎÔÛÇ\s]{5,50})/i);
+    if (proprietarioMatch) {
+      data.proprietario = proprietarioMatch[1].trim().substring(0, 60);
+    }
+    
+    // CPF/CNPJ
+    const cpfMatch = text.match(/CPF[:\s]*(\d{3}[\.\s]?\d{3}[\.\s]?\d{3}[-\s]?\d{2})/i);
+    const cnpjMatch = text.match(/CNPJ[:\s]*(\d{2}[\.\s]?\d{3}[\.\s]?\d{3}[\/\s]?\d{4}[-\s]?\d{2})/i);
+    data.cpf_cnpj = cpfMatch?.[1] || cnpjMatch?.[1] || null;
+    
+    // Chassi (17 alphanumeric)
+    const chassiMatch = text.match(/CHASSI[:\s]*([A-HJ-NPR-Z0-9]{17})/i);
+    if (chassiMatch) {
+      data.chassi = chassiMatch[1];
+    }
+    
+    // Check if we extracted meaningful data
+    const hasData = data.placa || data.renavam || data.marca_modelo;
+    
+    return hasData ? data : null;
+  }
+
+  // Check if any recent message contains CRLV data
+  const recentUserMessagesForCRLV = (recentMessages || [])
+    .filter((m: any) => m.from_type === 'user' && m.content)
+    .slice(-5); // Last 5 messages
+
+  for (const msg of recentUserMessagesForCRLV) {
+    if (msg.content && (msg.content.includes('[Texto extraído') || msg.content.includes('CRLV') || msg.content.includes('RENAVAM'))) {
+      const crlvData = extractCRLVData(msg.content);
+      
+      if (crlvData) {
+        console.log('[Nina] CRLV data extracted:', JSON.stringify(crlvData));
+        
+        // Check if we already processed this CRLV
+        const existingCRLV = conversation.nina_context?.crlv_data;
+        const isNewCRLV = !existingCRLV || existingCRLV.placa !== crlvData.placa;
+        
+        if (isNewCRLV) {
+          // Save to nina_context
+          const updatedContext = {
+            ...conversation.nina_context,
+            crlv_detected: true,
+            crlv_data: crlvData,
+            crlv_extracted_at: new Date().toISOString(),
+            qualification_answers: {
+              ...conversation.nina_context?.qualification_answers,
+              ...(crlvData.placa && { placa_veiculo: crlvData.placa }),
+              ...(crlvData.marca_modelo && { modelo_veiculo: crlvData.marca_modelo }),
+              ...(crlvData.ano_mod && { ano_veiculo: crlvData.ano_mod }),
+              ...(crlvData.combustivel && { combustivel_veiculo: crlvData.combustivel }),
+              ...(crlvData.cor && { cor_veiculo: crlvData.cor }),
+              tipo_veiculo: 'carro' // Default assumption for CRLV
+            }
+          };
+          
+          await supabase
+            .from('conversations')
+            .update({ nina_context: updatedContext })
+            .eq('id', conversation.id);
+          
+          conversation.nina_context = updatedContext;
+          
+          console.log(`[Nina] 🚗 CRLV data saved to nina_context:`, crlvData);
+          
+          // Mark vehicle lead interest for Atlas handoff
+          if (agent?.slug === 'atlas') {
+            console.log('[Nina] Atlas: Vehicle document received, data extracted for handoff');
+          }
+        }
+        
+        break; // Only process first CRLV found
+      }
+    }
+  }
+  // ===== END CRLV DOCUMENT DETECTION =====
+
   // ===== REAL-TIME QUALIFICATION EXTRACTION =====
   // Extract qualification answers from user messages immediately and save to nina_context
   const userMessagesContent = (recentMessages || [])
