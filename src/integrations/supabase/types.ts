@@ -1265,6 +1265,7 @@ export type Database = {
           timezone: string
           updated_at: string
           whatsapp_access_token: string | null
+          whatsapp_app_secret: string | null
           whatsapp_phone_number_id: string | null
           whatsapp_token_in_vault: boolean | null
           whatsapp_verify_token: string | null
@@ -1329,6 +1330,7 @@ export type Database = {
           timezone?: string
           updated_at?: string
           whatsapp_access_token?: string | null
+          whatsapp_app_secret?: string | null
           whatsapp_phone_number_id?: string | null
           whatsapp_token_in_vault?: boolean | null
           whatsapp_verify_token?: string | null
@@ -1393,6 +1395,7 @@ export type Database = {
           timezone?: string
           updated_at?: string
           whatsapp_access_token?: string | null
+          whatsapp_app_secret?: string | null
           whatsapp_phone_number_id?: string | null
           whatsapp_token_in_vault?: boolean | null
           whatsapp_verify_token?: string | null
