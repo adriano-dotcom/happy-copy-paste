@@ -63,7 +63,7 @@ const ChatInterface: React.FC = () => {
   const { sdrName, companyName } = useCompanySettings();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
-  const [showProfileInfo, setShowProfileInfo] = useState(true);
+  const [showProfileInfo, setShowProfileInfo] = useState(false);
   const [isPinnedProfileInfo, setIsPinnedProfileInfo] = useState(() => {
     const saved = localStorage.getItem('pinnedProfileInfo');
     return saved === 'true';
@@ -441,10 +441,10 @@ const ChatInterface: React.FC = () => {
     }
   }, [conversations, selectedChatId, loading, refetch, isMobile]);
 
-  // Reopen profile panel when pinned and chat changes
+  // Manage profile panel when chat changes - close unless pinned
   useEffect(() => {
-    if (isPinnedProfileInfo && selectedChatId) {
-      setShowProfileInfo(true);
+    if (selectedChatId) {
+      setShowProfileInfo(isPinnedProfileInfo);
     }
   }, [selectedChatId, isPinnedProfileInfo]);
 
@@ -1723,7 +1723,7 @@ const ChatInterface: React.FC = () => {
                 )}
                 <div 
                   className="flex items-center cursor-pointer hover:bg-slate-800/50 p-1.5 rounded-lg transition-colors pr-3"
-                  onClick={() => !isMobile && setShowProfileInfo(!showProfileInfo)}
+                  onClick={() => !isMobile && setShowProfileInfo(true)}
                 >
                   <div className="relative">
                     <img src={activeChat.contactAvatar} alt={activeChat.contactName} className={`${isMobile ? 'w-8 h-8' : 'w-9 h-9'} rounded-full ring-2 ring-slate-800`} />
