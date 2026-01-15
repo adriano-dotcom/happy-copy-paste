@@ -2421,7 +2421,27 @@ async function processQueueItem(
               transferred_to_human_at: new Date().toISOString()
             }
           })
-          .eq('id', conversation.id);
+        .eq('id', conversation.id);
+        
+        // Generate handoff summary in background
+        try {
+          const summaryUrl = `${supabaseUrl}/functions/v1/generate-handoff-summary`;
+          fetch(summaryUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`
+            },
+            body: JSON.stringify({
+              conversationId: conversation.id,
+              contactId: conversation.contact_id,
+              agentSlug: agent?.slug || 'atlas',
+              qualificationData: { out_of_scope_insurance: outOfScopeCheck.insuranceType }
+            })
+          }).catch(err => console.error('[Nina] Error generating handoff summary:', err));
+        } catch (e) {
+          console.error('[Nina] Failed to trigger handoff summary:', e);
+        }
         
         const responseTime = Date.now() - new Date(message.sent_at).getTime();
         await supabase
@@ -3084,6 +3104,26 @@ async function processQueueItem(
       
       console.log('[Nina] 🚗 Conversation status changed to human');
       
+      // Generate handoff summary in background
+      try {
+        const summaryUrl = `${supabaseUrl}/functions/v1/generate-handoff-summary`;
+        fetch(summaryUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`
+          },
+          body: JSON.stringify({
+            conversationId: conversation.id,
+            contactId: conversation.contact_id,
+            agentSlug: agent?.slug || 'atlas',
+            qualificationData: vehicleHandoffCheck.qualificationData
+          })
+        }).catch(err => console.error('[Nina] Error generating handoff summary:', err));
+      } catch (e) {
+        console.error('[Nina] Failed to trigger handoff summary:', e);
+      }
+      
       // Move deal to "Qualificado" stage
       const { data: deal } = await supabase
         .from('deals')
@@ -3522,8 +3562,28 @@ async function processQueueItem(
             awaiting_qualification_email: false,
             qualification_completed_at: new Date().toISOString()
           }
-        })
+          })
         .eq('id', conversation.id);
+      
+      // Generate handoff summary in background
+      try {
+        const summaryUrl = `${supabaseUrl}/functions/v1/generate-handoff-summary`;
+        fetch(summaryUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`
+          },
+          body: JSON.stringify({
+            conversationId: conversation.id,
+            contactId: conversation.contact_id,
+            agentSlug: agent?.slug || 'atlas',
+            qualificationData: conversation?.nina_context?.qualification_answers || {}
+          })
+        }).catch(err => console.error('[Nina] Error generating handoff summary:', err));
+      } catch (e) {
+        console.error('[Nina] Failed to trigger handoff summary:', e);
+      }
       
       // Move deal to "Qualificado" stage and send email notification
       const { data: deal } = await supabase

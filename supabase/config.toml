@@ -119,3 +119,7 @@ verify_jwt = false
 # Script para re-baixar documentos antigos do WhatsApp
 [functions.redownload-documents]
 verify_jwt = true
+
+# Função para gerar resumo de handoff
+[functions.generate-handoff-summary]
+verify_jwt = false
