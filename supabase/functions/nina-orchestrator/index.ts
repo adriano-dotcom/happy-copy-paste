@@ -1706,6 +1706,46 @@ async function processQueueItem(
         })
         .eq('id', conversation.id);
       
+      // ===== AUTO-GENERATE SUMMARY FOR RETURNING LEAD CONTEXT =====
+      try {
+        const { data: allMessages } = await supabase
+          .from('messages')
+          .select('content, from_type, sent_at')
+          .eq('conversation_id', conversation.id)
+          .order('sent_at', { ascending: true });
+        
+        if (allMessages && allMessages.length > 3) {
+          console.log('[Nina] 📝 Generating auto-summary for closed conversation...');
+          
+          const summaryResponse = await supabase.functions.invoke('generate-summary', {
+            body: {
+              messages: allMessages,
+              contactName: conversation.contact?.name || conversation.contact?.call_name,
+              agentName: agent?.name || 'Nina'
+            }
+          });
+          
+          if (summaryResponse.data?.summary) {
+            const timestamp = new Date().toLocaleDateString('pt-BR');
+            const existingNotes = conversation.contact?.notes || '';
+            const newSummary = `[${timestamp}] ${summaryResponse.data.summary}`;
+            const newNotes = existingNotes 
+              ? `${existingNotes}\n\n---\n${newSummary}`
+              : newSummary;
+            
+            await supabase
+              .from('contacts')
+              .update({ notes: newNotes })
+              .eq('id', conversation.contact_id);
+            
+            console.log('[Nina] 📝 Auto-generated summary saved to contact.notes');
+          }
+        }
+      } catch (summaryErr) {
+        console.error('[Nina] Error generating auto-summary:', summaryErr);
+      }
+      // ===== END AUTO-GENERATE SUMMARY =====
+      
       // Find deal and move to "Perdido" stage
       const { data: deal } = await supabase
         .from('deals')
@@ -2624,13 +2664,92 @@ async function processQueueItem(
     }
   }
 
-  // Get recent messages for context (last 20)
+  // ===== RETURNING LEAD DETECTION =====
+  // Detect if this is a returning lead (conversation was reactivated)
+  const conversationCreatedAt = new Date(conversation.created_at);
+  const conversationUpdatedAt = new Date(conversation.updated_at);
+  const lastMessageAt = new Date(conversation.last_message_at || conversation.updated_at);
+  
+  // Calculate days since last contact (before current message)
+  const hoursSinceLastMessage = message.sent_at 
+    ? (new Date(message.sent_at).getTime() - lastMessageAt.getTime()) / (1000 * 60 * 60)
+    : 0;
+  const daysSinceLastContact = Math.floor(hoursSinceLastMessage / 24);
+  
+  // Consider returning lead if:
+  // 1. Conversation existed for more than 1 day
+  // 2. Last activity was more than 1 day ago
+  const conversationAgeHours = (Date.now() - conversationCreatedAt.getTime()) / (1000 * 60 * 60);
+  const isReturningLead = conversationAgeHours > 24 && daysSinceLastContact >= 1;
+  
+  // Expand message history for returning leads
+  const messageLimit = isReturningLead ? 50 : 20;
+  
+  console.log(`[Nina] 📊 Returning lead check: conversationAge=${Math.round(conversationAgeHours)}h, daysSinceLastContact=${daysSinceLastContact}, isReturning=${isReturningLead}, messageLimit=${messageLimit}`);
+  
+  // Get recent messages for context
   const { data: recentMessages } = await supabase
     .from('messages')
     .select('*')
     .eq('conversation_id', conversation.id)
     .order('sent_at', { ascending: false })
-    .limit(20);
+    .limit(messageLimit);
+
+  // ===== DETECT PREVIOUS TOPICS FOR RETURNING LEADS =====
+  let previousTopics: string[] = [];
+  let returningLeadContext: { hasJobInquiry: boolean; hasInsuranceInquiry: boolean; wasRejected: boolean; rejectionReason: string | null } = {
+    hasJobInquiry: false,
+    hasInsuranceInquiry: false,
+    wasRejected: false,
+    rejectionReason: null
+  };
+  
+  if (isReturningLead && recentMessages && recentMessages.length > 5) {
+    console.log('[Nina] 🔍 Analyzing previous conversation topics for returning lead...');
+    
+    const allMessageContents = recentMessages.map((m: any) => m.content?.toLowerCase() || '').join(' ');
+    
+    // Detect job/resume inquiry
+    const jobKeywords = /emprego|curriculo|currículo|vaga|trabalho|trabalhar|contrat|motorista|operador|experiência|experiencia|contratar|CLT/i;
+    if (jobKeywords.test(allMessageContents)) {
+      previousTopics.push('emprego/currículo');
+      returningLeadContext.hasJobInquiry = true;
+    }
+    
+    // Detect insurance inquiry
+    const insuranceKeywords = /seguro|cotação|cotacao|cotar|apólice|apolice|rctr|cobertura|sinistro|carga/i;
+    if (insuranceKeywords.test(allMessageContents)) {
+      previousTopics.push('seguro');
+      returningLeadContext.hasInsuranceInquiry = true;
+    }
+    
+    // Detect if was rejected/dismissed previously
+    const rejectionPatterns = [
+      { regex: /não (temos|estamos|trabalhamos com) vagas?/i, reason: 'Não temos vagas disponíveis' },
+      { regex: /não (temos|estamos|trabalhamos com) essa modalidade/i, reason: 'Modalidade não atendida' },
+      { regex: /no momento não/i, reason: 'Não disponível no momento' },
+      { regex: /infelizmente não (podemos|conseguimos)/i, reason: 'Não foi possível atender' },
+      { regex: /não é nosso (foco|segmento)/i, reason: 'Fora do segmento' }
+    ];
+    
+    // Check Nina messages for rejections
+    const ninaMessages = recentMessages.filter((m: any) => m.from_type === 'nina');
+    for (const msg of ninaMessages) {
+      const content = msg.content?.toLowerCase() || '';
+      for (const pattern of rejectionPatterns) {
+        if (pattern.regex.test(content)) {
+          previousTopics.push('foi_dispensado');
+          returningLeadContext.wasRejected = true;
+          returningLeadContext.rejectionReason = pattern.reason;
+          break;
+        }
+      }
+      if (returningLeadContext.wasRejected) break;
+    }
+    
+    console.log(`[Nina] 🔍 Previous topics detected: ${previousTopics.length > 0 ? previousTopics.join(', ') : 'nenhum'}`);
+  }
+  // ===== END RETURNING LEAD DETECTION =====
 
   // Build conversation history for AI
   const conversationHistory = (recentMessages || [])
@@ -3732,7 +3851,13 @@ async function processQueueItem(
     agent,
     conversation.nina_context,
     recentUserMsgs,
-    recentCallLogs
+    recentCallLogs,
+    { 
+      isReturning: isReturningLead, 
+      daysSinceLastContact, 
+      previousTopics, 
+      context: returningLeadContext 
+    }
   );
 
   // Process template variables
@@ -4281,7 +4406,8 @@ function buildEnhancedPrompt(
   agent?: Agent | null,
   ninaContext?: any,
   recentUserMessages?: string[],
-  recentCallLogs?: any[]
+  recentCallLogs?: any[],
+  returningLeadInfo?: { isReturning: boolean; daysSinceLastContact: number; previousTopics: string[]; context: any }
 ): string {
   let contextInfo = '';
 
@@ -4313,6 +4439,43 @@ ${contact.notes}
 
 ⚠️ IMPORTANTE: Este cliente já entrou em contato antes. Use essas informações para dar continuidade sem repetir perguntas já respondidas.`;
     }
+  }
+  
+  // ===== RETURNING LEAD CONTEXT - CRITICAL FOR CONTEXTUAL RESPONSES =====
+  if (returningLeadInfo?.isReturning && returningLeadInfo.daysSinceLastContact >= 1) {
+    const ctx = returningLeadInfo.context || {};
+    
+    contextInfo += `\n\n## ⚠️ LEAD RECORRENTE (MUITO IMPORTANTE!)
+Este cliente entrou em contato há ${returningLeadInfo.daysSinceLastContact} dia(s) e está VOLTANDO agora.`;
+    
+    if (returningLeadInfo.previousTopics.length > 0) {
+      contextInfo += `\n\n### TÓPICOS ANTERIORES DETECTADOS:`;
+      
+      if (ctx.hasJobInquiry) {
+        contextInfo += `\n- ❌ Perguntou sobre EMPREGO/CURRÍCULO anteriormente`;
+      }
+      if (ctx.hasInsuranceInquiry) {
+        contextInfo += `\n- ✓ Já demonstrou interesse em SEGURO DE CARGA`;
+      }
+      if (ctx.wasRejected) {
+        contextInfo += `\n- ⚠️ Foi dispensado na última conversa: "${ctx.rejectionReason || 'motivo não identificado'}"`;
+      }
+    }
+    
+    contextInfo += `\n\n### 🎯 COMO RESPONDER A ESTE LEAD:
+1. RECONHEÇA o contato anterior de forma amigável
+2. Se ele perguntou sobre EMPREGO antes e agora quer SEGURO, mencione naturalmente:
+   "Que bom ter você de volta! Vi que você entrou em contato antes. Agora está buscando seguro de carga?"
+3. Se ele foi dispensado antes por motivo X, mas agora busca algo que PODEMOS atender, seja empático e acolhedor
+4. NUNCA trate como novo lead - use o contexto disponível
+5. Caso não tenha certeza do interesse atual, pergunte diretamente:
+   "Olá! Como posso te ajudar hoje? Está buscando seguro de carga ou deseja enviar currículo?"
+
+### Exemplo de saudação para lead recorrente:
+"Olá {nome}! Que bom ter você de volta! 😊 Como posso te ajudar hoje?"
+
+Se detectar que era interesse em emprego antes e agora é seguro:
+"Olá {nome}! Vi que você entrou em contato antes perguntando sobre vagas. Agora está buscando seguro de carga? Me conta: você trabalha como contratado direto ou subcontratado?"`;
   }
   
   // ===== HISTÓRICO DE LIGAÇÕES COM TRANSCRIÇÕES =====
