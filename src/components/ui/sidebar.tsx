@@ -174,11 +174,16 @@ export const DesktopSidebar = ({
         title={pinned ? "Desafixar painel" : "Fixar painel aberto"}
         style={{ pointerEvents: open ? 'auto' : 'none' }}
       >
-        {pinned ? (
-          <Pin className="w-4 h-4" />
-        ) : (
-          <PinOff className="w-4 h-4" />
-        )}
+        <motion.div
+          animate={{ rotate: pinned ? 0 : -45 }}
+          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+        >
+          {pinned ? (
+            <Pin className="w-4 h-4" />
+          ) : (
+            <PinOff className="w-4 h-4" />
+          )}
+        </motion.div>
       </motion.button>
       
       <div className="relative z-10 flex flex-col h-full">
