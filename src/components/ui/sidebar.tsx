@@ -2,9 +2,9 @@
 
 import { cn } from "@/lib/utils";
 import { Link, LinkProps } from "react-router-dom";
-import React, { useState, createContext, useContext } from "react";
+import React, { useState, createContext, useContext, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Pin, PinOff } from "lucide-react";
 
 interface Links {
   label: string;
@@ -16,6 +16,8 @@ interface SidebarContextProps {
   open: boolean;
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
   animate: boolean;
+  pinned: boolean;
+  setPinned: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const SidebarContext = createContext<SidebarContextProps | undefined>(
@@ -35,19 +37,37 @@ export const SidebarProvider = ({
   open: openProp,
   setOpen: setOpenProp,
   animate = true,
+  pinned: pinnedProp,
+  setPinned: setPinnedProp,
 }: {
   children: React.ReactNode;
   open?: boolean;
   setOpen?: React.Dispatch<React.SetStateAction<boolean>>;
   animate?: boolean;
+  pinned?: boolean;
+  setPinned?: React.Dispatch<React.SetStateAction<boolean>>;
 }) => {
   const [openState, setOpenState] = useState(false);
+  const [pinnedState, setPinnedState] = useState(() => {
+    const saved = localStorage.getItem('sidebar-pinned');
+    return saved === 'true';
+  });
 
   const open = openProp !== undefined ? openProp : openState;
   const setOpen = setOpenProp !== undefined ? setOpenProp : setOpenState;
+  const pinned = pinnedProp !== undefined ? pinnedProp : pinnedState;
+  const setPinned = setPinnedProp !== undefined ? setPinnedProp : setPinnedState;
+
+  // Persist pinned state
+  useEffect(() => {
+    localStorage.setItem('sidebar-pinned', String(pinned));
+    if (pinned) {
+      setOpen(true);
+    }
+  }, [pinned, setOpen]);
 
   return (
-    <SidebarContext.Provider value={{ open, setOpen, animate }}>
+    <SidebarContext.Provider value={{ open, setOpen, animate, pinned, setPinned }}>
       {children}
     </SidebarContext.Provider>
   );
@@ -58,14 +78,18 @@ export const Sidebar = ({
   open,
   setOpen,
   animate,
+  pinned,
+  setPinned,
 }: {
   children: React.ReactNode;
   open?: boolean;
   setOpen?: React.Dispatch<React.SetStateAction<boolean>>;
   animate?: boolean;
+  pinned?: boolean;
+  setPinned?: React.Dispatch<React.SetStateAction<boolean>>;
 }) => {
   return (
-    <SidebarProvider open={open} setOpen={setOpen} animate={animate}>
+    <SidebarProvider open={open} setOpen={setOpen} animate={animate} pinned={pinned} setPinned={setPinned}>
       {children}
     </SidebarProvider>
   );
@@ -94,7 +118,21 @@ export const DesktopSidebar = ({
   className?: string;
   children: React.ReactNode;
 }) => {
-  const { open, setOpen, animate } = useSidebar();
+  const { open, setOpen, animate, pinned, setPinned } = useSidebar();
+  
+  const handleMouseLeave = () => {
+    if (!pinned) {
+      setOpen(false);
+    }
+  };
+
+  const handlePinToggle = () => {
+    setPinned(!pinned);
+    if (!pinned) {
+      setOpen(true);
+    }
+  };
+
   return (
     <motion.div
       className={cn(
@@ -113,11 +151,36 @@ export const DesktopSidebar = ({
         ease: "easeInOut",
       }}
       onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseLeave={handleMouseLeave}
       {...props}
     >
       {/* Subtle gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/[0.02] via-transparent to-violet-500/[0.02] pointer-events-none" />
+      
+      {/* Pin Button */}
+      <motion.button
+        animate={{
+          opacity: open ? 1 : 0,
+          scale: open ? 1 : 0.8,
+        }}
+        transition={{ duration: 0.2 }}
+        onClick={handlePinToggle}
+        className={cn(
+          "absolute top-4 right-4 z-20 p-1.5 rounded-lg transition-all duration-200",
+          pinned
+            ? "bg-cyan-500/20 text-cyan-400 ring-1 ring-cyan-500/30 shadow-lg shadow-cyan-500/20"
+            : "bg-white/[0.05] text-slate-500 hover:text-slate-300 hover:bg-white/[0.08]"
+        )}
+        title={pinned ? "Desafixar painel" : "Fixar painel aberto"}
+        style={{ pointerEvents: open ? 'auto' : 'none' }}
+      >
+        {pinned ? (
+          <Pin className="w-4 h-4" />
+        ) : (
+          <PinOff className="w-4 h-4" />
+        )}
+      </motion.button>
+      
       <div className="relative z-10 flex flex-col h-full">
         {children}
       </div>
