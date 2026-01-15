@@ -112,6 +112,15 @@ interface AgentDistributionConfig {
   rotationIds: string[] | null;
 }
 
+interface TemplateMetrics {
+  totalSent: number;
+  periodSent: number;
+  totalCost: number;
+  periodCost: number;
+}
+
+const TEMPLATE_COST_BRL = 0.41; // Custo por mensagem de template Meta
+
 const Dashboard: React.FC = () => {
   const [metrics, setMetrics] = useState<StatMetric[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
@@ -122,6 +131,7 @@ const Dashboard: React.FC = () => {
   const [callMetrics, setCallMetrics] = useState<CallMetrics | null>(null);
   const [sellerCallData, setSellerCallData] = useState<SellerCallData[]>([]);
   const [dailyCallData, setDailyCallData] = useState<DailyCallData[]>([]);
+  const [templateMetrics, setTemplateMetrics] = useState<TemplateMetrics | null>(null);
   const [agentStats, setAgentStats] = useState<AgentLeadStats[]>([]);
   const [sellerLeadStats, setSellerLeadStats] = useState<SellerLeadStats[]>([]);
   const [sellerStatsBaselineDate, setSellerStatsBaselineDate] = useState<string | null>(null);
@@ -583,6 +593,35 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const fetchTemplateMetrics = async () => {
+    try {
+      const days = periodDays[period];
+      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      // Buscar total de templates enviados (all time)
+      const { count: totalSent } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('metadata->>is_template', 'true');
+
+      // Buscar templates no período selecionado
+      const { count: periodSent } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('metadata->>is_template', 'true')
+        .gte('sent_at', startDate);
+
+      setTemplateMetrics({
+        totalSent: totalSent || 0,
+        periodSent: periodSent || 0,
+        totalCost: (totalSent || 0) * TEMPLATE_COST_BRL,
+        periodCost: (periodSent || 0) * TEMPLATE_COST_BRL
+      });
+    } catch (error) {
+      console.error('Erro ao carregar métricas de templates:', error);
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -596,7 +635,8 @@ const Dashboard: React.FC = () => {
           fetchCallMetrics(),
           fetchAgentStats(),
           fetchSellerLeadStats(),
-          fetchIADistributionStats()
+          fetchIADistributionStats(),
+          fetchTemplateMetrics()
         ]);
         setMetrics(metricsData);
         setChartData(chartDataResponse);
@@ -700,6 +740,64 @@ const Dashboard: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {/* Template Cost Card */}
+      {templateMetrics && (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <div className="relative overflow-hidden rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-500/10 to-slate-900/50 backdrop-blur-sm p-6 shadow-xl transition-all duration-300 hover:translate-y-[-2px] group">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-green-500/10 border border-green-500/20">
+                  <DollarSign className="h-5 w-5 text-green-400" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-white">Custo de Templates Meta</h4>
+                  <p className="text-xs text-slate-500">R$ 0,41 por mensagem</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              {/* Período atual */}
+              <div>
+                <p className="text-2xl font-bold text-green-400">
+                  R$ {templateMetrics.periodCost.toFixed(2).replace('.', ',')}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {templateMetrics.periodSent} mensagens
+                </p>
+                <p className="text-xs text-slate-400">
+                  {period === 'today' ? 'hoje' : periodLabels[period]}
+                </p>
+              </div>
+              
+              {/* Total geral */}
+              <div className="border-l border-slate-700/50 pl-4">
+                <p className="text-xl font-bold text-white">
+                  R$ {templateMetrics.totalCost.toFixed(2).replace('.', ',')}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {templateMetrics.totalSent} mensagens
+                </p>
+                <p className="text-xs text-slate-400">total acumulado</p>
+              </div>
+            </div>
+            
+            {/* Cálculo visual */}
+            <div className="mt-4 pt-3 border-t border-slate-700/30">
+              <p className="text-xs text-slate-500 flex items-center gap-2">
+                <span className="font-mono">{templateMetrics.periodSent} × R$0,41 =</span>
+                <span className="font-semibold text-green-400">
+                  R$ {templateMetrics.periodCost.toFixed(2).replace('.', ',')}
+                </span>
+              </p>
+            </div>
+            
+            {/* Decorative Glow */}
+            <div className="absolute -bottom-10 -right-10 w-24 h-24 bg-green-500/10 blur-2xl rounded-full group-hover:bg-green-500/20 transition-all"></div>
+          </div>
+        </div>
+      )}
 
       {/* Charts Section */}
       <div className="grid gap-6 md:grid-cols-7">
