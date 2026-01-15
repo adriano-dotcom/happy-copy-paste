@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
+import { motion, useMotionValue, useTransform, PanInfo, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { 
   Search, MoreVertical, Phone, Paperclip, Send, Check, CheckCheck, 
@@ -2252,10 +2252,21 @@ const ChatInterface: React.FC = () => {
 
           {/* Right Profile Sidebar (CRM View) - Hidden on mobile */}
           {!isMobile && (
-          <div 
-            className={`${showProfileInfo ? 'w-80 border-l border-slate-800 opacity-100' : 'w-0 opacity-0 border-none'} transition-all duration-300 ease-in-out bg-slate-900/95 flex-shrink-0 flex flex-col overflow-hidden`}
-          >
-            <div className="w-80 h-full flex flex-col">
+            <AnimatePresence mode="wait">
+              {showProfileInfo && (
+                <motion.div
+                  initial={{ width: 0, opacity: 0, x: 40 }}
+                  animate={{ width: 320, opacity: 1, x: 0 }}
+                  exit={{ width: 0, opacity: 0, x: 40 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 400,
+                    damping: 35,
+                    opacity: { duration: 0.15 }
+                  }}
+                  className="border-l border-slate-800 bg-slate-900/95 flex-shrink-0 flex flex-col overflow-hidden"
+                >
+                  <div className="w-80 h-full flex flex-col">
               {/* Header */}
               <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800 flex-shrink-0">
                 <span className="font-semibold text-white">Informações do Lead</span>
@@ -2682,7 +2693,9 @@ const ChatInterface: React.FC = () => {
                 />
               </div>
             </div>
-          </div>
+          </motion.div>
+              )}
+            </AnimatePresence>
           )}
 
         </motion.div>
