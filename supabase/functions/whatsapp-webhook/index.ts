@@ -207,6 +207,68 @@ async function transcribeAudio(
   }
 }
 
+// ===== HMAC-SHA256 SIGNATURE VERIFICATION =====
+async function verifyWebhookSignature(
+  bodyText: string,
+  signatureHeader: string | null,
+  appSecret: string
+): Promise<boolean> {
+  if (!signatureHeader || !appSecret) {
+    console.warn('[Webhook] Missing signature header or app secret');
+    return false;
+  }
+
+  try {
+    // Expected format: "sha256=<hex_signature>"
+    if (!signatureHeader.startsWith('sha256=')) {
+      console.warn('[Webhook] Invalid signature format');
+      return false;
+    }
+
+    const providedSignature = signatureHeader.substring(7);
+    
+    // Create HMAC-SHA256 hash
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(appSecret);
+    const messageData = encoder.encode(bodyText);
+    
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    
+    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+    const signatureArray = new Uint8Array(signatureBuffer);
+    const expectedSignature = Array.from(signatureArray)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    // Constant-time comparison to prevent timing attacks
+    if (providedSignature.length !== expectedSignature.length) {
+      return false;
+    }
+    
+    let result = 0;
+    for (let i = 0; i < providedSignature.length; i++) {
+      result |= providedSignature.charCodeAt(i) ^ expectedSignature.charCodeAt(i);
+    }
+    
+    const isValid = result === 0;
+    if (!isValid) {
+      console.warn('[Webhook] Signature mismatch');
+    }
+    
+    return isValid;
+  } catch (error) {
+    console.error('[Webhook] Signature verification error:', error);
+    return false;
+  }
+}
+// ===== END SIGNATURE VERIFICATION =====
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -245,7 +307,33 @@ serve(async (req) => {
 
     // POST request = Incoming message from WhatsApp
     if (req.method === 'POST') {
-      const body = await req.json();
+      // Read raw body for signature verification
+      const bodyText = await req.text();
+      
+      // Get app secret from settings for signature validation
+      const { data: authSettings } = await supabase
+        .from('nina_settings')
+        .select('whatsapp_app_secret')
+        .maybeSingle();
+      
+      const appSecret = authSettings?.whatsapp_app_secret;
+      
+      // Validate signature if app secret is configured
+      if (appSecret) {
+        const signatureHeader = req.headers.get('X-Hub-Signature-256');
+        const isValidSignature = await verifyWebhookSignature(bodyText, signatureHeader, appSecret);
+        
+        if (!isValidSignature) {
+          console.error('[Webhook] Invalid signature - rejecting request');
+          return new Response('Forbidden', { status: 403, headers: corsHeaders });
+        }
+        console.log('[Webhook] Signature verified successfully');
+      } else {
+        console.warn('[Webhook] ⚠️ App secret not configured - signature verification skipped. Configure whatsapp_app_secret for security.');
+      }
+      
+      // Parse body after signature verification
+      const body = JSON.parse(bodyText);
       console.log('[Webhook] Received payload:', JSON.stringify(body, null, 2));
 
       // Extract message data from WhatsApp Cloud API format
