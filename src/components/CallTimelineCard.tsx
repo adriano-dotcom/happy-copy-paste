@@ -120,6 +120,24 @@ const CallTimelineCard: React.FC<CallTimelineCardProps> = ({ call }) => {
           textColor: 'text-red-400',
           iconBg: 'bg-red-500/20'
         };
+      case 'timeout':
+        return {
+          icon: PhoneMissed,
+          label: 'Não Atendeu',
+          bgColor: 'bg-amber-500/10',
+          borderColor: 'border-amber-500/30',
+          textColor: 'text-amber-400',
+          iconBg: 'bg-amber-500/20'
+        };
+      case 'cancelled':
+        return {
+          icon: PhoneOff,
+          label: 'Cancelada',
+          bgColor: 'bg-slate-500/10',
+          borderColor: 'border-slate-500/30',
+          textColor: 'text-slate-400',
+          iconBg: 'bg-slate-500/20'
+        };
       case 'initiated':
       case 'ringing':
         return {
