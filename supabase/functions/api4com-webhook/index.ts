@@ -114,36 +114,56 @@ serve(async (req) => {
       if (callId) {
         const { data } = await supabase
           .from('call_logs')
-          .select('id, api4com_call_id')
+          .select('id, api4com_call_id, phone_number, status')
           .eq('api4com_call_id', callId)
           .maybeSingle();
         
         if (data) {
-          console.log('[api4com-webhook] Found call log by api4com_call_id:', data.id);
+          console.log('[api4com-webhook] Found call log by api4com_call_id:', data.id, 'status:', data.status);
           return data;
         }
       }
 
       // Fallback: find by metadata (contactId + conversationId)
-      // Include 'cancelled' because user_hangup might have triggered before webhook arrives
+      // Include 'cancelled' and 'timeout' because client might have updated before webhook arrives
       if (metaContactId && metaConversationId) {
         const { data } = await supabase
           .from('call_logs')
-          .select('id, api4com_call_id')
+          .select('id, api4com_call_id, phone_number, status')
           .eq('contact_id', metaContactId)
           .eq('conversation_id', metaConversationId)
-          .in('status', ['dialing', 'ringing', 'answered', 'cancelled'])
+          .in('status', ['dialing', 'ringing', 'answered', 'cancelled', 'timeout'])
           .order('started_at', { ascending: false })
           .limit(1)
           .maybeSingle();
         
         if (data) {
-          console.log('[api4com-webhook] Found call log by metadata fallback:', data.id);
+          console.log('[api4com-webhook] Found call log by metadata fallback:', data.id, 'status:', data.status);
           return data;
         }
       }
 
-      console.log('[api4com-webhook] No matching call log found');
+      // Second fallback: find by phone number if destination is available
+      if (destination) {
+        const normalizedDestination = destination.replace(/\D/g, '');
+        console.log('[api4com-webhook] Trying phone number fallback with:', normalizedDestination);
+        
+        const { data } = await supabase
+          .from('call_logs')
+          .select('id, api4com_call_id, phone_number, status')
+          .or(`phone_number.eq.${normalizedDestination},phone_number.ilike.%${normalizedDestination.slice(-9)}`)
+          .in('status', ['dialing', 'ringing', 'answered', 'cancelled', 'timeout'])
+          .order('started_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (data) {
+          console.log('[api4com-webhook] Found call log by phone number fallback:', data.id, 'status:', data.status);
+          return data;
+        }
+      }
+
+      console.log('[api4com-webhook] No matching call log found for:', { callId, metaContactId, metaConversationId, destination });
       return null;
     }
 

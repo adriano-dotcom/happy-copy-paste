@@ -4,7 +4,7 @@ import { Tables } from '@/integrations/supabase/types';
 
 export type CallLog = Tables<'call_logs'>;
 
-const CALL_TIMEOUT_MS = 60000; // 60 seconds timeout for stuck calls
+const CALL_TIMEOUT_MS = 120000; // 2 minutes timeout for stuck calls
 
 export const useActiveCall = (conversationId: string | null) => {
   const [activeCall, setActiveCall] = useState<CallLog | null>(null);
@@ -73,14 +73,49 @@ export const useActiveCall = (conversationId: string | null) => {
 
       if (error) {
         console.error('Error fetching call history:', error);
-      } else {
-        setCallHistory(data || []);
-        // Check for active call
-        const active = data?.find(c => 
-          ['dialing', 'ringing', 'answered'].includes(c.status)
-        );
-        setActiveCall(active || null);
+        setLoading(false);
+        return;
       }
+
+      // Check for stuck calls and update them
+      const now = Date.now();
+      const stuckCalls = data?.filter(c => 
+        ['dialing', 'ringing'].includes(c.status) &&
+        now - new Date(c.started_at).getTime() > CALL_TIMEOUT_MS
+      ) || [];
+
+      // Update stuck calls to timeout status in background
+      for (const call of stuckCalls) {
+        console.log('[useActiveCall] Cleaning up stuck call:', call.id);
+        supabase
+          .from('call_logs')
+          .update({
+            status: 'timeout',
+            ended_at: new Date().toISOString(),
+            hangup_cause: 'timeout_client'
+          })
+          .eq('id', call.id)
+          .then(({ error: updateError }) => {
+            if (updateError) {
+              console.error('[useActiveCall] Failed to update stuck call:', updateError);
+            }
+          });
+      }
+
+      // Filter out stuck calls from active call consideration
+      const updatedData = data?.map(c => 
+        stuckCalls.find(sc => sc.id === c.id) 
+          ? { ...c, status: 'timeout' } 
+          : c
+      ) || [];
+
+      setCallHistory(updatedData);
+      
+      // Check for active call (excluding now-timeout calls)
+      const active = updatedData.find(c => 
+        ['dialing', 'ringing', 'answered'].includes(c.status)
+      );
+      setActiveCall(active || null);
       setLoading(false);
     };
 
