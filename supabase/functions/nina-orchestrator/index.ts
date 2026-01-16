@@ -580,6 +580,8 @@ interface CallbackIntent {
 function detectCallbackIntent(messageContent: string): CallbackIntent {
   const content = messageContent.toLowerCase().trim();
   
+  console.log(`[Callback Detection] 🔍 Analisando mensagem: "${content.substring(0, 100)}${content.length > 100 ? '...' : ''}"`);
+  
   // Patterns that indicate the lead wants to be called back later
   const callbackPhrases = [
     // Time-based
@@ -609,8 +611,11 @@ function detectCallbackIntent(messageContent: string): CallbackIntent {
   const hasIntent = callbackPhrases.some(phrase => content.includes(phrase));
   
   if (!hasIntent) {
+    console.log(`[Callback Detection] ❌ Nenhum intent de callback detectado`);
     return { hasIntent: false };
   }
+  
+  console.log(`[Callback Detection] ✅ Intent de callback detectado!`);
   
   let suggestedDate: Date | undefined;
   let suggestedTime: string | undefined;
@@ -648,6 +653,9 @@ function detectCallbackIntent(messageContent: string): CallbackIntent {
   if (content.includes('amanhã') || content.includes('amanha')) {
     suggestedDate = new Date(now);
     suggestedDate.setDate(suggestedDate.getDate() + 1);
+    console.log(`[Callback Detection] 📅 Detectado "amanhã":`);
+    console.log(`[Callback Detection]   - Hoje (Brasília): ${now.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })} ${now.toLocaleTimeString('pt-BR')}`);
+    console.log(`[Callback Detection]   - Amanhã calculado: ${suggestedDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}`);
   }
   
   // Next week
@@ -655,6 +663,11 @@ function detectCallbackIntent(messageContent: string): CallbackIntent {
     suggestedDate = new Date(now);
     suggestedDate.setDate(suggestedDate.getDate() + 7);
   }
+  
+  console.log(`[Callback Detection] 📋 Resultado final:`);
+  console.log(`[Callback Detection]   - hasIntent: ${true}`);
+  console.log(`[Callback Detection]   - suggestedDate: ${suggestedDate?.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' }) || 'não especificado'}`);
+  console.log(`[Callback Detection]   - suggestedTime: ${suggestedTime || 'não especificado'}`);
   
   return {
     hasIntent: true,
@@ -666,16 +679,26 @@ function detectCallbackIntent(messageContent: string): CallbackIntent {
 
 // Get current time in Brazil timezone (UTC-3)
 function getNowInBrazil(): Date {
-  const now = new Date();
+  const utcNow = new Date();
   // Convert to Brazil time string and parse back to get correct local values
-  const brazilTime = now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' });
-  return new Date(brazilTime);
+  const brazilTime = utcNow.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' });
+  const brazilDate = new Date(brazilTime);
+  
+  console.log(`[Timezone Debug] 🌍 UTC: ${utcNow.toISOString()} | Brasília: ${brazilDate.toLocaleString('pt-BR')} (dia: ${brazilDate.toLocaleDateString('pt-BR', { weekday: 'long' })})`);
+  
+  return brazilDate;
 }
 
 // Calculate next business hour for callback scheduling
 function calculateNextBusinessHour(suggestedDate?: Date, suggestedTime?: string): Date {
+  console.log(`[Business Hour Calc] ⏰ Calculando próximo horário comercial...`);
+  
   const now = getNowInBrazil();
   let targetDate = suggestedDate ? new Date(suggestedDate) : new Date(now);
+  
+  console.log(`[Business Hour Calc]   - Now (Brasília): ${now.toLocaleString('pt-BR')} (${now.toLocaleDateString('pt-BR', { weekday: 'long' })})`);
+  console.log(`[Business Hour Calc]   - Suggested date input: ${suggestedDate?.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' }) || 'não especificado'}`);
+  console.log(`[Business Hour Calc]   - Suggested time input: ${suggestedTime || 'não especificado'}`);
   
   // Set the time
   if (suggestedTime) {
@@ -704,16 +727,23 @@ function calculateNextBusinessHour(suggestedDate?: Date, suggestedTime?: string)
   }
   
   // Skip weekends
+  const originalDay = targetDate.getDay();
   while (targetDate.getDay() === 0 || targetDate.getDay() === 6) {
+    const skippedDay = targetDate.toLocaleDateString('pt-BR', { weekday: 'long' });
     targetDate.setDate(targetDate.getDate() + 1);
     targetDate.setHours(9, 0, 0, 0);
+    console.log(`[Business Hour Calc]   - ⏭️ Pulando fim de semana: ${skippedDay} → próximo dia`);
   }
   
   // Ensure it's in the future
   if (targetDate <= now) {
+    console.log(`[Business Hour Calc]   - ⚠️ Data no passado, ajustando para +30min`);
     targetDate = new Date(now);
     targetDate.setMinutes(targetDate.getMinutes() + 30);
   }
+  
+  console.log(`[Business Hour Calc] ✅ Resultado final: ${targetDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })} às ${targetDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
+  console.log(`[Business Hour Calc]   - ISO (para DB): ${targetDate.toISOString()}`);
   
   return targetDate;
 }
