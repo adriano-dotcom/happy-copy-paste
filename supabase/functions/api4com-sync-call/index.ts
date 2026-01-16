@@ -120,41 +120,66 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Try multiple endpoints
-    const baseUrl = 'https://api.api4com.com';
+    // Try multiple endpoints with different base URLs
+    const baseUrls = [
+      'https://api.api4com.com',
+      'https://api4com.com.br',
+      'https://app.api4com.com',
+    ];
+    
     const endpoints = [
       `/api/v1/dialer/calls/${callId}`,
       `/api/v1/calls/${callId}`,
       `/api/v1/cdr/${callId}`,
-      `/api/v1/dialer/${callId}`,
+      `/api/v1/call/${callId}`,
+      `/v1/calls/${callId}`,
+      `/calls/${callId}`,
+      `/call/${callId}`,
+      `/dialer/calls/${callId}`,
     ];
 
     let callDetails: Record<string, unknown> | null = null;
     let usedEndpoint = '';
 
-    for (const endpoint of endpoints) {
-      try {
-        console.log('[api4com-sync-call] Trying endpoint:', endpoint);
-        
-        const response = await fetch(`${baseUrl}${endpoint}`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${apiToken}`,
-            'Content-Type': 'application/json',
-          },
-        });
+    for (const baseUrl of baseUrls) {
+      if (callDetails) break;
+      
+      for (const endpoint of endpoints) {
+        try {
+          const fullUrl = `${baseUrl}${endpoint}`;
+          console.log('[api4com-sync-call] Trying:', fullUrl);
+          
+          const response = await fetch(fullUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${apiToken}`,
+              'X-Api-Key': apiToken,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+          });
 
-        if (response.ok) {
-          callDetails = await response.json();
-          usedEndpoint = endpoint;
-          console.log('[api4com-sync-call] ✅ Got response from:', endpoint);
-          break;
-        } else if (response.status !== 404) {
-          const errorText = await response.text();
-          console.log('[api4com-sync-call] Endpoint returned', response.status, ':', errorText.substring(0, 200));
+          console.log('[api4com-sync-call] Response:', response.status, response.statusText);
+
+          if (response.ok) {
+            const text = await response.text();
+            console.log('[api4com-sync-call] ✅ Got response from:', fullUrl);
+            console.log('[api4com-sync-call] Response body (first 500 chars):', text.substring(0, 500));
+            
+            try {
+              callDetails = JSON.parse(text);
+              usedEndpoint = fullUrl;
+            } catch (e) {
+              console.log('[api4com-sync-call] Failed to parse JSON:', e);
+            }
+            break;
+          } else {
+            const errorText = await response.text();
+            console.log('[api4com-sync-call]', response.status, ':', errorText.substring(0, 300));
+          }
+        } catch (e) {
+          console.error('[api4com-sync-call] Error fetching:', e);
         }
-      } catch (e) {
-        console.error('[api4com-sync-call] Error fetching:', endpoint, e);
       }
     }
 
