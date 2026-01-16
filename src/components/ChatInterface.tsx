@@ -2629,8 +2629,25 @@ const ChatInterface: React.FC = () => {
                     value={activeChat.assignedUserId || existingDeal?.owner?.id || ''}
                     onChange={(e) => {
                       const userId = e.target.value || null;
-                      assignConversation(activeChat.id, userId);
-                      toast.success('Conversa atribuída. Deal atualizado automaticamente.');
+                      const selectedMember = teamMembers.find(m => m.id === userId);
+                      const userName = selectedMember?.name || null;
+                      
+                      // Update conversation (and deal in backend)
+                      assignConversation(activeChat.id, userId, userName);
+                      
+                      // Update existingDeal locally for the header badge
+                      if (existingDeal) {
+                        setExistingDeal({
+                          ...existingDeal,
+                          owner: selectedMember ? { 
+                            id: selectedMember.id, 
+                            name: selectedMember.name,
+                            avatar: selectedMember.avatar 
+                          } : null
+                        });
+                      }
+                      
+                      toast.success('Responsável atualizado com sucesso!');
                     }}
                     className="w-full bg-slate-950/50 border border-slate-800 rounded-lg p-3 text-sm text-slate-300 focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/50 outline-none transition-all"
                   >

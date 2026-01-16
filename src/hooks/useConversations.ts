@@ -388,15 +388,24 @@ export function useConversations() {
   }, []);
 
   // Assign conversation (and sync with deal)
-  const assignConversation = useCallback(async (conversationId: string, userId: string | null) => {
+  const assignConversation = useCallback(async (
+    conversationId: string, 
+    userId: string | null,
+    userName?: string | null
+  ) => {
     const conv = conversations.find(c => c.id === conversationId);
     if (!conv) return;
 
-    // Optimistic UI update
+    // Optimistic UI update - include dealOwnerId and dealOwnerName
     setConversations(prev => {
       return prev.map(c => {
         if (c.id === conversationId) {
-          return { ...c, assignedUserId: userId };
+          return { 
+            ...c, 
+            assignedUserId: userId,
+            dealOwnerId: userId,
+            dealOwnerName: userName || null
+          };
         }
         return c;
       });
@@ -412,7 +421,12 @@ export function useConversations() {
       setConversations(prev => {
         return prev.map(c => {
           if (c.id === conversationId) {
-            return { ...c, assignedUserId: conv.assignedUserId };
+            return { 
+              ...c, 
+              assignedUserId: conv.assignedUserId,
+              dealOwnerId: conv.dealOwnerId,
+              dealOwnerName: conv.dealOwnerName
+            };
           }
           return c;
         });
