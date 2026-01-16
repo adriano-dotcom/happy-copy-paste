@@ -11,9 +11,29 @@ export const useActiveCall = (conversationId: string | null) => {
   const [callHistory, setCallHistory] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Function to clear stuck calls
-  const clearStuckCall = useCallback(async (call: CallLog) => {
-    console.log('[useActiveCall] Clearing stuck call:', call.id);
+  // Function to sync and then clear stuck calls
+  const syncAndClearStuckCall = useCallback(async (call: CallLog) => {
+    console.log('[useActiveCall] Attempting to sync before marking timeout:', call.id);
+    
+    try {
+      // First try to sync with provider to get real status
+      const { data, error } = await supabase.functions.invoke('api4com-sync-call', {
+        body: { call_log_id: call.id }
+      });
+      
+      if (error) {
+        console.error('[useActiveCall] Sync failed:', error);
+      } else if (data?.synced && data?.updates?.status) {
+        console.log('[useActiveCall] Sync successful, new status:', data.updates.status);
+        // The realtime subscription will pick up the update
+        return; // Don't mark as timeout - sync updated the status
+      }
+    } catch (e) {
+      console.error('[useActiveCall] Sync error:', e);
+    }
+    
+    // If sync didn't update status, mark as timeout
+    console.log('[useActiveCall] Clearing stuck call after failed sync:', call.id);
     
     const { error } = await supabase
       .from('call_logs')
@@ -32,7 +52,7 @@ export const useActiveCall = (conversationId: string | null) => {
     }
   }, []);
 
-  // Timeout for stuck calls
+  // Timeout for stuck calls - now with sync attempt first
   useEffect(() => {
     if (!activeCall) return;
     if (!['dialing', 'ringing'].includes(activeCall.status)) return;
@@ -42,17 +62,16 @@ export const useActiveCall = (conversationId: string | null) => {
     const remaining = CALL_TIMEOUT_MS - elapsed;
 
     if (remaining <= 0) {
-      clearStuckCall(activeCall);
+      syncAndClearStuckCall(activeCall);
       return;
     }
 
     const timeout = setTimeout(() => {
-      clearStuckCall(activeCall);
+      syncAndClearStuckCall(activeCall);
     }, remaining);
 
     return () => clearTimeout(timeout);
-  }, [activeCall, clearStuckCall]);
-
+  }, [activeCall, syncAndClearStuckCall]);
   // Fetch call history for the conversation
   useEffect(() => {
     if (!conversationId) {

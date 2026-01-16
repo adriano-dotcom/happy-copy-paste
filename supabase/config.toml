@@ -52,6 +52,9 @@ verify_jwt = true
 [functions.api4com-hangup]
 verify_jwt = true
 
+[functions.api4com-sync-call]
+verify_jwt = true
+
 [functions.transcribe-call-recording]
 verify_jwt = true
 
