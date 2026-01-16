@@ -1672,6 +1672,13 @@ const ChatInterface: React.FC = () => {
                     {/* Status badges and tags with glassmorphism */}
                     <div className="flex items-center mt-2 gap-1.5 flex-wrap">
                       {renderStatusBadge(chat.status, chat.assignedUserName)}
+                      {/* Owner/Vendedor Badge */}
+                      {chat.dealOwnerName && (
+                        <span className="px-2 py-0.5 bg-gradient-to-r from-emerald-500/20 to-green-500/20 backdrop-blur-sm text-emerald-300 border border-emerald-400/30 text-[10px] rounded-full font-medium flex items-center gap-1 shadow-lg shadow-emerald-500/10">
+                          <User className="w-2.5 h-2.5" />
+                          {chat.dealOwnerName.split(' ')[0]}
+                        </span>
+                      )}
                       <LeadScoreBadge clientMemory={chat.clientMemory} compact />
                       <WaitingTimeBadge 
                         lastMessageAt={chat.lastMessageAt} 
