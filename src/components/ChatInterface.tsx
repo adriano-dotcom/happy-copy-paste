@@ -58,7 +58,7 @@ interface AgentQuestion {
 const ChatInterface: React.FC = () => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const { conversations, loading, sendMessage, updateStatus, markAsRead, assignConversation, archiveConversation, unarchiveConversation, fetchArchivedConversations, refetch } = useConversations();
+  const { conversations, loading, sendMessage, updateStatus, markAsRead, markAsViewed, assignConversation, archiveConversation, unarchiveConversation, fetchArchivedConversations, refetch } = useConversations();
   const { user } = useAuth();
   const { sdrName, companyName } = useCompanySettings();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
@@ -751,10 +751,16 @@ const ChatInterface: React.FC = () => {
 
   // Mark as read when selecting conversation
   useEffect(() => {
-    if (selectedChatId && activeChat?.unreadCount > 0) {
-      markAsRead(selectedChatId);
+    if (selectedChatId) {
+      if (activeChat?.unreadCount && activeChat.unreadCount > 0) {
+        markAsRead(selectedChatId);
+      }
+      // Mark as viewed by human (stops pulsing when Nina replied)
+      if (activeChat?.needsHumanReview) {
+        markAsViewed(selectedChatId);
+      }
     }
-  }, [selectedChatId, activeChat?.unreadCount, markAsRead]);
+  }, [selectedChatId, activeChat?.unreadCount, activeChat?.needsHumanReview, markAsRead, markAsViewed]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1587,7 +1593,7 @@ const ChatInterface: React.FC = () => {
                     <div className={`w-12 h-12 rounded-full p-[2px] transition-all duration-300 ${
                       chat.status === 'closed' 
                         ? 'bg-gradient-to-tr from-slate-500 to-slate-600' 
-                        : chat.unreadCount > 0 
+                        : (chat.unreadCount > 0 || chat.needsHumanReview)
                           ? 'bg-gradient-to-tr from-cyan-400 via-teal-400 to-emerald-400 shadow-lg shadow-cyan-500/40 animate-pulse' 
                           : selectedChatId === chat.id
                             ? 'bg-gradient-to-tr from-violet-500 via-fuchsia-500 to-pink-500 shadow-lg shadow-violet-500/30'
@@ -1604,7 +1610,7 @@ const ChatInterface: React.FC = () => {
                       <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-gradient-to-r from-slate-400 to-slate-500 border-2 border-slate-900 rounded-full flex items-center justify-center">
                         <XCircle className="w-2.5 h-2.5 text-slate-900" />
                       </span>
-                    ) : chat.unreadCount > 0 ? (
+                    ) : (chat.unreadCount > 0 || chat.needsHumanReview) ? (
                       <span className="absolute bottom-0 right-0 w-4 h-4 bg-gradient-to-r from-emerald-400 to-green-400 border-2 border-slate-900 rounded-full shadow-lg shadow-emerald-400/60 animate-pulse"></span>
                     ) : (
                       <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-gradient-to-r from-slate-500 to-slate-600 border-2 border-slate-900 rounded-full"></span>
@@ -1616,7 +1622,7 @@ const ChatInterface: React.FC = () => {
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         {/* Contact name with glow for unread */}
                         <h3 className={`text-sm truncate transition-all ${
-                          chat.unreadCount > 0 
+                          (chat.unreadCount > 0 || chat.needsHumanReview)
                             ? 'font-bold text-white drop-shadow-[0_0_8px_rgba(6,182,212,0.4)]' 
                             : selectedChatId === chat.id 
                               ? 'font-semibold text-white' 

@@ -95,7 +95,11 @@ export function useConversations() {
                   // Increment unread if it's from user and play notification
                   unreadCount: newMessage.from_type === 'user' 
                     ? (playNotificationSound(), conv.unreadCount + 1)
-                    : conv.unreadCount
+                    : conv.unreadCount,
+                  // If Nina responded, mark as needing human review
+                  needsHumanReview: newMessage.from_type === 'nina' 
+                    ? true 
+                    : conv.needsHumanReview
                 };
               }
               return conv;
@@ -186,7 +190,8 @@ export function useConversations() {
                     whatsappWindowStart: updated.whatsapp_window_start || conv.whatsappWindowStart,
                     isWhatsAppWindowOpen: updated.whatsapp_window_start !== undefined ? isWindowOpen : conv.isWhatsAppWindowOpen,
                     windowHoursRemaining: updated.whatsapp_window_start !== undefined ? hoursRemaining : conv.windowHoursRemaining,
-                    lastMessageAt: updated.last_message_at || conv.lastMessageAt
+                    lastMessageAt: updated.last_message_at || conv.lastMessageAt,
+                    needsHumanReview: updated.needs_human_review ?? conv.needsHumanReview
                   };
                 }
                 return conv;
@@ -357,6 +362,31 @@ export function useConversations() {
     }
   }, []);
 
+  // Mark conversation as viewed by human (stops pulsing indicator)
+  const markAsViewed = useCallback(async (conversationId: string) => {
+    // Optimistic UI update
+    setConversations(prev => {
+      return prev.map(conv => {
+        if (conv.id === conversationId) {
+          return { ...conv, needsHumanReview: false };
+        }
+        return conv;
+      });
+    });
+
+    // Persist to database
+    try {
+      await supabase
+        .from('conversations')
+        .update({ needs_human_review: false })
+        .eq('id', conversationId);
+      console.log('[useConversations] Conversation marked as viewed');
+    } catch (err) {
+      console.error('[useConversations] Error marking as viewed:', err);
+      // Don't revert UI on error (better UX)
+    }
+  }, []);
+
   // Assign conversation (and sync with deal)
   const assignConversation = useCallback(async (conversationId: string, userId: string | null) => {
     const conv = conversations.find(c => c.id === conversationId);
@@ -439,6 +469,7 @@ export function useConversations() {
     sendMessage,
     updateStatus,
     markAsRead,
+    markAsViewed,
     assignConversation,
     archiveConversation,
     unarchiveConversation,
