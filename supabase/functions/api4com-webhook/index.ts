@@ -43,13 +43,75 @@ serve(async (req) => {
       );
     }
     
-    // Check multiple header variations (case-insensitive lookup + common alternatives)
-    const providedKey = 
+    // Log ALL headers for complete debugging
+    const allHeaders = Array.from(req.headers.entries());
+    console.log('[api4com-webhook] 📋 All headers received:', allHeaders.map(([k, v]) => 
+      k.toLowerCase().includes('key') || k.toLowerCase().includes('auth') || k.toLowerCase().includes('token')
+        ? `${k}: [REDACTED len=${v.length}]` 
+        : `${k}: ${v.substring(0, 50)}${v.length > 50 ? '...' : ''}`
+    ));
+    
+    // Extract URL for query parameter auth
+    const url = new URL(req.url);
+    
+    // Try multiple authentication methods:
+    // 1. Header variations (x-api4com-key, x-api-key, etc.)
+    // 2. Query parameters (?key=, ?api_key=, ?token=)
+    // 3. Authorization Bearer header
+    // 4. Basic Auth (extract password)
+    
+    let providedKey: string | null = null;
+    let authMethod = 'none';
+    
+    // Method 1: Headers
+    const headerKey = 
       req.headers.get('x-api4com-key') || 
       req.headers.get('X-Api4com-Key') || 
       req.headers.get('X-API4COM-KEY') ||
       req.headers.get('x-api-key') ||
-      req.headers.get('X-Api-Key');
+      req.headers.get('X-Api-Key') ||
+      req.headers.get('x-webhook-key') ||
+      req.headers.get('X-Webhook-Key');
+    
+    if (headerKey) {
+      providedKey = headerKey;
+      authMethod = 'header';
+    }
+    
+    // Method 2: Query parameters
+    if (!providedKey) {
+      const queryKey = url.searchParams.get('key') || 
+                       url.searchParams.get('api_key') || 
+                       url.searchParams.get('token') ||
+                       url.searchParams.get('webhook_key');
+      if (queryKey) {
+        providedKey = queryKey;
+        authMethod = 'query';
+      }
+    }
+    
+    // Method 3: Authorization Bearer
+    if (!providedKey) {
+      const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
+      if (authHeader) {
+        if (authHeader.startsWith('Bearer ')) {
+          providedKey = authHeader.substring(7);
+          authMethod = 'bearer';
+        } else if (authHeader.startsWith('Basic ')) {
+          // Decode Basic auth and use password as key
+          try {
+            const decoded = atob(authHeader.substring(6));
+            const [, password] = decoded.split(':');
+            if (password) {
+              providedKey = password;
+              authMethod = 'basic';
+            }
+          } catch (e) {
+            console.log('[api4com-webhook] Failed to decode Basic auth');
+          }
+        }
+      }
+    }
     
     // Apply trim to both keys to avoid accidental whitespace issues
     const trimmedProvidedKey = providedKey?.trim() || '';
@@ -57,21 +119,28 @@ serve(async (req) => {
     
     // Log diagnostic info (fingerprints only, never the actual keys)
     console.log('[api4com-webhook] 🔑 Auth check:', {
+      authMethod,
       providedKeyFingerprint: getKeyFingerprint(providedKey || ''),
       expectedKeyFingerprint: getKeyFingerprint(webhookKey),
-      headersReceived: Array.from(req.headers.keys()).filter(h => h.toLowerCase().includes('key') || h.toLowerCase().includes('api')),
+      hasQueryParams: url.searchParams.toString().length > 0,
     });
     
     if (!trimmedProvidedKey || trimmedProvidedKey !== trimmedWebhookKey) {
       console.error('[api4com-webhook] ❌ Unauthorized: Key mismatch or missing');
-      console.error('[api4com-webhook] Debug: providedKey exists?', !!providedKey, '| match?', trimmedProvidedKey === trimmedWebhookKey);
+      console.error('[api4com-webhook] Debug:', { 
+        authMethod, 
+        providedKeyExists: !!providedKey,
+        keyMatch: trimmedProvidedKey === trimmedWebhookKey,
+        providedLength: trimmedProvidedKey.length,
+        expectedLength: trimmedWebhookKey.length,
+      });
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('[api4com-webhook] ✅ Authentication successful');
+    console.log('[api4com-webhook] ✅ Authentication successful via', authMethod);
 
     const body = await req.json();
     
