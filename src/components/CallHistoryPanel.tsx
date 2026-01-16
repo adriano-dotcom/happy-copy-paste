@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, Play, Pause, Volume2, Loader2, FileText, ChevronDown, ChevronUp, NotebookPen } from 'lucide-react';
+import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock, Play, Pause, Volume2, Loader2, FileText, ChevronDown, ChevronUp, NotebookPen, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface CallLog {
   id: string;
@@ -11,6 +12,7 @@ interface CallLog {
   record_url: string | null;
   transcription?: string | null;
   transcription_status?: string | null;
+  api4com_call_id?: string | null;
 }
 
 interface CallHistoryPanelProps {
@@ -21,6 +23,7 @@ interface CallHistoryPanelProps {
   contactId?: string;
   contactName?: string;
   onNotesUpdate?: (notes: string) => void;
+  onCallSync?: (callId: string, updatedCall: CallLog) => void;
 }
 
 const formatDuration = (seconds: number | null): string => {
@@ -355,6 +358,75 @@ const TranscriptionSection: React.FC<{
   );
 };
 
+// Sync Call Button Component
+const SyncCallButton: React.FC<{
+  callId: string;
+  status: string;
+  onSync?: (callId: string, updatedCall: CallLog) => void;
+}> = ({ callId, status, onSync }) => {
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Only show for problematic statuses
+  const shouldShow = ['timeout', 'cancelled', 'dialing', 'ringing', 'failed'].includes(status);
+  if (!shouldShow) return null;
+
+  const handleSync = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent expanding the card
+    setIsSyncing(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('api4com-sync-call', {
+        body: { call_log_id: callId }
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        toast.success('Status sincronizado com sucesso!');
+        
+        // Fetch updated call data
+        const { data: updatedCall, error: fetchError } = await supabase
+          .from('call_logs')
+          .select('id, status, started_at, duration_seconds, record_url, transcription, transcription_status, api4com_call_id')
+          .eq('id', callId)
+          .single();
+
+        if (!fetchError && updatedCall) {
+          onSync?.(callId, updatedCall as CallLog);
+        }
+      } else if (data?.message) {
+        toast.info(data.message);
+      } else {
+        toast.info('Nenhuma atualização disponível');
+      }
+    } catch (error) {
+      console.error('Erro ao sincronizar:', error);
+      toast.error('Erro ao sincronizar ligação');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={handleSync}
+            disabled={isSyncing}
+            className="p-1.5 rounded-md hover:bg-slate-700/50 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-slate-400 hover:text-cyan-400 ${isSyncing ? 'animate-spin' : ''}`} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="left">
+          <p className="text-xs">Sincronizar status com provedor</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+};
+
 export const CallHistoryPanel: React.FC<CallHistoryPanelProps> = ({ 
   calls, 
   loading, 
@@ -362,7 +434,8 @@ export const CallHistoryPanel: React.FC<CallHistoryPanelProps> = ({
   onTranscriptionUpdate,
   contactId,
   contactName,
-  onNotesUpdate
+  onNotesUpdate,
+  onCallSync
 }) => {
   const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
 
@@ -448,6 +521,13 @@ export const CallHistoryPanel: React.FC<CallHistoryPanelProps> = ({
                   )}
                 </div>
               </div>
+              
+              {/* Sync Button */}
+              <SyncCallButton 
+                callId={call.id} 
+                status={call.status} 
+                onSync={onCallSync}
+              />
             </div>
 
             {/* Expanded Content: Audio Player + Transcription */}
