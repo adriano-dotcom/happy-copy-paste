@@ -625,8 +625,8 @@ function detectCallbackIntent(messageContent: string): CallbackIntent {
     }
   }
   
-  // Try to extract specific day
-  const now = new Date();
+  // Try to extract specific day - use Brazil timezone (UTC-3)
+  const now = getNowInBrazil();
   const daysOfWeek: Record<string, number> = {
     'domingo': 0, 'segunda': 1, 'terça': 2, 'terca': 2, 
     'quarta': 3, 'quinta': 4, 'sexta': 5, 'sábado': 6, 'sabado': 6
@@ -664,9 +664,17 @@ function detectCallbackIntent(messageContent: string): CallbackIntent {
   };
 }
 
+// Get current time in Brazil timezone (UTC-3)
+function getNowInBrazil(): Date {
+  const now = new Date();
+  // Convert to Brazil time string and parse back to get correct local values
+  const brazilTime = now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' });
+  return new Date(brazilTime);
+}
+
 // Calculate next business hour for callback scheduling
 function calculateNextBusinessHour(suggestedDate?: Date, suggestedTime?: string): Date {
-  const now = new Date();
+  const now = getNowInBrazil();
   let targetDate = suggestedDate ? new Date(suggestedDate) : new Date(now);
   
   // Set the time
@@ -4644,11 +4652,15 @@ Antes de fazer QUALQUER pergunta:
 - ANTT - já falou sobre regularização?
 - CT-e - já confirmou se emite ou não?
 
-### REGRA DE FINALIZAÇÃO (IMPORTANTE):
-- Ao coletar todas as informações de qualificação, SEMPRE solicite o email antes de encerrar
-- Se o cliente já informou email, confirme: "Posso enviar para [email]?"
-- Se não tem email, pergunte: "Qual seu melhor email para eu enviar a cotação?"
-- NUNCA finalize sem ter o email confirmado`;
+### REGRA DE FINALIZAÇÃO:`;
+
+  // Email rule only for Atlas (vehicle leads require email)
+  // Íris explicitly does NOT request email (transporters prefer WhatsApp per agent instructions)
+  if (agent?.slug === 'atlas') {
+    contextInfo += `
+- Ao coletar todas as informações de veículos, solicite o email para enviar a cotação
+- Pergunte: "Qual seu melhor email para eu enviar a cotação?"`;
+  }
 
   return basePrompt + contextInfo;
 }
