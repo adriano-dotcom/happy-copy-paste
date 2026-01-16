@@ -522,6 +522,7 @@ export type Database = {
           is_active: boolean
           last_message_at: string
           metadata: Json | null
+          needs_human_review: boolean | null
           nina_context: Json | null
           started_at: string
           status: Database["public"]["Enums"]["conversation_status"]
@@ -540,6 +541,7 @@ export type Database = {
           is_active?: boolean
           last_message_at?: string
           metadata?: Json | null
+          needs_human_review?: boolean | null
           nina_context?: Json | null
           started_at?: string
           status?: Database["public"]["Enums"]["conversation_status"]
@@ -558,6 +560,7 @@ export type Database = {
           is_active?: boolean
           last_message_at?: string
           metadata?: Json | null
+          needs_human_review?: boolean | null
           nina_context?: Json | null
           started_at?: string
           status?: Database["public"]["Enums"]["conversation_status"]

@@ -273,6 +273,7 @@ export interface DBConversation {
   created_at: string;
   updated_at: string;
   whatsapp_window_start: string | null;
+  needs_human_review: boolean;
   // Joined data
   contact?: DBContact;
   messages?: DBMessage[];
@@ -345,6 +346,8 @@ export interface UIConversation {
   // Deal owner fields
   dealOwnerId: string | null;
   dealOwnerName: string | null;
+  // Human review status
+  needsHumanReview: boolean;
 }
 
 export interface UIMessage {
@@ -423,7 +426,9 @@ export function transformDBToUIConversation(
     windowHoursRemaining: hoursRemaining,
     // Deal owner (enriched by API)
     dealOwnerId: (conv as any).dealOwnerId || null,
-    dealOwnerName: (conv as any).dealOwnerName || null
+    dealOwnerName: (conv as any).dealOwnerName || null,
+    // Human review status (defaults to true for new/unknown conversations)
+    needsHumanReview: conv.needs_human_review ?? true
   };
 }
 

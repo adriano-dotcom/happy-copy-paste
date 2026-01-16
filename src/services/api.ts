@@ -1477,7 +1477,8 @@ export const api = {
         *,
         contact:contacts(*),
         agent:agents(id, name, slug),
-        whatsapp_window_start
+        whatsapp_window_start,
+        needs_human_review
       `)
       .eq('is_active', true)
       .order('last_message_at', { ascending: false })
@@ -1494,7 +1495,8 @@ export const api = {
           *,
           contact:contacts(*),
           agent:agents(id, name, slug),
-          whatsapp_window_start
+          whatsapp_window_start,
+          needs_human_review
         `)
         .eq('id', includeConversationId)
         .single();
