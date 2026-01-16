@@ -3,8 +3,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api4com-key, x-api-key',
 };
+
+// Helper to get a fingerprint of the key for logging (without exposing the actual key)
+function getKeyFingerprint(key: string): string {
+  if (!key) return 'null';
+  const trimmed = key.trim();
+  if (trimmed.length < 8) return `len=${trimmed.length}`;
+  return `len=${trimmed.length}, prefix=${trimmed.substring(0, 3)}..., suffix=...${trimmed.substring(trimmed.length - 3)}`;
+}
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -35,18 +43,39 @@ serve(async (req) => {
       );
     }
     
-    const providedKey = req.headers.get('x-api4com-key') || req.headers.get('X-Api4com-Key');
-    if (!providedKey || providedKey !== webhookKey) {
-      console.error('[api4com-webhook] Unauthorized: Invalid or missing API key');
+    // Check multiple header variations (case-insensitive lookup + common alternatives)
+    const providedKey = 
+      req.headers.get('x-api4com-key') || 
+      req.headers.get('X-Api4com-Key') || 
+      req.headers.get('X-API4COM-KEY') ||
+      req.headers.get('x-api-key') ||
+      req.headers.get('X-Api-Key');
+    
+    // Apply trim to both keys to avoid accidental whitespace issues
+    const trimmedProvidedKey = providedKey?.trim() || '';
+    const trimmedWebhookKey = webhookKey.trim();
+    
+    // Log diagnostic info (fingerprints only, never the actual keys)
+    console.log('[api4com-webhook] 🔑 Auth check:', {
+      providedKeyFingerprint: getKeyFingerprint(providedKey || ''),
+      expectedKeyFingerprint: getKeyFingerprint(webhookKey),
+      headersReceived: Array.from(req.headers.keys()).filter(h => h.toLowerCase().includes('key') || h.toLowerCase().includes('api')),
+    });
+    
+    if (!trimmedProvidedKey || trimmedProvidedKey !== trimmedWebhookKey) {
+      console.error('[api4com-webhook] ❌ Unauthorized: Key mismatch or missing');
+      console.error('[api4com-webhook] Debug: providedKey exists?', !!providedKey, '| match?', trimmedProvidedKey === trimmedWebhookKey);
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
+    console.log('[api4com-webhook] ✅ Authentication successful');
+
     const body = await req.json();
     
-    console.log('[api4com-webhook] Received webhook:', JSON.stringify(body, null, 2));
+    console.log('[api4com-webhook] 📥 Received webhook:', JSON.stringify(body, null, 2));
 
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -69,14 +98,13 @@ serve(async (req) => {
     const extension = body.caller || body.extension || body.Extension || body.channel || body.caller_id_num;
     const destination = body.called || body.destination || body.phone || body.called_number || body.Destination;
     
-    console.log('[api4com-webhook] Processing event:', { 
+    console.log('[api4com-webhook] 🔍 Processing event:', { 
       eventType, 
       callId, 
       extension, 
       destination,
       metaContactId,
       metaConversationId,
-      rawBody: body 
     });
 
     // Map various event types to our status
@@ -114,7 +142,7 @@ serve(async (req) => {
       if (callId) {
         const { data } = await supabase
           .from('call_logs')
-          .select('id, api4com_call_id, phone_number, status')
+          .select('id, api4com_call_id, phone_number, status, answered_at')
           .eq('api4com_call_id', callId)
           .maybeSingle();
         
@@ -129,10 +157,10 @@ serve(async (req) => {
       if (metaContactId && metaConversationId) {
         const { data } = await supabase
           .from('call_logs')
-          .select('id, api4com_call_id, phone_number, status')
+          .select('id, api4com_call_id, phone_number, status, answered_at')
           .eq('contact_id', metaContactId)
           .eq('conversation_id', metaConversationId)
-          .in('status', ['dialing', 'ringing', 'answered', 'cancelled', 'timeout'])
+          .in('status', ['dialing', 'ringing', 'answered', 'cancelled', 'timeout', 'completed_manual'])
           .order('started_at', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -150,9 +178,9 @@ serve(async (req) => {
         
         const { data } = await supabase
           .from('call_logs')
-          .select('id, api4com_call_id, phone_number, status')
+          .select('id, api4com_call_id, phone_number, status, answered_at')
           .or(`phone_number.eq.${normalizedDestination},phone_number.ilike.%${normalizedDestination.slice(-9)}`)
-          .in('status', ['dialing', 'ringing', 'answered', 'cancelled', 'timeout'])
+          .in('status', ['dialing', 'ringing', 'answered', 'cancelled', 'timeout', 'completed_manual'])
           .order('started_at', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -163,7 +191,7 @@ serve(async (req) => {
         }
       }
 
-      console.log('[api4com-webhook] No matching call log found for:', { callId, metaContactId, metaConversationId, destination });
+      console.log('[api4com-webhook] ⚠️ No matching call log found for:', { callId, metaContactId, metaConversationId, destination });
       return null;
     }
 
@@ -194,12 +222,17 @@ serve(async (req) => {
       const callLog = await findCallLog();
       
       if (callLog) {
+        // Log the correction if we're fixing a client-side status
+        if (callLog.status === 'cancelled' || callLog.status === 'timeout' || callLog.status === 'completed_manual') {
+          console.log('[api4com-webhook] 🔧 Correcting client-side status:', callLog.status, '→', status);
+        }
+        
         const { error: updateError } = await supabase
           .from('call_logs')
           .update({
             status: status,
             ended_at: new Date().toISOString(),
-            answered_at: answeredAt ? new Date(answeredAt).toISOString() : null,
+            answered_at: answeredAt ? new Date(answeredAt).toISOString() : (callLog.answered_at || null),
             duration_seconds: duration,
             hangup_cause: hangupCause,
             record_url: recordUrl,
@@ -207,18 +240,26 @@ serve(async (req) => {
             metadata: {
               webhook_data: body,
               updated_at: new Date().toISOString(),
+              previous_status: callLog.status,
             }
           })
           .eq('id', callLog.id);
 
         if (updateError) {
-          console.error('[api4com-webhook] Update error:', updateError);
+          console.error('[api4com-webhook] ❌ Update error:', updateError);
         } else {
-          console.log('[api4com-webhook] Call log updated:', { id: callLog.id, status, duration, hangupCause, hasRecording: !!recordUrl });
+          console.log('[api4com-webhook] ✅ Call log updated:', { 
+            id: callLog.id, 
+            previousStatus: callLog.status,
+            newStatus: status, 
+            duration, 
+            hangupCause, 
+            hasRecording: !!recordUrl 
+          });
           
           // Trigger auto-transcription in background if there's a recording
           if (recordUrl) {
-            console.log('[api4com-webhook] Triggering auto-transcription for call:', callLog.id);
+            console.log('[api4com-webhook] 🎙️ Triggering auto-transcription for call:', callLog.id);
             
             // Background task for transcription
             const transcribeInBackground = async () => {
@@ -233,13 +274,13 @@ serve(async (req) => {
                 });
                 
                 if (response.ok) {
-                  console.log('[api4com-webhook] Auto-transcription completed for call:', callLog.id);
+                  console.log('[api4com-webhook] ✅ Auto-transcription completed for call:', callLog.id);
                 } else {
                   const errorText = await response.text();
-                  console.error('[api4com-webhook] Auto-transcription failed:', errorText);
+                  console.error('[api4com-webhook] ❌ Auto-transcription failed:', errorText);
                 }
               } catch (error) {
-                console.error('[api4com-webhook] Auto-transcription error:', error);
+                console.error('[api4com-webhook] ❌ Auto-transcription error:', error);
               }
             };
             
@@ -272,9 +313,9 @@ serve(async (req) => {
           .eq('id', callLog.id);
 
         if (updateError) {
-          console.error('[api4com-webhook] Answer update error:', updateError);
+          console.error('[api4com-webhook] ❌ Answer update error:', updateError);
         } else {
-          console.log('[api4com-webhook] Call marked as answered:', callLog.id);
+          console.log('[api4com-webhook] ✅ Call marked as answered:', callLog.id);
         }
       }
     } else if (normalizedEvent === 'ringing') {
@@ -293,9 +334,9 @@ serve(async (req) => {
           .eq('id', callLog.id);
         
         if (updateError) {
-          console.error('[api4com-webhook] Ringing update error:', updateError);
+          console.error('[api4com-webhook] ❌ Ringing update error:', updateError);
         } else {
-          console.log('[api4com-webhook] Call marked as ringing:', callLog.id);
+          console.log('[api4com-webhook] ✅ Call marked as ringing:', callLog.id);
         }
       }
     } else if (normalizedEvent === 'dialing') {
@@ -314,16 +355,15 @@ serve(async (req) => {
           .eq('id', callLog.id);
         
         if (!updateError) {
-          console.log('[api4com-webhook] Call marked as dialing:', callLog.id);
+          console.log('[api4com-webhook] ✅ Call marked as dialing:', callLog.id);
         }
       }
     } else {
       // Log unhandled event types for future reference
-      console.log('[api4com-webhook] Unhandled event type:', { 
+      console.log('[api4com-webhook] ⚠️ Unhandled event type:', { 
         eventType, 
         normalizedEvent,
         callId,
-        body 
       });
     }
 
@@ -338,7 +378,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('[api4com-webhook] Error:', error);
+    console.error('[api4com-webhook] ❌ Error:', error);
     // Return 200 to avoid webhook retries
     return new Response(
       JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }),

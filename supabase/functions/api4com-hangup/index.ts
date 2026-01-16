@@ -26,6 +26,21 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // First, get current call log status to determine correct final status
+    let currentStatus = 'dialing';
+    if (call_log_id) {
+      const { data: callLog } = await supabase
+        .from('call_logs')
+        .select('status, answered_at')
+        .eq('id', call_log_id)
+        .maybeSingle();
+      
+      if (callLog) {
+        currentStatus = callLog.status;
+        console.log('[api4com-hangup] Current call status:', currentStatus, '| answered_at:', callLog.answered_at);
+      }
+    }
+
     // Get API4Com settings
     console.log('[api4com-hangup] Buscando configurações...');
     const { data: settings, error: settingsError } = await supabase
@@ -56,19 +71,35 @@ serve(async (req) => {
       data: api4comData 
     });
 
-    // Update call log regardless of API response (user wants to close)
+    // Update call log with correct status based on whether the call was answered
     if (call_log_id) {
+      // Determine the correct status:
+      // - If call was answered, mark as "completed_manual" (user manually hung up after talking)
+      // - If call was still dialing/ringing, mark as "cancelled" (call never connected)
+      let finalStatus = 'cancelled';
+      let hangupCause = 'user_hangup';
+      
+      if (currentStatus === 'answered') {
+        finalStatus = 'completed_manual';
+        hangupCause = 'user_hangup_after_answer';
+        console.log('[api4com-hangup] 📞 Call was answered - marking as completed_manual');
+      } else {
+        console.log('[api4com-hangup] ❌ Call was not answered (status:', currentStatus, ') - marking as cancelled');
+      }
+
       const { error: updateError } = await supabase
         .from('call_logs')
         .update({ 
-          status: 'cancelled',
+          status: finalStatus,
           ended_at: new Date().toISOString(),
-          hangup_cause: 'user_hangup'
+          hangup_cause: hangupCause
         })
         .eq('id', call_log_id);
 
       if (updateError) {
         console.error('[api4com-hangup] Erro ao atualizar log:', updateError);
+      } else {
+        console.log('[api4com-hangup] ✅ Call log updated to:', finalStatus);
       }
     }
 
