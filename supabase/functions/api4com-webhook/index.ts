@@ -54,12 +54,7 @@ serve(async (req) => {
     // Extract URL for query parameter auth
     const url = new URL(req.url);
     
-    // Try multiple authentication methods:
-    // 1. Header variations (x-api4com-key, x-api-key, etc.)
-    // 2. Query parameters (?key=, ?api_key=, ?token=)
-    // 3. Authorization Bearer header
-    // 4. Basic Auth (extract password)
-    
+    // Try multiple authentication methods
     let providedKey: string | null = null;
     let authMethod = 'none';
     
@@ -98,7 +93,6 @@ serve(async (req) => {
           providedKey = authHeader.substring(7);
           authMethod = 'bearer';
         } else if (authHeader.startsWith('Basic ')) {
-          // Decode Basic auth and use password as key
           try {
             const decoded = atob(authHeader.substring(6));
             const [, password] = decoded.split(':');
@@ -113,11 +107,10 @@ serve(async (req) => {
       }
     }
     
-    // Apply trim to both keys to avoid accidental whitespace issues
+    // Apply trim to both keys
     const trimmedProvidedKey = providedKey?.trim() || '';
     const trimmedWebhookKey = webhookKey.trim();
     
-    // Log diagnostic info (fingerprints only, never the actual keys)
     console.log('[api4com-webhook] 🔑 Auth check:', {
       authMethod,
       providedKeyFingerprint: getKeyFingerprint(providedKey || ''),
@@ -127,13 +120,6 @@ serve(async (req) => {
     
     if (!trimmedProvidedKey || trimmedProvidedKey !== trimmedWebhookKey) {
       console.error('[api4com-webhook] ❌ Unauthorized: Key mismatch or missing');
-      console.error('[api4com-webhook] Debug:', { 
-        authMethod, 
-        providedKeyExists: !!providedKey,
-        keyMatch: trimmedProvidedKey === trimmedWebhookKey,
-        providedLength: trimmedProvidedKey.length,
-        expectedLength: trimmedWebhookKey.length,
-      });
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -144,134 +130,168 @@ serve(async (req) => {
 
     const body = await req.json();
     
-    console.log('[api4com-webhook] 📥 Received webhook:', JSON.stringify(body, null, 2));
+    // Log complete payload for debugging
+    console.log('[api4com-webhook] 📦 Full payload:', JSON.stringify(body, (key, value) => {
+      if (['token', 'secret', 'password', 'key'].includes(key.toLowerCase())) {
+        return '[REDACTED]';
+      }
+      return value;
+    }).substring(0, 2000));
 
-    // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Normalize event type - API4Com uses eventType field
-    const eventType = (body.eventType || body.event || body.type || body.Event || body.status || 'unknown').toLowerCase();
+    // Parse webhook event - try multiple common field names for compatibility
+    const eventType = body.eventType || body.event_type || body.event || body.type || body.action || body.Event || '';
+    const callId = body.id || body.callId || body.call_id || body.uniqueid || body.uuid || 
+                   body.callUuid || body.call_uuid || body.linkedid || body.Id || '';
+    const extension = body.extension || body.ext || body.from || body.caller || body.source || 
+                      body.caller_id || body.callerId || body.Extension || '';
     
-    // Extract call ID - API4Com uses 'id' field
-    const callId = body.id || body.call_id || body.uniqueid || body.channel_id || 
-                   body.CallId || body.callId || body.linkedid;
+    // Normalize destination phone number
+    let destination = body.destination || body.to || body.called || body.callee || 
+                      body.dest || body.destination_number || body.Destination || '';
+    if (destination) {
+      destination = destination.replace(/[^\d+]/g, '');
+      if (destination.length >= 10 && !destination.startsWith('+')) {
+        destination = '+' + (destination.startsWith('55') ? '' : '55') + destination;
+      }
+    }
     
-    // Extract metadata for alternative lookup
-    const metadata = body.metadata || {};
-    const metaContactId = metadata.contactId;
-    const metaConversationId = metadata.conversationId;
+    // Extract duration
+    const duration = parseInt(body.duration || body.billsec || body.talk_time || body.talkTime || 
+                     body.duration_seconds || body.billable_duration || body.Duration || '0', 10);
     
-    // Extract additional fields
-    const extension = body.caller || body.extension || body.Extension || body.channel || body.caller_id_num;
-    const destination = body.called || body.destination || body.phone || body.called_number || body.Destination;
+    // Extract recording URL
+    const recordUrl = body.recordUrl || body.recording_url || body.recordingUrl || 
+                      body.recording || body.record_url || body.media_url || 
+                      body.RecordUrl || body.RecordingUrl || null;
     
-    console.log('[api4com-webhook] 🔍 Processing event:', { 
-      eventType, 
-      callId, 
-      extension, 
+    // Extract hangup cause
+    const hangupCause = body.cause || body.hangup_cause || body.hangupCause || 
+                        body.disconnect_reason || body.reason || body.Cause || 
+                        body.disposition || '';
+    
+    // Extract answered time
+    const answeredAt = body.answered_at || body.answeredAt || body.answer_time || 
+                       body.connect_time || body.AnsweredAt || null;
+    
+    // Extract metadata
+    const metadata = body.metadata || body.meta || body.custom || body.customData || {};
+    const contactId = metadata.contactId || metadata.contact_id || body.contactId || body.contact_id || '';
+    const conversationId = metadata.conversationId || metadata.conversation_id || body.conversationId || body.conversation_id || '';
+
+    console.log('[api4com-webhook] 📊 Parsed event:', {
+      eventType,
+      callId,
+      extension,
       destination,
-      metaContactId,
-      metaConversationId,
+      duration,
+      recordUrl: recordUrl ? `[${recordUrl.length} chars]` : null,
+      hangupCause,
+      answeredAt,
+      contactId: contactId || 'none',
+      conversationId: conversationId || 'none',
     });
 
-    // Map various event types to our status
-    const eventMapping: Record<string, string> = {
-      // Hangup events
-      'channel-hangup': 'hangup',
-      'hangup': 'hangup',
-      'call-ended': 'hangup',
-      'callended': 'hangup',
-      'end': 'hangup',
-      'disconnected': 'hangup',
-      // Answer events
-      'channel-answer': 'answered',
-      'answer': 'answered',
-      'answered': 'answered',
-      'connected': 'answered',
-      'bridge': 'answered',
-      // Ringing events
-      'channel-ringing': 'ringing',
-      'ringing': 'ringing',
-      'ring': 'ringing',
-      'alerting': 'ringing',
-      // Dialing events
-      'dial': 'dialing',
-      'dialing': 'dialing',
-      'originate': 'dialing',
-      'progress': 'dialing',
-    };
+    // Map event type to normalized status
+    let normalizedEvent = '';
+    const eventLower = eventType.toLowerCase();
+    
+    if (['hangup', 'ended', 'completed', 'terminated', 'disconnect', 'disconnected', 'finish', 'finished', 'end'].includes(eventLower)) {
+      normalizedEvent = 'hangup';
+    } else if (['answered', 'answer', 'connected', 'connect', 'in-progress', 'talking', 'active'].includes(eventLower)) {
+      normalizedEvent = 'answered';
+    } else if (['ringing', 'ring', 'alerting', 'alert'].includes(eventLower)) {
+      normalizedEvent = 'ringing';
+    } else if (['dialing', 'dial', 'initiated', 'initiating', 'queued', 'pending', 'starting'].includes(eventLower)) {
+      normalizedEvent = 'dialing';
+    } else if (['no-answer', 'no_answer', 'noanswer', 'timeout', 'unanswered'].includes(eventLower)) {
+      normalizedEvent = 'no_answer';
+    } else if (['busy', 'rejected', 'declined'].includes(eventLower)) {
+      normalizedEvent = 'busy';
+    } else if (['failed', 'error', 'invalid', 'failure'].includes(eventLower)) {
+      normalizedEvent = 'failed';
+    } else if (['cancelled', 'canceled', 'aborted', 'cancel'].includes(eventLower)) {
+      normalizedEvent = 'cancelled';
+    } else {
+      console.log('[api4com-webhook] ⚠️ Unknown event type:', eventType);
+      normalizedEvent = eventLower;
+    }
 
-    const normalizedEvent = eventMapping[eventType] || eventType;
-
-    // Helper function to find call log by callId or by metadata
-    async function findCallLog() {
+    // Helper to find call log by multiple criteria
+    const findCallLog = async () => {
       // First try by api4com_call_id
       if (callId) {
         const { data } = await supabase
           .from('call_logs')
-          .select('id, api4com_call_id, phone_number, status, answered_at')
+          .select('*')
           .eq('api4com_call_id', callId)
-          .maybeSingle();
-        
-        if (data) {
-          console.log('[api4com-webhook] Found call log by api4com_call_id:', data.id, 'status:', data.status);
-          return data;
-        }
-      }
-
-      // Fallback: find by metadata (contactId + conversationId)
-      // Include 'cancelled' and 'timeout' because client might have updated before webhook arrives
-      if (metaContactId && metaConversationId) {
-        const { data } = await supabase
-          .from('call_logs')
-          .select('id, api4com_call_id, phone_number, status, answered_at')
-          .eq('contact_id', metaContactId)
-          .eq('conversation_id', metaConversationId)
-          .in('status', ['dialing', 'ringing', 'answered', 'cancelled', 'timeout', 'completed_manual'])
           .order('started_at', { ascending: false })
           .limit(1)
           .maybeSingle();
         
         if (data) {
-          console.log('[api4com-webhook] Found call log by metadata fallback:', data.id, 'status:', data.status);
+          console.log('[api4com-webhook] ✅ Found call log by api4com_call_id:', data.id);
           return data;
         }
       }
 
-      // Second fallback: find by phone number if destination is available
+      // Try by metadata
+      if (contactId || conversationId) {
+        let query = supabase.from('call_logs').select('*');
+        
+        if (contactId) query = query.eq('contact_id', contactId);
+        if (conversationId) query = query.eq('conversation_id', conversationId);
+        
+        const { data } = await query.order('started_at', { ascending: false }).limit(1).maybeSingle();
+        
+        if (data) {
+          console.log('[api4com-webhook] ✅ Found call log by metadata:', data.id);
+          // Update api4com_call_id if we have it
+          if (callId && !data.api4com_call_id) {
+            await supabase.from('call_logs').update({ api4com_call_id: callId }).eq('id', data.id);
+          }
+          return data;
+        }
+      }
+
+      // Try by phone number - most recent active call
       if (destination) {
-        const normalizedDestination = destination.replace(/\D/g, '');
-        console.log('[api4com-webhook] Trying phone number fallback with:', normalizedDestination);
-        
+        const phoneVariations = [
+          destination,
+          destination.replace(/^\+55/, ''),
+          destination.replace(/^\+/, ''),
+          `+${destination}`,
+          `+55${destination.replace(/^\+55/, '')}`,
+        ].filter(Boolean);
+
         const { data } = await supabase
           .from('call_logs')
-          .select('id, api4com_call_id, phone_number, status, answered_at')
-          .or(`phone_number.eq.${normalizedDestination},phone_number.ilike.%${normalizedDestination.slice(-9)}`)
-          .in('status', ['dialing', 'ringing', 'answered', 'cancelled', 'timeout', 'completed_manual'])
+          .select('*')
+          .in('phone_number', phoneVariations)
+          .in('status', ['dialing', 'ringing', 'answered'])
           .order('started_at', { ascending: false })
           .limit(1)
           .maybeSingle();
         
         if (data) {
-          console.log('[api4com-webhook] Found call log by phone number fallback:', data.id, 'status:', data.status);
+          console.log('[api4com-webhook] ✅ Found call log by phone number:', data.id);
+          if (callId && !data.api4com_call_id) {
+            await supabase.from('call_logs').update({ api4com_call_id: callId }).eq('id', data.id);
+          }
           return data;
         }
       }
 
-      console.log('[api4com-webhook] ⚠️ No matching call log found for:', { callId, metaContactId, metaConversationId, destination });
+      console.log('[api4com-webhook] ⚠️ No call log found for:', { callId, contactId, conversationId, destination });
       return null;
-    }
+    };
 
+    // Process based on event type
     if (normalizedEvent === 'hangup') {
-      // Call ended - update call log
-      const duration = parseInt(body.duration || body.billsec || body.call_duration || '0', 10);
-      const hangupCause = body.hangupCause || body.hangup_cause || body.cause || body.disposition || 'normal';
-      const recordUrl = body.recordUrl || body.record_url || body.recording_url || body.recordingurl || null;
-      const answeredAt = body.answered_at || body.answer_time || null;
-
-      // Determine final status based on hangup cause
+      // Determine final status
       let status = 'completed';
       const hangupCauseLower = hangupCause.toLowerCase();
       
@@ -291,7 +311,6 @@ serve(async (req) => {
       const callLog = await findCallLog();
       
       if (callLog) {
-        // Log the correction if we're fixing a client-side status
         if (callLog.status === 'cancelled' || callLog.status === 'timeout' || callLog.status === 'completed_manual') {
           console.log('[api4com-webhook] 🔧 Correcting client-side status:', callLog.status, '→', status);
         }
@@ -322,15 +341,13 @@ serve(async (req) => {
             previousStatus: callLog.status,
             newStatus: status, 
             duration, 
-            hangupCause, 
             hasRecording: !!recordUrl 
           });
           
-          // Trigger auto-transcription in background if there's a recording
+          // Trigger transcription if recording exists
           if (recordUrl) {
-            console.log('[api4com-webhook] 🎙️ Triggering auto-transcription for call:', callLog.id);
+            console.log('[api4com-webhook] 🎙️ Triggering transcription');
             
-            // Background task for transcription
             const transcribeInBackground = async () => {
               try {
                 const response = await fetch(`${supabaseUrl}/functions/v1/transcribe-call-recording`, {
@@ -343,23 +360,20 @@ serve(async (req) => {
                 });
                 
                 if (response.ok) {
-                  console.log('[api4com-webhook] ✅ Auto-transcription completed for call:', callLog.id);
+                  console.log('[api4com-webhook] ✅ Transcription triggered');
                 } else {
-                  const errorText = await response.text();
-                  console.error('[api4com-webhook] ❌ Auto-transcription failed:', errorText);
+                  console.error('[api4com-webhook] ❌ Transcription failed:', await response.text());
                 }
               } catch (error) {
-                console.error('[api4com-webhook] ❌ Auto-transcription error:', error);
+                console.error('[api4com-webhook] ❌ Transcription error:', error);
               }
             };
             
-            // Use EdgeRuntime.waitUntil for background processing
-            // @ts-ignore - EdgeRuntime is available in Supabase Edge Functions
+            // @ts-ignore
             if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
               // @ts-ignore
               EdgeRuntime.waitUntil(transcribeInBackground());
             } else {
-              // Fallback: fire and forget
               transcribeInBackground();
             }
           }
@@ -402,9 +416,7 @@ serve(async (req) => {
           })
           .eq('id', callLog.id);
         
-        if (updateError) {
-          console.error('[api4com-webhook] ❌ Ringing update error:', updateError);
-        } else {
+        if (!updateError) {
           console.log('[api4com-webhook] ✅ Call marked as ringing:', callLog.id);
         }
       }
@@ -427,13 +439,23 @@ serve(async (req) => {
           console.log('[api4com-webhook] ✅ Call marked as dialing:', callLog.id);
         }
       }
+    } else if (['no_answer', 'busy', 'failed', 'cancelled'].includes(normalizedEvent)) {
+      const callLog = await findCallLog();
+      
+      if (callLog) {
+        await supabase
+          .from('call_logs')
+          .update({
+            status: normalizedEvent,
+            ended_at: new Date().toISOString(),
+            hangup_cause: hangupCause || normalizedEvent,
+          })
+          .eq('id', callLog.id);
+        
+        console.log('[api4com-webhook] ✅ Call marked as', normalizedEvent, ':', callLog.id);
+      }
     } else {
-      // Log unhandled event types for future reference
-      console.log('[api4com-webhook] ⚠️ Unhandled event type:', { 
-        eventType, 
-        normalizedEvent,
-        callId,
-      });
+      console.log('[api4com-webhook] ⚠️ Unhandled event:', { eventType, normalizedEvent, callId });
     }
 
     return new Response(
@@ -448,7 +470,6 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[api4com-webhook] ❌ Error:', error);
-    // Return 200 to avoid webhook retries
     return new Response(
       JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
