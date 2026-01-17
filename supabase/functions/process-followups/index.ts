@@ -51,6 +51,14 @@ interface EligibleConversation {
   contact_phone: string;
   current_agent_id: string | null;
   pipeline_id: string | null;
+  client_memory?: {
+    lead_profile?: {
+      qualification_score?: number;
+      lead_stage?: string;
+      products_discussed?: string[];
+      interests?: string[];
+    };
+  };
 }
 
 // Check if WhatsApp 24h window is still open
@@ -126,7 +134,8 @@ async function generateAIMessage(
   agentSlug?: string,
   lastMessageSent?: string,
   conversationContext?: string,
-  unansweredQuestion?: string
+  unansweredQuestion?: string,
+  isQualified: boolean = true
 ): Promise<string> {
   try {
     // Se o agente é Íris (transportadores) e o prompt é schedule_call, usar prompt específico
@@ -142,7 +151,13 @@ async function generateAIMessage(
       console.log(`[process-followups] Overriding prompt to unanswered_question due to pending question`);
     }
     
-    console.log(`[process-followups] Generating AI message, prompt: ${finalPromptType}, context: ${conversationContext ? 'yes' : 'no'}, unanswered: ${unansweredQuestion ? 'yes' : 'no'}`);
+    // Se lead não qualificado, forçar re_qualify
+    if (!isQualified && promptType !== 'last_chance') {
+      finalPromptType = 're_qualify';
+      console.log(`[process-followups] Lead NOT qualified - forcing re_qualify prompt`);
+    }
+    
+    console.log(`[process-followups] Generating AI message, prompt: ${finalPromptType}, context: ${conversationContext ? 'yes' : 'no'}, unanswered: ${unansweredQuestion ? 'yes' : 'no'}, qualified: ${isQualified}`);
     
     const response = await fetch(`${supabaseUrl}/functions/v1/generate-followup-message`, {
       method: 'POST',
@@ -162,6 +177,7 @@ async function generateAIMessage(
         last_message_sent: lastMessageSent,
         conversation_context: conversationContext,
         unanswered_question: unansweredQuestion,
+        is_qualified: isQualified,
       }),
     });
 
@@ -237,6 +253,53 @@ function analyzeConversationHistory(messages: Array<{ content: string | null; fr
   return { hasUserResponse, unansweredQuestion, conversationContext, lastNinaMessage };
 }
 
+// Check if lead is qualified based on client_memory and conversation history
+function isLeadQualified(
+  clientMemory: EligibleConversation['client_memory'],
+  recentMessages: Array<{ content: string | null; from_type: string }>
+): boolean {
+  const leadProfile = clientMemory?.lead_profile;
+  
+  // Critério 1: Score de qualificação >= 40
+  if (leadProfile?.qualification_score && leadProfile.qualification_score >= 40) {
+    console.log(`[process-followups] Lead qualified: score >= 40 (${leadProfile.qualification_score})`);
+    return true;
+  }
+  
+  // Critério 2: Estágio 'qualified' ou 'engaged'
+  if (leadProfile?.lead_stage && ['qualified', 'engaged'].includes(leadProfile.lead_stage)) {
+    console.log(`[process-followups] Lead qualified: stage is ${leadProfile.lead_stage}`);
+    return true;
+  }
+  
+  // Critério 3: Produtos discutidos preenchido
+  if (leadProfile?.products_discussed && leadProfile.products_discussed.length > 0) {
+    console.log(`[process-followups] Lead qualified: has products_discussed`);
+    return true;
+  }
+  
+  // Critério 4: Usuário mencionou produto nas mensagens
+  const userMessages = recentMessages
+    .filter(m => m.from_type === 'user')
+    .map(m => m.content?.toLowerCase() || '');
+  
+  const productKeywords = [
+    'carga', 'frota', 'caminhão', 'caminhao', 'transporte', 'rctr', 
+    'veículo', 'veiculo', 'seguro', 'cotação', 'cotacao', 'proposta',
+    'cobertura', 'apólice', 'apolice', 'sinistro', 'roubo', 'acidente',
+    'proteção', 'proteger', 'assegurar', 'viagem', 'carreta', 'truck'
+  ];
+  
+  const userContent = userMessages.join(' ');
+  if (productKeywords.some(kw => userContent.includes(kw))) {
+    console.log(`[process-followups] Lead qualified: user mentioned product keywords`);
+    return true;
+  }
+  
+  console.log(`[process-followups] Lead NOT qualified: no criteria met`);
+  return false;
+}
+
 // Get message for current attempt from sequence
 async function getMessageForAttempt(
   automation: Automation,
@@ -250,9 +313,21 @@ async function getMessageForAttempt(
   agentSlug?: string,
   lastMessageSent?: string,
   conversationContext?: string,
-  unansweredQuestion?: string
+  unansweredQuestion?: string,
+  isQualified: boolean = true // NEW: Lead qualification status
 ): Promise<string> {
   const sequence = automation.messages_sequence;
+  
+  // If lead is NOT qualified, force re_qualify prompt
+  if (!isQualified) {
+    console.log(`[process-followups] Lead NOT qualified - forcing re_qualify prompt`);
+    return await generateAIMessage(
+      supabaseUrl, supabaseServiceKey, conv,
+      're_qualify', attemptNumber, hoursWaiting,
+      agentName, agentSpecialty, agentSlug, lastMessageSent,
+      conversationContext, unansweredQuestion, isQualified
+    );
+  }
   
   // If no sequence configured, use the legacy free_text_message
   if (!sequence || sequence.length === 0) {
@@ -277,7 +352,7 @@ async function getMessageForAttempt(
           supabaseUrl, supabaseServiceKey, conv,
           lastItem.ai_prompt_type, attemptNumber, hoursWaiting,
           agentName, agentSpecialty, agentSlug, lastMessageSent,
-          conversationContext, unansweredQuestion
+          conversationContext, unansweredQuestion, isQualified
         );
       }
       return replaceVariables(lastItem.content || automation.free_text_message || 'Oi {nome}!', conv);
@@ -289,12 +364,12 @@ async function getMessageForAttempt(
 
   // Generate AI message or use manual content
   if (sequenceItem.type === 'ai_generated' && sequenceItem.ai_prompt_type) {
-    console.log(`[process-followups] Generating AI message for attempt ${attemptNumber}, type: ${sequenceItem.ai_prompt_type}, has context: ${!!conversationContext}, has unanswered: ${!!unansweredQuestion}`);
+    console.log(`[process-followups] Generating AI message for attempt ${attemptNumber}, type: ${sequenceItem.ai_prompt_type}, has context: ${!!conversationContext}, has unanswered: ${!!unansweredQuestion}, qualified: ${isQualified}`);
     return await generateAIMessage(
       supabaseUrl, supabaseServiceKey, conv,
       sequenceItem.ai_prompt_type, attemptNumber, hoursWaiting,
       agentName, agentSpecialty, agentSlug, lastMessageSent,
-      conversationContext, unansweredQuestion
+      conversationContext, unansweredQuestion, isQualified
     );
   }
 
@@ -427,7 +502,8 @@ serve(async (req) => {
             name,
             call_name,
             company,
-            phone_number
+            phone_number,
+            client_memory
           )
         `)
         .eq('is_active', true)
@@ -480,6 +556,7 @@ serve(async (req) => {
           contact_phone: (convRaw.contacts as any)?.phone_number,
           current_agent_id: convRaw.current_agent_id,
           pipeline_id: null,
+          client_memory: (convRaw.contacts as any)?.client_memory,
         };
 
         // Check if deal is lost (skip if lost_at is set or in "Perdido" stage)
@@ -541,6 +618,10 @@ serve(async (req) => {
         if (conversationAnalysis.unansweredQuestion) {
           console.log(`[process-followups] Detected unanswered question in ${conv.id}: "${conversationAnalysis.unansweredQuestion.substring(0, 60)}..."`);
         }
+        
+        // Check if lead is qualified
+        const leadIsQualified = isLeadQualified(conv.client_memory, recentMessages || []);
+        console.log(`[process-followups] Lead qualification status for ${conv.id}: ${leadIsQualified ? 'QUALIFIED' : 'NOT QUALIFIED'}`);
 
         // Check previous follow-ups from this automation (now including message_content for anti-repetition)
         const { data: previousLogs, error: logsError } = await supabase
@@ -604,7 +685,8 @@ serve(async (req) => {
               agentInfo?.slug,
               lastMessageSent,
               conversationAnalysis.conversationContext,
-              conversationAnalysis.unansweredQuestion || undefined
+              conversationAnalysis.unansweredQuestion || undefined,
+              leadIsQualified // NEW: Pass qualification status
             );
             
             console.log(`[process-followups] Sending message (attempt ${attemptNumber}) to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
