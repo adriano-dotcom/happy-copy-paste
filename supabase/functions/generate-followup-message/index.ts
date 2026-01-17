@@ -15,8 +15,37 @@ interface GenerateMessageRequest {
   hours_waiting?: number;
   attempt_number: number;
   conversation_context?: string;
-  unanswered_question?: string; // NEW: The specific question that went unanswered
+  unanswered_question?: string; // The specific question that went unanswered
   last_message_sent?: string; // Anti-repetition
+  is_qualified?: boolean; // Lead qualification status
+}
+
+// Terms forbidden for unqualified leads (they imply a quote is ready when it's not)
+const FORBIDDEN_TERMS_FOR_UNQUALIFIED = [
+  'cotação', 'cotacao', 'orçamento', 'orcamento', 'proposta', 
+  'valor', 'preço', 'preco', 'quase pronta', 'pronto', 'pronta',
+  'confirmar dados', 'confirmar os dados', 'finalizar'
+];
+
+// Sanitize message for unqualified leads - prevent forbidden terms
+function sanitizeMessageForUnqualifiedLead(
+  message: string, 
+  isQualified: boolean,
+  contactName: string,
+  lastMessage?: string
+): string {
+  if (isQualified) return message;
+  
+  const lowerMessage = message.toLowerCase();
+  const containsForbidden = FORBIDDEN_TERMS_FOR_UNQUALIFIED.some(term => lowerMessage.includes(term));
+  
+  if (containsForbidden) {
+    console.log(`[generate-followup-message] Message contains forbidden terms for unqualified lead: "${message.substring(0, 60)}..."`);
+    console.log(`[generate-followup-message] Falling back to re-qualification message`);
+    return getVariedFallback(contactName, lastMessage);
+  }
+  
+  return message;
 }
 
 const PROMPT_TEMPLATES: Record<string, string> = {
@@ -167,8 +196,11 @@ serve(async (req) => {
       attempt_number,
       conversation_context,
       unanswered_question,
-      last_message_sent
+      last_message_sent,
+      is_qualified = true // Default to qualified for backward compatibility
     } = body;
+    
+    console.log(`[generate-followup-message] Lead qualification status: ${is_qualified ? 'QUALIFIED' : 'NOT QUALIFIED'}`);
 
     console.log(`[generate-followup-message] Generating ${prompt_type} message for ${contact_name}, attempt ${attempt_number}`);
     if (unanswered_question) {
@@ -284,13 +316,17 @@ Responda APENAS com a mensagem, sem explicações ou aspas.`;
       console.log('[generate-followup-message] Generated message too similar to last, using fallback');
       generatedMessage = getVariedFallback(contact_name, last_message_sent);
     }
+    
+    // Sanitize message for unqualified leads - prevent forbidden terms
+    generatedMessage = sanitizeMessageForUnqualifiedLead(generatedMessage, is_qualified, contact_name, last_message_sent);
 
     console.log(`[generate-followup-message] Generated: "${generatedMessage.substring(0, 50)}..."`);
 
     return new Response(JSON.stringify({ 
       message: generatedMessage,
       prompt_type,
-      attempt_number 
+      attempt_number,
+      is_qualified
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
