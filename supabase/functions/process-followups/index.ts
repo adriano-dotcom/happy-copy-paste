@@ -104,22 +104,41 @@ interface LeadQualification {
 }
 
 // Mensagens de fallback POR PRODUTO - evita perguntas redundantes
+// Inclui perguntas de qualificação específicas para transportadores
 const FALLBACK_MESSAGES_BY_PRODUCT: Record<string, string[]> = {
   carga: [
+    // Perguntas de qualificação de perfil do transportador
+    "{nome}, você é transportador de carga própria ou presta serviço pra terceiros?",
+    "Oi {nome}! Você é transportador pessoa jurídica ou autônomo? Assim te passo as melhores opções!",
+    "{nome}, me confirma: você tem transportadora ou é motorista autônomo?",
+    "E aí {nome}! Você faz transporte próprio ou terceirizado? Me conta pra eu montar a proposta certa!",
+    "{nome}, você é transportador ou embarcador da carga? Me fala que te ajudo melhor!",
+    // Perguntas de aprofundamento sobre a operação
     "{nome}, sobre o seguro de carga: qual tipo de mercadoria você transporta?",
-    "Oi {nome}! Sobre seu seguro de carga, você faz transporte próprio ou terceirizado?",
+    "Oi {nome}! Pra sua carga, você precisa de cobertura pra qual rota principal?",
     "{nome}, posso te ligar pra falar sobre as coberturas de carga? 5 min!",
-    "E aí {nome}! Pra gente avançar no seguro de carga, me conta a rota principal que você faz!",
-    "{nome}, qual o valor médio das cargas que você transporta? Assim te passo as melhores opções!",
+    "E aí {nome}! Pra gente avançar, me conta o valor médio das cargas que você transporta!",
+    "{nome}, qual seu maior receio: roubo, acidente ou avaria da carga?",
+    "{nome}, quantas viagens você faz por mês em média? Assim calculo a melhor cobertura!",
   ],
   veiculo: [
+    // Perguntas de qualificação de perfil
+    "{nome}, o veículo é seu próprio ou da empresa?",
+    "Oi {nome}! Você usa o veículo pra trabalho ou uso pessoal?",
+    "{nome}, é veículo próprio ou financiado? Me conta que te passo as opções certas!",
+    // Perguntas de aprofundamento
     "{nome}, sobre o seguro do veículo: é pra uso profissional ou pessoal?",
     "Oi {nome}! Pra te passar as opções certas, me conta qual o modelo do veículo!",
     "{nome}, posso te ligar pra falar sobre as coberturas do seu veículo? 5 min!",
     "E aí {nome}! O veículo é pra transporte de carga ou de passageiros?",
-    "{nome}, o veículo é seu ou de frota? Me conta que te ajudo!",
+    "{nome}, qual ano do veículo? Assim te passo valores mais precisos!",
   ],
   frota: [
+    // Perguntas de qualificação de perfil
+    "{nome}, a frota é própria da empresa ou terceirizada?",
+    "Oi {nome}! Vocês são transportadora ou usam os veículos pra operação própria?",
+    "{nome}, os motoristas são CLT ou agregados? Isso influencia na cobertura!",
+    // Perguntas de aprofundamento
     "{nome}, sobre o seguro de frota: quantos veículos você tem hoje?",
     "Oi {nome}! Sua frota é só de caminhões ou tem outros tipos de veículo?",
     "{nome}, posso te ligar pra falar sobre as opções de seguro pra frota? 5 min!",

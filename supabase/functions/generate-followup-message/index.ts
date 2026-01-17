@@ -292,18 +292,47 @@ Reformule a pergunta de forma mais direta ou ofereça opções.`;
     }
     
     // Add product context if detected - CRITICAL to avoid redundant questions
+    // Perguntas de qualificação específicas por produto
+    const qualificationQuestions: Record<string, string[]> = {
+      carga: [
+        'Você é transportador pessoa jurídica ou autônomo?',
+        'Faz transporte próprio ou terceirizado (presta serviço)?',
+        'Você é transportador ou embarcador da carga?',
+        'Qual tipo de mercadoria você transporta?',
+        'Qual a rota principal que você faz?',
+        'Qual o valor médio das cargas transportadas?',
+        'Quantas viagens você faz por mês?',
+      ],
+      veiculo: [
+        'O veículo é próprio ou financiado?',
+        'É pra uso profissional ou pessoal?',
+        'Qual o modelo e ano do veículo?',
+        'Você usa pra transporte de carga ou passageiros?',
+      ],
+      frota: [
+        'A frota é própria ou terceirizada?',
+        'Quantos veículos tem na frota?',
+        'Os motoristas são CLT ou agregados?',
+        'Quais tipos de veículos (caminhões, vans, etc)?',
+        'Que tipo de transporte a frota faz?',
+      ],
+    };
+
     let productContext = '';
     if (detected_product) {
       const productLabels: Record<string, string> = {
-        carga: 'SEGURO DE CARGA',
+        carga: 'SEGURO DE CARGA / TRANSPORTADOR',
         veiculo: 'SEGURO DE VEÍCULO',
         frota: 'SEGURO DE FROTA'
       };
+      const questions = qualificationQuestions[detected_product] || [];
       productContext = `
 ⚠️ PRODUTO JÁ IDENTIFICADO: O cliente demonstrou interesse em ${productLabels[detected_product] || detected_product.toUpperCase()}.
 - NUNCA pergunte "carga ou veículo?" - ele já disse o que quer!
-- Faça perguntas de APROFUNDAMENTO sobre ${detected_product} (ex: tipo de mercadoria, rota, valor, quantidade)
-- Seja ESPECÍFICO sobre ${detected_product}`;
+- Escolha UMA destas perguntas de qualificação para fazer:
+  ${questions.map(q => `• ${q}`).join('\n  ')}
+- Seja ESPECÍFICO e NATURAL sobre ${detected_product}
+- Se for CARGA, pergunte sobre o PERFIL: pessoa jurídica ou autônomo, próprio ou terceirizado`;
     }
 
     const userPrompt = `Gere uma mensagem de follow-up para:
