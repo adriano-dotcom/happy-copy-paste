@@ -8,6 +8,21 @@ const corsHeaders = {
 // Detected product type
 type DetectedProduct = 'carga' | 'veiculo' | 'frota' | null;
 
+// Interface para rastrear quais tópicos de qualificação já foram respondidos
+interface AnsweredQualifications {
+  tipo_empresa: boolean;        // pessoa jurídica / autônomo
+  tipo_operacao: boolean;       // próprio / terceirizado
+  perfil_transportador: boolean; // transportador / embarcador
+  tipo_mercadoria: boolean;     // qual mercadoria transporta
+  rota_principal: boolean;      // qual rota faz
+  valor_carga: boolean;         // valor médio da carga
+  qtd_viagens: boolean;         // quantas viagens por mês
+  uso_veiculo: boolean;         // profissional / pessoal
+  modelo_veiculo: boolean;      // modelo e ano
+  qtd_frota: boolean;           // quantos veículos na frota
+  tipo_frota: boolean;          // tipos de veículos
+}
+
 interface GenerateMessageRequest {
   contact_name: string;
   contact_company?: string;
@@ -21,7 +36,8 @@ interface GenerateMessageRequest {
   unanswered_question?: string;
   last_message_sent?: string;
   is_qualified?: boolean;
-  detected_product?: DetectedProduct; // NEW: Detected product
+  detected_product?: DetectedProduct;
+  answered_qualifications?: AnsweredQualifications; // NOVO: tópicos já respondidos
 }
 
 // Terms forbidden for unqualified leads (they imply a quote is ready when it's not)
@@ -37,7 +53,8 @@ function sanitizeMessageForUnqualifiedLead(
   isQualified: boolean,
   contactName: string,
   lastMessage?: string,
-  detectedProduct?: DetectedProduct
+  detectedProduct?: DetectedProduct,
+  answeredQualifications?: AnsweredQualifications
 ): string {
   if (isQualified) return message;
   
@@ -47,7 +64,7 @@ function sanitizeMessageForUnqualifiedLead(
   if (containsForbidden) {
     console.log(`[generate-followup-message] Message contains forbidden terms for unqualified lead: "${message.substring(0, 60)}..."`);
     console.log(`[generate-followup-message] Falling back to re-qualification message`);
-    return getVariedFallback(contactName, lastMessage, detectedProduct);
+    return getVariedFallback(contactName, lastMessage, detectedProduct, answeredQualifications);
   }
   
   return message;
@@ -166,15 +183,86 @@ const FALLBACK_MESSAGES_BY_PRODUCT: Record<string, string[]> = {
   ],
 };
 
+// Mapeamento de perguntas para tópicos de qualificação
+const QUESTION_TOPIC_MAP: Record<string, keyof AnsweredQualifications> = {
+  'pessoa jurídica ou autônomo': 'tipo_empresa',
+  'jurídica ou autônomo': 'tipo_empresa',
+  'pj ou autônomo': 'tipo_empresa',
+  'transportadora ou motorista': 'tipo_empresa',
+  'tem transportadora': 'tipo_empresa',
+  'próprio ou terceirizado': 'tipo_operacao',
+  'transporte próprio': 'tipo_operacao',
+  'presta serviço': 'tipo_operacao',
+  'carga própria': 'tipo_operacao',
+  'transportador ou embarcador': 'perfil_transportador',
+  'dono da carga': 'perfil_transportador',
+  'qual tipo de mercadoria': 'tipo_mercadoria',
+  'o que você transporta': 'tipo_mercadoria',
+  'que tipo de carga': 'tipo_mercadoria',
+  'rota principal': 'rota_principal',
+  'qual rota': 'rota_principal',
+  'pra onde você': 'rota_principal',
+  'valor médio': 'valor_carga',
+  'quanto vale': 'valor_carga',
+  'quantas viagens': 'qtd_viagens',
+  'viagens por mês': 'qtd_viagens',
+  'uso profissional ou pessoal': 'uso_veiculo',
+  'trabalho ou lazer': 'uso_veiculo',
+  'modelo e ano': 'modelo_veiculo',
+  'qual o modelo': 'modelo_veiculo',
+  'ano do veículo': 'modelo_veiculo',
+  'quantos veículos': 'qtd_frota',
+  'tamanho da frota': 'qtd_frota',
+  'tipos de veículo': 'tipo_frota',
+  'só caminhões': 'tipo_frota',
+};
+
+// Filtra perguntas que já foram respondidas
+function filterUnansweredQuestions(
+  questions: string[],
+  answeredQualifications?: AnsweredQualifications
+): string[] {
+  if (!answeredQualifications) return questions;
+  
+  return questions.filter(question => {
+    const questionLower = question.toLowerCase();
+    
+    for (const [trigger, topic] of Object.entries(QUESTION_TOPIC_MAP)) {
+      if (questionLower.includes(trigger) && answeredQualifications[topic]) {
+        console.log(`[generate-followup-message] Filtering out answered question: "${question.substring(0, 40)}..." (topic: ${topic})`);
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
 // Get a fallback message that's different from the last one, using product-specific messages
 function getVariedFallback(
   contactName: string, 
   lastMessage?: string,
-  detectedProduct?: DetectedProduct
+  detectedProduct?: DetectedProduct,
+  answeredQualifications?: AnsweredQualifications
 ): string {
   const name = contactName || 'Cliente';
   const productKey = detectedProduct || 'generico';
-  const messages = FALLBACK_MESSAGES_BY_PRODUCT[productKey] || FALLBACK_MESSAGES_BY_PRODUCT.generico;
+  let messages = FALLBACK_MESSAGES_BY_PRODUCT[productKey] || FALLBACK_MESSAGES_BY_PRODUCT.generico;
+  
+  // Filtrar mensagens de perguntas já respondidas
+  messages = filterUnansweredQuestions(messages, answeredQualifications);
+  
+  // Se todas as perguntas foram respondidas, usar mensagens de avanço
+  if (messages.length === 0) {
+    console.log(`[generate-followup-message] All qualification questions answered - using advancement messages`);
+    messages = [
+      `${name}, já tenho tudo que preciso! Posso te ligar em 5 min pra fechar?`,
+      `Oi ${name}! Com essas informações, consigo te passar as melhores opções. Me manda um horário que te ligo!`,
+      `${name}, perfeito! Que tal uma ligação rápida pra eu te apresentar a proposta?`,
+    ];
+    // Retornar diretamente sem substituição (já tem o nome)
+    const randomIndex = Math.floor(Math.random() * messages.length);
+    return messages[randomIndex];
+  }
   
   let attempts = 0;
   let fallback: string;
@@ -234,8 +322,17 @@ serve(async (req) => {
       unanswered_question,
       last_message_sent,
       is_qualified = true,
-      detected_product = null // NEW: Detected product
+      detected_product = null,
+      answered_qualifications = null // NOVO: tópicos já respondidos
     } = body;
+    
+    // Log answered qualifications
+    if (answered_qualifications) {
+      const answeredTopics = Object.entries(answered_qualifications)
+        .filter(([_, v]) => v)
+        .map(([k]) => k);
+      console.log(`[generate-followup-message] Already answered topics: ${answeredTopics.join(', ') || 'none'}`);
+    }
     
     console.log(`[generate-followup-message] Lead: qualified=${is_qualified ? 'YES' : 'NO'}, product=${detected_product || 'none'}`);
 
@@ -325,14 +422,28 @@ Reformule a pergunta de forma mais direta ou ofereça opções.`;
         veiculo: 'SEGURO DE VEÍCULO',
         frota: 'SEGURO DE FROTA'
       };
-      const questions = qualificationQuestions[detected_product] || [];
-      productContext = `
+      const allQuestions = qualificationQuestions[detected_product] || [];
+      
+      // Filtrar perguntas já respondidas
+      const availableQuestions = filterUnansweredQuestions(allQuestions, answered_qualifications || undefined);
+      
+      console.log(`[generate-followup-message] Available questions: ${availableQuestions.length}/${allQuestions.length}`);
+      
+      if (availableQuestions.length === 0) {
+        productContext = `
+⚠️ QUALIFICAÇÃO COMPLETA: O cliente já respondeu TODAS as perguntas de qualificação para ${productLabels[detected_product]}!
+- NÃO faça mais perguntas sobre perfil, tipo de empresa, mercadoria, etc.
+- Agora você deve AVANÇAR: sugira agendar uma LIGAÇÃO ou enviar uma PROPOSTA
+- Seja direto: "Posso te ligar em 5 min?" ou "Qual o melhor horário pra eu te ligar?"`;
+      } else {
+        productContext = `
 ⚠️ PRODUTO JÁ IDENTIFICADO: O cliente demonstrou interesse em ${productLabels[detected_product] || detected_product.toUpperCase()}.
 - NUNCA pergunte "carga ou veículo?" - ele já disse o que quer!
-- Escolha UMA destas perguntas de qualificação para fazer:
-  ${questions.map(q => `• ${q}`).join('\n  ')}
+- Escolha UMA destas perguntas (as outras JÁ FORAM RESPONDIDAS):
+  ${availableQuestions.map(q => `• ${q}`).join('\n  ')}
 - Seja ESPECÍFICO e NATURAL sobre ${detected_product}
-- Se for CARGA, pergunte sobre o PERFIL: pessoa jurídica ou autônomo, próprio ou terceirizado`;
+- NUNCA repita perguntas que ele já respondeu!`;
+      }
     }
 
     const userPrompt = `Gere uma mensagem de follow-up para:
@@ -369,7 +480,7 @@ Responda APENAS com a mensagem, sem explicações ou aspas.`;
       console.error('[generate-followup-message] AI Gateway error:', response.status, errorText);
       
       if (response.status === 429 || response.status === 402) {
-        const fallbackMessage = getVariedFallback(contact_name, last_message_sent, detected_product);
+        const fallbackMessage = getVariedFallback(contact_name, last_message_sent, detected_product, answered_qualifications || undefined);
         return new Response(JSON.stringify({ 
           error: response.status === 429 ? 'Rate limit exceeded' : 'Créditos insuficientes',
           message: fallbackMessage,
@@ -396,11 +507,11 @@ Responda APENAS com a mensagem, sem explicações ou aspas.`;
     // Check if message is too similar to last one - regenerate if needed
     if (last_message_sent && messagesTooSimilar(generatedMessage, last_message_sent)) {
       console.log('[generate-followup-message] Generated message too similar to last, using fallback');
-      generatedMessage = getVariedFallback(contact_name, last_message_sent, detected_product);
+      generatedMessage = getVariedFallback(contact_name, last_message_sent, detected_product, answered_qualifications || undefined);
     }
     
     // Sanitize message for unqualified leads - prevent forbidden terms
-    generatedMessage = sanitizeMessageForUnqualifiedLead(generatedMessage, is_qualified, contact_name, last_message_sent, detected_product);
+    generatedMessage = sanitizeMessageForUnqualifiedLead(generatedMessage, is_qualified, contact_name, last_message_sent, detected_product, answered_qualifications || undefined);
 
     console.log(`[generate-followup-message] Generated: "${generatedMessage.substring(0, 50)}..."`);
 
