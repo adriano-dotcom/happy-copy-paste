@@ -94,30 +94,70 @@ function replaceVariables(message: string, conv: EligibleConversation): string {
     .replace(/{company}/gi, company);
 }
 
-// Mensagens de fallback focadas em RE-QUALIFICAÇÃO (para leads não qualificados)
-const FALLBACK_MESSAGES = [
-  "{nome}, me conta: qual tipo de seguro você está buscando? Posso te ajudar!",
-  "Oi {nome}! Você precisa de seguro pra transporte, frota ou carga? Me fala que te ajudo!",
-  "{nome}, posso te ligar rapidinho pra entender sua necessidade? 5 min!",
-  "E aí {nome}! Ainda precisa de ajuda com seguro? Me conta o que você busca!",
-  "{nome}, tô aqui pra te ajudar! É pra proteger veículo, carga ou os dois?",
-  "Oi {nome}! Me conta o que você transporta que te passo as opções de seguro!",
-  "{nome}, quer que eu te ligue pra explicar as coberturas disponíveis?",
-  "E aí {nome}! Qual sua principal preocupação: proteger a carga ou o veículo?",
-];
+// Detected product type from conversation
+type DetectedProduct = 'carga' | 'veiculo' | 'frota' | null;
 
-// Get a varied fallback that's different from the last message
-function getVariedFallback(contactName: string, lastMessage?: string): string {
+// Lead qualification analysis result
+interface LeadQualification {
+  isQualified: boolean;
+  detectedProduct: DetectedProduct;
+}
+
+// Mensagens de fallback POR PRODUTO - evita perguntas redundantes
+const FALLBACK_MESSAGES_BY_PRODUCT: Record<string, string[]> = {
+  carga: [
+    "{nome}, sobre o seguro de carga: qual tipo de mercadoria você transporta?",
+    "Oi {nome}! Sobre seu seguro de carga, você faz transporte próprio ou terceirizado?",
+    "{nome}, posso te ligar pra falar sobre as coberturas de carga? 5 min!",
+    "E aí {nome}! Pra gente avançar no seguro de carga, me conta a rota principal que você faz!",
+    "{nome}, qual o valor médio das cargas que você transporta? Assim te passo as melhores opções!",
+  ],
+  veiculo: [
+    "{nome}, sobre o seguro do veículo: é pra uso profissional ou pessoal?",
+    "Oi {nome}! Pra te passar as opções certas, me conta qual o modelo do veículo!",
+    "{nome}, posso te ligar pra falar sobre as coberturas do seu veículo? 5 min!",
+    "E aí {nome}! O veículo é pra transporte de carga ou de passageiros?",
+    "{nome}, o veículo é seu ou de frota? Me conta que te ajudo!",
+  ],
+  frota: [
+    "{nome}, sobre o seguro de frota: quantos veículos você tem hoje?",
+    "Oi {nome}! Sua frota é só de caminhões ou tem outros tipos de veículo?",
+    "{nome}, posso te ligar pra falar sobre as opções de seguro pra frota? 5 min!",
+    "E aí {nome}! Os veículos da frota fazem que tipo de transporte?",
+    "{nome}, pra montar a melhor proposta, me conta quantos veículos são na frota!",
+  ],
+  generico: [
+    "{nome}, me conta: qual tipo de seguro você está buscando? Posso te ajudar!",
+    "Oi {nome}! Você precisa de seguro pra transporte, frota ou carga? Me fala que te ajudo!",
+    "{nome}, posso te ligar rapidinho pra entender sua necessidade? 5 min!",
+    "E aí {nome}! Ainda precisa de ajuda com seguro? Me conta o que você busca!",
+    "{nome}, tô aqui pra te ajudar! É pra proteger veículo, carga ou os dois?",
+    "Oi {nome}! Me conta o que você transporta que te passo as opções de seguro!",
+    "{nome}, quer que eu te ligue pra explicar as coberturas disponíveis?",
+    "E aí {nome}! Qual sua principal preocupação: proteger a carga ou o veículo?",
+  ],
+};
+
+// Get a varied fallback that's different from the last message, using product-specific messages
+function getVariedFallback(
+  contactName: string, 
+  lastMessage?: string,
+  detectedProduct?: DetectedProduct
+): string {
   const name = contactName || 'Cliente';
+  const productKey = detectedProduct || 'generico';
+  const messages = FALLBACK_MESSAGES_BY_PRODUCT[productKey] || FALLBACK_MESSAGES_BY_PRODUCT.generico;
+  
   let attempts = 0;
   let fallback: string;
   
   do {
-    const randomIndex = Math.floor(Math.random() * FALLBACK_MESSAGES.length);
-    fallback = FALLBACK_MESSAGES[randomIndex].replace('{nome}', name);
+    const randomIndex = Math.floor(Math.random() * messages.length);
+    fallback = messages[randomIndex].replace('{nome}', name);
     attempts++;
   } while (lastMessage && fallback === lastMessage && attempts < 10);
   
+  console.log(`[process-followups] Fallback selected for product "${productKey}": "${fallback.substring(0, 50)}..."`);
   return fallback;
 }
 
@@ -135,7 +175,8 @@ async function generateAIMessage(
   lastMessageSent?: string,
   conversationContext?: string,
   unansweredQuestion?: string,
-  isQualified: boolean = true
+  isQualified: boolean = true,
+  detectedProduct?: DetectedProduct
 ): Promise<string> {
   try {
     // Se o agente é Íris (transportadores) e o prompt é schedule_call, usar prompt específico
@@ -157,7 +198,7 @@ async function generateAIMessage(
       console.log(`[process-followups] Lead NOT qualified - forcing re_qualify prompt`);
     }
     
-    console.log(`[process-followups] Generating AI message, prompt: ${finalPromptType}, context: ${conversationContext ? 'yes' : 'no'}, unanswered: ${unansweredQuestion ? 'yes' : 'no'}, qualified: ${isQualified}`);
+    console.log(`[process-followups] Generating AI message, prompt: ${finalPromptType}, context: ${conversationContext ? 'yes' : 'no'}, unanswered: ${unansweredQuestion ? 'yes' : 'no'}, qualified: ${isQualified}, product: ${detectedProduct || 'none'}`);
     
     const response = await fetch(`${supabaseUrl}/functions/v1/generate-followup-message`, {
       method: 'POST',
@@ -178,19 +219,20 @@ async function generateAIMessage(
         conversation_context: conversationContext,
         unanswered_question: unansweredQuestion,
         is_qualified: isQualified,
+        detected_product: detectedProduct, // NEW: Pass detected product
       }),
     });
 
     if (!response.ok) {
       console.error('[process-followups] AI message generation failed:', response.status);
-      return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent);
+      return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct);
     }
 
     const data = await response.json();
-    return data.message || getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent);
+    return data.message || getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct);
   } catch (error) {
     console.error('[process-followups] Error generating AI message:', error);
-    return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent);
+    return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct);
   }
 }
 
@@ -253,51 +295,94 @@ function analyzeConversationHistory(messages: Array<{ content: string | null; fr
   return { hasUserResponse, unansweredQuestion, conversationContext, lastNinaMessage };
 }
 
-// Check if lead is qualified based on client_memory and conversation history
-function isLeadQualified(
+// Analyze lead qualification AND detect specific product mentioned
+function analyzeLeadQualification(
   clientMemory: EligibleConversation['client_memory'],
   recentMessages: Array<{ content: string | null; from_type: string }>
-): boolean {
+): LeadQualification {
   const leadProfile = clientMemory?.lead_profile;
+  
+  // Keywords for product detection - more specific to less specific
+  const CARGA_KEYWORDS = [
+    'carga', 'cargas', 'transportadora', 'transportador', 'frete', 'rctr', 
+    'mercadoria', 'mercadorias', 'embarque', 'roubo de carga', 'desvio de carga'
+  ];
+  const VEICULO_KEYWORDS = [
+    'veículo', 'veiculo', 'carro', 'moto', 'motocicleta', 'automóvel', 'automovel'
+  ];
+  const FROTA_KEYWORDS = [
+    'frota', 'frotas', 'vários veículos', 'varios veiculos', 'veículos da empresa'
+  ];
+  const CAMINHAO_KEYWORDS = [
+    'caminhão', 'caminhao', 'carreta', 'truck', 'bi-truck', 'bitruck', 'cavalo mecânico'
+  ];
+  
+  // Build user content for analysis
+  const userMessages = recentMessages
+    .filter(m => m.from_type === 'user')
+    .map(m => m.content?.toLowerCase() || '');
+  const userContent = userMessages.join(' ');
+  
+  // Function to detect product from text
+  const detectProduct = (text: string): DetectedProduct => {
+    // Priority: carga > frota > veículo (carga is more specific)
+    if (CARGA_KEYWORDS.some(kw => text.includes(kw))) {
+      return 'carga';
+    }
+    if (FROTA_KEYWORDS.some(kw => text.includes(kw))) {
+      return 'frota';
+    }
+    // Caminhão alone usually means carga (for this business)
+    if (CAMINHAO_KEYWORDS.some(kw => text.includes(kw))) {
+      return 'carga'; // Default caminhão to carga for transporters
+    }
+    if (VEICULO_KEYWORDS.some(kw => text.includes(kw))) {
+      return 'veiculo';
+    }
+    return null;
+  };
   
   // Critério 1: Score de qualificação >= 40
   if (leadProfile?.qualification_score && leadProfile.qualification_score >= 40) {
     console.log(`[process-followups] Lead qualified: score >= 40 (${leadProfile.qualification_score})`);
-    return true;
+    const product = leadProfile?.products_discussed?.[0] as DetectedProduct || detectProduct(userContent);
+    return { isQualified: true, detectedProduct: product };
   }
   
   // Critério 2: Estágio 'qualified' ou 'engaged'
   if (leadProfile?.lead_stage && ['qualified', 'engaged'].includes(leadProfile.lead_stage)) {
     console.log(`[process-followups] Lead qualified: stage is ${leadProfile.lead_stage}`);
-    return true;
+    const product = leadProfile?.products_discussed?.[0] as DetectedProduct || detectProduct(userContent);
+    return { isQualified: true, detectedProduct: product };
   }
   
   // Critério 3: Produtos discutidos preenchido
   if (leadProfile?.products_discussed && leadProfile.products_discussed.length > 0) {
     console.log(`[process-followups] Lead qualified: has products_discussed`);
-    return true;
+    const product = leadProfile.products_discussed[0] as DetectedProduct;
+    return { isQualified: true, detectedProduct: product };
   }
   
   // Critério 4: Usuário mencionou produto nas mensagens
-  const userMessages = recentMessages
-    .filter(m => m.from_type === 'user')
-    .map(m => m.content?.toLowerCase() || '');
+  const detectedProduct = detectProduct(userContent);
+  if (detectedProduct) {
+    console.log(`[process-followups] Lead qualified: user mentioned ${detectedProduct} keywords`);
+    return { isQualified: true, detectedProduct };
+  }
   
-  const productKeywords = [
-    'carga', 'frota', 'caminhão', 'caminhao', 'transporte', 'rctr', 
-    'veículo', 'veiculo', 'seguro', 'cotação', 'cotacao', 'proposta',
-    'cobertura', 'apólice', 'apolice', 'sinistro', 'roubo', 'acidente',
-    'proteção', 'proteger', 'assegurar', 'viagem', 'carreta', 'truck'
+  // Check for general insurance keywords that indicate some interest but no specific product
+  const generalKeywords = [
+    'seguro', 'cotação', 'cotacao', 'proposta', 'cobertura', 
+    'apólice', 'apolice', 'sinistro', 'acidente', 'proteção', 'proteger'
   ];
   
-  const userContent = userMessages.join(' ');
-  if (productKeywords.some(kw => userContent.includes(kw))) {
-    console.log(`[process-followups] Lead qualified: user mentioned product keywords`);
-    return true;
+  if (generalKeywords.some(kw => userContent.includes(kw))) {
+    console.log(`[process-followups] Lead qualified with general keywords but no specific product`);
+    return { isQualified: true, detectedProduct: null };
   }
   
   console.log(`[process-followups] Lead NOT qualified: no criteria met`);
-  return false;
+  return { isQualified: false, detectedProduct: null };
 }
 
 // Get message for current attempt from sequence
@@ -314,7 +399,8 @@ async function getMessageForAttempt(
   lastMessageSent?: string,
   conversationContext?: string,
   unansweredQuestion?: string,
-  isQualified: boolean = true // NEW: Lead qualification status
+  isQualified: boolean = true,
+  detectedProduct?: DetectedProduct // NEW: Detected product
 ): Promise<string> {
   const sequence = automation.messages_sequence;
   
@@ -325,7 +411,7 @@ async function getMessageForAttempt(
       supabaseUrl, supabaseServiceKey, conv,
       're_qualify', attemptNumber, hoursWaiting,
       agentName, agentSpecialty, agentSlug, lastMessageSent,
-      conversationContext, unansweredQuestion, isQualified
+      conversationContext, unansweredQuestion, isQualified, detectedProduct
     );
   }
   
@@ -352,7 +438,7 @@ async function getMessageForAttempt(
           supabaseUrl, supabaseServiceKey, conv,
           lastItem.ai_prompt_type, attemptNumber, hoursWaiting,
           agentName, agentSpecialty, agentSlug, lastMessageSent,
-          conversationContext, unansweredQuestion, isQualified
+          conversationContext, unansweredQuestion, isQualified, detectedProduct
         );
       }
       return replaceVariables(lastItem.content || automation.free_text_message || 'Oi {nome}!', conv);
@@ -364,12 +450,12 @@ async function getMessageForAttempt(
 
   // Generate AI message or use manual content
   if (sequenceItem.type === 'ai_generated' && sequenceItem.ai_prompt_type) {
-    console.log(`[process-followups] Generating AI message for attempt ${attemptNumber}, type: ${sequenceItem.ai_prompt_type}, has context: ${!!conversationContext}, has unanswered: ${!!unansweredQuestion}, qualified: ${isQualified}`);
+    console.log(`[process-followups] Generating AI message for attempt ${attemptNumber}, type: ${sequenceItem.ai_prompt_type}, has context: ${!!conversationContext}, has unanswered: ${!!unansweredQuestion}, qualified: ${isQualified}, product: ${detectedProduct || 'none'}`);
     return await generateAIMessage(
       supabaseUrl, supabaseServiceKey, conv,
       sequenceItem.ai_prompt_type, attemptNumber, hoursWaiting,
       agentName, agentSpecialty, agentSlug, lastMessageSent,
-      conversationContext, unansweredQuestion, isQualified
+      conversationContext, unansweredQuestion, isQualified, detectedProduct
     );
   }
 
@@ -619,9 +705,11 @@ serve(async (req) => {
           console.log(`[process-followups] Detected unanswered question in ${conv.id}: "${conversationAnalysis.unansweredQuestion.substring(0, 60)}..."`);
         }
         
-        // Check if lead is qualified
-        const leadIsQualified = isLeadQualified(conv.client_memory, recentMessages || []);
-        console.log(`[process-followups] Lead qualification status for ${conv.id}: ${leadIsQualified ? 'QUALIFIED' : 'NOT QUALIFIED'}`);
+        // Analyze lead qualification and detect product
+        const leadQualification = analyzeLeadQualification(conv.client_memory, recentMessages || []);
+        const leadIsQualified = leadQualification.isQualified;
+        const detectedProduct = leadQualification.detectedProduct;
+        console.log(`[process-followups] Lead qualification for ${conv.id}: qualified=${leadIsQualified}, product=${detectedProduct || 'none'}`);
 
         // Check previous follow-ups from this automation (now including message_content for anti-repetition)
         const { data: previousLogs, error: logsError } = await supabase
@@ -686,7 +774,8 @@ serve(async (req) => {
               lastMessageSent,
               conversationAnalysis.conversationContext,
               conversationAnalysis.unansweredQuestion || undefined,
-              leadIsQualified // NEW: Pass qualification status
+              leadIsQualified,
+              detectedProduct // NEW: Pass detected product
             );
             
             console.log(`[process-followups] Sending message (attempt ${attemptNumber}) to ${conv.id}: "${messageContent.substring(0, 50)}..."`);

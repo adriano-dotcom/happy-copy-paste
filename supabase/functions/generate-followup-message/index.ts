@@ -5,6 +5,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Detected product type
+type DetectedProduct = 'carga' | 'veiculo' | 'frota' | null;
+
 interface GenerateMessageRequest {
   contact_name: string;
   contact_company?: string;
@@ -15,9 +18,10 @@ interface GenerateMessageRequest {
   hours_waiting?: number;
   attempt_number: number;
   conversation_context?: string;
-  unanswered_question?: string; // The specific question that went unanswered
-  last_message_sent?: string; // Anti-repetition
-  is_qualified?: boolean; // Lead qualification status
+  unanswered_question?: string;
+  last_message_sent?: string;
+  is_qualified?: boolean;
+  detected_product?: DetectedProduct; // NEW: Detected product
 }
 
 // Terms forbidden for unqualified leads (they imply a quote is ready when it's not)
@@ -32,7 +36,8 @@ function sanitizeMessageForUnqualifiedLead(
   message: string, 
   isQualified: boolean,
   contactName: string,
-  lastMessage?: string
+  lastMessage?: string,
+  detectedProduct?: DetectedProduct
 ): string {
   if (isQualified) return message;
   
@@ -42,7 +47,7 @@ function sanitizeMessageForUnqualifiedLead(
   if (containsForbidden) {
     console.log(`[generate-followup-message] Message contains forbidden terms for unqualified lead: "${message.substring(0, 60)}..."`);
     console.log(`[generate-followup-message] Falling back to re-qualification message`);
-    return getVariedFallback(contactName, lastMessage);
+    return getVariedFallback(contactName, lastMessage, detectedProduct);
   }
   
   return message;
@@ -126,30 +131,61 @@ Retome de forma mais DIRETA e oferecendo valor:
 - Não seja genérico - use o contexto da conversa`,
 };
 
-// Mensagens de fallback focadas em RE-QUALIFICAÇÃO (para leads não qualificados)
-const FALLBACK_MESSAGES = [
-  "{nome}, me conta: qual tipo de seguro você está buscando? Posso te ajudar!",
-  "Oi {nome}! Você precisa de seguro pra transporte, frota ou carga? Me fala que te ajudo!",
-  "{nome}, posso te ligar rapidinho pra entender sua necessidade? 5 min!",
-  "E aí {nome}! Ainda precisa de ajuda com seguro? Me conta o que você busca!",
-  "{nome}, tô aqui pra te ajudar! É pra proteger veículo, carga ou os dois?",
-  "Oi {nome}! Me conta o que você transporta que te passo as opções de seguro!",
-  "{nome}, quer que eu te ligue pra explicar as coberturas disponíveis?",
-  "E aí {nome}! Qual sua principal preocupação: proteger a carga ou o veículo?",
-];
+// Fallback messages by product - avoids redundant questions
+const FALLBACK_MESSAGES_BY_PRODUCT: Record<string, string[]> = {
+  carga: [
+    "{nome}, sobre o seguro de carga: qual tipo de mercadoria você transporta?",
+    "Oi {nome}! Sobre seu seguro de carga, você faz transporte próprio ou terceirizado?",
+    "{nome}, posso te ligar pra falar sobre as coberturas de carga? 5 min!",
+    "E aí {nome}! Pra gente avançar no seguro de carga, me conta a rota principal que você faz!",
+    "{nome}, qual o valor médio das cargas que você transporta? Assim te passo as melhores opções!",
+  ],
+  veiculo: [
+    "{nome}, sobre o seguro do veículo: é pra uso profissional ou pessoal?",
+    "Oi {nome}! Pra te passar as opções certas, me conta qual o modelo do veículo!",
+    "{nome}, posso te ligar pra falar sobre as coberturas do seu veículo? 5 min!",
+    "E aí {nome}! O veículo é pra transporte de carga ou de passageiros?",
+    "{nome}, o veículo é seu ou de frota? Me conta que te ajudo!",
+  ],
+  frota: [
+    "{nome}, sobre o seguro de frota: quantos veículos você tem hoje?",
+    "Oi {nome}! Sua frota é só de caminhões ou tem outros tipos de veículo?",
+    "{nome}, posso te ligar pra falar sobre as opções de seguro pra frota? 5 min!",
+    "E aí {nome}! Os veículos da frota fazem que tipo de transporte?",
+    "{nome}, pra montar a melhor proposta, me conta quantos veículos são na frota!",
+  ],
+  generico: [
+    "{nome}, me conta: qual tipo de seguro você está buscando? Posso te ajudar!",
+    "Oi {nome}! Você precisa de seguro pra transporte, frota ou carga? Me fala que te ajudo!",
+    "{nome}, posso te ligar rapidinho pra entender sua necessidade? 5 min!",
+    "E aí {nome}! Ainda precisa de ajuda com seguro? Me conta o que você busca!",
+    "{nome}, tô aqui pra te ajudar! É pra proteger veículo, carga ou os dois?",
+    "Oi {nome}! Me conta o que você transporta que te passo as opções de seguro!",
+    "{nome}, quer que eu te ligue pra explicar as coberturas disponíveis?",
+    "E aí {nome}! Qual sua principal preocupação: proteger a carga ou o veículo?",
+  ],
+};
 
-// Get a fallback message that's different from the last one
-function getVariedFallback(contactName: string, lastMessage?: string): string {
+// Get a fallback message that's different from the last one, using product-specific messages
+function getVariedFallback(
+  contactName: string, 
+  lastMessage?: string,
+  detectedProduct?: DetectedProduct
+): string {
   const name = contactName || 'Cliente';
+  const productKey = detectedProduct || 'generico';
+  const messages = FALLBACK_MESSAGES_BY_PRODUCT[productKey] || FALLBACK_MESSAGES_BY_PRODUCT.generico;
+  
   let attempts = 0;
   let fallback: string;
   
   do {
-    const randomIndex = Math.floor(Math.random() * FALLBACK_MESSAGES.length);
-    fallback = FALLBACK_MESSAGES[randomIndex].replace('{nome}', name);
+    const randomIndex = Math.floor(Math.random() * messages.length);
+    fallback = messages[randomIndex].replace('{nome}', name);
     attempts++;
   } while (lastMessage && fallback === lastMessage && attempts < 10);
   
+  console.log(`[generate-followup-message] Fallback for product "${productKey}": "${fallback.substring(0, 50)}..."`);
   return fallback;
 }
 
@@ -197,10 +233,11 @@ serve(async (req) => {
       conversation_context,
       unanswered_question,
       last_message_sent,
-      is_qualified = true // Default to qualified for backward compatibility
+      is_qualified = true,
+      detected_product = null // NEW: Detected product
     } = body;
     
-    console.log(`[generate-followup-message] Lead qualification status: ${is_qualified ? 'QUALIFIED' : 'NOT QUALIFIED'}`);
+    console.log(`[generate-followup-message] Lead: qualified=${is_qualified ? 'YES' : 'NO'}, product=${detected_product || 'none'}`);
 
     console.log(`[generate-followup-message] Generating ${prompt_type} message for ${contact_name}, attempt ${attempt_number}`);
     if (unanswered_question) {
@@ -253,6 +290,21 @@ Reformule a pergunta de forma mais direta ou ofereça opções.`;
     } else if (conversation_context) {
       contextSection = `\n- Contexto da conversa: ${conversation_context}`;
     }
+    
+    // Add product context if detected - CRITICAL to avoid redundant questions
+    let productContext = '';
+    if (detected_product) {
+      const productLabels: Record<string, string> = {
+        carga: 'SEGURO DE CARGA',
+        veiculo: 'SEGURO DE VEÍCULO',
+        frota: 'SEGURO DE FROTA'
+      };
+      productContext = `
+⚠️ PRODUTO JÁ IDENTIFICADO: O cliente demonstrou interesse em ${productLabels[detected_product] || detected_product.toUpperCase()}.
+- NUNCA pergunte "carga ou veículo?" - ele já disse o que quer!
+- Faça perguntas de APROFUNDAMENTO sobre ${detected_product} (ex: tipo de mercadoria, rota, valor, quantidade)
+- Seja ESPECÍFICO sobre ${detected_product}`;
+    }
 
     const userPrompt = `Gere uma mensagem de follow-up para:
 - Nome do cliente: ${contact_name}
@@ -260,6 +312,7 @@ ${contact_company ? `- Empresa: ${contact_company}` : ''}
 ${hours_waiting ? `- Horas sem resposta: ${Math.round(hours_waiting)}h` : ''}
 - Tentativa número: ${attempt_number}
 ${contextSection}
+${productContext}
 ${last_message_sent ? `\n❌ NÃO repita nem pareça com: "${last_message_sent}"` : ''}
 
 Responda APENAS com a mensagem, sem explicações ou aspas.`;
@@ -287,7 +340,7 @@ Responda APENAS com a mensagem, sem explicações ou aspas.`;
       console.error('[generate-followup-message] AI Gateway error:', response.status, errorText);
       
       if (response.status === 429 || response.status === 402) {
-        const fallbackMessage = getVariedFallback(contact_name, last_message_sent);
+        const fallbackMessage = getVariedFallback(contact_name, last_message_sent, detected_product);
         return new Response(JSON.stringify({ 
           error: response.status === 429 ? 'Rate limit exceeded' : 'Créditos insuficientes',
           message: fallbackMessage,
@@ -314,11 +367,11 @@ Responda APENAS com a mensagem, sem explicações ou aspas.`;
     // Check if message is too similar to last one - regenerate if needed
     if (last_message_sent && messagesTooSimilar(generatedMessage, last_message_sent)) {
       console.log('[generate-followup-message] Generated message too similar to last, using fallback');
-      generatedMessage = getVariedFallback(contact_name, last_message_sent);
+      generatedMessage = getVariedFallback(contact_name, last_message_sent, detected_product);
     }
     
     // Sanitize message for unqualified leads - prevent forbidden terms
-    generatedMessage = sanitizeMessageForUnqualifiedLead(generatedMessage, is_qualified, contact_name, last_message_sent);
+    generatedMessage = sanitizeMessageForUnqualifiedLead(generatedMessage, is_qualified, contact_name, last_message_sent, detected_product);
 
     console.log(`[generate-followup-message] Generated: "${generatedMessage.substring(0, 50)}..."`);
 
@@ -337,13 +390,15 @@ Responda APENAS com a mensagem, sem explicações ou aspas.`;
     // Parse body again for fallback
     let contactName = 'Cliente';
     let lastMessage: string | undefined;
+    let product: DetectedProduct = null;
     try {
       const body = await req.clone().json();
       contactName = body.contact_name || 'Cliente';
       lastMessage = body.last_message_sent;
+      product = body.detected_product || null;
     } catch {}
     
-    const fallbackMessage = getVariedFallback(contactName, lastMessage);
+    const fallbackMessage = getVariedFallback(contactName, lastMessage, product);
     
     return new Response(JSON.stringify({ 
       message: fallbackMessage,
