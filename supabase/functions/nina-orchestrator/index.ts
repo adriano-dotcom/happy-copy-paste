@@ -143,29 +143,116 @@ function toBRT(date: Date | string): string {
 }
 // ===== END TIMEZONE UTILITY =====
 
-// ===== JOB SEEKER DETECTION =====
-const JOB_SEEKER_KEYWORDS = [
-  'vaga', 'vagas', 'emprego', 'trabalho', 'trabalhar',
-  'contratar', 'contratando', 'contratação', 'contratacao',
-  'curriculo', 'currículo', 'cv',
-  'ajudante', 'operador', 'auxiliar',
-  'oportunidade de trabalho', 'oportunidade de emprego',
-  'preciso de emprego', 'procuro emprego', 'procuro trabalho',
-  'estou desempregado', 'estou procurando emprego',
-  'vocês estão contratando', 'estão contratando', 'estao contratando',
-  'tem vaga', 'há vaga', 'ha vaga', 'há vagas', 'ha vagas',
-  'posso mandar meu currículo', 'posso enviar meu currículo',
-  'manda o currículo', 'enviar currículo', 'deixar currículo'
+// ===== AUTOMATIC DISQUALIFICATION SYSTEM =====
+interface DisqualificationCategory {
+  key: string;
+  tag: string;
+  keywords: string[];
+  response: string | null;
+  pauseConversation: boolean;
+  reason: string;
+  emoji: string;
+}
+
+const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
+  {
+    key: 'job_seeker',
+    tag: 'emprego',
+    keywords: [
+      'vaga', 'vagas', 'emprego', 'trabalho', 'trabalhar',
+      'contratar', 'contratando', 'contratação', 'contratacao',
+      'curriculo', 'currículo', 'cv',
+      'ajudante', 'operador', 'auxiliar',
+      'oportunidade de trabalho', 'oportunidade de emprego',
+      'preciso de emprego', 'procuro emprego', 'procuro trabalho',
+      'estou desempregado', 'estou procurando emprego',
+      'vocês estão contratando', 'estão contratando', 'estao contratando',
+      'tem vaga', 'há vaga', 'ha vaga', 'há vagas', 'ha vagas',
+      'posso mandar meu currículo', 'posso enviar meu currículo',
+      'manda o currículo', 'enviar currículo', 'deixar currículo'
+    ],
+    response: 'Olá! Agradecemos seu contato. Somos uma corretora especializada em seguros de transporte e carga. No momento, não temos vagas em aberto. Desejamos sucesso na sua busca! 🙏',
+    pauseConversation: true,
+    reason: 'Procura de emprego - não é lead de seguro',
+    emoji: '💼'
+  },
+  {
+    key: 'vendor',
+    tag: 'fornecedor',
+    keywords: [
+      'gostaria de oferecer', 'tenho um produto', 'representante comercial',
+      'parceiro comercial', 'distribuidor', 'revenda', 'atacado',
+      'cotação de serviço', 'oferecer serviços', 'prestar serviço',
+      'somos empresa de', 'minha empresa oferece', 'nossa empresa oferece',
+      'vendemos', 'comercializamos', 'fornecemos', 'sou vendedor',
+      'sou representante', 'vendo sistema', 'vendo software',
+      'ofereço meus serviços', 'prestação de serviço'
+    ],
+    response: 'Olá! Agradecemos seu contato. No momento, não estamos buscando novos fornecedores ou prestadores de serviço. Caso isso mude, entraremos em contato. Obrigado! 👋',
+    pauseConversation: true,
+    reason: 'Fornecedor/prestador de serviço - não é lead de seguro',
+    emoji: '🏭'
+  },
+  {
+    key: 'partnership',
+    tag: 'parceria',
+    keywords: [
+      'parceria', 'parceiro', 'associação', 'convênio', 'colaboração',
+      'representar vocês', 'representação', 'comissão por indicação',
+      'indicação de clientes', 'troca de indicação', 'network',
+      'joint venture', 'co-branding', 'acordo comercial'
+    ],
+    response: 'Olá! Agradecemos o interesse em parceria. No momento, não estamos avaliando novas parcerias comerciais. Desejamos sucesso! 🤝',
+    pauseConversation: true,
+    reason: 'Busca parceria - não é lead de seguro',
+    emoji: '🤝'
+  },
+  {
+    key: 'wrong_number',
+    tag: 'engano',
+    keywords: [
+      'número errado', 'numero errado', 'errei o número', 'errei o numero',
+      'desculpa, engano', 'foi engano', 'liguei errado', 'mandei errado',
+      'quem é você', 'quem e voce', 'não conheço', 'nao conheco',
+      'quem está falando', 'quem esta falando', 'não te conheço',
+      'nao te conheco', 'errado o contato', 'contato errado'
+    ],
+    response: 'Olá! Parece que você entrou em contato por engano. Aqui é a Jacometo Seguros, especializada em seguros de transporte e carga. Se precisar de algo nessa área, estamos à disposição! 😊',
+    pauseConversation: true,
+    reason: 'Contato por engano - não é lead de seguro',
+    emoji: '❓'
+  },
+  {
+    key: 'spam',
+    tag: 'spam',
+    keywords: [
+      'ganhe dinheiro', 'renda extra fácil', 'trabalhe de casa ganhando',
+      'investimento garantido', 'forex', 'criptomoeda fácil',
+      'clique no link e ganhe', 'promoção especial exclusiva',
+      'você foi selecionado', 'prêmio em dinheiro', 'casino',
+      'apostas online', 'ganhos garantidos', 'duplique seu dinheiro',
+      'bitcoin grátis', 'pix de graça', 'empréstimo aprovado'
+    ],
+    response: null, // Não responde spam
+    pauseConversation: true,
+    reason: 'Spam/golpe detectado',
+    emoji: '🚫'
+  }
 ];
 
-function detectJobSeeker(messageContent: string): boolean {
+function detectDisqualificationCategory(messageContent: string): DisqualificationCategory | null {
   const content = messageContent.toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return JOB_SEEKER_KEYWORDS.some(keyword => 
-    content.includes(keyword.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
-  );
+  
+  for (const category of DISQUALIFICATION_CATEGORIES) {
+    const match = category.keywords.some(keyword => 
+      content.includes(keyword.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+    );
+    if (match) return category;
+  }
+  return null;
 }
-// ===== END JOB SEEKER DETECTION =====
+// ===== END AUTOMATIC DISQUALIFICATION SYSTEM =====
 
 function detectOutOfScopeInsurance(messageContent: string, currentAgentSlug: string | null): OutOfScopeResult {
   console.log('[Nina][OutOfScope] ========== VERIFICANDO OUT OF SCOPE ==========');
@@ -2319,83 +2406,90 @@ async function processQueueItem(
   }
   // ===== END SOFT REJECTION STEP 1 =====
 
-  // ===== JOB SEEKER DETECTION =====
-  if (message.content && detectJobSeeker(message.content)) {
-    console.log('[Nina] 💼 Job seeker detected - polite rejection');
+  // ===== AUTOMATIC DISQUALIFICATION DETECTION =====
+  if (message.content) {
+    const disqualCategory = detectDisqualificationCategory(message.content);
     
-    // Resposta educada
-    const jobSeekerResponse = 'Olá! Agradecemos seu contato. Somos uma corretora especializada em seguros de transporte e carga. No momento, não temos vagas em aberto. Desejamos sucesso na sua busca! 🙏';
-    
-    // 1. Adicionar tag "Emprego" ao contato e marcar como frio
-    const currentTags = conversation.contact?.tags || [];
-    const clientMemory = conversation.contact?.client_memory || {};
-    
-    if (!currentTags.map((t: string) => t.toLowerCase()).includes('emprego')) {
-      await supabase
-        .from('contacts')
-        .update({ 
-          tags: [...currentTags, 'emprego'],
-          client_memory: {
-            ...clientMemory,
-            lead_profile: {
-              ...(clientMemory.lead_profile || {}),
-              lead_stage: 'cold',
-              qualification_score: 0,
-              disqualification_reason: 'Procura de emprego - não é lead de seguro'
-            }
-          }
-        })
-        .eq('id', conversation.contact_id);
+    if (disqualCategory) {
+      console.log(`[Nina] ${disqualCategory.emoji} Disqualification detected: ${disqualCategory.key}`);
       
-      console.log('[Nina] 🏷️ Tag "Emprego" added, lead marked as cold');
-    }
-    
-    // 2. Calcular delay e enviar resposta
-    const delayMin = settings?.response_delay_min || 1000;
-    const delayMax = settings?.response_delay_max || 3000;
-    const delay = Math.random() * (delayMax - delayMin) + delayMin;
-    const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
-    
-    await queueTextResponse(supabase, conversation, message, jobSeekerResponse, settings, aiSettings, delay, agent);
-    
-    // 3. Marcar mensagem como processada
-    await supabase
-      .from('messages')
-      .update({ processed_by_nina: true })
-      .eq('id', message.id);
-    
-    // 4. Pausar conversa para facilitar arquivamento
-    await supabase
-      .from('conversations')
-      .update({ 
-        status: 'paused',
-        metadata: {
-          ...(conversation.metadata || {}),
-          paused_reason: 'job_seeker',
-          paused_at: new Date().toISOString()
+      // 1. Adicionar tag e marcar como frio
+      const currentTags = conversation.contact?.tags || [];
+      const clientMemory = conversation.contact?.client_memory || {};
+      
+      if (!currentTags.map((t: string) => t.toLowerCase()).includes(disqualCategory.tag)) {
+        await supabase
+          .from('contacts')
+          .update({ 
+            tags: [...currentTags, disqualCategory.tag],
+            client_memory: {
+              ...clientMemory,
+              lead_profile: {
+                ...(clientMemory.lead_profile || {}),
+                lead_stage: 'cold',
+                qualification_score: 0,
+                disqualification_reason: disqualCategory.reason
+              }
+            }
+          })
+          .eq('id', conversation.contact_id);
+        
+        console.log(`[Nina] 🏷️ Tag "${disqualCategory.tag}" added, lead marked as cold`);
+      }
+      
+      // 2. Enviar resposta (se configurada)
+      if (disqualCategory.response) {
+        const delayMin = settings?.response_delay_min || 1000;
+        const delayMax = settings?.response_delay_max || 3000;
+        const delay = Math.random() * (delayMax - delayMin) + delayMin;
+        const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+        
+        await queueTextResponse(supabase, conversation, message, disqualCategory.response, settings, aiSettings, delay, agent);
+      }
+      
+      // 3. Marcar mensagem como processada
+      await supabase
+        .from('messages')
+        .update({ processed_by_nina: true })
+        .eq('id', message.id);
+      
+      // 4. Pausar conversa (se configurado)
+      if (disqualCategory.pauseConversation) {
+        await supabase
+          .from('conversations')
+          .update({ 
+            status: 'paused',
+            metadata: {
+              ...(conversation.metadata || {}),
+              paused_reason: disqualCategory.key,
+              paused_at: new Date().toISOString()
+            }
+          })
+          .eq('id', conversation.id);
+      }
+      
+      // 5. Disparar envio da mensagem (se houver resposta)
+      if (disqualCategory.response) {
+        try {
+          const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+          fetch(senderUrl, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json', 
+              'Authorization': `Bearer ${supabaseServiceKey}` 
+            },
+            body: JSON.stringify({ triggered_by: `nina-orchestrator-${disqualCategory.key}` })
+          }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+        } catch (e) {
+          console.error('[Nina] Failed to trigger whatsapp-sender:', e);
         }
-      })
-      .eq('id', conversation.id);
-    
-    // 5. Disparar envio da mensagem
-    try {
-      const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
-      fetch(senderUrl, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Authorization': `Bearer ${supabaseServiceKey}` 
-        },
-        body: JSON.stringify({ triggered_by: 'nina-orchestrator-job-seeker' })
-      }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
-    } catch (e) {
-      console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+      }
+      
+      console.log(`[Nina] ✅ ${disqualCategory.key} handled - conversation ${disqualCategory.pauseConversation ? 'paused' : 'active'}`);
+      return;
     }
-    
-    console.log('[Nina] ✅ Job seeker handled - conversation paused for archiving');
-    return;
   }
-  // ===== END JOB SEEKER DETECTION =====
+  // ===== END AUTOMATIC DISQUALIFICATION DETECTION =====
 
   // ===== OUT OF SCOPE INSURANCE DETECTION - HANDOFF TO SOFIA =====
   // Detect when lead asks for insurance types outside transport scope
