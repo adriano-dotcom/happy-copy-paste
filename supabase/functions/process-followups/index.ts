@@ -97,6 +97,21 @@ function replaceVariables(message: string, conv: EligibleConversation): string {
 // Detected product type from conversation
 type DetectedProduct = 'carga' | 'veiculo' | 'frota' | null;
 
+// Interface para rastrear quais tópicos de qualificação já foram respondidos
+interface AnsweredQualifications {
+  tipo_empresa: boolean;        // pessoa jurídica / autônomo
+  tipo_operacao: boolean;       // próprio / terceirizado
+  perfil_transportador: boolean; // transportador / embarcador
+  tipo_mercadoria: boolean;     // qual mercadoria transporta
+  rota_principal: boolean;      // qual rota faz
+  valor_carga: boolean;         // valor médio da carga
+  qtd_viagens: boolean;         // quantas viagens por mês
+  uso_veiculo: boolean;         // profissional / pessoal
+  modelo_veiculo: boolean;      // modelo e ano
+  qtd_frota: boolean;           // quantos veículos na frota
+  tipo_frota: boolean;          // tipos de veículos
+}
+
 // Lead qualification analysis result
 interface LeadQualification {
   isQualified: boolean;
@@ -195,7 +210,8 @@ async function generateAIMessage(
   conversationContext?: string,
   unansweredQuestion?: string,
   isQualified: boolean = true,
-  detectedProduct?: DetectedProduct
+  detectedProduct?: DetectedProduct,
+  answeredQualifications?: AnsweredQualifications // NOVO: tópicos já respondidos
 ): Promise<string> {
   try {
     // Se o agente é Íris (transportadores) e o prompt é schedule_call, usar prompt específico
@@ -215,6 +231,14 @@ async function generateAIMessage(
     if (!isQualified && promptType !== 'last_chance') {
       finalPromptType = 're_qualify';
       console.log(`[process-followups] Lead NOT qualified - forcing re_qualify prompt`);
+    }
+    
+    // Log answered qualifications
+    if (answeredQualifications) {
+      const answeredTopics = Object.entries(answeredQualifications)
+        .filter(([_, v]) => v)
+        .map(([k]) => k);
+      console.log(`[process-followups] Already answered qualifications: ${answeredTopics.join(', ') || 'none'}`);
     }
     
     console.log(`[process-followups] Generating AI message, prompt: ${finalPromptType}, context: ${conversationContext ? 'yes' : 'no'}, unanswered: ${unansweredQuestion ? 'yes' : 'no'}, qualified: ${isQualified}, product: ${detectedProduct || 'none'}`);
@@ -238,7 +262,8 @@ async function generateAIMessage(
         conversation_context: conversationContext,
         unanswered_question: unansweredQuestion,
         is_qualified: isQualified,
-        detected_product: detectedProduct, // NEW: Pass detected product
+        detected_product: detectedProduct,
+        answered_qualifications: answeredQualifications, // NOVO: tópicos já respondidos
       }),
     });
 
@@ -261,12 +286,97 @@ interface ConversationAnalysis {
   unansweredQuestion: string | null;
   conversationContext: string;
   lastNinaMessage: string | null;
+  answeredQualifications: AnsweredQualifications; // NOVO: tópicos já respondidos
+}
+
+// Analisa mensagens do usuário para detectar quais tópicos de qualificação foram respondidos
+function analyzeAnsweredQualifications(
+  messages: Array<{ content: string | null; from_type: string }>
+): AnsweredQualifications {
+  const result: AnsweredQualifications = {
+    tipo_empresa: false,
+    tipo_operacao: false,
+    perfil_transportador: false,
+    tipo_mercadoria: false,
+    rota_principal: false,
+    valor_carga: false,
+    qtd_viagens: false,
+    uso_veiculo: false,
+    modelo_veiculo: false,
+    qtd_frota: false,
+    tipo_frota: false,
+  };
+  
+  // Detectores de resposta por tópico (regex patterns)
+  const detectors: Record<keyof AnsweredQualifications, RegExp[]> = {
+    tipo_empresa: [
+      /autônomo|autonomo|pj|pessoa jur[íi]dica|cnpj|mei|empresa|ltda|eireli|s\.?a\.?|sociedade/i
+    ],
+    tipo_operacao: [
+      /pr[óo]prio|terceirizado|agregado|presto servi[çc]o|presta servico|frota pr[óo]pria|carga pr[óo]pria|subcontratado/i
+    ],
+    perfil_transportador: [
+      /transportador|embarcador|dono da carga|contratante|freteiro|caminhoneiro|motorista/i
+    ],
+    tipo_mercadoria: [
+      /eletr[ôo]nico|gr[ãa]o|combust[íi]vel|alimento|carga seca|frigor[íi]fic|container|qu[íi]mico|perec[íi]vel|m[óo]veis|bebidas|a[çc]o|ferro|madeira|papel|tecido|roupa|cosm[ée]tico|medicamento|farm[áa]ceutico/i
+    ],
+    rota_principal: [
+      /s[ãa]o paulo|sp|rio|rj|minas|mg|bahia|ba|nordeste|sul|sudeste|centro-oeste|norte|interior|capital|rodovia|br-\d|para[ná]|pr|santa catarina|sc|rio grande/i
+    ],
+    valor_carga: [
+      /mil reais|milh[ãa]o|\d+ mil|\d+k|r\$ ?\d|\d+ reais|100k|200k|500k|1m|2m/i
+    ],
+    qtd_viagens: [
+      /\d+ viagens?|\d+ por m[êe]s|\d+ por mes|semanal|mensal|di[áa]ri|\d+ vezes?/i
+    ],
+    uso_veiculo: [
+      /pessoal|profissional|trabalho|lazer|fam[íi]lia|uso pr[óo]prio|uso di[áa]rio|particular/i
+    ],
+    modelo_veiculo: [
+      /volvo|scania|mercedes|iveco|daf|man|volkswagen|vw|fiat|ford|hyundai|toyota|fh|vm|axor|actros|atego|stralis|daily|constellation|meteor|\d{4}|ano \d|20\d\d/i
+    ],
+    qtd_frota: [
+      /\d+ ve[íi]culos?|\d+ caminh[õo]es?|\d+ carretas?|uma frota de|tenho \d|minha frota tem/i
+    ],
+    tipo_frota: [
+      /s[óo] caminh[õo]es?|s[óo] carretas?|vans?|utilit[áa]rios?|leves e pesados|misturada|truck|bitruck|bi-truck|toco|3\/4/i
+    ],
+  };
+  
+  // Concatenar todo conteúdo das mensagens do usuário
+  const userContent = messages
+    .filter(m => m.from_type === 'user')
+    .map(m => m.content || '')
+    .join(' ')
+    .toLowerCase();
+  
+  // Testar cada detector
+  for (const [key, patterns] of Object.entries(detectors)) {
+    const matched = patterns.some(p => p.test(userContent));
+    result[key as keyof AnsweredQualifications] = matched;
+    if (matched) {
+      console.log(`[process-followups] Qualification topic already answered: ${key}`);
+    }
+  }
+  
+  return result;
 }
 
 function analyzeConversationHistory(messages: Array<{ content: string | null; from_type: string; sent_at: string }>): ConversationAnalysis {
+  const emptyQualifications: AnsweredQualifications = {
+    tipo_empresa: false, tipo_operacao: false, perfil_transportador: false,
+    tipo_mercadoria: false, rota_principal: false, valor_carga: false,
+    qtd_viagens: false, uso_veiculo: false, modelo_veiculo: false,
+    qtd_frota: false, tipo_frota: false,
+  };
+  
   if (!messages || messages.length === 0) {
-    return { hasUserResponse: false, unansweredQuestion: null, conversationContext: '', lastNinaMessage: null };
+    return { hasUserResponse: false, unansweredQuestion: null, conversationContext: '', lastNinaMessage: null, answeredQualifications: emptyQualifications };
   }
+  
+  // Analisar qualificações respondidas
+  const answeredQualifications = analyzeAnsweredQualifications(messages);
   
   // Messages are ordered desc (most recent first)
   const hasUserResponse = messages.some(m => m.from_type === 'user');
@@ -311,7 +421,7 @@ function analyzeConversationHistory(messages: Array<{ content: string | null; fr
     }
   }
   
-  return { hasUserResponse, unansweredQuestion, conversationContext, lastNinaMessage };
+  return { hasUserResponse, unansweredQuestion, conversationContext, lastNinaMessage, answeredQualifications };
 }
 
 // Analyze lead qualification AND detect specific product mentioned
@@ -419,7 +529,8 @@ async function getMessageForAttempt(
   conversationContext?: string,
   unansweredQuestion?: string,
   isQualified: boolean = true,
-  detectedProduct?: DetectedProduct // NEW: Detected product
+  detectedProduct?: DetectedProduct,
+  answeredQualifications?: AnsweredQualifications // NOVO: tópicos já respondidos
 ): Promise<string> {
   const sequence = automation.messages_sequence;
   
@@ -430,7 +541,7 @@ async function getMessageForAttempt(
       supabaseUrl, supabaseServiceKey, conv,
       're_qualify', attemptNumber, hoursWaiting,
       agentName, agentSpecialty, agentSlug, lastMessageSent,
-      conversationContext, unansweredQuestion, isQualified, detectedProduct
+      conversationContext, unansweredQuestion, isQualified, detectedProduct, answeredQualifications
     );
   }
   
@@ -457,7 +568,7 @@ async function getMessageForAttempt(
           supabaseUrl, supabaseServiceKey, conv,
           lastItem.ai_prompt_type, attemptNumber, hoursWaiting,
           agentName, agentSpecialty, agentSlug, lastMessageSent,
-          conversationContext, unansweredQuestion, isQualified, detectedProduct
+          conversationContext, unansweredQuestion, isQualified, detectedProduct, answeredQualifications
         );
       }
       return replaceVariables(lastItem.content || automation.free_text_message || 'Oi {nome}!', conv);
@@ -474,7 +585,7 @@ async function getMessageForAttempt(
       supabaseUrl, supabaseServiceKey, conv,
       sequenceItem.ai_prompt_type, attemptNumber, hoursWaiting,
       agentName, agentSpecialty, agentSlug, lastMessageSent,
-      conversationContext, unansweredQuestion, isQualified, detectedProduct
+      conversationContext, unansweredQuestion, isQualified, detectedProduct, answeredQualifications
     );
   }
 
@@ -794,7 +905,8 @@ serve(async (req) => {
               conversationAnalysis.conversationContext,
               conversationAnalysis.unansweredQuestion || undefined,
               leadIsQualified,
-              detectedProduct // NEW: Pass detected product
+              detectedProduct,
+              conversationAnalysis.answeredQualifications // NOVO: tópicos já respondidos
             );
             
             console.log(`[process-followups] Sending message (attempt ${attemptNumber}) to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
