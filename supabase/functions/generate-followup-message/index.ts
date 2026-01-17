@@ -79,15 +79,15 @@ OFEREÇA uma ligação rápida de forma PROATIVA e DIRETA:
 - NUNCA peça e-mail (transportadores não usam)
 Exemplo: "{nome}, te ligo em 5 min pra resolver seu seguro de carga? Me manda um 'pode ligar' ou me diz o horário."`,
 
-  unanswered_question: `O cliente NÃO respondeu sua última pergunta.
-VOCÊ TEM O CONTEXTO DA PERGUNTA - use isso!
-Você DEVE retomar a MESMA pergunta de forma DIFERENTE:
-- Reformule com outras palavras
-- Seja mais direto OU mais casual (varie)
-- Ofereça opções prontas se fizer sentido (ex: "É mais frota própria ou terceirizada?")
-- NÃO pergunte "o que achou" ou "conseguiu pensar" - NÃO HOUVE CONVERSA!
-- Foque em obter a informação que você PRECISA
-- Mostre que responder é rápido e fácil`,
+  unanswered_question: `O cliente NÃO respondeu sua última pergunta de qualificação.
+CONTEXTO CRÍTICO: O lead pode ter vindo de um anúncio e está no início da conversa.
+Você DEVE:
+1. Retomar a pergunta de forma DIFERENTE e mais SIMPLES
+2. Oferecer OPÇÕES prontas (ex: "É mais pra carga ou veículo?")
+3. Ser BREVE e direto - 1 a 2 frases no máximo
+4. NUNCA mencionar cotação ou orçamento (ainda não há!)
+5. Foco em DESCOBRIR a necessidade do cliente
+Exemplo: "{nome}, me ajuda aqui: é pra proteger a carga durante o transporte ou o veículo em si?"`,
 
   re_qualify: `O cliente mostrou interesse inicial mas não respondeu sua pergunta de qualificação.
 Retome de forma mais DIRETA e oferecendo valor:
@@ -97,16 +97,16 @@ Retome de forma mais DIRETA e oferecendo valor:
 - Não seja genérico - use o contexto da conversa`,
 };
 
-// Varied fallback messages to never repeat the same one
+// Mensagens de fallback focadas em RE-QUALIFICAÇÃO (para leads não qualificados)
 const FALLBACK_MESSAGES = [
-  "{nome}, posso te ligar rapidinho pra resolver sobre o seguro? 5 min e já te passo tudo!",
-  "E aí {nome}! Quer que eu te ligue pra explicar melhor sobre a cobertura?",
-  "{nome}, me passa o melhor horário que te ligo. Resolvo tudo em 5 minutinhos!",
-  "Oi {nome}! Tô por aqui pra te ajudar com o seguro. Posso te ligar agora?",
-  "{nome}, ainda precisa do seguro de carga? Me avisa que te ligo!",
-  "E aí {nome}! Sua cotação tá quase pronta, só preciso confirmar uns dados. Posso ligar?",
-  "{nome}, tô no aguardo. Se quiser, me manda um horário que te ligo!",
-  "Oi {nome}! Que tal uma ligação rápida pra resolvermos seu seguro?",
+  "{nome}, me conta: qual tipo de seguro você está buscando? Posso te ajudar!",
+  "Oi {nome}! Você precisa de seguro pra transporte, frota ou carga? Me fala que te ajudo!",
+  "{nome}, posso te ligar rapidinho pra entender sua necessidade? 5 min!",
+  "E aí {nome}! Ainda precisa de ajuda com seguro? Me conta o que você busca!",
+  "{nome}, tô aqui pra te ajudar! É pra proteger veículo, carga ou os dois?",
+  "Oi {nome}! Me conta o que você transporta que te passo as opções de seguro!",
+  "{nome}, quer que eu te ligue pra explicar as coberturas disponíveis?",
+  "E aí {nome}! Qual sua principal preocupação: proteger a carga ou o veículo?",
 ];
 
 // Get a fallback message that's different from the last one
