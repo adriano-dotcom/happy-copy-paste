@@ -8,11 +8,16 @@ interface UnreadConversation {
   lastMessage: string;
   unreadCount: number;
   lastMessageAt: string;
+  type: 'pending_lead' | 'unread_message';
 }
 
 interface UnreadMessagesContextType {
   totalUnread: number;
   unreadConversations: UnreadConversation[];
+  pendingLeadsCount: number;
+  unreadMessagesCount: number;
+  pendingLeads: UnreadConversation[];
+  unreadMessages: UnreadConversation[];
   refetch: () => Promise<void>;
 }
 
@@ -29,6 +34,10 @@ export const useUnreadMessages = () => {
 export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [unreadConversations, setUnreadConversations] = useState<UnreadConversation[]>([]);
   const [totalUnread, setTotalUnread] = useState(0);
+  const [pendingLeadsCount, setPendingLeadsCount] = useState(0);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [pendingLeads, setPendingLeads] = useState<UnreadConversation[]>([]);
+  const [unreadMessages, setUnreadMessages] = useState<UnreadConversation[]>([]);
 
   const fetchUnreadConversations = useCallback(async () => {
     try {
@@ -120,13 +129,18 @@ export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = (
             lastMessageContent = lastMsg?.[0]?.content || (lastMsg?.[0]?.type !== 'text' ? '📎 Mídia' : 'Nova conversa');
           }
 
+          // Determinar o tipo da conversa
+          const conversationType: 'pending_lead' | 'unread_message' = 
+            needsHumanAttention && !hasUnreadMessages ? 'pending_lead' : 'unread_message';
+
           unreadData.push({
             id: conv.id,
             contactName,
             contactInitials: initials,
             lastMessage: lastMessageContent || '📎 Mídia',
-            unreadCount: hasUnreadMessages ? (unreadCount || 0) : 1, // Se só precisa atenção, conta como 1
-            lastMessageAt: conv.last_message_at
+            unreadCount: hasUnreadMessages ? (unreadCount || 0) : 1,
+            lastMessageAt: conv.last_message_at,
+            type: conversationType
           });
         }
       }
@@ -136,7 +150,15 @@ export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = (
         new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
       );
 
+      // Separar em listas distintas
+      const leads = unreadData.filter(c => c.type === 'pending_lead');
+      const messages = unreadData.filter(c => c.type === 'unread_message');
+
       setUnreadConversations(unreadData);
+      setPendingLeads(leads);
+      setUnreadMessages(messages);
+      setPendingLeadsCount(leads.length);
+      setUnreadMessagesCount(messages.reduce((acc, conv) => acc + conv.unreadCount, 0));
       setTotalUnread(unreadData.reduce((acc, conv) => acc + conv.unreadCount, 0));
     } catch (error) {
       console.error('Error in fetchUnreadConversations:', error);
@@ -185,7 +207,15 @@ export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = (
   }, [fetchUnreadConversations]);
 
   return (
-    <UnreadMessagesContext.Provider value={{ totalUnread, unreadConversations, refetch: fetchUnreadConversations }}>
+    <UnreadMessagesContext.Provider value={{ 
+      totalUnread, 
+      unreadConversations, 
+      pendingLeadsCount,
+      unreadMessagesCount,
+      pendingLeads,
+      unreadMessages,
+      refetch: fetchUnreadConversations 
+    }}>
       {children}
     </UnreadMessagesContext.Provider>
   );

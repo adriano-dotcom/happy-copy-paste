@@ -271,6 +271,7 @@ export const SidebarLink = ({
   isActive,
   onClick,
   badge,
+  secondaryBadge,
   ...props
 }: {
   link: Links;
@@ -278,6 +279,7 @@ export const SidebarLink = ({
   isActive?: boolean;
   onClick?: () => void;
   badge?: number;
+  secondaryBadge?: number;
   props?: Omit<LinkProps, 'to'>;
 }) => {
   const { open, animate, setOpen } = useSidebar();
@@ -290,6 +292,9 @@ export const SidebarLink = ({
     }
     onClick?.();
   };
+
+  const hasBadge = (badge && badge > 0) || (secondaryBadge && secondaryBadge > 0);
+  const totalBadge = (badge || 0) + (secondaryBadge || 0);
   
   return (
     <Link
@@ -316,10 +321,10 @@ export const SidebarLink = ({
           : "text-slate-500 group-hover/sidebar:text-cyan-300"
       )}>
         {link.icon}
-        {/* Badge when collapsed - iOS 26 style */}
-        {badge && badge > 0 && !open && (
+        {/* Badge when collapsed - iOS 26 style - shows total */}
+        {hasBadge && !open && (
           <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full px-1 shadow-lg shadow-rose-500/40 ring-2 ring-rose-400/30 animate-pulse">
-            {badge > 99 ? '99+' : badge}
+            {totalBadge > 99 ? '99+' : totalBadge}
           </span>
         )}
       </span>
@@ -339,15 +344,32 @@ export const SidebarLink = ({
       >
         {link.label}
       </motion.span>
-      {/* Badge when expanded - iOS 26 style */}
-      {badge && badge > 0 && open && (
-        <motion.span
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          className="min-w-[22px] h-[22px] flex items-center justify-center text-[11px] font-bold bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full px-1.5 shadow-lg shadow-rose-500/40 ring-2 ring-rose-400/30"
-        >
-          {badge > 99 ? '99+' : badge}
-        </motion.span>
+      {/* Badges when expanded - iOS 26 style */}
+      {open && (
+        <div className="flex items-center gap-1.5">
+          {/* Secondary badge (orange - pending leads) */}
+          {secondaryBadge && secondaryBadge > 0 && (
+            <motion.span
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="min-w-[22px] h-[22px] flex items-center justify-center text-[11px] font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-full px-1.5 shadow-lg shadow-amber-500/40 ring-2 ring-amber-400/30"
+              title="Leads aguardando atendimento"
+            >
+              {secondaryBadge > 99 ? '99+' : secondaryBadge}
+            </motion.span>
+          )}
+          {/* Primary badge (pink - unread messages) */}
+          {badge && badge > 0 && (
+            <motion.span
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="min-w-[22px] h-[22px] flex items-center justify-center text-[11px] font-bold bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full px-1.5 shadow-lg shadow-rose-500/40 ring-2 ring-rose-400/30"
+              title="Mensagens não lidas"
+            >
+              {badge > 99 ? '99+' : badge}
+            </motion.span>
+          )}
+        </div>
       )}
     </Link>
   );
