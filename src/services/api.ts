@@ -318,7 +318,7 @@ export const api = {
         .order('created_at', { ascending: false }),
       supabase
         .from('conversations')
-        .select('contact_id, is_active, status, updated_at')
+        .select('id, contact_id, is_active, status, updated_at')
         .in('contact_id', contactIds)
         .order('updated_at', { ascending: false })
     ]);
@@ -341,6 +341,38 @@ export const api = {
         conversationsByContact.set(conv.contact_id, conv);
       }
     });
+
+    // Fetch contacts that have WhatsApp template messages sent
+    const conversationIds = (conversationsData || []).map(c => c.id);
+    const contactsWithTemplateSent = new Set<string>();
+    
+    if (conversationIds.length > 0) {
+      const { data: templateMessages } = await supabase
+        .from('messages')
+        .select('conversation_id, metadata')
+        .in('conversation_id', conversationIds)
+        .eq('from_type', 'nina')
+        .not('metadata', 'is', null);
+      
+      // Check metadata for is_template = true
+      if (templateMessages && templateMessages.length > 0) {
+        // Get unique conversation IDs that have template messages
+        const conversationsWithTemplates = new Set<string>();
+        templateMessages.forEach(m => {
+          const metadata = m.metadata as Record<string, any> | null;
+          if (metadata && metadata.is_template === true) {
+            conversationsWithTemplates.add(m.conversation_id);
+          }
+        });
+        
+        // Map back to contact IDs
+        (conversationsData || []).forEach(conv => {
+          if (conversationsWithTemplates.has(conv.id)) {
+            contactsWithTemplateSent.add(conv.contact_id);
+          }
+        });
+      }
+    }
 
     // Format CNPJ for display
     const formatCNPJDisplay = (cnpj: string | null) => {
@@ -393,6 +425,8 @@ export const api = {
         // Conversation data
         conversationActive: conversation?.is_active ?? null,
         conversationStatus: conversation?.status || undefined,
+        // Template sent status
+        hasTemplateSent: contactsWithTemplateSent.has(c.id),
       };
     });
   },
