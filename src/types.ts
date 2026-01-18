@@ -317,6 +317,7 @@ export interface UIConversation {
   contactEmail: string | null;
   contactCnpj: string | null;
   contactCompany: string | null;
+  contactFleetSize: number | null;
   status: ConversationStatus;
   isActive: boolean;
   assignedTeam: string | null;
@@ -413,6 +414,7 @@ export function transformDBToUIConversation(
     notes: conv.contact?.notes || null,
     contactCnpj: conv.contact?.cnpj || null,
     contactCompany: conv.contact?.company || null,
+    contactFleetSize: (conv.contact as any)?.fleet_size || null,
     agentId: conv.agent?.id || null,
     agentName: conv.agent?.name || null,
     agentSlug: conv.agent?.slug || null,

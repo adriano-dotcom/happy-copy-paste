@@ -6,7 +6,7 @@ import {
   Smile, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
   Tag, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
   Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle,
-  ArrowLeft, Keyboard, XCircle, PlayCircle, Pin, Sparkles, UserCheck, PauseCircle, Bot, AlertCircle, Download, Eye
+  ArrowLeft, Keyboard, XCircle, PlayCircle, Pin, Sparkles, UserCheck, PauseCircle, Bot, AlertCircle, Download, Eye, Truck
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -2460,6 +2460,21 @@ const ChatInterface: React.FC = () => {
                       )}
                     </div>
                   </div>
+
+                  {/* Fleet Size - Automotor */}
+                  {activeChat.contactFleetSize && activeChat.contactFleetSize > 0 && (
+                    <div className="flex items-center gap-3 text-sm">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                        <Truck className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <div className="flex flex-col flex-1">
+                        <span className="text-xs text-slate-500">Frota (Automotor)</span>
+                        <span className="text-emerald-300 font-bold text-lg">
+                          {activeChat.contactFleetSize} veículo{activeChat.contactFleetSize > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Save Button */}
                   {isEditingContact && (

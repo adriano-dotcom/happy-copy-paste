@@ -226,6 +226,7 @@ export function useConversations() {
                   contactEmail: updated.email || null,
                   contactCnpj: updated.cnpj || null,
                   contactCompany: updated.company || null,
+                  contactFleetSize: updated.fleet_size || null,
                   notes: updated.notes || null,
                   clientMemory: updated.client_memory || conv.clientMemory,
                   tags: updated.tags || []
