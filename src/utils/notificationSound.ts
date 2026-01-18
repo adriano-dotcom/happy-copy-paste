@@ -1,5 +1,6 @@
 // Notification sound utility using Web Audio API
 const STORAGE_KEY = 'notification_sound_enabled';
+const VOLUME_KEY = 'notification_sound_volume';
 
 let audioContext: AudioContext | null = null;
 
@@ -17,6 +18,16 @@ export const isNotificationSoundEnabled = (): boolean => {
 
 export const setNotificationSoundEnabled = (enabled: boolean): void => {
   localStorage.setItem(STORAGE_KEY, String(enabled));
+};
+
+// Volume control (0.0 to 1.0, default 0.5)
+export const getNotificationVolume = (): number => {
+  const stored = localStorage.getItem(VOLUME_KEY);
+  return stored ? parseFloat(stored) : 0.5;
+};
+
+export const setNotificationVolume = (volume: number): void => {
+  localStorage.setItem(VOLUME_KEY, String(Math.max(0, Math.min(1, volume))));
 };
 
 export const playNotificationSound = () => {
@@ -37,8 +48,9 @@ export const playNotificationSound = () => {
     oscillator.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
     oscillator.type = 'sine';
     
+    const volume = getNotificationVolume();
     gainNode.gain.setValueAtTime(0, ctx.currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.05);
+    gainNode.gain.linearRampToValueAtTime(0.3 * volume, ctx.currentTime + 0.05);
     gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
 
     oscillator.start(ctx.currentTime);
@@ -59,6 +71,7 @@ export const playNewLeadSound = () => {
     // Three-note alert pattern: E5 → C5 → E5
     const notes = [659.25, 523.25, 659.25];
     const noteDuration = 0.15;
+    const volume = getNotificationVolume();
 
     notes.forEach((freq, i) => {
       const oscillator = ctx.createOscillator();
@@ -72,7 +85,7 @@ export const playNewLeadSound = () => {
 
       const startTime = ctx.currentTime + i * noteDuration;
       gainNode.gain.setValueAtTime(0, startTime);
-      gainNode.gain.linearRampToValueAtTime(0.3, startTime + 0.03);
+      gainNode.gain.linearRampToValueAtTime(0.3 * volume, startTime + 0.03);
       gainNode.gain.linearRampToValueAtTime(0, startTime + noteDuration);
 
       oscillator.start(startTime);
@@ -94,6 +107,7 @@ export const playQualifiedLeadSound = () => {
     // Play a triumphant ascending arpeggio
     const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
     const noteDuration = 0.12;
+    const volume = getNotificationVolume();
 
     notes.forEach((freq, i) => {
       const oscillator = ctx.createOscillator();
@@ -107,8 +121,8 @@ export const playQualifiedLeadSound = () => {
 
       const startTime = ctx.currentTime + i * noteDuration;
       gainNode.gain.setValueAtTime(0, startTime);
-      gainNode.gain.linearRampToValueAtTime(0.25, startTime + 0.02);
-      gainNode.gain.linearRampToValueAtTime(0.15, startTime + noteDuration * 0.5);
+      gainNode.gain.linearRampToValueAtTime(0.25 * volume, startTime + 0.02);
+      gainNode.gain.linearRampToValueAtTime(0.15 * volume, startTime + noteDuration * 0.5);
       gainNode.gain.linearRampToValueAtTime(0, startTime + noteDuration);
 
       oscillator.start(startTime);
