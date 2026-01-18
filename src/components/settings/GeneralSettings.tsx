@@ -4,7 +4,8 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { playNotificationSound, playNewLeadSound, playQualifiedLeadSound, isNotificationSoundEnabled, setNotificationSoundEnabled } from '@/utils/notificationSound';
+import { playNotificationSound, playNewLeadSound, playQualifiedLeadSound, isNotificationSoundEnabled, setNotificationSoundEnabled, getNotificationVolume, setNotificationVolume } from '@/utils/notificationSound';
+import { Slider } from '@/components/ui/slider';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import EmailTemplateEditorModal from './EmailTemplateEditorModal';
@@ -25,6 +26,7 @@ interface FullEmailTemplate {
 
 const GeneralSettings: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [volume, setVolume] = useState(50);
   const [facebookTemplate, setFacebookTemplate] = useState('lead_facebook_meta');
   const [emailTemplateId, setEmailTemplateId] = useState<string>('none');
   const [googleTemplate, setGoogleTemplate] = useState('lead_google_ads');
@@ -46,9 +48,16 @@ const GeneralSettings: React.FC = () => {
 
   useEffect(() => {
     setSoundEnabled(isNotificationSoundEnabled());
+    setVolume(Math.round(getNotificationVolume() * 100));
     fetchSettings();
     fetchTemplates();
   }, []);
+
+  const handleVolumeChange = (value: number[]) => {
+    const newVolume = value[0];
+    setVolume(newVolume);
+    setNotificationVolume(newVolume / 100);
+  };
 
   const fetchSettings = async () => {
     const { data } = await supabase
@@ -256,33 +265,56 @@ const GeneralSettings: React.FC = () => {
           </div>
           
           {soundEnabled && (
-            <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-700/50">
-              <span className="text-xs text-slate-400 w-full mb-1">Testar sons:</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => playNotificationSound()}
-                className="text-xs border-slate-700 hover:bg-slate-800"
-              >
-                🔔 Mensagem
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => playNewLeadSound()}
-                className="text-xs border-slate-700 hover:bg-slate-800"
-              >
-                🆕 Novo Lead
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => playQualifiedLeadSound()}
-                className="text-xs border-slate-700 hover:bg-slate-800"
-              >
-                🏆 Qualificado
-              </Button>
-            </div>
+            <>
+              <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                <div className="flex items-center gap-3 mb-3">
+                  <Volume2 className="w-5 h-5 text-cyan-400" />
+                  <Label className="text-sm font-medium text-white">
+                    Volume: {volume}%
+                  </Label>
+                </div>
+                <Slider
+                  value={[volume]}
+                  onValueChange={handleVolumeChange}
+                  max={100}
+                  min={0}
+                  step={5}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-slate-500 mt-2">
+                  <span>Silencioso</span>
+                  <span>Máximo</span>
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-700/50">
+                <span className="text-xs text-slate-400 w-full mb-1">Testar sons:</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => playNotificationSound()}
+                  className="text-xs border-slate-700 hover:bg-slate-800"
+                >
+                  🔔 Mensagem
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => playNewLeadSound()}
+                  className="text-xs border-slate-700 hover:bg-slate-800"
+                >
+                  🆕 Novo Lead
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => playQualifiedLeadSound()}
+                  className="text-xs border-slate-700 hover:bg-slate-800"
+                >
+                  🏆 Qualificado
+                </Button>
+              </div>
+            </>
           )}
         </div>
       </div>
