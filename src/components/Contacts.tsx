@@ -1308,7 +1308,7 @@ const Contacts: React.FC = () => {
                 </SelectTrigger>
                 <SelectContent className="bg-slate-900 border-slate-700">
                   {statusOptions.map(option => (
-                    <SelectItem key={option.value} value={option.value} className="cursor-pointer">
+                    <SelectItem key={option.value} value={option.value} className="cursor-pointer text-slate-200 focus:bg-slate-800 focus:text-white hover:bg-slate-800">
                       <span className={`px-2 py-0.5 rounded text-xs font-medium border ${option.color}`}>
                         {option.label}
                       </span>
@@ -1321,11 +1321,11 @@ const Contacts: React.FC = () => {
                   <SelectValue placeholder={isBulkCampaignUpdating ? "Atualizando..." : "🏷️ Campanha"} />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-900 border-slate-700">
-                  <SelectItem value="__none__" className="cursor-pointer text-slate-400">
+                  <SelectItem value="__none__" className="cursor-pointer text-slate-400 focus:bg-slate-800 focus:text-slate-300 hover:bg-slate-800">
                     Remover campanha
                   </SelectItem>
                   {availableCampaigns.map(campaign => (
-                    <SelectItem key={campaign.id} value={campaign.name} className="cursor-pointer">
+                    <SelectItem key={campaign.id} value={campaign.name} className="cursor-pointer text-slate-200 focus:bg-slate-800 focus:text-white hover:bg-slate-800">
                       <div className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: campaign.color || '#3b82f6' }} />
                         {campaign.name}
@@ -1339,11 +1339,11 @@ const Contacts: React.FC = () => {
                   <SelectValue placeholder={isBulkPipelineUpdating ? "Atualizando..." : "📋 Tipo"} />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-900 border-slate-700">
-                  <SelectItem value="__none__" className="cursor-pointer text-slate-400">
+                  <SelectItem value="__none__" className="cursor-pointer text-slate-400 focus:bg-slate-800 focus:text-slate-300 hover:bg-slate-800">
                     Sem pipeline
                   </SelectItem>
                   {availablePipelines.map(pipeline => (
-                    <SelectItem key={pipeline.id} value={pipeline.id} className="cursor-pointer">
+                    <SelectItem key={pipeline.id} value={pipeline.id} className="cursor-pointer text-slate-200 focus:bg-slate-800 focus:text-white hover:bg-slate-800">
                       <div className="flex items-center gap-2">
                         <span>{pipeline.icon || '📋'}</span>
                         {pipeline.name}
@@ -1357,11 +1357,11 @@ const Contacts: React.FC = () => {
                   <SelectValue placeholder={isBulkOwnerUpdating ? "Atualizando..." : "👤 Responsável"} />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-900 border-slate-700">
-                  <SelectItem value="__none__" className="cursor-pointer text-slate-400">
+                  <SelectItem value="__none__" className="cursor-pointer text-slate-400 focus:bg-slate-800 focus:text-slate-300 hover:bg-slate-800">
                     Sem responsável
                   </SelectItem>
                   {availableOwners.map(owner => (
-                    <SelectItem key={owner.id} value={owner.id} className="cursor-pointer">
+                    <SelectItem key={owner.id} value={owner.id} className="cursor-pointer text-slate-200 focus:bg-slate-800 focus:text-white hover:bg-slate-800">
                       {owner.name}
                     </SelectItem>
                   ))}
