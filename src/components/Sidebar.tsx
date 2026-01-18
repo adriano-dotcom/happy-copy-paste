@@ -63,7 +63,7 @@ const LogoIcon = () => {
 };
 
 const UnreadPreviewPanel = () => {
-  const { unreadConversations, totalUnread } = useUnreadMessages();
+  const { pendingLeads, unreadMessages, totalUnread } = useUnreadMessages();
   const { open } = useSidebar();
   const location = useLocation();
   const isOnChatPage = location.pathname === '/chat';
@@ -80,40 +80,83 @@ const UnreadPreviewPanel = () => {
       {/* Divider with gradient */}
       <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mb-4" />
       
-      <h4 className="text-xs text-slate-400 uppercase tracking-wider mb-3 px-2 font-medium flex items-center gap-2">
-        <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-cyan-400 to-teal-400 animate-pulse" />
-        Mensagens não lidas
-      </h4>
-      <div className="space-y-1.5">
-        {unreadConversations.slice(0, 5).map(conv => (
-          <Link
-            key={conv.id}
-            to={`/chat?conversation=${conv.id}`}
-            className="flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.02] hover:bg-gradient-to-r hover:from-cyan-500/10 hover:to-transparent border border-white/[0.03] hover:border-cyan-500/20 backdrop-blur-sm transition-all duration-300 group"
-          >
-            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-cyan-800 to-slate-800 flex items-center justify-center text-xs font-bold text-cyan-200 ring-2 ring-cyan-500/20 group-hover:ring-cyan-400/40 shadow-lg shadow-cyan-500/10 transition-all flex-shrink-0">
-              {conv.contactInitials}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-200 truncate group-hover:text-white transition-colors">
-                {conv.contactName}
-              </p>
-              <p className="text-xs text-slate-500 truncate">
-                {conv.lastMessage.length > 30 ? conv.lastMessage.slice(0, 30) + '...' : conv.lastMessage}
-              </p>
-            </div>
-            <span className="min-w-[22px] h-[22px] flex items-center justify-center text-[11px] font-bold bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full px-1.5 shadow-lg shadow-rose-500/40 ring-2 ring-rose-400/30 flex-shrink-0">
-              {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
+      {/* Leads aguardando atendimento */}
+      {pendingLeads.length > 0 && (
+        <>
+          <h4 className="text-xs text-slate-400 uppercase tracking-wider mb-3 px-2 font-medium flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-400 animate-pulse" />
+            Leads aguardando
+            <span className="ml-auto min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-full px-1">
+              {pendingLeads.length}
             </span>
-          </Link>
-        ))}
-      </div>
-      {unreadConversations.length > 5 && (
+          </h4>
+          <div className="space-y-1.5 mb-4">
+            {pendingLeads.slice(0, 3).map(conv => (
+              <Link
+                key={conv.id}
+                to={`/chat?conversation=${conv.id}`}
+                className="flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.02] hover:bg-gradient-to-r hover:from-amber-500/10 hover:to-transparent border border-white/[0.03] hover:border-amber-500/20 backdrop-blur-sm transition-all duration-300 group"
+              >
+                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-800 to-slate-800 flex items-center justify-center text-xs font-bold text-amber-200 ring-2 ring-amber-500/20 group-hover:ring-amber-400/40 shadow-lg shadow-amber-500/10 transition-all flex-shrink-0">
+                  {conv.contactInitials}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-200 truncate group-hover:text-white transition-colors">
+                    {conv.contactName}
+                  </p>
+                  <p className="text-xs text-slate-500 truncate">
+                    {conv.lastMessage.length > 30 ? conv.lastMessage.slice(0, 30) + '...' : conv.lastMessage}
+                  </p>
+                </div>
+                <span className="min-w-[22px] h-[22px] flex items-center justify-center text-[10px] font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-full px-1.5 shadow-lg shadow-amber-500/40 ring-2 ring-amber-400/30 flex-shrink-0">
+                  🆕
+                </span>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Mensagens não lidas */}
+      {unreadMessages.length > 0 && (
+        <>
+          <h4 className="text-xs text-slate-400 uppercase tracking-wider mb-3 px-2 font-medium flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-rose-400 to-pink-400 animate-pulse" />
+            Mensagens não lidas
+          </h4>
+          <div className="space-y-1.5">
+            {unreadMessages.slice(0, 3).map(conv => (
+              <Link
+                key={conv.id}
+                to={`/chat?conversation=${conv.id}`}
+                className="flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.02] hover:bg-gradient-to-r hover:from-cyan-500/10 hover:to-transparent border border-white/[0.03] hover:border-cyan-500/20 backdrop-blur-sm transition-all duration-300 group"
+              >
+                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-cyan-800 to-slate-800 flex items-center justify-center text-xs font-bold text-cyan-200 ring-2 ring-cyan-500/20 group-hover:ring-cyan-400/40 shadow-lg shadow-cyan-500/10 transition-all flex-shrink-0">
+                  {conv.contactInitials}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-200 truncate group-hover:text-white transition-colors">
+                    {conv.contactName}
+                  </p>
+                  <p className="text-xs text-slate-500 truncate">
+                    {conv.lastMessage.length > 30 ? conv.lastMessage.slice(0, 30) + '...' : conv.lastMessage}
+                  </p>
+                </div>
+                <span className="min-w-[22px] h-[22px] flex items-center justify-center text-[11px] font-bold bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full px-1.5 shadow-lg shadow-rose-500/40 ring-2 ring-rose-400/30 flex-shrink-0">
+                  {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
+      
+      {(pendingLeads.length > 3 || unreadMessages.length > 3) && (
         <Link
           to="/chat"
           className="block text-center text-xs bg-gradient-to-r from-cyan-400 to-teal-400 bg-clip-text text-transparent font-medium hover:from-cyan-300 hover:to-teal-300 mt-3 py-2 hover:bg-white/[0.03] rounded-lg transition-all"
         >
-          Ver todas ({totalUnread} mensagens)
+          Ver todas as conversas
         </Link>
       )}
     </motion.div>
@@ -126,7 +169,7 @@ const SidebarContent = () => {
   const { open } = useSidebar();
   const { isAdmin, loading: roleLoading } = useUserRole();
   const { user, signOut } = useAuth();
-  const { totalUnread } = useUnreadMessages();
+  const { pendingLeadsCount, unreadMessagesCount } = useUnreadMessages();
 
   // Filter menu items based on user role
   const menuItems = allMenuItems.filter(item => !item.adminOnly || isAdmin);
@@ -164,7 +207,8 @@ const SidebarContent = () => {
               key={idx}
               link={link}
               isActive={currentPath.startsWith(link.href.slice(1))}
-              badge={link.id === 'chat' ? totalUnread : undefined}
+              badge={link.id === 'chat' ? unreadMessagesCount : undefined}
+              secondaryBadge={link.id === 'chat' ? pendingLeadsCount : undefined}
             />
           ))}
         </nav>
