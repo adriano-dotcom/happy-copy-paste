@@ -42,6 +42,8 @@ interface ColumnMapping {
 interface ValidationResult {
   valid: ParsedRow[];
   invalid: { row: ParsedRow; errors: string[] }[];
+  duplicatesInFile: number;
+  duplicatesInDatabase: number;
 }
 
 interface Campaign {
@@ -233,9 +235,52 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
     reader.readAsText(selectedFile);
   };
 
-  const validateRows = (): ValidationResult => {
+  // Normalize phone number to international format (55...)
+  const normalizePhone = (phone: string | undefined): string => {
+    let normalized = phone?.replace(/\D/g, '') || '';
+    if (normalized && !normalized.startsWith('55')) {
+      normalized = '55' + normalized;
+    }
+    return normalized;
+  };
+
+  // Check which phone numbers already exist in the database
+  const checkExistingPhones = async (phones: string[]): Promise<Set<string>> => {
+    if (phones.length === 0) return new Set();
+    
+    try {
+      // Query in batches to avoid URL length limits
+      const batchSize = 100;
+      const existingPhones = new Set<string>();
+      
+      for (let i = 0; i < phones.length; i += batchSize) {
+        const batch = phones.slice(i, i + batchSize);
+        const { data, error } = await supabase
+          .from('contacts')
+          .select('phone_number')
+          .in('phone_number', batch);
+        
+        if (error) {
+          console.error('Error checking existing phones:', error);
+          continue;
+        }
+        
+        data?.forEach(c => existingPhones.add(c.phone_number));
+      }
+      
+      return existingPhones;
+    } catch (error) {
+      console.error('Error checking existing phones:', error);
+      return new Set();
+    }
+  };
+
+  const validateRows = (existingPhones: Set<string>): ValidationResult => {
     const valid: ParsedRow[] = [];
     const invalid: { row: ParsedRow; errors: string[] }[] = [];
+    const seenPhones = new Set<string>();
+    let duplicatesInFile = 0;
+    let duplicatesInDatabase = 0;
 
     rows.forEach(row => {
       const errors: string[] = [];
@@ -247,11 +292,29 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
       }
 
       // Check phone - aceita 10-11 dígitos (sem país) ou 12-13 dígitos (com 55)
-      const phone = row[mapping.phone]?.replace(/\D/g, '');
-      const isValidLength = phone && phone.length >= 10 && phone.length <= 13;
-      const hasValidCountryCode = phone && phone.length >= 12 ? phone.startsWith('55') : true;
-      if (!phone || !isValidLength || !hasValidCountryCode) {
+      const rawPhone = row[mapping.phone]?.replace(/\D/g, '');
+      const isValidLength = rawPhone && rawPhone.length >= 10 && rawPhone.length <= 13;
+      const hasValidCountryCode = rawPhone && rawPhone.length >= 12 ? rawPhone.startsWith('55') : true;
+      
+      if (!rawPhone || !isValidLength || !hasValidCountryCode) {
         errors.push('Telefone inválido (use formato: 11999999999 ou 5511999999999)');
+      } else {
+        // Normalize and check for duplicates
+        const normalizedPhone = normalizePhone(rawPhone);
+        
+        // Check duplicate in CSV
+        if (seenPhones.has(normalizedPhone)) {
+          errors.push('Telefone duplicado no arquivo CSV');
+          duplicatesInFile++;
+        } else {
+          seenPhones.add(normalizedPhone);
+          
+          // Check duplicate in database
+          if (existingPhones.has(normalizedPhone)) {
+            errors.push('Telefone já cadastrado no sistema');
+            duplicatesInDatabase++;
+          }
+        }
       }
 
       // Check email (optional)
@@ -277,18 +340,37 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
       }
     });
 
-    return { valid, invalid };
+    return { valid, invalid, duplicatesInFile, duplicatesInDatabase };
   };
 
-  const handleProceedToPreview = () => {
+  const [validating, setValidating] = useState(false);
+
+  const handleProceedToPreview = async () => {
     if (!mapping.name || !mapping.phone) {
       toast.error('Mapeie os campos obrigatórios (Nome e Telefone)');
       return;
     }
 
-    const result = validateRows();
-    setValidation(result);
-    setStep('preview');
+    setValidating(true);
+    
+    try {
+      // Normalize all phones from CSV
+      const phonesToCheck = rows
+        .map(row => normalizePhone(row[mapping.phone]))
+        .filter(phone => phone.length >= 12); // Only valid format phones
+
+      // Check which phones already exist in database
+      const existingPhones = await checkExistingPhones(phonesToCheck);
+      
+      const result = validateRows(existingPhones);
+      setValidation(result);
+      setStep('preview');
+    } catch (error) {
+      console.error('Error validating rows:', error);
+      toast.error('Erro ao validar contatos');
+    } finally {
+      setValidating(false);
+    }
   };
 
   const handleImport = async () => {
@@ -640,8 +722,19 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                 <Button variant="outline" onClick={() => setStep('upload')} className="border-slate-700 text-slate-300">
                   Voltar
                 </Button>
-                <Button onClick={handleProceedToPreview} className="bg-cyan-600 hover:bg-cyan-700">
-                  Validar e Continuar
+                <Button 
+                  onClick={handleProceedToPreview} 
+                  disabled={validating}
+                  className="bg-cyan-600 hover:bg-cyan-700"
+                >
+                  {validating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Validando...
+                    </>
+                  ) : (
+                    'Validar e Continuar'
+                  )}
                 </Button>
               </div>
             </div>
@@ -666,6 +759,21 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                   <p className="text-2xl font-bold text-red-400">{validation.invalid.length}</p>
                 </div>
               </div>
+
+              {/* Show duplicate breakdown if any */}
+              {(validation.duplicatesInFile > 0 || validation.duplicatesInDatabase > 0) && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                  <p className="text-sm font-medium text-amber-400 mb-1">Telefones duplicados encontrados:</p>
+                  <ul className="text-xs text-amber-300 space-y-1">
+                    {validation.duplicatesInFile > 0 && (
+                      <li>• {validation.duplicatesInFile} duplicado(s) no arquivo CSV</li>
+                    )}
+                    {validation.duplicatesInDatabase > 0 && (
+                      <li>• {validation.duplicatesInDatabase} já cadastrado(s) no sistema</li>
+                    )}
+                  </ul>
+                </div>
+              )}
 
               {validation.invalid.length > 0 && (
                 <div className="space-y-2">
