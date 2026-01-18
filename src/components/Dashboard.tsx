@@ -741,10 +741,11 @@ const Dashboard: React.FC = () => {
         ))}
       </div>
 
-      {/* Template Cost Card */}
+      {/* Template Cost Card + Leads Evolution */}
       {templateMetrics && (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          <div className="relative overflow-hidden rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-500/10 to-slate-900/50 backdrop-blur-sm p-6 shadow-xl transition-all duration-300 hover:translate-y-[-2px] group">
+        <div className="grid gap-6 md:grid-cols-7">
+          {/* Template Cost Card - 3 columns */}
+          <div className="col-span-full md:col-span-3 relative overflow-hidden rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-500/10 to-slate-900/50 backdrop-blur-sm p-6 shadow-xl transition-all duration-300 hover:translate-y-[-2px] group">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-green-500/10 border border-green-500/20">
@@ -796,87 +797,87 @@ const Dashboard: React.FC = () => {
             {/* Decorative Glow */}
             <div className="absolute -bottom-10 -right-10 w-24 h-24 bg-green-500/10 blur-2xl rounded-full group-hover:bg-green-500/20 transition-all"></div>
           </div>
-        </div>
-      )}
 
-      {/* Leads Evolution Chart */}
-      {leadsEvolutionData.length > 0 && (
-<div className="rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-sm p-4 shadow-lg">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-white">Evolução de Leads</h3>
-              <p className="text-sm text-slate-400">
-                Novos leads por dia {period === 'today' ? 'hoje' : `nos últimos ${periodDays[period]} dias`}
-              </p>
+          {/* Leads Evolution Chart - 4 columns */}
+          {leadsEvolutionData.length > 0 && (
+            <div className="col-span-full md:col-span-4 rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-sm p-4 shadow-lg">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Evolução de Leads</h3>
+                  <p className="text-sm text-slate-400">
+                    Novos leads por dia {period === 'today' ? 'hoje' : `nos últimos ${periodDays[period]} dias`}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-violet-500"></span>
+                    Total
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    Transporte
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-cyan-500"></span>
+                    Saúde
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                    Prosp.
+                  </span>
+                </div>
+              </div>
+              
+              <div className="h-[200px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={leadsEvolutionData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorTransporte" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorSaude" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#06b6d4" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorProspeccao" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis 
+                      dataKey="date" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tickMargin={10} 
+                      fontSize={12} 
+                      stroke="#64748b"
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      fontSize={12} 
+                      stroke="#64748b"
+                      allowDecimals={false}
+                    />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', color: '#f8fafc', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)' }}
+                      labelStyle={{ color: '#94a3b8', marginBottom: '8px' }}
+                    />
+                    <Area type="monotone" dataKey="total" name="Total" stroke="#8b5cf6" strokeWidth={2} fill="url(#colorTotal)" />
+                    <Area type="monotone" dataKey="transporte" name="Transporte" stroke="#10b981" strokeWidth={2} fill="url(#colorTransporte)" />
+                    <Area type="monotone" dataKey="saude" name="Saúde" stroke="#06b6d4" strokeWidth={2} fill="url(#colorSaude)" />
+                    <Area type="monotone" dataKey="prospeccao" name="Prospecção" stroke="#f97316" strokeWidth={2} fill="url(#colorProspeccao)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-            <div className="flex items-center gap-4 text-xs">
-              <span className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-violet-500"></span>
-                Total
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
-                Transporte
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-cyan-500"></span>
-                Saúde
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-orange-500"></span>
-                Prospecção
-              </span>
-            </div>
-          </div>
-          
-          <div className="h-[200px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={leadsEvolutionData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorTransporte" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorSaude" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#06b6d4" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorProspeccao" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis 
-                  dataKey="date" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tickMargin={10} 
-                  fontSize={12} 
-                  stroke="#64748b"
-                />
-                <YAxis 
-                  axisLine={false} 
-                  tickLine={false} 
-                  fontSize={12} 
-                  stroke="#64748b"
-                  allowDecimals={false}
-                />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', color: '#f8fafc', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)' }}
-                  labelStyle={{ color: '#94a3b8', marginBottom: '8px' }}
-                />
-                <Area type="monotone" dataKey="total" name="Total" stroke="#8b5cf6" strokeWidth={2} fill="url(#colorTotal)" />
-                <Area type="monotone" dataKey="transporte" name="Transporte" stroke="#10b981" strokeWidth={2} fill="url(#colorTransporte)" />
-                <Area type="monotone" dataKey="saude" name="Saúde" stroke="#06b6d4" strokeWidth={2} fill="url(#colorSaude)" />
-                <Area type="monotone" dataKey="prospeccao" name="Prospecção" stroke="#f97316" strokeWidth={2} fill="url(#colorProspeccao)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          )}
         </div>
       )}
 
