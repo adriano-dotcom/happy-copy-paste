@@ -808,24 +808,24 @@ const Dashboard: React.FC = () => {
                     Novos leads por dia {period === 'today' ? 'hoje' : `nos últimos ${periodDays[period]} dias`}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-violet-500"></span>
-                    Total
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    Transporte
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-cyan-500"></span>
-                    Saúde
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-                    Prosp.
-                  </span>
-                </div>
+                  <div className="flex flex-col gap-1 text-xs text-slate-400">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-violet-500"></span>
+                      Total
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      Transporte
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-cyan-500"></span>
+                      Saúde
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                      Prosp.
+                    </span>
+                  </div>
               </div>
               
               <div className="h-[200px] w-full">
