@@ -893,8 +893,8 @@ const Dashboard: React.FC = () => {
 
       {/* Leads Evolution Chart */}
       {leadsEvolutionData.length > 0 && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-sm p-6 shadow-lg">
-          <div className="mb-6 flex items-center justify-between">
+<div className="rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-sm p-4 shadow-lg">
+          <div className="mb-3 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-white">Evolução de Leads</h3>
               <p className="text-sm text-slate-400">
