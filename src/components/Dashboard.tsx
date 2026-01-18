@@ -802,8 +802,8 @@ const Dashboard: React.FC = () => {
       {/* Charts Section */}
       <div className="grid gap-6 md:grid-cols-7">
         {/* Main Chart */}
-        <div className="col-span-4 rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-sm p-6 shadow-lg">
-          <div className="mb-6 flex items-center justify-between">
+        <div className="col-span-4 rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-sm p-4 shadow-lg">
+          <div className="mb-3 flex items-center justify-between">
             <div>
                 <h3 className="text-lg font-semibold text-white">Volume de Atendimentos</h3>
                 <p className="text-sm text-slate-400">
@@ -814,7 +814,7 @@ const Dashboard: React.FC = () => {
                 <ArrowUpRight className="w-5 h-5" />
             </button>
           </div>
-          <div className="h-[300px] w-full">
+          <div className="h-[180px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
@@ -857,20 +857,20 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Secondary Chart */}
-        <div className="col-span-3 rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-sm p-6 shadow-lg flex flex-col">
-           <div className="mb-6">
+        <div className="col-span-3 rounded-2xl border border-slate-800 bg-slate-900/50 backdrop-blur-sm p-4 shadow-lg flex flex-col">
+           <div className="mb-3">
             <h3 className="text-lg font-semibold text-white">Conversões</h3>
             <p className="text-sm text-slate-400">Reuniões, vendas e ações concluídas</p>
           </div>
           
-          <div className="flex-1 flex flex-col justify-center space-y-5">
-            {chartData.slice(0, 5).map((day, i) => (
+          <div className="flex-1 flex flex-col justify-center space-y-3">
+            {chartData.slice(0, 3).map((day, i) => (
               <div key={i} className="group">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-1">
                     <span className="text-sm font-medium text-slate-300">{day.name}</span>
                     <span className="text-sm font-bold text-white group-hover:text-cyan-400 transition-colors">{day.sales} conv.</span>
                 </div>
-                <div className="h-2.5 bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-gradient-to-r from-cyan-600 to-teal-500 rounded-full shadow-[0_0_10px_rgba(6,182,212,0.3)] transition-all duration-1000 ease-out group-hover:shadow-[0_0_15px_rgba(6,182,212,0.6)]" 
                     style={{ width: `${Math.min((day.sales / Math.max(...chartData.map(d => d.sales), 1)) * 100, 100)}%` }} 
@@ -880,7 +880,7 @@ const Dashboard: React.FC = () => {
             ))}
           </div>
           
-          <div className="mt-6 pt-4 border-t border-slate-800">
+          <div className="mt-3 pt-3 border-t border-slate-800">
              <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-500">Total no período</span>
                 <span className="text-emerald-400 font-bold">
