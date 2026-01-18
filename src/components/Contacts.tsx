@@ -86,6 +86,8 @@ const Contacts: React.FC = () => {
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
   const [isBulkSendTemplateOpen, setIsBulkSendTemplateOpen] = useState(false);
   const [isBulkCampaignUpdating, setIsBulkCampaignUpdating] = useState(false);
+  const [isBulkPipelineUpdating, setIsBulkPipelineUpdating] = useState(false);
+  const [isBulkOwnerUpdating, setIsBulkOwnerUpdating] = useState(false);
   
   // Prospecting modal state
   const [isProspectingModalOpen, setIsProspectingModalOpen] = useState(false);
@@ -434,6 +436,44 @@ const Contacts: React.FC = () => {
       toast.error('Erro ao atualizar campanha em massa');
     } finally {
       setIsBulkCampaignUpdating(false);
+    }
+  };
+  
+  const handleBulkPipelineChange = async (pipelineId: string) => {
+    if (selectedContactIds.size === 0) return;
+    
+    try {
+      setIsBulkPipelineUpdating(true);
+      const pipelineValue = pipelineId === '__none__' ? null : pipelineId;
+      await api.updateContactsPipeline(Array.from(selectedContactIds), pipelineValue);
+      const pipelineName = pipelineValue ? availablePipelines.find(p => p.id === pipelineValue)?.name : null;
+      toast.success(`Tipo ${pipelineName ? `alterado para "${pipelineName}"` : 'removido'} de ${selectedContactIds.size} contato(s)`);
+      setSelectedContactIds(new Set());
+      loadContacts();
+    } catch (error) {
+      console.error('Erro ao atualizar tipo em massa:', error);
+      toast.error('Erro ao atualizar tipo em massa');
+    } finally {
+      setIsBulkPipelineUpdating(false);
+    }
+  };
+  
+  const handleBulkOwnerChange = async (ownerId: string) => {
+    if (selectedContactIds.size === 0) return;
+    
+    try {
+      setIsBulkOwnerUpdating(true);
+      const ownerValue = ownerId === '__none__' ? null : ownerId;
+      await api.updateContactsOwner(Array.from(selectedContactIds), ownerValue);
+      const ownerName = ownerValue ? availableOwners.find(o => o.id === ownerValue)?.name : null;
+      toast.success(`Responsável ${ownerName ? `alterado para "${ownerName}"` : 'removido'} de ${selectedContactIds.size} contato(s)`);
+      setSelectedContactIds(new Set());
+      loadContacts();
+    } catch (error) {
+      console.error('Erro ao atualizar responsável em massa:', error);
+      toast.error('Erro ao atualizar responsável em massa');
+    } finally {
+      setIsBulkOwnerUpdating(false);
     }
   };
   
@@ -1294,7 +1334,40 @@ const Contacts: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
-              <Button 
+              <Select onValueChange={handleBulkPipelineChange} disabled={isBulkPipelineUpdating}>
+                <SelectTrigger className="w-44 bg-slate-900 border-slate-700 text-slate-200">
+                  <SelectValue placeholder={isBulkPipelineUpdating ? "Atualizando..." : "📋 Tipo"} />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-900 border-slate-700">
+                  <SelectItem value="__none__" className="cursor-pointer text-slate-400">
+                    Sem pipeline
+                  </SelectItem>
+                  {availablePipelines.map(pipeline => (
+                    <SelectItem key={pipeline.id} value={pipeline.id} className="cursor-pointer">
+                      <div className="flex items-center gap-2">
+                        <span>{pipeline.icon || '📋'}</span>
+                        {pipeline.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select onValueChange={handleBulkOwnerChange} disabled={isBulkOwnerUpdating}>
+                <SelectTrigger className="w-48 bg-slate-900 border-slate-700 text-slate-200">
+                  <SelectValue placeholder={isBulkOwnerUpdating ? "Atualizando..." : "👤 Responsável"} />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-900 border-slate-700">
+                  <SelectItem value="__none__" className="cursor-pointer text-slate-400">
+                    Sem responsável
+                  </SelectItem>
+                  {availableOwners.map(owner => (
+                    <SelectItem key={owner.id} value={owner.id} className="cursor-pointer">
+                      {owner.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
                 variant="ghost" 
                 size="sm"
                 onClick={() => setIsBulkSendTemplateOpen(true)}

@@ -463,6 +463,146 @@ export const api = {
   },
 
   /**
+   * Update pipeline (tipo) for multiple contacts via deals
+   * Creates deals for contacts without one
+   */
+  updateContactsPipeline: async (contactIds: string[], pipelineId: string | null): Promise<void> => {
+    // Fetch existing deals for these contacts
+    const { data: existingDeals } = await supabase
+      .from('deals')
+      .select('id, contact_id')
+      .in('contact_id', contactIds);
+
+    const dealsMap = new Map((existingDeals || []).map(d => [d.contact_id, d.id]));
+    
+    // Get first stage of the pipeline (if pipeline is provided)
+    let firstStageId: string | null = null;
+    if (pipelineId) {
+      const { data: stages } = await supabase
+        .from('pipeline_stages')
+        .select('id')
+        .eq('pipeline_id', pipelineId)
+        .order('position', { ascending: true })
+        .limit(1);
+      firstStageId = stages?.[0]?.id || null;
+    }
+    
+    const contactsWithDeals = contactIds.filter(id => dealsMap.has(id));
+    const contactsWithoutDeals = contactIds.filter(id => !dealsMap.has(id));
+
+    // Update existing deals
+    if (contactsWithDeals.length > 0) {
+      const dealIds = contactsWithDeals.map(cid => dealsMap.get(cid)!);
+      const updateData: any = { 
+        pipeline_id: pipelineId, 
+        updated_at: new Date().toISOString() 
+      };
+      if (firstStageId) {
+        updateData.stage_id = firstStageId;
+      }
+      const { error } = await supabase
+        .from('deals')
+        .update(updateData)
+        .in('id', dealIds);
+      if (error) {
+        console.error('[API] Error updating deals pipeline:', error);
+        throw error;
+      }
+    }
+
+    // Create deals for contacts without one (only if pipeline is provided)
+    if (contactsWithoutDeals.length > 0 && pipelineId && firstStageId) {
+      const newDeals = contactsWithoutDeals.map(contactId => ({
+        contact_id: contactId,
+        pipeline_id: pipelineId,
+        stage_id: firstStageId,
+        title: 'Novo Deal'
+      }));
+      const { error } = await supabase
+        .from('deals')
+        .insert(newDeals);
+      if (error) {
+        console.error('[API] Error creating deals for pipeline:', error);
+        throw error;
+      }
+    }
+  },
+
+  /**
+   * Update owner (responsável) for multiple contacts via deals
+   * Creates deals for contacts without one
+   */
+  updateContactsOwner: async (contactIds: string[], ownerId: string | null): Promise<void> => {
+    // Fetch existing deals for these contacts
+    const { data: existingDeals } = await supabase
+      .from('deals')
+      .select('id, contact_id, pipeline_id')
+      .in('contact_id', contactIds);
+
+    const dealsMap = new Map((existingDeals || []).map(d => [d.contact_id, d]));
+    
+    const contactsWithDeals = contactIds.filter(id => dealsMap.has(id));
+    const contactsWithoutDeals = contactIds.filter(id => !dealsMap.has(id));
+
+    // Update existing deals
+    if (contactsWithDeals.length > 0) {
+      const dealIds = contactsWithDeals.map(cid => dealsMap.get(cid)!.id);
+      const { error } = await supabase
+        .from('deals')
+        .update({ owner_id: ownerId, updated_at: new Date().toISOString() })
+        .in('id', dealIds);
+      if (error) {
+        console.error('[API] Error updating deals owner:', error);
+        throw error;
+      }
+    }
+
+    // Create deals for contacts without one (only if owner is provided)
+    if (contactsWithoutDeals.length > 0 && ownerId) {
+      // Get default pipeline and first stage
+      const { data: pipelines } = await supabase
+        .from('pipelines')
+        .select('id')
+        .eq('is_active', true)
+        .limit(1);
+      
+      const defaultPipelineId = pipelines?.[0]?.id;
+      if (!defaultPipelineId) {
+        console.warn('[API] No active pipeline found, cannot create deals');
+        return;
+      }
+
+      const { data: stages } = await supabase
+        .from('pipeline_stages')
+        .select('id')
+        .eq('pipeline_id', defaultPipelineId)
+        .order('position', { ascending: true })
+        .limit(1);
+      
+      const firstStageId = stages?.[0]?.id;
+      if (!firstStageId) {
+        console.warn('[API] No stage found for pipeline, cannot create deals');
+        return;
+      }
+
+      const newDeals = contactsWithoutDeals.map(contactId => ({
+        contact_id: contactId,
+        pipeline_id: defaultPipelineId,
+        stage_id: firstStageId,
+        owner_id: ownerId,
+        title: 'Novo Deal'
+      }));
+      const { error } = await supabase
+        .from('deals')
+        .insert(newDeals);
+      if (error) {
+        console.error('[API] Error creating deals for owner:', error);
+        throw error;
+      }
+    }
+  },
+
+  /**
    * Delete contact and all related data (conversations, messages, deals)
    */
   deleteContact: async (id: string): Promise<void> => {
