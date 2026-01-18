@@ -32,12 +32,13 @@ export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = (
 
   const fetchUnreadConversations = useCallback(async () => {
     try {
-      // Buscar conversas ativas com mensagens não lidas
+      // Buscar conversas ativas
       const { data: conversations, error: convError } = await supabase
         .from('conversations')
         .select(`
           id,
           last_message_at,
+          status,
           contact:contacts!conversations_contact_id_fkey (
             id,
             name,
@@ -59,11 +60,30 @@ export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = (
         return;
       }
 
-      // Para cada conversa, buscar mensagens não lidas (from_type = 'user' e read_at = null)
       const unreadData: UnreadConversation[] = [];
+      const conversationIds = conversations.map(c => c.id);
+
+      // Buscar todas as conversas que já tiveram interação humana
+      const { data: humanInteractions } = await supabase
+        .from('messages')
+        .select('conversation_id')
+        .in('conversation_id', conversationIds)
+        .eq('from_type', 'human');
+
+      const conversationsWithHuman = new Set(humanInteractions?.map(m => m.conversation_id) || []);
 
       for (const conv of conversations) {
-        const { data: unreadMessages, error: msgError } = await supabase
+        const contact = conv.contact as any;
+        const contactName = contact?.name || contact?.call_name || contact?.phone_number || 'Desconhecido';
+        const initials = contactName
+          .split(' ')
+          .map((n: string) => n[0])
+          .slice(0, 2)
+          .join('')
+          .toUpperCase();
+
+        // Buscar mensagens não lidas do usuário
+        const { data: unreadMessages } = await supabase
           .from('messages')
           .select('id, content, sent_at')
           .eq('conversation_id', conv.id)
@@ -72,34 +92,40 @@ export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = (
           .order('sent_at', { ascending: false })
           .limit(1);
 
-        if (msgError) {
-          console.error('Error fetching unread messages:', msgError);
-          continue;
-        }
-
-        const { count } = await supabase
+        const { count: unreadCount } = await supabase
           .from('messages')
           .select('id', { count: 'exact', head: true })
           .eq('conversation_id', conv.id)
           .eq('from_type', 'user')
           .is('read_at', null);
 
-        if (count && count > 0) {
-          const contact = conv.contact as any;
-          const contactName = contact?.name || contact?.call_name || contact?.phone_number || 'Desconhecido';
-          const initials = contactName
-            .split(' ')
-            .map((n: string) => n[0])
-            .slice(0, 2)
-            .join('')
-            .toUpperCase();
+        // Incluir conversa se:
+        // 1. Tem mensagens não lidas do cliente
+        // 2. OU nunca teve atendimento humano (status = 'nina' e sem mensagens human)
+        const hasUnreadMessages = unreadCount && unreadCount > 0;
+        const needsHumanAttention = conv.status === 'nina' && !conversationsWithHuman.has(conv.id);
+
+        if (hasUnreadMessages || needsHumanAttention) {
+          // Buscar última mensagem para preview se não houver não lida
+          let lastMessageContent = unreadMessages?.[0]?.content || '';
+          
+          if (!lastMessageContent) {
+            const { data: lastMsg } = await supabase
+              .from('messages')
+              .select('content, type')
+              .eq('conversation_id', conv.id)
+              .order('sent_at', { ascending: false })
+              .limit(1);
+            
+            lastMessageContent = lastMsg?.[0]?.content || (lastMsg?.[0]?.type !== 'text' ? '📎 Mídia' : 'Nova conversa');
+          }
 
           unreadData.push({
             id: conv.id,
             contactName,
             contactInitials: initials,
-            lastMessage: unreadMessages?.[0]?.content || '📎 Mídia',
-            unreadCount: count,
+            lastMessage: lastMessageContent || '📎 Mídia',
+            unreadCount: hasUnreadMessages ? (unreadCount || 0) : 1, // Se só precisa atenção, conta como 1
             lastMessageAt: conv.last_message_at
           });
         }
