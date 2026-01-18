@@ -225,7 +225,7 @@ serve(async (req) => {
         .eq('slug', 'atlas')
         .single();
 
-      // Get prospecting pipeline and "Aguardando Resposta" stage
+      // Get prospecting pipeline and "Template Enviado" stage
       const { data: prospectingPipeline } = await supabase
         .from('pipelines')
         .select('id')
@@ -233,11 +233,11 @@ serve(async (req) => {
         .single();
 
       if (prospectingPipeline) {
-        const { data: awaitingStage } = await supabase
+        const { data: templateSentStage } = await supabase
           .from('pipeline_stages')
           .select('id')
           .eq('pipeline_id', prospectingPipeline.id)
-          .eq('title', 'Aguardando Resposta')
+          .eq('title', 'Template Enviado')
           .single();
 
         // Update conversation with prospecting metadata and Atlas agent
@@ -263,28 +263,28 @@ serve(async (req) => {
           .eq('contact_id', contact_id)
           .maybeSingle();
 
-        if (!existingDeal && awaitingStage) {
+        if (!existingDeal && templateSentStage) {
           // Create new deal in prospecting pipeline
           await supabase
             .from('deals')
             .insert({
               contact_id,
               title: contact.name || 'Lead Prospecção',
-              stage_id: awaitingStage.id,
+              stage_id: templateSentStage.id,
               pipeline_id: prospectingPipeline.id,
               priority: 'medium'
             });
-          console.log('Created deal in Prospecção pipeline');
-        } else if (existingDeal && awaitingStage) {
-          // Update existing deal to prospecting pipeline
+          console.log('Created deal in Prospecção pipeline - Template Enviado stage');
+        } else if (existingDeal && templateSentStage) {
+          // Update existing deal to Template Enviado stage
           await supabase
             .from('deals')
             .update({
-              stage_id: awaitingStage.id,
+              stage_id: templateSentStage.id,
               pipeline_id: prospectingPipeline.id
             })
             .eq('id', existingDeal.id);
-          console.log('Updated deal to Prospecção pipeline');
+          console.log('Updated deal to Template Enviado stage');
         }
       }
     }
