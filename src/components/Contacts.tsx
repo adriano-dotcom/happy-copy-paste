@@ -60,6 +60,8 @@ interface ExtendedContact extends Contact {
   // Conversation data
   conversationActive?: boolean | null;
   conversationStatus?: string;
+  // Template sent status
+  hasTemplateSent?: boolean;
 }
 
 const Contacts: React.FC = () => {
@@ -109,6 +111,7 @@ const Contacts: React.FC = () => {
   const [pipelineFilter, setPipelineFilter] = useState<string>('all');
   const [createdDateFilter, setCreatedDateFilter] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month'>('all');
   const [chatStatusFilter, setChatStatusFilter] = useState<'all' | 'active' | 'archived' | 'none'>('all');
+  const [templateFilter, setTemplateFilter] = useState<'all' | 'with' | 'without'>('all');
   const [availableOwners, setAvailableOwners] = useState<{id: string; name: string}[]>([]);
   const [availablePipelines, setAvailablePipelines] = useState<{id: string; name: string; slug: string; icon: string | null; color: string | null}[]>([]);
 
@@ -362,6 +365,15 @@ const Contacts: React.FC = () => {
       }
     }
     
+    // Filtrar por template WhatsApp enviado
+    if (templateFilter !== 'all') {
+      if (templateFilter === 'with') {
+        filtered = filtered.filter(c => (c as ExtendedContact).hasTemplateSent === true);
+      } else if (templateFilter === 'without') {
+        filtered = filtered.filter(c => (c as ExtendedContact).hasTemplateSent !== true);
+      }
+    }
+    
     // Filtrar por termo de busca (incluindo campanha e responsável)
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
@@ -510,9 +522,10 @@ const Contacts: React.FC = () => {
     setPipelineFilter('all');
     setCreatedDateFilter('all');
     setChatStatusFilter('all');
+    setTemplateFilter('all');
   };
   
-  const hasActiveFilters = selectedStatuses.length > 0 || cnpjFilter !== 'all' || channelFilter !== 'all' || dateFilter !== 'all' || letterFilter !== 'all' || campaignFilter !== 'all' || verticalFilter !== 'all' || ownerFilter !== 'all' || pipelineFilter !== 'all' || createdDateFilter !== 'all' || chatStatusFilter !== 'all';
+  const hasActiveFilters = selectedStatuses.length > 0 || cnpjFilter !== 'all' || channelFilter !== 'all' || dateFilter !== 'all' || letterFilter !== 'all' || campaignFilter !== 'all' || verticalFilter !== 'all' || ownerFilter !== 'all' || pipelineFilter !== 'all' || createdDateFilter !== 'all' || chatStatusFilter !== 'all' || templateFilter !== 'all';
   
   const getChatStatusBadge = (contact: ExtendedContact) => {
     if (contact.conversationActive === null || contact.conversationActive === undefined) {
@@ -896,6 +909,39 @@ const Contacts: React.FC = () => {
                     </Popover>
                   </th>
                 )}
+                {/* Template Header with Filter - Only show on Outbound tab */}
+                {activeTab === 'outbound' && (
+                  <th className="px-4 py-4">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button className="flex items-center gap-1.5 hover:text-cyan-400 transition-colors">
+                          <Send className="w-3 h-3" />
+                          Template
+                          <ChevronDown className="w-3 h-3" />
+                          {templateFilter !== 'all' && <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />}
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="bg-slate-900 border-slate-700 w-44 p-2">
+                        <div className="space-y-1">
+                          {[
+                            { value: 'all', label: 'Todos', color: 'text-slate-300' },
+                            { value: 'with', label: '✅ Com template', color: 'text-green-400' },
+                            { value: 'without', label: '❌ Sem template', color: 'text-slate-400' }
+                          ].map(opt => (
+                            <button
+                              key={opt.value}
+                              onClick={() => setTemplateFilter(opt.value as typeof templateFilter)}
+                              className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-800 transition-colors ${templateFilter === opt.value ? 'bg-slate-800 text-cyan-400' : opt.color}`}
+                            >
+                              {opt.label}
+                              {templateFilter === opt.value && <span className="text-cyan-400">✓</span>}
+                            </button>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </th>
+                )}
                 {/* Segmento Header with Filter - Only show on Outbound tab */}
                 {activeTab === 'outbound' && (
                   <th className="px-4 py-4">
@@ -1127,6 +1173,19 @@ const Contacts: React.FC = () => {
                       {(contact as ExtendedContact).campaign ? (
                         <span className="px-2 py-1 rounded-full text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                           {(contact as ExtendedContact).campaign}
+                        </span>
+                      ) : (
+                        <span className="text-slate-600 text-xs">-</span>
+                      )}
+                    </td>
+                  )}
+                  {/* Template Cell - Only show on Outbound tab */}
+                  {activeTab === 'outbound' && (
+                    <td className="px-4 py-4">
+                      {(contact as ExtendedContact).hasTemplateSent ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-500/10 text-green-400 border border-green-500/20 inline-flex items-center gap-1">
+                          <Send className="w-3 h-3" />
+                          Enviado
                         </span>
                       ) : (
                         <span className="text-slate-600 text-xs">-</span>
