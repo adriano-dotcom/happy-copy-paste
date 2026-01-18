@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { playNotificationSound, playNewLeadSound } from '@/utils/notificationSound';
 
 interface UnreadConversation {
   id: string;
@@ -38,6 +39,10 @@ export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = (
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [pendingLeads, setPendingLeads] = useState<UnreadConversation[]>([]);
   const [unreadMessages, setUnreadMessages] = useState<UnreadConversation[]>([]);
+  
+  // Refs para rastrear IDs anteriores (para detectar novos itens)
+  const previousLeadIdsRef = useRef<Set<string>>(new Set());
+  const previousMessageIdsRef = useRef<Set<string>>(new Set());
 
   const fetchUnreadConversations = useCallback(async () => {
     try {
@@ -153,6 +158,30 @@ export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = (
       // Separar em listas distintas
       const leads = unreadData.filter(c => c.type === 'pending_lead');
       const messages = unreadData.filter(c => c.type === 'unread_message');
+
+      // Detectar novos itens e tocar som apropriado
+      const currentLeadIds = new Set(leads.map(l => l.id));
+      const currentMessageIds = new Set(messages.map(m => m.id));
+
+      // Verificar se há novos leads (somente se já temos dados anteriores)
+      if (previousLeadIdsRef.current.size > 0) {
+        const newLeads = leads.filter(l => !previousLeadIdsRef.current.has(l.id));
+        if (newLeads.length > 0) {
+          playNewLeadSound();
+        }
+      }
+
+      // Verificar se há novas mensagens não lidas
+      if (previousMessageIdsRef.current.size > 0) {
+        const newMessages = messages.filter(m => !previousMessageIdsRef.current.has(m.id));
+        if (newMessages.length > 0) {
+          playNotificationSound();
+        }
+      }
+
+      // Atualizar refs com IDs atuais
+      previousLeadIdsRef.current = currentLeadIds;
+      previousMessageIdsRef.current = currentMessageIds;
 
       setUnreadConversations(unreadData);
       setPendingLeads(leads);

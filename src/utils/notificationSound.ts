@@ -48,6 +48,41 @@ export const playNotificationSound = () => {
   }
 };
 
+// Sound for new leads awaiting attention - more attention-grabbing
+export const playNewLeadSound = () => {
+  if (!isNotificationSoundEnabled()) return;
+
+  try {
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') ctx.resume();
+
+    // Three-note alert pattern: E5 → C5 → E5
+    const notes = [659.25, 523.25, 659.25];
+    const noteDuration = 0.15;
+
+    notes.forEach((freq, i) => {
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      oscillator.frequency.setValueAtTime(freq, ctx.currentTime + i * noteDuration);
+      oscillator.type = 'triangle';
+
+      const startTime = ctx.currentTime + i * noteDuration;
+      gainNode.gain.setValueAtTime(0, startTime);
+      gainNode.gain.linearRampToValueAtTime(0.3, startTime + 0.03);
+      gainNode.gain.linearRampToValueAtTime(0, startTime + noteDuration);
+
+      oscillator.start(startTime);
+      oscillator.stop(startTime + noteDuration);
+    });
+  } catch (error) {
+    console.warn('Could not play new lead sound:', error);
+  }
+};
+
 // Special sound for qualified leads - more celebratory
 export const playQualifiedLeadSound = () => {
   if (!isNotificationSoundEnabled()) return;

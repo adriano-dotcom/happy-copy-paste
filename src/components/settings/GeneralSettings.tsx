@@ -4,7 +4,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { playNotificationSound, isNotificationSoundEnabled, setNotificationSoundEnabled } from '@/utils/notificationSound';
+import { playNotificationSound, playNewLeadSound, playQualifiedLeadSound, isNotificationSoundEnabled, setNotificationSoundEnabled } from '@/utils/notificationSound';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import EmailTemplateEditorModal from './EmailTemplateEditorModal';
@@ -248,22 +248,42 @@ const GeneralSettings: React.FC = () => {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              {soundEnabled && (
-                <button
-                  onClick={handleTestSound}
-                  className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
-                >
-                  Testar
-                </button>
-              )}
-              <Switch
-                id="notification-sound"
-                checked={soundEnabled}
-                onCheckedChange={handleSoundToggle}
-              />
-            </div>
+            <Switch
+              id="notification-sound"
+              checked={soundEnabled}
+              onCheckedChange={handleSoundToggle}
+            />
           </div>
+          
+          {soundEnabled && (
+            <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-700/50">
+              <span className="text-xs text-slate-400 w-full mb-1">Testar sons:</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => playNotificationSound()}
+                className="text-xs border-slate-700 hover:bg-slate-800"
+              >
+                🔔 Mensagem
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => playNewLeadSound()}
+                className="text-xs border-slate-700 hover:bg-slate-800"
+              >
+                🆕 Novo Lead
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => playQualifiedLeadSound()}
+                className="text-xs border-slate-700 hover:bg-slate-800"
+              >
+                🏆 Qualificado
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
