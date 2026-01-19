@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Megaphone, TrendingUp, TrendingDown, RefreshCw, Target, Users, MessageSquare, XCircle, Rocket } from 'lucide-react';
+import { Megaphone, TrendingUp, TrendingDown, RefreshCw, Target, Users, MessageSquare, XCircle, Rocket, Shield, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ProspectingFunnel } from './prospecting/ProspectingFunnel';
@@ -11,6 +13,14 @@ import { PeriodComparison } from './prospecting/PeriodComparison';
 import { CampaignTable } from './prospecting/CampaignTable';
 import { ProspectingKPICard } from './prospecting/ProspectingKPICard';
 import { CampaignManager } from './campaigns/CampaignManager';
+
+interface QualityStatus {
+  rating: 'GREEN' | 'YELLOW' | 'RED';
+  tier?: string;
+  event?: string;
+  last_check?: string;
+  display_phone_number?: string;
+}
 
 interface ProspectingMetrics {
   templatesSent: number;
@@ -65,6 +75,8 @@ const ProspectingDashboard: React.FC = () => {
   const [templates, setTemplates] = useState<TemplatePerformance[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignData[]>([]);
   const [trendData, setTrendData] = useState<TrendData[]>([]);
+  const [qualityStatus, setQualityStatus] = useState<QualityStatus | null>(null);
+  const [checkingQuality, setCheckingQuality] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -284,8 +296,48 @@ const ProspectingDashboard: React.FC = () => {
     }
   };
 
+  // Fetch quality status
+  const fetchQualityStatus = async () => {
+    try {
+      const { data: settings } = await supabase
+        .from('nina_settings')
+        .select('whatsapp_quality_status')
+        .maybeSingle();
+      
+      if (settings?.whatsapp_quality_status) {
+        setQualityStatus(settings.whatsapp_quality_status as unknown as QualityStatus);
+      }
+    } catch (error) {
+      console.error('Error fetching quality status:', error);
+    }
+  };
+
+  // Check quality manually
+  const checkQuality = async () => {
+    setCheckingQuality(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('check-whatsapp-quality');
+      if (error) throw error;
+      
+      if (data?.quality) {
+        setQualityStatus(data.quality);
+        if (data.changed) {
+          toast.info(`Quality Score atualizado: ${data.quality.rating}`);
+        } else {
+          toast.success('Quality Score verificado: ' + data.quality.rating);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking quality:', error);
+      toast.error('Erro ao verificar quality score');
+    } finally {
+      setCheckingQuality(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchQualityStatus();
   }, [period]);
 
   const getTrendIcon = (current: number, previous: number) => {
@@ -320,6 +372,69 @@ const ProspectingDashboard: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Quality Score Badge */}
+          {qualityStatus && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={checkQuality}
+                    disabled={checkingQuality}
+                    className={`border gap-2 ${
+                      qualityStatus.rating === 'GREEN' 
+                        ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' 
+                        : qualityStatus.rating === 'YELLOW'
+                        ? 'border-amber-500/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+                        : 'border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                    }`}
+                  >
+                    {qualityStatus.rating === 'GREEN' ? (
+                      <CheckCircle className="w-4 h-4" />
+                    ) : qualityStatus.rating === 'YELLOW' ? (
+                      <AlertTriangle className="w-4 h-4" />
+                    ) : (
+                      <Shield className="w-4 h-4" />
+                    )}
+                    <span className="hidden md:inline">Quality: {qualityStatus.rating}</span>
+                    <Badge 
+                      variant="outline" 
+                      className={`text-xs ${
+                        qualityStatus.rating === 'GREEN' 
+                          ? 'border-emerald-500/50 text-emerald-400' 
+                          : qualityStatus.rating === 'YELLOW'
+                          ? 'border-amber-500/50 text-amber-400'
+                          : 'border-red-500/50 text-red-400'
+                      }`}
+                    >
+                      {qualityStatus.tier?.replace('TIER_', '') || '1K'}
+                    </Badge>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs">
+                  <div className="space-y-1">
+                    <p className="font-semibold">Quality Score: {qualityStatus.rating}</p>
+                    <p className="text-xs text-muted-foreground">Tier: {qualityStatus.tier || 'TIER_1K'}</p>
+                    {qualityStatus.last_check && (
+                      <p className="text-xs text-muted-foreground">
+                        Última verificação: {new Date(qualityStatus.last_check).toLocaleString('pt-BR')}
+                      </p>
+                    )}
+                    {qualityStatus.rating !== 'GREEN' && (
+                      <p className="text-xs text-amber-400 mt-2">
+                        ⚠️ {qualityStatus.rating === 'YELLOW' 
+                          ? 'Número está sendo monitorado. Reduza volume de envios.'
+                          : 'Número restrito! Pause campanhas imediatamente.'}
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-2">Clique para atualizar</p>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+
           <Select value={period} onValueChange={setPeriod}>
             <SelectTrigger className="w-[140px] bg-slate-800/50 border-slate-700">
               <SelectValue placeholder="Período" />

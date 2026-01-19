@@ -1369,6 +1369,7 @@ export type Database = {
           whatsapp_access_token: string | null
           whatsapp_app_secret: string | null
           whatsapp_phone_number_id: string | null
+          whatsapp_quality_status: Json | null
           whatsapp_token_in_vault: boolean | null
           whatsapp_verify_token: string | null
           whatsapp_waba_id: string | null
@@ -1434,6 +1435,7 @@ export type Database = {
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_quality_status?: Json | null
           whatsapp_token_in_vault?: boolean | null
           whatsapp_verify_token?: string | null
           whatsapp_waba_id?: string | null
@@ -1499,6 +1501,7 @@ export type Database = {
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_quality_status?: Json | null
           whatsapp_token_in_vault?: boolean | null
           whatsapp_verify_token?: string | null
           whatsapp_waba_id?: string | null
@@ -2337,6 +2340,45 @@ export type Database = {
           quality_score?: string | null
           templates_sent?: number | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      whatsapp_quality_history: {
+        Row: {
+          created_at: string
+          current_limit: string | null
+          display_phone_number: string | null
+          event_type: string
+          id: string
+          old_limit: string | null
+          phone_number_id: string
+          quality_rating: string
+          raw_payload: Json | null
+          recorded_at: string
+        }
+        Insert: {
+          created_at?: string
+          current_limit?: string | null
+          display_phone_number?: string | null
+          event_type: string
+          id?: string
+          old_limit?: string | null
+          phone_number_id: string
+          quality_rating: string
+          raw_payload?: Json | null
+          recorded_at?: string
+        }
+        Update: {
+          created_at?: string
+          current_limit?: string | null
+          display_phone_number?: string | null
+          event_type?: string
+          id?: string
+          old_limit?: string | null
+          phone_number_id?: string
+          quality_rating?: string
+          raw_payload?: Json | null
+          recorded_at?: string
         }
         Relationships: []
       }

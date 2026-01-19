@@ -277,10 +277,31 @@ serve(async (req) => {
       const entry = body.entry?.[0];
       const changes = entry?.changes?.[0];
       const value = changes?.value;
+      const field = changes?.field;
       
       if (!value) {
         console.log('[Webhook] No value in payload, ignoring');
         return new Response(JSON.stringify({ status: 'ignored' }), { 
+          status: 200, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        });
+      }
+
+      // ===== HANDLE ACCOUNT UPDATES (Quality Score, Tier changes) =====
+      if (field === 'account_update') {
+        console.log('[Webhook] Received account_update event:', JSON.stringify(value));
+        EdgeRuntime.waitUntil(handleAccountUpdate(supabase, value));
+        return new Response(JSON.stringify({ status: 'processing_account_update' }), { 
+          status: 200, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        });
+      }
+
+      // ===== HANDLE TEMPLATE STATUS UPDATES =====
+      if (field === 'message_template_status_update') {
+        console.log('[Webhook] Received template status update:', JSON.stringify(value));
+        EdgeRuntime.waitUntil(handleTemplateStatusUpdate(supabase, value));
+        return new Response(JSON.stringify({ status: 'processing_template_update' }), { 
           status: 200, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         });
@@ -1126,5 +1147,223 @@ async function processMediaAndUpdateMessage(
         metadata: { processing: false, processing_error: (error as Error).message }
       })
       .eq('id', messageId);
+  }
+}
+
+// ===== HANDLE ACCOUNT UPDATES (Quality Score changes) =====
+async function handleAccountUpdate(supabase: any, value: any) {
+  try {
+    const { 
+      event, 
+      current_limit, 
+      display_phone_number, 
+      phone_number_id,
+      ban_info,
+      restriction_info
+    } = value;
+
+    console.log('[Webhook Account] Processing account update:', event, 'for', phone_number_id);
+
+    // Map event to quality rating
+    const ratingMap: Record<string, string> = {
+      'FLAGGED': 'YELLOW',
+      'DOWNGRADE': 'RED',
+      'UPGRADE': 'GREEN',
+      'UNFLAGGED': 'GREEN',
+      'ACCOUNT_RESTRICTED': 'RED',
+      'ACCOUNT_BANNED': 'RED'
+    };
+
+    const rating = ratingMap[event] || 'GREEN';
+
+    // Get previous status
+    const { data: settings } = await supabase
+      .from('nina_settings')
+      .select('whatsapp_quality_status')
+      .maybeSingle();
+
+    const previousStatus = settings?.whatsapp_quality_status || { rating: 'GREEN' };
+
+    // Insert into history
+    const { error: historyError } = await supabase
+      .from('whatsapp_quality_history')
+      .insert({
+        phone_number_id: phone_number_id || settings?.whatsapp_phone_number_id,
+        display_phone_number,
+        event_type: event,
+        current_limit,
+        old_limit: previousStatus.tier,
+        quality_rating: rating,
+        raw_payload: value
+      });
+
+    if (historyError) {
+      console.error('[Webhook Account] Error inserting history:', historyError);
+    }
+
+    // Update current status in nina_settings
+    const newStatus = {
+      rating,
+      event,
+      tier: current_limit || previousStatus.tier,
+      last_check: new Date().toISOString(),
+      ban_info: ban_info || null,
+      restriction_info: restriction_info || null
+    };
+
+    const { error: updateError } = await supabase
+      .from('nina_settings')
+      .update({ whatsapp_quality_status: newStatus })
+      .eq('id', '1e57a20e-4a9e-4fdc-a6ef-0ed084cfcf2c');
+
+    if (updateError) {
+      console.error('[Webhook Account] Error updating status:', updateError);
+    }
+
+    console.log('[Webhook Account] Status updated:', rating, 'Previous:', previousStatus.rating);
+
+    // Send alert if quality dropped to YELLOW or RED
+    if ((rating === 'YELLOW' || rating === 'RED') && previousStatus.rating !== rating) {
+      console.log('[Webhook Account] Triggering quality alert for rating:', rating);
+      await sendQualityAlertFromWebhook(supabase, rating, event, current_limit, display_phone_number);
+    }
+
+  } catch (error) {
+    console.error('[Webhook Account] Error processing account update:', error);
+  }
+}
+
+// ===== HANDLE TEMPLATE STATUS UPDATES =====
+async function handleTemplateStatusUpdate(supabase: any, value: any) {
+  try {
+    const { 
+      event, 
+      message_template_id,
+      message_template_name,
+      message_template_language,
+      reason
+    } = value;
+
+    console.log('[Webhook Template] Processing template update:', event, message_template_name);
+
+    // Update whatsapp_templates table if template was rejected or disabled
+    if (event === 'REJECTED' || event === 'DISABLED' || event === 'FLAGGED') {
+      const { error } = await supabase
+        .from('whatsapp_templates')
+        .update({ 
+          status: event.toLowerCase(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('template_id', message_template_id);
+
+      if (error) {
+        console.error('[Webhook Template] Error updating template status:', error);
+      } else {
+        console.log('[Webhook Template] Template status updated:', message_template_name, '->', event);
+      }
+
+      // Log to quality history as well for tracking
+      await supabase
+        .from('whatsapp_quality_history')
+        .insert({
+          phone_number_id: 'template_update',
+          event_type: `TEMPLATE_${event}`,
+          quality_rating: event === 'APPROVED' ? 'GREEN' : 'YELLOW',
+          raw_payload: {
+            template_id: message_template_id,
+            template_name: message_template_name,
+            language: message_template_language,
+            reason
+          }
+        });
+    }
+
+    // If template was approved, update status
+    if (event === 'APPROVED') {
+      const { error } = await supabase
+        .from('whatsapp_templates')
+        .update({ 
+          status: 'approved',
+          updated_at: new Date().toISOString()
+        })
+        .eq('template_id', message_template_id);
+
+      if (error) {
+        console.error('[Webhook Template] Error updating approved template:', error);
+      }
+    }
+
+  } catch (error) {
+    console.error('[Webhook Template] Error processing template update:', error);
+  }
+}
+
+// ===== SEND QUALITY ALERT EMAIL =====
+async function sendQualityAlertFromWebhook(
+  supabase: any,
+  rating: string,
+  event: string,
+  tier: string,
+  phoneNumber: string
+) {
+  try {
+    console.log('[Webhook Alert] Sending quality alert for rating:', rating);
+
+    const color = rating === 'RED' ? '#DC2626' : '#F59E0B';
+    const emoji = rating === 'RED' ? '🚨' : '⚠️';
+    const severity = rating === 'RED' ? 'CRÍTICO' : 'ATENÇÃO';
+
+    // Get alert recipients (team members with admin role)
+    const { data: admins } = await supabase
+      .from('team_members')
+      .select('email, name')
+      .eq('role', 'admin');
+
+    const recipients = admins?.map((a: any) => a.email).filter(Boolean) || [];
+    
+    if (recipients.length === 0) {
+      console.warn('[Webhook Alert] No admin recipients found');
+      return;
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+
+    for (const email of recipients) {
+      try {
+        await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseKey}`
+          },
+          body: JSON.stringify({
+            to: email,
+            subject: `${emoji} ${severity}: Quality Score WhatsApp ${rating}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background: ${color}; color: white; padding: 20px; border-radius: 8px 8px 0 0;">
+                  <h1 style="margin: 0;">${emoji} Alerta de Quality Score</h1>
+                </div>
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 0 0 8px 8px;">
+                  <p><strong>Status:</strong> <span style="background: ${color}; color: white; padding: 2px 8px; border-radius: 4px;">${rating}</span></p>
+                  <p><strong>Evento:</strong> ${event}</p>
+                  <p><strong>Tier:</strong> ${tier || 'N/A'}</p>
+                  <p><strong>Número:</strong> ${phoneNumber || 'N/A'}</p>
+                  <p><strong>Hora:</strong> ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
+                  <hr style="border: 1px solid #dee2e6; margin: 20px 0;">
+                  <p style="color: #666;">Acesse o sistema para verificar e tomar as ações necessárias.</p>
+                </div>
+              </div>
+            `
+          })
+        });
+        console.log('[Webhook Alert] Email sent to:', email);
+      } catch (emailError) {
+        console.error('[Webhook Alert] Failed to send email to:', email, emailError);
+      }
+    }
+  } catch (error) {
+    console.error('[Webhook Alert] Error sending alerts:', error);
   }
 }
