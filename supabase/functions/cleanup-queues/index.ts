@@ -1,5 +1,100 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// ============================================
+// HELPER: Enviar alerta de documentos órfãos
+// ============================================
+async function sendDocumentHealthAlert(supabase: any, docs: any[]) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  
+  // Formatar lista de documentos
+  const docList = docs.map(doc => {
+    const contact = (doc.conversations as any)?.contacts;
+    return `
+      <tr>
+        <td style="padding: 8px; border: 1px solid #ddd;">${contact?.name || 'Desconhecido'}</td>
+        <td style="padding: 8px; border: 1px solid #ddd;">${contact?.phone_number || '-'}</td>
+        <td style="padding: 8px; border: 1px solid #ddd;">${doc.type}</td>
+        <td style="padding: 8px; border: 1px solid #ddd;">${(doc.content || '-').substring(0, 50)}</td>
+        <td style="padding: 8px; border: 1px solid #ddd;">${new Date(doc.created_at).toLocaleString('pt-BR')}</td>
+      </tr>
+    `;
+  }).join('');
+  
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 700px;">
+      <h2 style="color: #e53e3e;">⚠️ Alerta: Documentos não salvos</h2>
+      <p>Os seguintes documentos foram recebidos mas não foram salvos corretamente no storage:</p>
+      
+      <table style="border-collapse: collapse; width: 100%; margin: 20px 0;">
+        <thead>
+          <tr style="background-color: #f8f9fa;">
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Contato</th>
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Telefone</th>
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Tipo</th>
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Conteúdo</th>
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Recebido em</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${docList}
+        </tbody>
+      </table>
+      
+      <p><strong>Ação recomendada:</strong> Solicite ao cliente que reenvie os documentos.</p>
+      
+      <p style="color: #666; font-size: 12px;">
+        Este é um alerta automático do sistema de verificação de saúde de documentos.
+      </p>
+    </div>
+  `;
+  
+  // Enviar para admin e atendimento
+  const recipients = ['adriano@jacometo.com.br', 'atendimento@jacometo.com.br'];
+  
+  for (const email of recipients) {
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`
+        },
+        body: JSON.stringify({
+          to: email,
+          subject: `⚠️ ${docs.length} documento(s) não salvo(s) - Ação necessária`,
+          html
+        })
+      });
+      
+      if (response.ok) {
+        console.log(`[CleanupQueues] 📧 Document health alert sent to ${email}`);
+      } else {
+        console.error(`[CleanupQueues] Failed to send alert to ${email}:`, await response.text());
+      }
+    } catch (err) {
+      console.error(`[CleanupQueues] Error sending alert to ${email}:`, err);
+    }
+  }
+  
+  // Marcar documentos como alertados para evitar spam
+  for (const doc of docs) {
+    const existingMetadata = (doc.metadata as Record<string, any>) || {};
+    await supabase
+      .from('messages')
+      .update({ 
+        metadata: { 
+          ...existingMetadata,
+          media_alert_sent: true,
+          media_alert_at: new Date().toISOString()
+        }
+      })
+      .eq('id', doc.id);
+  }
+  
+  console.log(`[CleanupQueues] Marked ${docs.length} documents as alerted`);
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -59,6 +154,58 @@ Deno.serve(async (req) => {
         stuckItems.map(i => i.id));
     } else {
       console.log('[CleanupQueues] No stuck processing items found');
+    }
+
+    // ============================================
+    // HEALTH CHECK: Documentos sem media_url
+    // ============================================
+    console.log('[CleanupQueues] Checking for documents without media_url...');
+
+    // Documentos criados há mais de 5 minutos sem media_url (excluir já alertados)
+    const docHealthThreshold = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+    const { data: orphanedDocs, error: orphanError } = await supabase
+      .from('messages')
+      .select(`
+        id,
+        content,
+        type,
+        created_at,
+        metadata,
+        conversation_id,
+        conversations!inner (
+          contact_id,
+          contacts!inner (
+            name,
+            phone_number
+          )
+        )
+      `)
+      .in('type', ['document', 'image'])
+      .is('media_url', null)
+      .eq('from_type', 'user')
+      .lt('created_at', docHealthThreshold)
+      .gt('created_at', oneHourAgo)
+      .limit(20);
+
+    if (orphanError) {
+      console.error('[CleanupQueues] Error checking orphaned documents:', orphanError);
+    } else if (orphanedDocs && orphanedDocs.length > 0) {
+      // Filtrar documentos que ainda não foram alertados
+      const docsToAlert = orphanedDocs.filter(doc => {
+        const metadata = doc.metadata as Record<string, any> | null;
+        return !metadata?.media_alert_sent;
+      });
+
+      if (docsToAlert.length > 0) {
+        console.warn(`[CleanupQueues] ⚠️ Found ${docsToAlert.length} documents without media_url!`);
+        await sendDocumentHealthAlert(supabase, docsToAlert);
+      } else {
+        console.log('[CleanupQueues] ✓ All orphaned documents already alerted');
+      }
+    } else {
+      console.log('[CleanupQueues] ✓ All recent documents have media_url');
     }
 
     // Get current queue stats for reporting
