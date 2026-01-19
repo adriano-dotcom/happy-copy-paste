@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Megaphone, TrendingUp, TrendingDown, RefreshCw, Target, Users, MessageSquare, XCircle } from 'lucide-react';
-import { Card } from '@/components/ui/card';
+import { Megaphone, TrendingUp, TrendingDown, RefreshCw, Target, Users, MessageSquare, XCircle, Rocket } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
@@ -10,6 +10,7 @@ import { TemplateRanking } from './prospecting/TemplateRanking';
 import { PeriodComparison } from './prospecting/PeriodComparison';
 import { CampaignTable } from './prospecting/CampaignTable';
 import { ProspectingKPICard } from './prospecting/ProspectingKPICard';
+import { CampaignManager } from './campaigns/CampaignManager';
 
 interface ProspectingMetrics {
   templatesSent: number;
@@ -401,6 +402,24 @@ const ProspectingDashboard: React.FC = () => {
 
       {/* Campaign Table */}
       <CampaignTable campaigns={campaigns} loading={loading} />
+
+      {/* Active Campaigns Manager */}
+      <Card className="mt-6 bg-slate-900/50 border-slate-800">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/30">
+              <Rocket className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <CardTitle className="text-lg text-white">Campanhas de Disparo</CardTitle>
+              <p className="text-sm text-slate-400">Gerenciamento de campanhas WhatsApp em massa</p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <CampaignManager />
+        </CardContent>
+      </Card>
     </div>
   );
 };
