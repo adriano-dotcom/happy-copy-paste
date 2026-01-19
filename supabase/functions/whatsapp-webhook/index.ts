@@ -1148,8 +1148,20 @@ async function processMediaAndUpdateMessage(
     // ============================================
     // FASE 4: Atualizar content e finalizar
     // ============================================
+    // Buscar metadata atual para preservar dados originais (raw.document.id, etc.)
+    const { data: currentMessage } = await supabase
+      .from('messages')
+      .select('metadata')
+      .eq('id', messageId)
+      .single();
+
+    const existingMetadata = (currentMessage?.metadata as Record<string, any>) || {};
+
     const updateData: any = {
-      metadata: { processing: false }
+      metadata: { 
+        ...existingMetadata,      // Preserva raw, original_type, etc.
+        processing: false         // Atualiza apenas o flag
+      }
     };
     
     if (content) {
@@ -1168,11 +1180,23 @@ async function processMediaAndUpdateMessage(
     }
   } catch (error) {
     console.error('[Webhook Media] Error processing media:', error);
-    // Mark message as having failed processing
+    // Mark message as having failed processing - preservar metadata existente
+    const { data: errorMessage } = await supabase
+      .from('messages')
+      .select('metadata')
+      .eq('id', messageId)
+      .single();
+    
+    const errorMetadata = (errorMessage?.metadata as Record<string, any>) || {};
+    
     await supabase
       .from('messages')
       .update({ 
-        metadata: { processing: false, processing_error: (error as Error).message }
+        metadata: { 
+          ...errorMetadata,
+          processing: false, 
+          processing_error: (error as Error).message 
+        }
       })
       .eq('id', messageId);
   }
