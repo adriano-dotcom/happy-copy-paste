@@ -159,17 +159,22 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     key: 'job_seeker',
     tag: 'emprego',
     keywords: [
-      'vaga', 'vagas', 'emprego', 'trabalho', 'trabalhar',
-      'contratar', 'contratando', 'contratação', 'contratacao',
-      'curriculo', 'currículo', 'cv',
-      'ajudante', 'operador', 'auxiliar',
-      'oportunidade de trabalho', 'oportunidade de emprego',
-      'preciso de emprego', 'procuro emprego', 'procuro trabalho',
-      'estou desempregado', 'estou procurando emprego',
-      'vocês estão contratando', 'estão contratando', 'estao contratando',
-      'tem vaga', 'há vaga', 'ha vaga', 'há vagas', 'ha vagas',
+      // More specific job-seeking phrases to avoid false positives
+      'vaga de emprego', 'vagas de emprego', 'vaga de trabalho', 'vagas de trabalho',
+      'procuro emprego', 'preciso de emprego', 'procurando emprego',
+      'procuro trabalho', 'preciso de trabalho', 'procurando trabalho',
+      'estou desempregado', 'estou procurando emprego', 'estou sem emprego',
+      'vocês estão contratando', 'voces estao contratando', 'estão contratando', 'estao contratando',
+      'tem vaga aí', 'tem vaga ai', 'tem vagas aí', 'tem vagas ai',
+      'há vaga disponível', 'ha vaga disponivel', 'há vagas disponíveis',
       'posso mandar meu currículo', 'posso enviar meu currículo',
-      'manda o currículo', 'enviar currículo', 'deixar currículo'
+      'manda o currículo', 'enviar currículo', 'deixar currículo',
+      'curriculo', 'currículo', 'meu cv',
+      'oportunidade de emprego', 'oportunidades de emprego',
+      'quero trabalhar aí', 'quero trabalhar ai', 'quero trabalhar com vocês', 'quero trabalhar com voces',
+      'vocês precisam de', 'voces precisam de', 'precisam de motorista', 'precisam de ajudante'
+      // REMOVED: 'vaga', 'vagas', 'trabalho', 'trabalhar', 'contratar', 'contratando' - too generic!
+      // REMOVED: 'ajudante', 'operador', 'auxiliar', 'motorista' - could be legitimate leads
     ],
     response: 'Olá! Agradecemos seu contato. Somos uma corretora especializada em seguros de transporte e carga. No momento, não temos vagas em aberto. Desejamos sucesso na sua busca! 🙏',
     pauseConversation: true,
@@ -244,11 +249,38 @@ function detectDisqualificationCategory(messageContent: string): Disqualificatio
   const content = messageContent.toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   
+  // ===== INSURANCE INTEREST CHECK - MUST COME FIRST =====
+  // If the message mentions insurance-related terms, do NOT disqualify
+  // This prevents false positives when leads say "onde eu trabalho, a gente tá sem seguro"
+  const insuranceTerms = [
+    'seguro', 'seguros', 'cotar', 'cotacao', 'cotação', 
+    'rctr', 'carga', 'cargas', 'transporte', 'apolice', 'apólice',
+    'cobertura', 'sinistro', 'indenizacao', 'indenização',
+    'proteger', 'proteção', 'protecao', 'assegurar',
+    'sem seguro', 'fazer seguro', 'preciso de seguro', 'quero seguro',
+    'nao tem seguro', 'não tem seguro', 'ta sem seguro', 'tá sem seguro',
+    'esta sem seguro', 'está sem seguro', 'renovar seguro', 'renovacao',
+    'ct-e', 'cte', 'antt', 'rntrc', 'caminhao', 'caminhão', 'frota'
+  ];
+  
+  const hasInsuranceInterest = insuranceTerms.some(term => 
+    content.includes(term.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+  );
+  
+  if (hasInsuranceInterest) {
+    console.log(`[Nina][Disqualification] 🛡️ Insurance interest detected in message - NOT disqualifying`);
+    return null;
+  }
+  // ===== END INSURANCE INTEREST CHECK =====
+  
   for (const category of DISQUALIFICATION_CATEGORIES) {
     const match = category.keywords.some(keyword => 
       content.includes(keyword.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
     );
-    if (match) return category;
+    if (match) {
+      console.log(`[Nina][Disqualification] ⚠️ Detected disqualification category: ${category.key} (keyword matched)`);
+      return category;
+    }
   }
   return null;
 }
