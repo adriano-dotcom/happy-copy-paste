@@ -344,27 +344,34 @@ export const api = {
 
     // Fetch contacts that have WhatsApp template messages sent
     const conversationIds = (conversationsData || []).map(c => c.id);
-    const contactsWithTemplateSent = new Set<string>();
+    const contactTemplateMap = new Map<string, string>();
     
     if (conversationIds.length > 0) {
-      // Query directly for template messages using contains filter
+      // Query template messages with metadata to get template_name
       const { data: templateMessages } = await supabase
         .from('messages')
-        .select('conversation_id')
+        .select('conversation_id, metadata')
         .in('conversation_id', conversationIds)
         .eq('from_type', 'nina')
-        .contains('metadata', { is_template: true });
+        .contains('metadata', { is_template: true })
+        .order('sent_at', { ascending: false });
       
       if (templateMessages && templateMessages.length > 0) {
-        // Get unique conversation IDs that have template messages
-        const conversationsWithTemplates = new Set(
-          templateMessages.map(m => m.conversation_id)
-        );
+        // Build map of conversation_id → template_name (most recent first)
+        const convToTemplate = new Map<string, string>();
+        templateMessages.forEach(m => {
+          const meta = m.metadata as Record<string, any> | null;
+          // Only add if not exists (first found = most recent due to ordering)
+          if (meta?.template_name && !convToTemplate.has(m.conversation_id)) {
+            convToTemplate.set(m.conversation_id, meta.template_name);
+          }
+        });
         
         // Map back to contact IDs
         (conversationsData || []).forEach(conv => {
-          if (conversationsWithTemplates.has(conv.id)) {
-            contactsWithTemplateSent.add(conv.contact_id);
+          const templateName = convToTemplate.get(conv.id);
+          if (templateName) {
+            contactTemplateMap.set(conv.contact_id, templateName);
           }
         });
       }
@@ -422,7 +429,8 @@ export const api = {
         conversationActive: conversation?.is_active ?? null,
         conversationStatus: conversation?.status || undefined,
         // Template sent status
-        hasTemplateSent: contactsWithTemplateSent.has(c.id),
+        hasTemplateSent: contactTemplateMap.has(c.id),
+        templateName: contactTemplateMap.get(c.id),
       };
     });
   },
