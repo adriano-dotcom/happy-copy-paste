@@ -319,6 +319,105 @@ export type Database = {
           },
         ]
       }
+      campaign_contacts: {
+        Row: {
+          campaign_id: string
+          contact_id: string
+          conversation_id: string | null
+          created_at: string | null
+          deal_id: string | null
+          delivered_at: string | null
+          error_code: string | null
+          error_message: string | null
+          id: string
+          position: number | null
+          read_at: string | null
+          replied_at: string | null
+          retry_count: number | null
+          scheduled_at: string | null
+          sent_at: string | null
+          status: string | null
+          updated_at: string | null
+          whatsapp_message_id: string | null
+        }
+        Insert: {
+          campaign_id: string
+          contact_id: string
+          conversation_id?: string | null
+          created_at?: string | null
+          deal_id?: string | null
+          delivered_at?: string | null
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          position?: number | null
+          read_at?: string | null
+          replied_at?: string | null
+          retry_count?: number | null
+          scheduled_at?: string | null
+          sent_at?: string | null
+          status?: string | null
+          updated_at?: string | null
+          whatsapp_message_id?: string | null
+        }
+        Update: {
+          campaign_id?: string
+          contact_id?: string
+          conversation_id?: string | null
+          created_at?: string | null
+          deal_id?: string | null
+          delivered_at?: string | null
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          position?: number | null
+          read_at?: string | null
+          replied_at?: string | null
+          retry_count?: number | null
+          scheduled_at?: string | null
+          sent_at?: string | null
+          status?: string | null
+          updated_at?: string | null
+          whatsapp_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_contacts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_contacts_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_contacts_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_contacts_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_contacts_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaigns: {
         Row: {
           color: string | null
@@ -1999,6 +2098,296 @@ export type Database = {
         }
         Relationships: []
       }
+      webhook_dead_letter: {
+        Row: {
+          created_at: string | null
+          error_message: string | null
+          error_stack: string | null
+          headers: Json | null
+          id: string
+          last_retry_at: string | null
+          max_retries: number | null
+          next_retry_at: string | null
+          payload: Json
+          resolved_at: string | null
+          retry_count: number | null
+          status: string | null
+          webhook_type: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          error_message?: string | null
+          error_stack?: string | null
+          headers?: Json | null
+          id?: string
+          last_retry_at?: string | null
+          max_retries?: number | null
+          next_retry_at?: string | null
+          payload: Json
+          resolved_at?: string | null
+          retry_count?: number | null
+          status?: string | null
+          webhook_type?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          error_message?: string | null
+          error_stack?: string | null
+          headers?: Json | null
+          id?: string
+          last_retry_at?: string | null
+          max_retries?: number | null
+          next_retry_at?: string | null
+          payload?: Json
+          resolved_at?: string | null
+          retry_count?: number | null
+          status?: string | null
+          webhook_type?: string | null
+        }
+        Relationships: []
+      }
+      whatsapp_campaigns: {
+        Row: {
+          completed_at: string | null
+          created_at: string | null
+          created_by: string | null
+          current_failure_streak: number | null
+          delivered_count: number | null
+          description: string | null
+          error_message: string | null
+          failed_count: number | null
+          id: string
+          interval_seconds: number | null
+          is_prospecting: boolean | null
+          last_processed_at: string | null
+          max_failures_before_pause: number | null
+          messages_per_batch: number | null
+          metadata: Json | null
+          name: string
+          owner_id: string | null
+          paused_at: string | null
+          read_count: number | null
+          replied_count: number | null
+          scheduled_at: string | null
+          sent_count: number | null
+          skipped_count: number | null
+          started_at: string | null
+          status: string | null
+          target_pipeline_id: string | null
+          target_stage_id: string | null
+          template_id: string | null
+          template_variables: Json | null
+          total_contacts: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          current_failure_streak?: number | null
+          delivered_count?: number | null
+          description?: string | null
+          error_message?: string | null
+          failed_count?: number | null
+          id?: string
+          interval_seconds?: number | null
+          is_prospecting?: boolean | null
+          last_processed_at?: string | null
+          max_failures_before_pause?: number | null
+          messages_per_batch?: number | null
+          metadata?: Json | null
+          name: string
+          owner_id?: string | null
+          paused_at?: string | null
+          read_count?: number | null
+          replied_count?: number | null
+          scheduled_at?: string | null
+          sent_count?: number | null
+          skipped_count?: number | null
+          started_at?: string | null
+          status?: string | null
+          target_pipeline_id?: string | null
+          target_stage_id?: string | null
+          template_id?: string | null
+          template_variables?: Json | null
+          total_contacts?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          current_failure_streak?: number | null
+          delivered_count?: number | null
+          description?: string | null
+          error_message?: string | null
+          failed_count?: number | null
+          id?: string
+          interval_seconds?: number | null
+          is_prospecting?: boolean | null
+          last_processed_at?: string | null
+          max_failures_before_pause?: number | null
+          messages_per_batch?: number | null
+          metadata?: Json | null
+          name?: string
+          owner_id?: string | null
+          paused_at?: string | null
+          read_count?: number | null
+          replied_count?: number | null
+          scheduled_at?: string | null
+          sent_count?: number | null
+          skipped_count?: number | null
+          started_at?: string | null
+          status?: string | null
+          target_pipeline_id?: string | null
+          target_stage_id?: string | null
+          template_id?: string | null
+          template_variables?: Json | null
+          total_contacts?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_campaigns_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_campaigns_target_pipeline_id_fkey"
+            columns: ["target_pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_campaigns_target_stage_id_fkey"
+            columns: ["target_stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_campaigns_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_metrics: {
+        Row: {
+          avg_delivery_time_ms: number | null
+          avg_response_time_ms: number | null
+          created_at: string | null
+          delivery_rate: number | null
+          error_131026_count: number | null
+          error_131049_count: number | null
+          error_other_count: number | null
+          id: string
+          messages_delivered: number | null
+          messages_failed: number | null
+          messages_read: number | null
+          messages_sent: number | null
+          metric_date: string | null
+          metric_hour: number | null
+          phone_number_id: string | null
+          quality_score: string | null
+          templates_sent: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          avg_delivery_time_ms?: number | null
+          avg_response_time_ms?: number | null
+          created_at?: string | null
+          delivery_rate?: number | null
+          error_131026_count?: number | null
+          error_131049_count?: number | null
+          error_other_count?: number | null
+          id?: string
+          messages_delivered?: number | null
+          messages_failed?: number | null
+          messages_read?: number | null
+          messages_sent?: number | null
+          metric_date?: string | null
+          metric_hour?: number | null
+          phone_number_id?: string | null
+          quality_score?: string | null
+          templates_sent?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          avg_delivery_time_ms?: number | null
+          avg_response_time_ms?: number | null
+          created_at?: string | null
+          delivery_rate?: number | null
+          error_131026_count?: number | null
+          error_131049_count?: number | null
+          error_other_count?: number | null
+          id?: string
+          messages_delivered?: number | null
+          messages_failed?: number | null
+          messages_read?: number | null
+          messages_sent?: number | null
+          metric_date?: string | null
+          metric_hour?: number | null
+          phone_number_id?: string | null
+          quality_score?: string | null
+          templates_sent?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      whatsapp_rate_limits: {
+        Row: {
+          created_at: string | null
+          daily_limit: number | null
+          hourly_limit: number | null
+          id: string
+          last_reset_date: string | null
+          last_reset_hour: number | null
+          messages_this_hour: number | null
+          messages_today: number | null
+          paused_until: string | null
+          phone_number_id: string
+          quality_score: string | null
+          tier: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          daily_limit?: number | null
+          hourly_limit?: number | null
+          id?: string
+          last_reset_date?: string | null
+          last_reset_hour?: number | null
+          messages_this_hour?: number | null
+          messages_today?: number | null
+          paused_until?: string | null
+          phone_number_id: string
+          quality_score?: string | null
+          tier?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          daily_limit?: number | null
+          hourly_limit?: number | null
+          id?: string
+          last_reset_date?: string | null
+          last_reset_hour?: number | null
+          messages_this_hour?: number | null
+          messages_today?: number | null
+          paused_until?: string | null
+          phone_number_id?: string
+          quality_score?: string | null
+          tier?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       whatsapp_templates: {
         Row: {
           category: string | null
@@ -2075,6 +2464,43 @@ export type Database = {
       }
     }
     Functions: {
+      check_rate_limit: {
+        Args: { p_phone_number_id: string }
+        Returns: {
+          can_send: boolean
+          reason: string
+          wait_seconds: number
+        }[]
+      }
+      claim_campaign_batch: {
+        Args: { p_batch_size?: number; p_campaign_id: string }
+        Returns: {
+          campaign_id: string
+          contact_id: string
+          conversation_id: string | null
+          created_at: string | null
+          deal_id: string | null
+          delivered_at: string | null
+          error_code: string | null
+          error_message: string | null
+          id: string
+          position: number | null
+          read_at: string | null
+          replied_at: string | null
+          retry_count: number | null
+          scheduled_at: string | null
+          sent_at: string | null
+          status: string | null
+          updated_at: string | null
+          whatsapp_message_id: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "campaign_contacts"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       claim_message_processing_batch: {
         Args: { p_limit?: number }
         Returns: {
@@ -2183,6 +2609,10 @@ export type Database = {
         Returns: boolean
       }
       has_vault_secret: { Args: { secret_name: string }; Returns: boolean }
+      increment_rate_limit: {
+        Args: { p_count?: number; p_phone_number_id: string }
+        Returns: undefined
+      }
       is_authenticated_user: { Args: never; Returns: boolean }
       is_whatsapp_window_open: {
         Args: { p_conversation_id: string }
@@ -2191,6 +2621,18 @@ export type Database = {
       set_vault_secret: {
         Args: { secret_name: string; secret_value: string }
         Returns: string
+      }
+      update_campaign_counters: {
+        Args: {
+          p_campaign_id: string
+          p_delivered?: number
+          p_failed?: number
+          p_read?: number
+          p_replied?: number
+          p_sent?: number
+          p_skipped?: number
+        }
+        Returns: undefined
       }
       update_client_memory: {
         Args: { p_contact_id: string; p_new_memory: Json }
