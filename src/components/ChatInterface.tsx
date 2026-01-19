@@ -141,6 +141,13 @@ const ChatInterface: React.FC = () => {
   // PDF preview state
   const [pdfPreview, setPdfPreview] = useState<{ url: string; filename: string } | null>(null);
   
+  // Audio recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
   // Input refs for keyboard shortcuts
   const searchInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
@@ -838,6 +845,110 @@ const ChatInterface: React.FC = () => {
       : undefined;
     
     await sendMessage(activeChat.id, content, operatorName);
+  };
+
+  // Audio recording functions
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+      
+      mediaRecorder.onstop = () => {
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      
+      // Start timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+      
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      toast.error('Erro ao acessar microfone. Verifique as permissões.');
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!mediaRecorderRef.current || !isRecording) return;
+    
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    
+    return new Promise<void>((resolve) => {
+      mediaRecorderRef.current!.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const reader = new FileReader();
+        
+        reader.onloadend = async () => {
+          const base64 = (reader.result as string).split(',')[1];
+          await sendAudioMessage(base64, 'audio/webm');
+          resolve();
+        };
+        
+        reader.readAsDataURL(audioBlob);
+      };
+      
+      mediaRecorderRef.current!.stop();
+      setIsRecording(false);
+      setRecordingTime(0);
+    });
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+    }
+    audioChunksRef.current = [];
+    setIsRecording(false);
+    setRecordingTime(0);
+  };
+
+  const sendAudioMessage = async (audioBase64: string, mimeType: string) => {
+    if (!activeChat) return;
+    
+    try {
+      toast.loading('Processando áudio...', { id: 'audio-send' });
+      
+      const { data, error } = await supabase.functions.invoke('simulate-audio-webhook', {
+        body: {
+          phone: activeChat.contactPhone,
+          name: activeChat.contactName,
+          audio_base64: audioBase64,
+          audio_mime_type: mimeType,
+        },
+      });
+      
+      if (error) throw error;
+      
+      const transcriptionPreview = data.transcription?.substring(0, 50);
+      toast.success(`Áudio enviado! Transcrição: "${transcriptionPreview}..."`, { 
+        id: 'audio-send',
+        duration: 4000 
+      });
+      
+      await refetch();
+      
+    } catch (error) {
+      console.error('Error sending audio:', error);
+      toast.error('Erro ao enviar áudio', { id: 'audio-send' });
+    }
   };
 
   const handleStatusChange = async (status: ConversationStatus) => {
@@ -2254,8 +2365,44 @@ const ChatInterface: React.FC = () => {
                   <Button type="submit" className={`rounded-full ${isMobile ? 'w-11 h-11' : 'w-12 h-12'} p-0 shadow-lg shadow-cyan-500/20 hover:scale-105 active:scale-95 transition-all`}>
                     <Send className="w-5 h-5 ml-0.5" />
                   </Button>
+                ) : isRecording ? (
+                  <div className="flex items-center gap-2">
+                    {/* Cancel button */}
+                    <ShadcnButton 
+                      type="button" 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={cancelRecording}
+                      className="rounded-full w-10 h-10 text-red-400 hover:bg-red-500/20"
+                    >
+                      <XCircle className="w-5 h-5" />
+                    </ShadcnButton>
+                    
+                    {/* Recording indicator */}
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/20 rounded-full">
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                      <span className="text-sm text-red-400 font-mono">
+                        {Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, '0')}
+                      </span>
+                    </div>
+                    
+                    {/* Send audio button */}
+                    <ShadcnButton 
+                      type="button" 
+                      onClick={stopRecording}
+                      className={`rounded-full ${isMobile ? 'w-11 h-11' : 'w-12 h-12'} p-0 bg-green-600 hover:bg-green-700`}
+                    >
+                      <Send className="w-5 h-5" />
+                    </ShadcnButton>
+                  </div>
                 ) : (
-                  <Button type="button" variant="secondary" className={`rounded-full ${isMobile ? 'w-11 h-11' : 'w-12 h-12'} p-0 bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700`} disabled={!windowTimeRemaining.isOpen}>
+                  <Button 
+                    type="button" 
+                    variant="secondary" 
+                    onClick={startRecording}
+                    className={`rounded-full ${isMobile ? 'w-11 h-11' : 'w-12 h-12'} p-0 bg-slate-800 hover:bg-cyan-600 text-slate-400 hover:text-white border-slate-700 transition-colors`}
+                    disabled={!windowTimeRemaining.isOpen}
+                  >
                     <Mic className="w-5 h-5" />
                   </Button>
                 )}
