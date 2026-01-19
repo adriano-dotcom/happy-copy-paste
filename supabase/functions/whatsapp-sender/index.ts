@@ -74,6 +74,29 @@ serve(async (req) => {
       });
     }
 
+    // ===== RATE LIMIT CHECK =====
+    const { data: canSend, error: rateLimitError } = await supabase.rpc('check_rate_limit', { 
+      p_phone_number_id: settings.whatsapp_phone_number_id 
+    });
+
+    if (rateLimitError) {
+      console.error('[Sender] Error checking rate limit:', rateLimitError);
+    }
+
+    if (canSend === false) {
+      console.log('[Sender] Rate limit reached for today, exiting');
+      return new Response(JSON.stringify({ 
+        error: 'Rate limit reached',
+        message: 'Limite diário de mensagens atingido',
+        processed: 0 
+      }), {
+        status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    console.log('[Sender] Rate limit check passed');
+    // ===== END RATE LIMIT CHECK =====
+
     // Create settings object with resolved token
     const resolvedSettings = {
       ...settings,
@@ -154,6 +177,13 @@ serve(async (req) => {
           
           totalSent++;
           console.log(`[Sender] Successfully sent message ${item.id} (${totalSent} total)`);
+          
+          // ===== INCREMENT RATE LIMIT COUNTER =====
+          await supabase.rpc('increment_rate_limit', { 
+            p_phone_number_id: settings.whatsapp_phone_number_id,
+            p_count: 1 
+          });
+          // ===== END INCREMENT RATE LIMIT =====
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           console.error(`[Sender] Error sending item ${item.id}:`, error);

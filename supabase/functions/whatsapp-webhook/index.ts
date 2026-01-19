@@ -2,6 +2,11 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
+// Declare EdgeRuntime for background tasks (Supabase Deno runtime)
+declare const EdgeRuntime: {
+  waitUntil(promise: Promise<any>): void;
+};
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -14,6 +19,7 @@ function toBRT(date: Date | string): string {
   return d.toLocaleString('pt-BR', { timeZone: BRAZIL_TIMEZONE });
 }
 // ===== END TIMEZONE UTILITY =====
+
 const dddMap: Record<string, { city: string; state: string }> = {
   '11': { city: 'São Paulo', state: 'SP' }, '12': { city: 'São José dos Campos', state: 'SP' },
   '13': { city: 'Santos', state: 'SP' }, '14': { city: 'Bauru', state: 'SP' },
@@ -60,19 +66,13 @@ function getRegionFromDDD(phoneNumber: string): { city: string; state: string } 
 
 // Normalize Brazilian phone number to consistent format
 function normalizePhone(phone: string): string {
-  // Remove all non-digits
   const digits = phone.replace(/\D/g, '');
-  
-  // If starts with 55 (Brazil country code)
   if (digits.startsWith('55') && digits.length >= 12) {
     return digits;
   }
-  
-  // If doesn't have country code, add it
   if (digits.length >= 10 && digits.length <= 11) {
     return '55' + digits;
   }
-  
   return digits;
 }
 
@@ -81,7 +81,6 @@ function getPhoneVariants(phone: string): string[] {
   const normalized = normalizePhone(phone);
   const variants: string[] = [normalized];
   
-  // Only process if it looks like a Brazilian number (55 + DDD + number)
   if (!normalized.startsWith('55') || normalized.length < 12) {
     return variants;
   }
@@ -89,13 +88,11 @@ function getPhoneVariants(phone: string): string[] {
   const ddd = normalized.substring(2, 4);
   const rest = normalized.substring(4);
   
-  // If 9 digits after DDD (new mobile format with 9), also try without the 9
   if (rest.length === 9 && rest.startsWith('9')) {
     const withoutNine = '55' + ddd + rest.substring(1);
     variants.push(withoutNine);
   }
   
-  // If 8 digits after DDD (old format or landline), also try with 9 prefix
   if (rest.length === 8) {
     const withNine = '55' + ddd + '9' + rest;
     variants.push(withNine);
@@ -107,7 +104,6 @@ function getPhoneVariants(phone: string): string[] {
 
 // Find contact by phone OR whatsapp_id with flexible matching
 async function findContactByPhone(supabase: any, phoneNumber: string): Promise<any | null> {
-  // First, try to find by whatsapp_id (most reliable - doesn't change with phone format)
   const { data: contactByWaId, error: waIdError } = await supabase
     .from('contacts')
     .select('*')
@@ -123,7 +119,6 @@ async function findContactByPhone(supabase: any, phoneNumber: string): Promise<a
     return contactByWaId;
   }
   
-  // Then try by phone variants (for backwards compatibility)
   const variants = getPhoneVariants(phoneNumber);
   
   const { data: contacts, error } = await supabase
@@ -140,7 +135,6 @@ async function findContactByPhone(supabase: any, phoneNumber: string): Promise<a
     const contact = contacts[0];
     console.log('[Webhook] Found existing contact with phone variant:', contact.phone_number);
     
-    // Update whatsapp_id if not set (for older contacts)
     if (!contact.whatsapp_id && phoneNumber) {
       await supabase
         .from('contacts')
@@ -155,6 +149,310 @@ async function findContactByPhone(supabase: any, phoneNumber: string): Promise<a
   return null;
 }
 
+// ===== HMAC-SHA256 SIGNATURE VERIFICATION =====
+async function verifyWebhookSignature(
+  bodyText: string,
+  signatureHeader: string | null,
+  appSecret: string
+): Promise<boolean> {
+  if (!signatureHeader || !appSecret) {
+    console.warn('[Webhook] Missing signature header or app secret');
+    return false;
+  }
+
+  try {
+    if (!signatureHeader.startsWith('sha256=')) {
+      console.warn('[Webhook] Invalid signature format');
+      return false;
+    }
+
+    const providedSignature = signatureHeader.substring(7);
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(appSecret);
+    const messageData = encoder.encode(bodyText);
+    
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    
+    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+    const signatureArray = new Uint8Array(signatureBuffer);
+    const expectedSignature = Array.from(signatureArray)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    if (providedSignature.length !== expectedSignature.length) {
+      return false;
+    }
+    
+    let result = 0;
+    for (let i = 0; i < providedSignature.length; i++) {
+      result |= providedSignature.charCodeAt(i) ^ expectedSignature.charCodeAt(i);
+    }
+    
+    const isValid = result === 0;
+    if (!isValid) {
+      console.warn('[Webhook] Signature mismatch');
+    }
+    
+    return isValid;
+  } catch (error) {
+    console.error('[Webhook] Signature verification error:', error);
+    return false;
+  }
+}
+// ===== END SIGNATURE VERIFICATION =====
+
+// ===== BACKGROUND TASK: Handle shutdown gracefully =====
+addEventListener('beforeunload', (ev: any) => {
+  console.log('[Webhook] Function shutdown due to:', ev.detail?.reason);
+});
+// ===== END SHUTDOWN HANDLING =====
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  try {
+    // GET request = Webhook verification from WhatsApp
+    if (req.method === 'GET') {
+      const url = new URL(req.url);
+      const mode = url.searchParams.get('hub.mode');
+      const token = url.searchParams.get('hub.verify_token');
+      const challenge = url.searchParams.get('hub.challenge');
+
+      const { data: settings } = await supabase
+        .from('nina_settings')
+        .select('whatsapp_verify_token')
+        .maybeSingle();
+
+      const verifyToken = settings?.whatsapp_verify_token || 'webhook-verify-token';
+
+      if (mode === 'subscribe' && token === verifyToken) {
+        console.log('[Webhook] Verification successful');
+        return new Response(challenge, { status: 200, headers: corsHeaders });
+      } else {
+        console.error('[Webhook] Verification failed');
+        return new Response('Forbidden', { status: 403, headers: corsHeaders });
+      }
+    }
+
+    // POST request = Incoming message from WhatsApp
+    if (req.method === 'POST') {
+      const bodyText = await req.text();
+      
+      const { data: authSettings } = await supabase
+        .from('nina_settings')
+        .select('whatsapp_app_secret, whatsapp_access_token')
+        .maybeSingle();
+      
+      const appSecret = authSettings?.whatsapp_app_secret;
+      
+      if (appSecret) {
+        const signatureHeader = req.headers.get('X-Hub-Signature-256');
+        const isValidSignature = await verifyWebhookSignature(bodyText, signatureHeader, appSecret);
+        
+        if (!isValidSignature) {
+          console.error('[Webhook] Invalid signature - rejecting request');
+          return new Response('Forbidden', { status: 403, headers: corsHeaders });
+        }
+        console.log('[Webhook] Signature verified successfully');
+      } else {
+        console.warn('[Webhook] ⚠️ App secret not configured - signature verification skipped.');
+      }
+      
+      const body = JSON.parse(bodyText);
+      console.log('[Webhook] Received payload at', toBRT(new Date()));
+
+      const entry = body.entry?.[0];
+      const changes = entry?.changes?.[0];
+      const value = changes?.value;
+      
+      if (!value) {
+        console.log('[Webhook] No value in payload, ignoring');
+        return new Response(JSON.stringify({ status: 'ignored' }), { 
+          status: 200, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        });
+      }
+
+      const messages = value.messages;
+      const contacts = value.contacts;
+      const phoneNumberId = value.metadata?.phone_number_id;
+
+      // Handle status updates (delivered, read, etc) - fast path
+      if (value.statuses) {
+        // Process status updates in background
+        EdgeRuntime.waitUntil(processStatusUpdates(supabase, value.statuses));
+        
+        return new Response(JSON.stringify({ status: 'processing_statuses' }), { 
+          status: 200, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        });
+      }
+
+      // Process incoming messages
+      if (messages && messages.length > 0) {
+        const settings = authSettings;
+        
+        for (const message of messages) {
+          const contactInfo = contacts?.find((c: any) => c.wa_id === message.from);
+          
+          // Insert into message_grouping_queue for deduplication
+          const { error: queueError } = await supabase
+            .from('message_grouping_queue')
+            .insert({
+              whatsapp_message_id: message.id,
+              phone_number_id: phoneNumberId,
+              message_data: message,
+              contacts_data: contactInfo || null
+            });
+
+          if (queueError) {
+            if (queueError.code === '23505') {
+              console.log('[Webhook] Duplicate message ignored:', message.id);
+            } else {
+              console.error('[Webhook] Queue insert error:', queueError);
+              // Log to dead letter queue
+              await logToDeadLetterQueue(supabase, message, phoneNumberId, queueError);
+            }
+            continue;
+          }
+          
+          console.log('[Webhook] Message queued:', message.id);
+          
+          // ===== BACKGROUND PROCESSING: Heavy operations run after response =====
+          // Queue message record first (fast), then process media in background
+          EdgeRuntime.waitUntil(
+            processIncomingMessageWithBackground(
+              supabase, 
+              message, 
+              contactInfo, 
+              phoneNumberId, 
+              settings, 
+              lovableApiKey
+            )
+          );
+        }
+        
+        // Return immediately after queuing - don't wait for OCR/transcription
+        return new Response(JSON.stringify({ status: 'queued', count: messages.length }), { 
+          status: 200, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        });
+      }
+
+      return new Response(JSON.stringify({ status: 'processed' }), { 
+        status: 200, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      });
+    }
+
+    return new Response('Method not allowed', { status: 405, headers: corsHeaders });
+
+  } catch (error) {
+    console.error('[Webhook] Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(JSON.stringify({ error: errorMessage }), {
+      status: 500, 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    });
+  }
+});
+
+// ===== DEAD LETTER QUEUE: Log failed messages for retry =====
+async function logToDeadLetterQueue(
+  supabase: any, 
+  message: any, 
+  phoneNumberId: string, 
+  error: any
+) {
+  try {
+    await supabase.from('webhook_dead_letter').insert({
+      source: 'whatsapp',
+      payload: message,
+      error_message: error?.message || JSON.stringify(error),
+      phone_number_id: phoneNumberId
+    });
+    console.log('[Webhook] Logged to dead letter queue:', message.id);
+  } catch (dlqError) {
+    console.error('[Webhook] Failed to log to dead letter queue:', dlqError);
+  }
+}
+
+// ===== BACKGROUND: Process status updates =====
+async function processStatusUpdates(supabase: any, statuses: any[]) {
+  for (const status of statuses) {
+    try {
+      console.log('[Webhook] Processing status update:', status.status, 'for', status.id);
+      
+      if (status.id) {
+        const statusMap: Record<string, string> = {
+          'sent': 'sent',
+          'delivered': 'delivered',
+          'read': 'read',
+          'failed': 'failed'
+        };
+        
+        const newStatus = statusMap[status.status];
+        if (newStatus) {
+          const updateData: Record<string, any> = { 
+            status: newStatus,
+            ...(newStatus === 'delivered' && { delivered_at: new Date().toISOString() }),
+            ...(newStatus === 'read' && { read_at: new Date().toISOString() })
+          };
+          
+          if (newStatus === 'failed' && status.errors && status.errors.length > 0) {
+            console.log('[Webhook] Message failed with errors:', JSON.stringify(status.errors));
+            
+            const { data: existingMsg } = await supabase
+              .from('messages')
+              .select('metadata')
+              .eq('whatsapp_message_id', status.id)
+              .maybeSingle();
+            
+            updateData.metadata = {
+              ...(existingMsg?.metadata || {}),
+              whatsapp_error: {
+                code: status.errors[0]?.code,
+                title: status.errors[0]?.title,
+                message: status.errors[0]?.message,
+                details: status.errors[0]?.error_data?.details
+              }
+            };
+          }
+          
+          await supabase
+            .from('messages')
+            .update(updateData)
+            .eq('whatsapp_message_id', status.id);
+            
+          // Also update campaign_contacts if this is a campaign message
+          if (newStatus === 'delivered' || newStatus === 'read') {
+            const updateField = newStatus === 'delivered' ? 'delivered_at' : 'read_at';
+            await supabase
+              .from('campaign_contacts')
+              .update({ [updateField]: new Date().toISOString() })
+              .eq('whatsapp_message_id', status.id);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[Webhook] Error processing status:', error);
+    }
+  }
+}
+
 // Transcribe audio using ElevenLabs Scribe v1
 async function transcribeAudio(
   audioBuffer: ArrayBuffer, 
@@ -162,7 +460,6 @@ async function transcribeAudio(
   supabase: any
 ): Promise<string | null> {
   try {
-    // Get ElevenLabs API key from settings
     const { data: settings } = await supabase
       .from('nina_settings')
       .select('elevenlabs_api_key')
@@ -207,265 +504,6 @@ async function transcribeAudio(
   }
 }
 
-// ===== HMAC-SHA256 SIGNATURE VERIFICATION =====
-async function verifyWebhookSignature(
-  bodyText: string,
-  signatureHeader: string | null,
-  appSecret: string
-): Promise<boolean> {
-  if (!signatureHeader || !appSecret) {
-    console.warn('[Webhook] Missing signature header or app secret');
-    return false;
-  }
-
-  try {
-    // Expected format: "sha256=<hex_signature>"
-    if (!signatureHeader.startsWith('sha256=')) {
-      console.warn('[Webhook] Invalid signature format');
-      return false;
-    }
-
-    const providedSignature = signatureHeader.substring(7);
-    
-    // Create HMAC-SHA256 hash
-    const encoder = new TextEncoder();
-    const keyData = encoder.encode(appSecret);
-    const messageData = encoder.encode(bodyText);
-    
-    const cryptoKey = await crypto.subtle.importKey(
-      'raw',
-      keyData,
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
-    
-    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
-    const signatureArray = new Uint8Array(signatureBuffer);
-    const expectedSignature = Array.from(signatureArray)
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-
-    // Constant-time comparison to prevent timing attacks
-    if (providedSignature.length !== expectedSignature.length) {
-      return false;
-    }
-    
-    let result = 0;
-    for (let i = 0; i < providedSignature.length; i++) {
-      result |= providedSignature.charCodeAt(i) ^ expectedSignature.charCodeAt(i);
-    }
-    
-    const isValid = result === 0;
-    if (!isValid) {
-      console.warn('[Webhook] Signature mismatch');
-    }
-    
-    return isValid;
-  } catch (error) {
-    console.error('[Webhook] Signature verification error:', error);
-    return false;
-  }
-}
-// ===== END SIGNATURE VERIFICATION =====
-
-serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-  try {
-    // GET request = Webhook verification from WhatsApp
-    if (req.method === 'GET') {
-      const url = new URL(req.url);
-      const mode = url.searchParams.get('hub.mode');
-      const token = url.searchParams.get('hub.verify_token');
-      const challenge = url.searchParams.get('hub.challenge');
-
-      // Get verify token from settings
-      const { data: settings } = await supabase
-        .from('nina_settings')
-        .select('whatsapp_verify_token')
-        .maybeSingle();
-
-      const verifyToken = settings?.whatsapp_verify_token || 'webhook-verify-token';
-
-      if (mode === 'subscribe' && token === verifyToken) {
-        console.log('[Webhook] Verification successful');
-        return new Response(challenge, { status: 200, headers: corsHeaders });
-      } else {
-        console.error('[Webhook] Verification failed');
-        return new Response('Forbidden', { status: 403, headers: corsHeaders });
-      }
-    }
-
-    // POST request = Incoming message from WhatsApp
-    if (req.method === 'POST') {
-      // Read raw body for signature verification
-      const bodyText = await req.text();
-      
-      // Get app secret from settings for signature validation
-      const { data: authSettings } = await supabase
-        .from('nina_settings')
-        .select('whatsapp_app_secret')
-        .maybeSingle();
-      
-      const appSecret = authSettings?.whatsapp_app_secret;
-      
-      // Validate signature if app secret is configured
-      if (appSecret) {
-        const signatureHeader = req.headers.get('X-Hub-Signature-256');
-        const isValidSignature = await verifyWebhookSignature(bodyText, signatureHeader, appSecret);
-        
-        if (!isValidSignature) {
-          console.error('[Webhook] Invalid signature - rejecting request');
-          return new Response('Forbidden', { status: 403, headers: corsHeaders });
-        }
-        console.log('[Webhook] Signature verified successfully');
-      } else {
-        console.warn('[Webhook] ⚠️ App secret not configured - signature verification skipped. Configure whatsapp_app_secret for security.');
-      }
-      
-      // Parse body after signature verification
-      const body = JSON.parse(bodyText);
-      console.log('[Webhook] Received payload:', JSON.stringify(body, null, 2));
-
-      // Extract message data from WhatsApp Cloud API format
-      const entry = body.entry?.[0];
-      const changes = entry?.changes?.[0];
-      const value = changes?.value;
-      
-      if (!value) {
-        console.log('[Webhook] No value in payload, ignoring');
-        return new Response(JSON.stringify({ status: 'ignored' }), { 
-          status: 200, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        });
-      }
-
-      const messages = value.messages;
-      const contacts = value.contacts;
-      const phoneNumberId = value.metadata?.phone_number_id;
-
-      // Handle status updates (delivered, read, etc)
-      if (value.statuses) {
-        for (const status of value.statuses) {
-          console.log('[Webhook] Status update:', status);
-          
-          // Update message status in database
-          if (status.id) {
-            const statusMap: Record<string, string> = {
-              'sent': 'sent',
-              'delivered': 'delivered',
-              'read': 'read',
-              'failed': 'failed'
-            };
-            
-            const newStatus = statusMap[status.status];
-            if (newStatus) {
-              const updateData: Record<string, any> = { 
-                status: newStatus,
-                ...(newStatus === 'delivered' && { delivered_at: new Date().toISOString() }),
-                ...(newStatus === 'read' && { read_at: new Date().toISOString() })
-              };
-              
-              // Save WhatsApp error details when status is 'failed'
-              if (newStatus === 'failed' && status.errors && status.errors.length > 0) {
-                console.log('[Webhook] Message failed with errors:', JSON.stringify(status.errors));
-                
-                // Get existing metadata to merge with error info
-                const { data: existingMsg } = await supabase
-                  .from('messages')
-                  .select('metadata')
-                  .eq('whatsapp_message_id', status.id)
-                  .maybeSingle();
-                
-                updateData.metadata = {
-                  ...(existingMsg?.metadata || {}),
-                  whatsapp_error: {
-                    code: status.errors[0]?.code,
-                    title: status.errors[0]?.title,
-                    message: status.errors[0]?.message,
-                    details: status.errors[0]?.error_data?.details
-                  }
-                };
-              }
-              
-              await supabase
-                .from('messages')
-                .update(updateData)
-                .eq('whatsapp_message_id', status.id);
-            }
-          }
-        }
-        
-        return new Response(JSON.stringify({ status: 'processed_statuses' }), { 
-          status: 200, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        });
-      }
-
-      // Get settings for audio transcription
-      const { data: settings } = await supabase
-        .from('nina_settings')
-        .select('whatsapp_access_token')
-        .maybeSingle();
-
-      // Process incoming messages
-      if (messages && messages.length > 0) {
-        for (const message of messages) {
-          const contactInfo = contacts?.find((c: any) => c.wa_id === message.from);
-          
-          // Insert into message_grouping_queue for deduplication and grouping
-          const { error: queueError } = await supabase
-            .from('message_grouping_queue')
-            .insert({
-              whatsapp_message_id: message.id,
-              phone_number_id: phoneNumberId,
-              message_data: message,
-              contacts_data: contactInfo || null
-            });
-
-          if (queueError) {
-            // If duplicate key error, message was already received
-            if (queueError.code === '23505') {
-              console.log('[Webhook] Duplicate message ignored:', message.id);
-            } else {
-              console.error('[Webhook] Queue insert error:', queueError);
-            }
-          } else {
-            console.log('[Webhook] Message queued:', message.id);
-            
-            // Process the message immediately
-            await processIncomingMessage(supabase, message, contactInfo, phoneNumberId, settings, lovableApiKey);
-          }
-        }
-      }
-
-      return new Response(JSON.stringify({ status: 'processed' }), { 
-        status: 200, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      });
-    }
-
-    return new Response('Method not allowed', { status: 405, headers: corsHeaders });
-
-  } catch (error) {
-    console.error('[Webhook] Error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: errorMessage }), {
-      status: 500, 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    });
-  }
-});
-
 // Extract text from image using Gemini Vision OCR
 async function extractTextFromImage(
   imageBuffer: ArrayBuffer,
@@ -475,10 +513,8 @@ async function extractTextFromImage(
   try {
     console.log('[OCR] Starting image text extraction, size:', imageBuffer.byteLength, 'bytes');
     
-    // Convert ArrayBuffer to base64
     const base64Image = base64Encode(imageBuffer);
     
-    // Call Gemini Vision to extract text
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -537,10 +573,8 @@ async function extractTextFromPDF(
   try {
     console.log('[OCR] Starting PDF text extraction, size:', pdfBuffer.byteLength, 'bytes');
     
-    // Convert PDF to base64 - Gemini can process PDF directly
     const base64PDF = base64Encode(pdfBuffer);
     
-    // Call Gemini Vision with PDF
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -618,7 +652,6 @@ async function downloadAndStoreMedia(
   }
 
   try {
-    // Step 1: Get the media URL from WhatsApp
     console.log('[Webhook] Getting media info for:', mediaId);
     const mediaInfoResponse = await fetch(
       `https://graph.facebook.com/v18.0/${mediaId}`,
@@ -644,7 +677,6 @@ async function downloadAndStoreMedia(
       return { storageUrl: null, mediaBuffer: null, mimeType: null };
     }
 
-    // Step 2: Download the actual media from WhatsApp
     console.log('[Webhook] Downloading media from WhatsApp...');
     const mediaResponse = await fetch(mediaUrl, {
       headers: {
@@ -661,7 +693,6 @@ async function downloadAndStoreMedia(
     const mediaBuffer = await mediaResponse.arrayBuffer();
     console.log('[Webhook] Downloaded media, size:', mediaBuffer.byteLength, 'bytes');
 
-    // Step 3: Generate unique filename and upload to Supabase Storage
     const fileExtension = mimeType.includes('pdf') ? 'pdf' :
                           mimeType.includes('msword') ? 'doc' :
                           mimeType.includes('wordprocessingml') ? 'docx' :
@@ -682,7 +713,7 @@ async function downloadAndStoreMedia(
       .from('whatsapp-media')
       .upload(fileName, mediaBuffer, {
         contentType: mimeType,
-        cacheControl: '31536000', // 1 year cache
+        cacheControl: '31536000',
         upsert: false
       });
 
@@ -691,7 +722,6 @@ async function downloadAndStoreMedia(
       return { storageUrl: null, mediaBuffer, mimeType };
     }
 
-    // Step 4: Get public URL
     const { data: urlData } = supabase.storage
       .from('whatsapp-media')
       .getPublicUrl(fileName);
@@ -707,7 +737,9 @@ async function downloadAndStoreMedia(
   }
 }
 
-async function processIncomingMessage(
+// ===== MAIN BACKGROUND PROCESSOR =====
+// This runs after the webhook returns 200 to WhatsApp
+async function processIncomingMessageWithBackground(
   supabase: any, 
   message: any, 
   contactInfo: any, 
@@ -715,322 +747,384 @@ async function processIncomingMessage(
   settings: any,
   lovableApiKey: string
 ) {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  
-  const rawPhoneNumber = message.from;
-  const normalizedPhone = normalizePhone(rawPhoneNumber);
-  const whatsappId = contactInfo?.wa_id || rawPhoneNumber;
-  const contactName = contactInfo?.profile?.name || null;
+  try {
+    const rawPhoneNumber = message.from;
+    const normalizedPhone = normalizePhone(rawPhoneNumber);
+    const whatsappId = contactInfo?.wa_id || rawPhoneNumber;
+    const contactName = contactInfo?.profile?.name || null;
 
-  // 1. Get or create contact using flexible phone search
-  let contact = await findContactByPhone(supabase, rawPhoneNumber);
+    // 1. Get or create contact using flexible phone search
+    let contact = await findContactByPhone(supabase, rawPhoneNumber);
 
-  if (!contact) {
-    // Extrair cidade/estado do DDD
-    const region = getRegionFromDDD(normalizedPhone);
-    
-    // Create new contact with normalized phone number
-    const { data: newContact, error: contactError } = await supabase
-      .from('contacts')
-      .insert({
-        phone_number: normalizedPhone,
-        whatsapp_id: whatsappId,
-        name: contactName,
-        call_name: contactName?.split(' ')[0] || null,
-        lead_source: 'inbound', // Contatos via WhatsApp são inbound
-        city: region?.city || null,
-        state: region?.state || null
-      })
-      .select()
-      .single();
-
-    if (contactError) {
-      console.error('[Webhook] Error creating contact:', contactError);
-      throw contactError;
-    }
-    contact = newContact;
-    console.log('[Webhook] Created new contact:', contact.id, 'with phone:', normalizedPhone, region ? `(${region.city} - ${region.state})` : '');
-  } else {
-    // Update contact info if needed
-    const updates: any = { last_activity: new Date().toISOString() };
-    
-    // Update name if we have a new one
-    if (contactName && !contact.name) {
-      updates.name = contactName;
-      updates.call_name = contactName.split(' ')[0];
-    }
-    
-    // Update whatsapp_id if not set
-    if (!contact.whatsapp_id) {
-      updates.whatsapp_id = whatsappId;
-    }
-    
-    await supabase
-      .from('contacts')
-      .update(updates)
-      .eq('id', contact.id);
+    if (!contact) {
+      const region = getRegionFromDDD(normalizedPhone);
       
-    console.log('[Webhook] Using existing contact:', contact.id, 'found by phone variant');
-  }
-
-  // 2. Get or create active conversation (tentar reativar conversa existente se não houver ativa)
-  const { data: existingConversations } = await supabase
-    .from('conversations')
-    .select('*')
-    .eq('contact_id', contact.id)
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
-    .limit(1);
-
-  let conversation = existingConversations?.[0] || null;
-
-  // Se não encontrou conversa ativa, buscar conversa INATIVA mais recente para reativar
-  if (!conversation) {
-    const { data: inactiveConversations } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('contact_id', contact.id)
-      .eq('is_active', false)
-      .order('updated_at', { ascending: false })
-      .limit(1);
-
-    if (inactiveConversations?.[0]) {
-      // Reativar conversa existente mantendo histórico
-      const { data: reactivatedConv, error: reactivateError } = await supabase
-        .from('conversations')
-        .update({
-          is_active: true,
-          status: 'nina', // Nina assume novamente
-          whatsapp_window_start: new Date().toISOString()
+      const { data: newContact, error: contactError } = await supabase
+        .from('contacts')
+        .insert({
+          phone_number: normalizedPhone,
+          whatsapp_id: whatsappId,
+          name: contactName,
+          call_name: contactName?.split(' ')[0] || null,
+          lead_source: 'inbound',
+          city: region?.city || null,
+          state: region?.state || null
         })
-        .eq('id', inactiveConversations[0].id)
         .select()
         .single();
 
-      if (!reactivateError && reactivatedConv) {
-        conversation = reactivatedConv;
-        console.log('[Webhook] Reactivated existing conversation:', conversation.id);
+      if (contactError) {
+        console.error('[Webhook BG] Error creating contact:', contactError);
+        throw contactError;
+      }
+      contact = newContact;
+      console.log('[Webhook BG] Created new contact:', contact.id, region ? `(${region.city} - ${region.state})` : '');
+    } else {
+      const updates: any = { last_activity: new Date().toISOString() };
+      
+      if (contactName && !contact.name) {
+        updates.name = contactName;
+        updates.call_name = contactName.split(' ')[0];
+      }
+      
+      if (!contact.whatsapp_id) {
+        updates.whatsapp_id = whatsappId;
+      }
+      
+      await supabase
+        .from('contacts')
+        .update(updates)
+        .eq('id', contact.id);
+        
+      console.log('[Webhook BG] Using existing contact:', contact.id);
+    }
+
+    // 2. Get or create active conversation
+    const { data: existingConversations } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('contact_id', contact.id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    let conversation = existingConversations?.[0] || null;
+
+    if (!conversation) {
+      const { data: inactiveConversations } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('contact_id', contact.id)
+        .eq('is_active', false)
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      if (inactiveConversations?.[0]) {
+        const { data: reactivatedConv, error: reactivateError } = await supabase
+          .from('conversations')
+          .update({
+            is_active: true,
+            status: 'nina',
+            whatsapp_window_start: new Date().toISOString()
+          })
+          .eq('id', inactiveConversations[0].id)
+          .select()
+          .single();
+
+        if (!reactivateError && reactivatedConv) {
+          conversation = reactivatedConv;
+          console.log('[Webhook BG] Reactivated conversation:', conversation.id);
+        }
       }
     }
-  }
 
-  // Só cria nova conversa se realmente não existir nenhuma
-  if (!conversation) {
-    const { data: newConversation, error: convError } = await supabase
-      .from('conversations')
+    if (!conversation) {
+      const { data: newConversation, error: convError } = await supabase
+        .from('conversations')
+        .insert({
+          contact_id: contact.id,
+          status: 'nina',
+          is_active: true
+        })
+        .select()
+        .single();
+
+      if (convError) {
+        console.error('[Webhook BG] Error creating conversation:', convError);
+        throw convError;
+      }
+      conversation = newConversation;
+      console.log('[Webhook BG] Created new conversation:', conversation.id);
+    }
+
+    // 3. Parse message content - FAST PATH for text, SLOW PATH for media
+    let content: string | null = null;
+    let mediaUrl: string | null = null;
+    let mediaType: string | null = null;
+    let messageType: string = 'text';
+    let pendingMediaProcessing = false;
+
+    switch (message.type) {
+      case 'text':
+        content = message.text?.body;
+        break;
+      case 'image':
+        messageType = 'image';
+        mediaType = 'image';
+        content = message.image?.caption || '[imagem - processando...]';
+        pendingMediaProcessing = true;
+        break;
+      case 'audio':
+        messageType = 'audio';
+        mediaType = 'audio';
+        content = '[áudio - transcrevendo...]';
+        pendingMediaProcessing = true;
+        break;
+      case 'video':
+        messageType = 'video';
+        mediaType = 'video';
+        content = message.video?.caption || '[vídeo]';
+        pendingMediaProcessing = true;
+        break;
+      case 'document':
+        messageType = 'document';
+        mediaType = 'document';
+        content = message.document?.filename || '[documento - processando...]';
+        pendingMediaProcessing = true;
+        break;
+      default:
+        content = `[${message.type}]`;
+    }
+
+    // 4. Create message record IMMEDIATELY (before media processing)
+    const { data: dbMessage, error: msgError } = await supabase
+      .from('messages')
       .insert({
-        contact_id: contact.id,
-        status: 'nina', // Nina handles new conversations by default
-        is_active: true
+        conversation_id: conversation.id,
+        whatsapp_message_id: message.id,
+        content: content,
+        type: messageType,
+        from_type: 'user',
+        status: 'sent',
+        media_url: mediaUrl,
+        media_type: mediaType,
+        sent_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+        metadata: { raw: message, original_type: message.type, processing: pendingMediaProcessing }
       })
       .select()
       .single();
 
-    if (convError) {
-      console.error('[Webhook] Error creating conversation:', convError);
-      throw convError;
+    if (msgError) {
+      console.error('[Webhook BG] Error creating message:', msgError);
+      throw msgError;
     }
-    conversation = newConversation;
-    console.log('[Webhook] Created new conversation:', conversation.id);
+    console.log('[Webhook BG] Created message:', dbMessage.id);
+
+    // 5. Update conversation last_message_at
+    await supabase
+      .from('conversations')
+      .update({ last_message_at: new Date().toISOString() })
+      .eq('id', conversation.id);
+
+    // 6. Process media in background (download, store, OCR/transcribe)
+    if (pendingMediaProcessing) {
+      await processMediaAndUpdateMessage(
+        supabase, 
+        dbMessage.id, 
+        message, 
+        normalizedPhone, 
+        settings, 
+        lovableApiKey
+      );
+    }
+
+    // 7. Queue for Nina AI processing (with debounce)
+    if (conversation.status === 'nina') {
+      const DEBOUNCE_DELAY_MS = 15000;
+      const scheduledFor = new Date(Date.now() + DEBOUNCE_DELAY_MS).toISOString();
+      
+      const { error: ninaQueueError } = await supabase
+        .from('nina_processing_queue')
+        .insert({
+          message_id: dbMessage.id,
+          conversation_id: conversation.id,
+          contact_id: contact.id,
+          priority: 1,
+          scheduled_for: scheduledFor,
+          context_data: {
+            phone_number_id: phoneNumberId,
+            contact_name: contact.name || contact.call_name,
+            message_type: messageType,
+            original_type: message.type,
+            debounce_scheduled_at: new Date().toISOString()
+          }
+        });
+
+      if (ninaQueueError) {
+        console.error('[Webhook BG] Error queuing for Nina:', ninaQueueError);
+      } else {
+        console.log('[Webhook BG] Message queued for Nina (scheduled:', scheduledFor, ')');
+      }
+    }
+
+    console.log('[Webhook BG] Background processing complete for message:', dbMessage.id);
+  } catch (error) {
+    console.error('[Webhook BG] Error in background processing:', error);
+    // Log to dead letter queue for manual review
+    await logToDeadLetterQueue(supabase, message, phoneNumberId, error);
   }
+}
 
-  // 3. Parse message content based on type
-  let content: string | null = null;
-  let mediaUrl: string | null = null;
-  let mediaType: string | null = null;
-  let messageType: string = 'text';
-
-  switch (message.type) {
-    case 'text':
-      content = message.text?.body;
-      break;
-    case 'image':
-      messageType = 'image';
-      mediaType = 'image';
-      const imageCaption = message.image?.caption || null;
-      // Download, store, and OCR the image
-      const imageMediaId = message.image?.id;
-      if (imageMediaId && settings?.whatsapp_access_token) {
-        console.log('[Webhook] Processing image message:', imageMediaId);
-        const { storageUrl: imageStorageUrl, mediaBuffer: imageBuffer, mimeType: imageMimeType } = 
-          await downloadAndStoreMedia(supabase, settings, imageMediaId, normalizedPhone, 'image');
+// ===== PROCESS MEDIA AND UPDATE MESSAGE =====
+async function processMediaAndUpdateMessage(
+  supabase: any,
+  messageId: string,
+  message: any,
+  normalizedPhone: string,
+  settings: any,
+  lovableApiKey: string
+) {
+  try {
+    let mediaUrl: string | null = null;
+    let content: string | null = null;
+    
+    switch (message.type) {
+      case 'image': {
+        const imageCaption = message.image?.caption || null;
+        const imageMediaId = message.image?.id;
         
-        if (imageStorageUrl) {
-          mediaUrl = imageStorageUrl;
-          console.log('[Webhook] Image stored at:', imageStorageUrl);
-        }
-        
-        // Try to extract text from image via OCR
-        if (imageBuffer && imageMimeType && lovableApiKey) {
-          const extractedText = await extractTextFromImage(imageBuffer, imageMimeType, lovableApiKey);
-          if (extractedText) {
-            // Combine caption (if any) with extracted text
-            content = imageCaption 
-              ? `${imageCaption}\n\n[Texto extraído da imagem: ${extractedText}]`
-              : `[Texto extraído da imagem: ${extractedText}]`;
-            console.log('[Webhook] Image OCR successful');
+        if (imageMediaId && settings?.whatsapp_access_token) {
+          console.log('[Webhook Media] Processing image:', imageMediaId);
+          const { storageUrl, mediaBuffer, mimeType } = 
+            await downloadAndStoreMedia(supabase, settings, imageMediaId, normalizedPhone, 'image');
+          
+          if (storageUrl) {
+            mediaUrl = storageUrl;
+          }
+          
+          // Try OCR
+          if (mediaBuffer && mimeType && lovableApiKey) {
+            const extractedText = await extractTextFromImage(mediaBuffer, mimeType, lovableApiKey);
+            if (extractedText) {
+              content = imageCaption 
+                ? `${imageCaption}\n\n[Texto extraído da imagem: ${extractedText}]`
+                : `[Texto extraído da imagem: ${extractedText}]`;
+            } else {
+              content = imageCaption || '[imagem]';
+            }
           } else {
             content = imageCaption || '[imagem]';
           }
-        } else {
-          content = imageCaption || '[imagem]';
         }
-      } else {
-        content = imageCaption || '[imagem]';
+        break;
       }
-      break;
-    case 'audio':
-      messageType = 'audio';
-      mediaType = 'audio';
-      // Download, store, and transcribe the audio
-      const audioMediaId = message.audio?.id;
-      if (audioMediaId && settings?.whatsapp_access_token) {
-        console.log('[Webhook] Processing audio message:', audioMediaId);
-        const { storageUrl, mediaBuffer: audioBuffer, mimeType: audioMimeType } = await downloadAndStoreMedia(
-          supabase, settings, audioMediaId, normalizedPhone, 'audio'
-        );
+      
+      case 'audio': {
+        const audioMediaId = message.audio?.id;
         
-        if (storageUrl) {
-          mediaUrl = storageUrl;
-          console.log('[Webhook] Audio stored at:', storageUrl);
-        }
-        
-        // Try to transcribe with ElevenLabs if we have the audio buffer
-        if (audioBuffer && audioMimeType) {
-          const transcription = await transcribeAudio(audioBuffer, audioMimeType, supabase);
-          if (transcription) {
-            content = transcription;
-            console.log('[Webhook] Audio transcribed:', transcription.substring(0, 100));
+        if (audioMediaId && settings?.whatsapp_access_token) {
+          console.log('[Webhook Media] Processing audio:', audioMediaId);
+          const { storageUrl, mediaBuffer, mimeType } = 
+            await downloadAndStoreMedia(supabase, settings, audioMediaId, normalizedPhone, 'audio');
+          
+          if (storageUrl) {
+            mediaUrl = storageUrl;
+          }
+          
+          // Try transcription
+          if (mediaBuffer && mimeType) {
+            const transcription = await transcribeAudio(mediaBuffer, mimeType, supabase);
+            content = transcription || '[áudio]';
           } else {
             content = '[áudio]';
           }
-        } else {
-          content = '[áudio]';
         }
-      } else {
-        content = '[áudio]';
+        break;
       }
-      break;
-    case 'video':
-      messageType = 'video';
-      mediaType = 'video';
-      const videoCaption = message.video?.caption || null;
-      const videoMediaId = message.video?.id;
-      if (videoMediaId && settings?.whatsapp_access_token) {
-        console.log('[Webhook] Processing video message:', videoMediaId);
-        const { storageUrl: videoStorageUrl } = await downloadAndStoreMedia(
-          supabase, settings, videoMediaId, normalizedPhone, 'video'
-        );
-        if (videoStorageUrl) {
-          mediaUrl = videoStorageUrl;
-          console.log('[Webhook] Video stored at:', videoStorageUrl);
-        }
-      }
-      content = videoCaption || '[vídeo]';
-      break;
-    case 'document':
-      messageType = 'document';
-      mediaType = 'document';
-      const docFilename = message.document?.filename || '[documento]';
-      const docMediaId = message.document?.id;
-      const docMimeType = message.document?.mime_type || '';
       
-      if (docMediaId && settings?.whatsapp_access_token) {
-        console.log('[Webhook] Processing document message:', docMediaId, 'filename:', docFilename, 'mimeType:', docMimeType);
-        const { storageUrl: docStorageUrl, mediaBuffer: docBuffer, mimeType: actualDocMimeType } = await downloadAndStoreMedia(
-          supabase, settings, docMediaId, normalizedPhone, 'document'
-        );
+      case 'video': {
+        const videoMediaId = message.video?.id;
+        const videoCaption = message.video?.caption || null;
         
-        if (docStorageUrl) {
-          mediaUrl = docStorageUrl;
-          console.log('[Webhook] Document stored at:', docStorageUrl);
+        if (videoMediaId && settings?.whatsapp_access_token) {
+          console.log('[Webhook Media] Processing video:', videoMediaId);
+          const { storageUrl } = await downloadAndStoreMedia(
+            supabase, settings, videoMediaId, normalizedPhone, 'video'
+          );
+          if (storageUrl) {
+            mediaUrl = storageUrl;
+          }
         }
+        content = videoCaption || '[vídeo]';
+        break;
+      }
+      
+      case 'document': {
+        const docFilename = message.document?.filename || '[documento]';
+        const docMediaId = message.document?.id;
+        const docMimeType = message.document?.mime_type || '';
         
-        // Check if it's a PDF and try OCR
-        const isPdf = docFilename.toLowerCase().endsWith('.pdf') || 
-                      docMimeType.includes('pdf') ||
-                      (actualDocMimeType && actualDocMimeType.includes('pdf'));
-        
-        if (isPdf && docBuffer && lovableApiKey) {
-          console.log('[Webhook] PDF detected, attempting OCR...');
-          const extractedText = await extractTextFromPDF(docBuffer, lovableApiKey);
-          if (extractedText) {
-            content = `${docFilename}\n\n[Texto extraído do documento: ${extractedText}]`;
-            console.log('[Webhook] PDF OCR successful');
+        if (docMediaId && settings?.whatsapp_access_token) {
+          console.log('[Webhook Media] Processing document:', docMediaId);
+          const { storageUrl, mediaBuffer, mimeType } = await downloadAndStoreMedia(
+            supabase, settings, docMediaId, normalizedPhone, 'document'
+          );
+          
+          if (storageUrl) {
+            mediaUrl = storageUrl;
+          }
+          
+          // Check if PDF and try OCR
+          const isPdf = docFilename.toLowerCase().endsWith('.pdf') || 
+                        docMimeType.includes('pdf') ||
+                        (mimeType && mimeType.includes('pdf'));
+          
+          if (isPdf && mediaBuffer && lovableApiKey) {
+            console.log('[Webhook Media] PDF detected, attempting OCR...');
+            const extractedText = await extractTextFromPDF(mediaBuffer, lovableApiKey);
+            if (extractedText) {
+              content = `${docFilename}\n\n[Texto extraído do documento: ${extractedText}]`;
+            } else {
+              content = docFilename;
+            }
           } else {
             content = docFilename;
           }
-        } else {
-          content = docFilename;
         }
-      } else {
-        content = docFilename;
+        break;
       }
-      break;
-    default:
-      content = `[${message.type}]`;
-  }
-
-  // 4. Create message record
-  const { data: dbMessage, error: msgError } = await supabase
-    .from('messages')
-    .insert({
-      conversation_id: conversation.id,
-      whatsapp_message_id: message.id,
-      content: content,
-      type: messageType,
-      from_type: 'user',
-      status: 'sent',
-      media_url: mediaUrl,
-      media_type: mediaType,
-      sent_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
-      metadata: { raw: message, original_type: message.type }
-    })
-    .select()
-    .single();
-
-  if (msgError) {
-    console.error('[Webhook] Error creating message:', msgError);
-    throw msgError;
-  }
-  console.log('[Webhook] Created message:', dbMessage.id);
-
-  // 5. Update conversation last_message_at (trigger should handle this but let's be sure)
-  await supabase
-    .from('conversations')
-    .update({ last_message_at: new Date().toISOString() })
-    .eq('id', conversation.id);
-
-  // 6. If conversation is handled by Nina, queue for AI processing with debounce delay
-  if (conversation.status === 'nina') {
-    // Debounce: schedule processing for 15 seconds in the future
-    // This allows multiple rapid messages to be aggregated before AI responds
-    const DEBOUNCE_DELAY_MS = 15000;
-    const scheduledFor = new Date(Date.now() + DEBOUNCE_DELAY_MS).toISOString();
-    
-    const { error: ninaQueueError } = await supabase
-      .from('nina_processing_queue')
-      .insert({
-        message_id: dbMessage.id,
-        conversation_id: conversation.id,
-        contact_id: contact.id,
-        priority: 1,
-        scheduled_for: scheduledFor,
-        context_data: {
-          phone_number_id: phoneNumberId,
-          contact_name: contact.name || contact.call_name,
-          message_type: messageType,
-          original_type: message.type,
-          debounce_scheduled_at: new Date().toISOString()
-        }
-      });
-
-    if (ninaQueueError) {
-      console.error('[Webhook] Error queuing for Nina:', ninaQueueError);
-    } else {
-      console.log('[Webhook] Message queued for Nina processing (scheduled for:', scheduledFor, ')');
-      // Cron job (process-nina-queue) é responsável por disparar o nina-orchestrator
     }
+
+    // Update message with processed content and media URL
+    const updateData: any = {
+      metadata: { processing: false }
+    };
+    
+    if (content) {
+      updateData.content = content;
+    }
+    if (mediaUrl) {
+      updateData.media_url = mediaUrl;
+    }
+
+    const { error: updateError } = await supabase
+      .from('messages')
+      .update(updateData)
+      .eq('id', messageId);
+
+    if (updateError) {
+      console.error('[Webhook Media] Error updating message:', updateError);
+    } else {
+      console.log('[Webhook Media] Message updated with processed content:', messageId);
+    }
+  } catch (error) {
+    console.error('[Webhook Media] Error processing media:', error);
+    // Mark message as having failed processing
+    await supabase
+      .from('messages')
+      .update({ 
+        metadata: { processing: false, processing_error: (error as Error).message }
+      })
+      .eq('id', messageId);
   }
 }
