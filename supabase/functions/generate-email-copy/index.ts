@@ -275,7 +275,7 @@ REGRAS CRÍTICAS:
 4. Parágrafos curtos (máx 3 linhas)
 5. Assunto máximo 60 caracteres
 6. Tom profissional e brasileiro
-7. NÃO inclua assinatura no final - ela será adicionada automaticamente pelo sistema com o nome do operador
+7. CRÍTICO: NÃO inclua NENHUM tipo de assinatura, despedida com nome, fechamento como "Adriano - Jacometo", "Fulano - Jacometo Seguros", "Atenciosamente, Nome" etc. A assinatura profissional completa será adicionada AUTOMATICAMENTE pelo sistema. O email deve terminar com o CTA ou última frase do corpo, SEM nome ou empresa no final.
 8. SEMPRE inicie o email com a saudação do horário fornecida seguida do nome (ex: "Bom dia João," ou "Boa tarde Maria,")
 
 FORMATO DE RESPOSTA (JSON):

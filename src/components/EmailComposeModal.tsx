@@ -290,6 +290,13 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
       .replace(/<(div|span)[^>]*>Equipe Jacometo[^<]*<\/(div|span)>/gi, '')
       // Remove "Abraços, Equipe Jacometo"
       .replace(/Abraços[,.]?\s*(<br\s*\/?>)?\s*(Equipe Jacometo[^<\n]*)?/gi, '')
+      // === NOVOS PATTERNS: Remove assinaturas simples geradas pela IA ===
+      // Remove "Nome - Jacometo" em parágrafo no final
+      .replace(/<p[^>]*>\s*[A-Z][a-záéíóúãõç]+(\s+[A-Z])?[a-záéíóúãõç]*\s*[-–]\s*Jacometo[^<]*<\/p>/gi, '')
+      // Remove "Adriano - Jacometo Seguros" em texto puro
+      .replace(/[\n\r\s]*Adriano\s*[-–]\s*Jacometo[^\n<]*/gi, '')
+      // Remove "Nome - Empresa" genérico no final do email (texto puro)
+      .replace(/[\n\r\s]+[A-Z][a-záéíóúãõç]+(\s+[A-Z][a-záéíóúãõç]+)*\s*[-–]\s*Jacometo[^\n<]*$/gim, '')
       // Remove linhas vazias extras no final
       .replace(/(<br\s*\/?>\s*)+$/gi, '')
       .replace(/(<p[^>]*>\s*<\/p>\s*)+$/gi, '');
