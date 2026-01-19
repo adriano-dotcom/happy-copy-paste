@@ -39,6 +39,7 @@ const EMAIL_TYPES = [
   { value: 'cotacao', label: 'Envio de Cotação', icon: '💰' },
   { value: 'boas-vindas', label: 'Boas-vindas', icon: '🎉' },
   { value: 'renewal', label: 'Renovação', icon: '🔄' },
+  { value: 'prospeccao', label: 'Prospecção', icon: '🎯' },
 ];
 
 export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
@@ -307,10 +308,10 @@ export const EmailComposeModal: React.FC<EmailComposeModalProps> = ({
       <strong style="font-size: 15px; color: #1e293b; display: block;">${senderName || 'Adriano Jacometo'}</strong>
       <span style="color: #64748b; display: block; margin-bottom: 4px;">Corretor de Seguros</span>
       <strong style="color: #334155; display: block; margin-bottom: 16px;">Jacometo Corretora de Seguros</strong>
-      <span style="display: block; margin-bottom: 6px; color: #475569;">📱 WhatsApp: <a href="https://wa.me/5543991434002" style="color: #25D366; text-decoration: none;">+55 43 9 9143 4002</a></span>
-      <span style="display: block; margin-bottom: 6px; color: #475569;">📞 Telefone: (43) 3321‑5007</span>
+      <span style="display: block; margin-bottom: 6px; color: #475569;">📱 WhatsApp: <a href="https://wa.me/5543991434002" style="color: #25D366; text-decoration: none;">+55 43 99143-4002</a></span>
+      <span style="display: block; margin-bottom: 6px; color: #475569;">📞 Telefone: (43) 3321-5007</span>
       <span style="display: block; margin-bottom: 6px; color: #475569;">📍 Rua Souza Naves, 612 – Sala 51 – Centro – Londrina/PR</span>
-      <span style="display: block; margin-top: 10px;">🌐 <a href="https://jacometoseguros.com.br" style="color: #6366f1; text-decoration: none;">jacometoseguros.com.br</a></span>
+      <span style="display: block; margin-top: 10px;">🌐 <a href="https://transporte.jacometoseguros.com.br" style="color: #6366f1; text-decoration: none;">transporte.jacometoseguros.com.br</a></span>
     </td>
   </tr>
 </table>`;

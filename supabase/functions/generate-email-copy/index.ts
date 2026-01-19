@@ -225,6 +225,17 @@ OBJETIVO: Envio de valores/proposta
 - Diferenciais inclusos
 - Validade da proposta
 - CTA para fechamento
+`,
+  'prospeccao': `
+OBJETIVO: Email de prospecção ativa para leads frios ou mornos
+- Primeiro contato ou reativação de interesse
+- Apresentar a Jacometo como especialista em seguros para transportadores
+- Despertar interesse sem ser invasivo
+- Foco em benefícios e proteção (não em obrigação legal)
+- Tom consultivo e amigável
+- Pergunta aberta para engajar
+- CTA claro: agendar conversa, responder email ou WhatsApp
+- Máximo 120 palavras no corpo
 `
 };
 

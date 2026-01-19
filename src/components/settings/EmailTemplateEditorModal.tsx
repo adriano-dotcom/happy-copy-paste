@@ -59,6 +59,7 @@ const EMAIL_TYPES = [
   { value: 'boas-vindas', label: '🎉 Boas-vindas' },
   { value: 'renewal', label: '🔄 Renovação' },
   { value: 'cotacao', label: '💰 Cotação' },
+  { value: 'prospeccao', label: '🎯 Prospecção' },
 ];
 
 const EmailTemplateEditorModal: React.FC<EmailTemplateEditorModalProps> = ({
