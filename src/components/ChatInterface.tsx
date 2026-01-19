@@ -148,6 +148,10 @@ const ChatInterface: React.FC = () => {
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   
+  // File upload state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  
   // Input refs for keyboard shortcuts
   const searchInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
@@ -948,6 +952,82 @@ const ChatInterface: React.FC = () => {
     } catch (error) {
       console.error('Error sending audio:', error);
       toast.error('Erro ao enviar áudio', { id: 'audio-send' });
+    }
+  };
+
+  // Handle file selection for upload
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !activeChat) return;
+    
+    // Reset input to allow re-selecting the same file
+    event.target.value = '';
+    
+    // Validate size (max 16MB for WhatsApp)
+    if (file.size > 16 * 1024 * 1024) {
+      toast.error('Arquivo muito grande. Máximo: 16MB');
+      return;
+    }
+    
+    // Determine media type
+    const isImage = file.type.startsWith('image/');
+    const messageType = isImage ? 'image' : 'document';
+    
+    try {
+      setIsUploading(true);
+      toast.loading(`Enviando ${isImage ? 'imagem' : 'documento'}...`, { id: 'file-upload' });
+      
+      // 1. Upload to Supabase Storage (whatsapp-media bucket)
+      const fileName = `${activeChat.contactId}/${Date.now()}_${file.name}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('whatsapp-media')
+        .upload(fileName, file, {
+          contentType: file.type,
+          cacheControl: '3600'
+        });
+      
+      if (uploadError) throw uploadError;
+      
+      // 2. Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('whatsapp-media')
+        .getPublicUrl(fileName);
+      
+      // 3. Insert into send queue
+      const { error: queueError } = await supabase
+        .from('send_queue')
+        .insert({
+          conversation_id: activeChat.id,
+          contact_id: activeChat.contactId,
+          content: !isImage ? file.name : undefined,
+          message_type: messageType,
+          from_type: 'human',
+          media_url: publicUrl,
+          metadata: {
+            sender_name: user?.email?.split('@')[0] || 'Operador',
+            original_filename: file.name,
+            file_size: file.size,
+            mime_type: file.type
+          },
+          scheduled_at: new Date().toISOString()
+        });
+      
+      if (queueError) throw queueError;
+      
+      // 4. Trigger queue processing
+      await supabase.functions.invoke('trigger-whatsapp-sender');
+      
+      toast.success(`${isImage ? 'Imagem' : 'Documento'} enviado!`, { id: 'file-upload' });
+      
+      // Refresh messages
+      await refetch();
+      
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      toast.error('Erro ao enviar arquivo', { id: 'file-upload' });
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -2288,14 +2368,34 @@ const ChatInterface: React.FC = () => {
               )}
               
               <form onSubmit={handleSendMessage} className="flex items-end gap-2 md:gap-3 max-w-4xl mx-auto">
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                
                 <div className={`flex items-center ${isMobile ? 'gap-0.5' : 'gap-1'}`}>
                   {!isMobile && (
                     <>
                       <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors" disabled={!windowTimeRemaining.isOpen}>
                         <Smile className="w-5 h-5" />
                       </Button>
-                      <Button type="button" variant="ghost" size="icon" className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors" disabled={!windowTimeRemaining.isOpen}>
-                        <Paperclip className="w-5 h-5" />
+                      <Button 
+                        type="button" 
+                        variant="ghost" 
+                        size="icon" 
+                        className="text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-full transition-colors" 
+                        disabled={!windowTimeRemaining.isOpen || isUploading}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {isUploading ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <Paperclip className="w-5 h-5" />
+                        )}
                       </Button>
                     </>
                   )}
