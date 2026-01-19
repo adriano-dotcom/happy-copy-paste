@@ -119,6 +119,42 @@ export type Database = {
           },
         ]
       }
+      api4com_webhook_logs: {
+        Row: {
+          call_id: string | null
+          client_ip: string | null
+          created_at: string | null
+          error_message: string | null
+          event_type: string
+          headers: Json | null
+          id: string
+          processing_result: string | null
+          raw_payload: Json
+        }
+        Insert: {
+          call_id?: string | null
+          client_ip?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          event_type: string
+          headers?: Json | null
+          id?: string
+          processing_result?: string | null
+          raw_payload: Json
+        }
+        Update: {
+          call_id?: string | null
+          client_ip?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          event_type?: string
+          headers?: Json | null
+          id?: string
+          processing_result?: string | null
+          raw_payload?: Json
+        }
+        Relationships: []
+      }
       appointments: {
         Row: {
           attendees: string[] | null

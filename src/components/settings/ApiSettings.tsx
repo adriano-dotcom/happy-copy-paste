@@ -1,11 +1,12 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
-import { Save, MessageSquare, Mic, Eye, EyeOff, Copy, Check, Loader2, Send, ChevronDown, Volume2, Download, Upload, FileAudio, Mail, Phone, Bot } from 'lucide-react';
+import { Save, MessageSquare, Mic, Eye, EyeOff, Copy, Check, Loader2, Send, ChevronDown, Volume2, Download, Upload, FileAudio, Mail, Phone, Bot, Activity } from 'lucide-react';
 import { Button } from '../Button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { VaultMigrationPanel } from './VaultMigrationPanel';
+import Api4ComDiagnostics from './Api4ComDiagnostics';
 
 interface NinaSettings {
   id?: string;
@@ -128,6 +129,7 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
   // API4Com states
   const [showApi4comToken, setShowApi4comToken] = useState(false);
   const [api4comSectionOpen, setApi4comSectionOpen] = useState(false);
+  const [api4comDiagnosticsOpen, setApi4comDiagnosticsOpen] = useState(false);
   const [copiedApi4comWebhook, setCopiedApi4comWebhook] = useState(false);
   const [testingApi4com, setTestingApi4com] = useState(false);
   
@@ -1317,6 +1319,18 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
                   </Button>
                 </div>
               </div>
+            </Collapsible.Content>
+          </Collapsible.Root>
+
+          {/* API4Com Diagnostics Panel */}
+          <Collapsible.Root open={api4comDiagnosticsOpen} onOpenChange={setApi4comDiagnosticsOpen}>
+            <Collapsible.Trigger className="flex items-center gap-2 text-sm text-green-400 hover:text-green-300 transition-colors mt-2">
+              <Activity className="w-4 h-4" />
+              <ChevronDown className={`w-4 h-4 transition-transform ${api4comDiagnosticsOpen ? 'rotate-180' : ''}`} />
+              Diagnóstico de Chamadas
+            </Collapsible.Trigger>
+            <Collapsible.Content className="mt-4">
+              <Api4ComDiagnostics />
             </Collapsible.Content>
           </Collapsible.Root>
         </div>

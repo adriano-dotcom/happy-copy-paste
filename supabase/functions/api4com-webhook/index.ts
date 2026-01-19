@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -35,6 +35,43 @@ function isTrustedIP(ip: string): boolean {
     }
   }
   return false;
+}
+
+// Helper function to log webhook events to database
+async function logWebhookEvent(
+  supabase: SupabaseClient,
+  {
+    callId,
+    eventType,
+    rawPayload,
+    clientIP,
+    headers,
+    processingResult,
+    errorMessage
+  }: {
+    callId?: string;
+    eventType: string;
+    rawPayload: any;
+    clientIP: string;
+    headers: Record<string, string>;
+    processingResult: 'success' | 'ignored' | 'error';
+    errorMessage?: string;
+  }
+) {
+  try {
+    await supabase.from('api4com_webhook_logs').insert({
+      call_id: callId || null,
+      event_type: eventType,
+      raw_payload: rawPayload,
+      client_ip: clientIP,
+      headers: headers,
+      processing_result: processingResult,
+      error_message: errorMessage || null
+    });
+    console.log('[api4com-webhook] 📝 Logged webhook event:', eventType, processingResult);
+  } catch (e) {
+    console.error('[api4com-webhook] Failed to save webhook log:', e);
+  }
 }
 
 // Helper to get a fingerprint of the key for logging (without exposing the actual key)
@@ -576,7 +613,32 @@ serve(async (req) => {
       }
     } else {
       console.log('[api4com-webhook] ⚠️ Unhandled event:', { eventType, normalizedEvent, callId });
+      
+      // Log ignored/unknown events
+      await logWebhookEvent(supabase, {
+        callId,
+        eventType,
+        rawPayload: body,
+        clientIP,
+        headers: Object.fromEntries(Array.from(req.headers.entries()).filter(([k]) => 
+          !k.toLowerCase().includes('auth') && !k.toLowerCase().includes('key')
+        )),
+        processingResult: 'ignored',
+        errorMessage: `Unknown event type: ${eventType}`,
+      });
     }
+
+    // Log successful processing
+    await logWebhookEvent(supabase, {
+      callId,
+      eventType,
+      rawPayload: body,
+      clientIP,
+      headers: Object.fromEntries(Array.from(req.headers.entries()).filter(([k]) => 
+        !k.toLowerCase().includes('auth') && !k.toLowerCase().includes('key')
+      )),
+      processingResult: 'success',
+    });
 
     return new Response(
       JSON.stringify({ 
@@ -590,6 +652,25 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[api4com-webhook] ❌ Error:', error);
+    
+    // Log error
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      
+      await logWebhookEvent(supabase, {
+        eventType: 'error',
+        rawPayload: { error: error instanceof Error ? error.message : 'Unknown error' },
+        clientIP: 'unknown',
+        headers: {},
+        processingResult: 'error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      });
+    } catch (logError) {
+      console.error('[api4com-webhook] Failed to log error:', logError);
+    }
+    
     return new Response(
       JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
