@@ -29,13 +29,25 @@ serve(async (req) => {
     console.log('[Sender] Starting send process...');
 
     // Get WhatsApp credentials from settings
-    const { data: settings } = await supabase
+    const { data: settings, error: settingsError } = await supabase
       .from('nina_settings')
       .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_token_in_vault')
       .maybeSingle();
 
+    if (settingsError) {
+      console.error('[Sender] Error fetching settings:', settingsError);
+      return new Response(JSON.stringify({ 
+        error: 'Erro ao buscar configurações',
+        message: settingsError.message,
+        processed: 0 
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     if (!settings) {
-      console.log('[Sender] Sistema não configurado');
+      console.log('[Sender] Sistema não configurado - nenhuma configuração encontrada na tabela nina_settings');
       return new Response(JSON.stringify({ 
         error: 'Sistema não configurado',
         message: 'Acesse /settings para configurar o WhatsApp',
@@ -45,6 +57,8 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
+    
+    console.log('[Sender] Settings loaded successfully');
 
     // Get access token from Vault or fallback to table
     let accessToken = settings.whatsapp_access_token;
