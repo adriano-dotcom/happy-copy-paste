@@ -347,23 +347,19 @@ export const api = {
     const contactsWithTemplateSent = new Set<string>();
     
     if (conversationIds.length > 0) {
+      // Query directly for template messages using contains filter
       const { data: templateMessages } = await supabase
         .from('messages')
-        .select('conversation_id, metadata')
+        .select('conversation_id')
         .in('conversation_id', conversationIds)
         .eq('from_type', 'nina')
-        .not('metadata', 'is', null);
+        .contains('metadata', { is_template: true });
       
-      // Check metadata for is_template = true
       if (templateMessages && templateMessages.length > 0) {
         // Get unique conversation IDs that have template messages
-        const conversationsWithTemplates = new Set<string>();
-        templateMessages.forEach(m => {
-          const metadata = m.metadata as Record<string, any> | null;
-          if (metadata && metadata.is_template === true) {
-            conversationsWithTemplates.add(m.conversation_id);
-          }
-        });
+        const conversationsWithTemplates = new Set(
+          templateMessages.map(m => m.conversation_id)
+        );
         
         // Map back to contact IDs
         (conversationsData || []).forEach(conv => {
