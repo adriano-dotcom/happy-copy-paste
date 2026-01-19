@@ -147,6 +147,30 @@ const ChatInterface: React.FC = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const audioFormatRef = useRef<{ mimeType: string; extension: string }>({ mimeType: 'audio/ogg', extension: 'ogg' });
+  
+  // Detecta o melhor formato de áudio suportado pelo navegador E pelo WhatsApp
+  const getPreferredAudioMimeType = (): { mimeType: string; extension: string } => {
+    // Ordem de preferência (todos aceitos pelo WhatsApp Business API)
+    const formats = [
+      { mimeType: 'audio/ogg; codecs=opus', extension: 'ogg' },
+      { mimeType: 'audio/ogg', extension: 'ogg' },
+      { mimeType: 'audio/mp4', extension: 'm4a' },
+      { mimeType: 'audio/mpeg', extension: 'mp3' },
+      { mimeType: 'audio/aac', extension: 'aac' },
+    ];
+    
+    for (const format of formats) {
+      if (MediaRecorder.isTypeSupported(format.mimeType)) {
+        console.log(`[Audio] Using WhatsApp-compatible format: ${format.mimeType}`);
+        return format;
+      }
+    }
+    
+    // Fallback para webm (pode não funcionar no WhatsApp)
+    console.warn('[Audio] No WhatsApp-compatible format found, using webm');
+    return { mimeType: 'audio/webm', extension: 'webm' };
+  };
   
   // File upload state
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -855,7 +879,12 @@ const ChatInterface: React.FC = () => {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      
+      // Detectar melhor formato compatível com WhatsApp
+      const preferredFormat = getPreferredAudioMimeType();
+      audioFormatRef.current = preferredFormat;
+      
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: preferredFormat.mimeType });
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
       
@@ -892,14 +921,16 @@ const ChatInterface: React.FC = () => {
       recordingTimerRef.current = null;
     }
     
+    const format = audioFormatRef.current;
+    
     return new Promise<void>((resolve) => {
       mediaRecorderRef.current!.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioBlob = new Blob(audioChunksRef.current, { type: format.mimeType });
         const reader = new FileReader();
         
         reader.onloadend = async () => {
           const base64 = (reader.result as string).split(',')[1];
-          await sendAudioMessage(base64, 'audio/webm');
+          await sendAudioMessage(base64, format.mimeType, format.extension);
           resolve();
         };
         
@@ -924,7 +955,7 @@ const ChatInterface: React.FC = () => {
     setRecordingTime(0);
   };
 
-  const sendAudioMessage = async (audioBase64: string, mimeType: string) => {
+  const sendAudioMessage = async (audioBase64: string, mimeType: string, extension: string) => {
     if (!activeChat) return;
     
     try {
@@ -940,7 +971,6 @@ const ChatInterface: React.FC = () => {
       const audioBlob = new Blob([byteArray], { type: mimeType });
       
       // 2. Upload to Supabase Storage (whatsapp-media bucket)
-      const extension = mimeType.split('/')[1]?.split(';')[0] || 'ogg';
       const fileName = `${activeChat.contactId}/${Date.now()}_audio.${extension}`;
       
       const { error: uploadError } = await supabase.storage
