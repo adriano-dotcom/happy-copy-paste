@@ -186,6 +186,76 @@ Deno.serve(async (req) => {
     if (!callDetails) {
       console.log('[api4com-sync-call] Could not get call details from any endpoint');
       
+      // Try to fetch recordings specifically if call ended
+      if (['completed', 'cancelled', 'no_answer', 'busy', 'failed'].includes(callLog.status) && !callLog.record_url) {
+        console.log('[api4com-sync-call] 🎤 Attempting to fetch recordings for completed call');
+        
+        for (const baseUrl of baseUrls) {
+          try {
+            const recordingsEndpoints = [
+              `/api/v1/recordings?call_id=${callId}`,
+              `/api/v1/calls/${callId}/recordings`,
+              `/api/v1/dialer/recordings/${callId}`,
+            ];
+            
+            for (const endpoint of recordingsEndpoints) {
+              const response = await fetch(`${baseUrl}${endpoint}`, {
+                method: 'GET',
+                headers: {
+                  'Authorization': `Bearer ${apiToken}`,
+                  'X-Api-Key': apiToken,
+                  'Accept': 'application/json',
+                },
+              });
+              
+              if (response.ok) {
+                const recordingsData = await response.json();
+                console.log('[api4com-sync-call] 📼 Recordings response:', JSON.stringify(recordingsData).substring(0, 500));
+                
+                const recordingUrl = recordingsData?.data?.[0]?.url || 
+                                     recordingsData?.recordings?.[0]?.url ||
+                                     recordingsData?.recording_url ||
+                                     recordingsData?.url;
+                
+                if (recordingUrl) {
+                  console.log('[api4com-sync-call] ✅ Found recording URL:', recordingUrl.substring(0, 80));
+                  
+                  await supabase
+                    .from('call_logs')
+                    .update({
+                      record_url: recordingUrl,
+                      transcription_status: 'pending',
+                    })
+                    .eq('id', callLog.id);
+                  
+                  // Trigger transcription
+                  await fetch(`${supabaseUrl}/functions/v1/transcribe-call-recording`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${supabaseKey}`,
+                    },
+                    body: JSON.stringify({ call_log_id: callLog.id }),
+                  });
+                  
+                  return new Response(
+                    JSON.stringify({ 
+                      success: true, 
+                      synced: true, 
+                      message: 'Gravação recuperada',
+                      updates: { record_url: recordingUrl },
+                    }),
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                  );
+                }
+              }
+            }
+          } catch (e) {
+            console.log('[api4com-sync-call] Recording fetch error:', e);
+          }
+        }
+      }
+      
       // Check elapsed time for stuck calls
       const startTime = new Date(callLog.started_at).getTime();
       const elapsed = Date.now() - startTime;

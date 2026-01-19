@@ -4,7 +4,7 @@ import { Tables } from '@/integrations/supabase/types';
 
 export type CallLog = Tables<'call_logs'>;
 
-const CALL_TIMEOUT_MS = 120000; // 2 minutes timeout for stuck calls
+const CALL_TIMEOUT_MS = 180000; // 3 minutes timeout for stuck calls (increased from 2)
 
 export const useActiveCall = (conversationId: string | null) => {
   const [activeCall, setActiveCall] = useState<CallLog | null>(null);
