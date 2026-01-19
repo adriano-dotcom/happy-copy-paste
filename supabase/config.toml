@@ -134,3 +134,7 @@ verify_jwt = false
 # Verificador de quality score WhatsApp
 [functions.check-whatsapp-quality]
 verify_jwt = false
+
+# Sincronização de chamadas travadas API4Com
+[functions.api4com-sync-stuck-calls]
+verify_jwt = true
