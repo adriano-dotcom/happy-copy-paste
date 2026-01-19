@@ -1345,17 +1345,21 @@ function detectAtlasVehicleHandoff(
 
 // ===== REAL-TIME QUALIFICATION EXTRACTION FUNCTION =====
 // Extract qualification answers from user messages for immediate saving
-function extractQualificationFromMessages(userMessages: string[]): { [key: string]: string | null } {
+// ENHANCED: Now includes contextual extraction based on agent questions
+function extractQualificationFromMessages(
+  userMessages: string[], 
+  agentMessages?: string[]
+): { [key: string]: string | null } {
   const extracted: { [key: string]: string | null } = {};
   const allText = userMessages.join(' ').toLowerCase();
   
-  // Patterns for cargo qualification fields
+  // Patterns for cargo qualification fields - ENHANCED with more variations
   const patterns: { [key: string]: RegExp } = {
     contratacao: /\b(direto|subcontratado|ambos|contratado direto|subcontrata|sub-contratado)\b/i,
-    tipo_carga: /\b(alumínio|aluminio|ferro|grão|grãos|graos|grao|alimento|alimentos|químico|quimicos|químicos|madeira|cimento|frigorific|refrigerad|seca|geral|carga geral|paletizada|granel|container|containers|bebidas?|perecíveis|pereciveis|eletrônicos|eletronicos|máquinas|maquinas|equipamentos?)\b/i,
+    tipo_carga: /\b(alumínio|aluminio|ferro|grão|grãos|graos|grao|alimento|alimentos|químico|quimicos|químicos|madeira|cimento|frigorific|refrigerad|seca|geral|carga geral|paletizada|granel|container|containers|bebidas?|perecíveis|pereciveis|eletrônicos|eletronicos|máquinas|maquinas|equipamentos?|peças|pecas|peca|peça|autopeças|autopecas|pecas? automotivas?|componentes?|industriais?|combustível|combustivel|carne|carnes|leite|laticínios|laticinios|ração|racao|agrícola|agricola|soja|milho|trigo|fertilizante|defensivos?|insumos?)\b/i,
     tipo_frota: /\b(própria|propria|próprio|proprio|agregado|agregados|terceiro|terceiros|frota própria|frota propria|mista)\b/i,
-    antt: /\b(regularizada|pessoa física|pessoa fisica|ativa|não tenho antt|nao tenho antt|em processo|sim tenho|tenho sim|antt ok|antt ativa)\b/i,
-    cte: /\b(sim|não|nao|emito|emite|vou começar|vou comecar|já emito|ja emito|emitimos|não emito|nao emito|emissão|emissao)\b/i,
+    antt: /\b(regularizada|pessoa física|pessoa fisica|ativa|não tenho antt|nao tenho antt|em processo|sim tenho|tenho sim|antt ok|antt ativa|regular|em dia)\b/i,
+    cte: /\b(sim|não|nao|emito|emite|vou começar|vou comecar|já emito|ja emito|emitimos|não emito|nao emito|emissão|emissao|em meu nome|no meu nome|cte proprio|cte próprio)\b/i,
   };
   
   // Patterns for vehicle/fleet qualification fields (Atlas agent)
@@ -1391,17 +1395,116 @@ function extractQualificationFromMessages(userMessages: string[]): { [key: strin
     }
   }
   
-  // Extract viagens/mes (numeric pattern)
-  const viagensMatch = allText.match(/(\d+)\s*(?:viagens?|vezes?|por mês|ao mês|por mes|mensal|mensais)/i);
-  if (viagensMatch) {
-    extracted.viagens_mes = viagensMatch[1];
+  // Extract viagens/mes (numeric pattern) - ENHANCED
+  const viagensPatterns = [
+    /(\d+)\s*(?:viagens?|vezes?|por mês|ao mês|por mes|mensal|mensais)/i,
+    /(?:faço|faco|realizo|faziamos|fazemos)\s*(?:em média|em media)?\s*(\d+)/i,
+    /(?:média|media|em torno de)\s*(\d+)\s*(?:viagens?|vezes?)?/i
+  ];
+  
+  for (const viagensRegex of viagensPatterns) {
+    const viagensMatch = allText.match(viagensRegex);
+    if (viagensMatch) {
+      const num = viagensMatch[1] || viagensMatch[2];
+      if (num) {
+        extracted.viagens_mes = num;
+        break;
+      }
+    }
   }
   
-  // Extract valor médio (currency pattern)
-  const valorMatch = allText.match(/(?:R\$|reais)\s*(\d+(?:\.\d{3})*(?:,\d{2})?)|(\d+(?:\.\d{3})*(?:,\d{2})?)\s*(?:mil|reais)/gi);
-  if (valorMatch && valorMatch.length > 0) {
-    extracted.valor_medio = valorMatch[0];
+  // ===== ENHANCED VALUE EXTRACTION =====
+  // Extract valor médio and maior valor with improved patterns
+  const valorPatterns = [
+    // Pattern: "140 mil", "R$ 140 mil", "140.000", "R$ 140.000"
+    /R?\$?\s*(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*(mil|reais)?/gi,
+    // Pattern: "140" followed by "mil" (split messages)
+    /(\d{2,3})\s*$/i, // Ends with number like "140"
+  ];
+  
+  // Also try to extract from individual messages (handles split responses like "140" + "mil")
+  let valorMedio: string | null = null;
+  let maiorValor: string | null = null;
+  
+  // ===== CONTEXTUAL EXTRACTION: Correlate questions with answers =====
+  if (agentMessages && agentMessages.length > 0 && userMessages.length > 0) {
+    // Look for question-answer pairs
+    for (let i = 0; i < agentMessages.length && i < userMessages.length; i++) {
+      const question = (agentMessages[i] || '').toLowerCase();
+      const answer = (userMessages[i] || '').toLowerCase();
+      
+      // Check if agent asked about valor medio/average value
+      const isValorMedioQuestion = /valor médio|valor medio|média por carga|media por carga|quanto vale|valor da carga|valor por viagem/i.test(question);
+      if (isValorMedioQuestion && !valorMedio) {
+        // Try to extract number from answer
+        const numMatch = answer.match(/(\d+(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*(mil|reais)?/);
+        if (numMatch) {
+          valorMedio = numMatch[0].trim();
+        } else {
+          // Handle just numbers like "140"
+          const simpleNum = answer.match(/(\d{2,3})\s*$/);
+          if (simpleNum) {
+            // Check next user message for "mil"
+            const nextAnswer = userMessages[i + 1]?.toLowerCase() || '';
+            if (nextAnswer.includes('mil')) {
+              valorMedio = `${simpleNum[1]} mil`;
+            } else {
+              valorMedio = `R$ ${simpleNum[1]}.000`; // Assume thousands
+            }
+          }
+        }
+      }
+      
+      // Check if agent asked about maior valor/highest value
+      const isMaiorValorQuestion = /maior valor|maior carga|mais caro|mais alto|carga mais valiosa|maior operação|maior operacao/i.test(question);
+      if (isMaiorValorQuestion && !maiorValor) {
+        const numMatch = answer.match(/(\d+(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*(mil|milhão|milhao|reais)?/);
+        if (numMatch) {
+          maiorValor = numMatch[0].trim();
+        } else {
+          const simpleNum = answer.match(/(\d{2,4})\s*$/);
+          if (simpleNum) {
+            const nextAnswer = userMessages[i + 1]?.toLowerCase() || '';
+            if (nextAnswer.includes('mil')) {
+              maiorValor = `${simpleNum[1]} mil`;
+            } else if (nextAnswer.includes('milh')) {
+              maiorValor = `${simpleNum[1]} milhão`;
+            } else {
+              maiorValor = `R$ ${simpleNum[1]}.000`;
+            }
+          }
+        }
+      }
+      
+      // Check if agent asked about tipo de carga
+      const isTipoCargaQuestion = /tipo de carga|que tipo|qual carga|transporta o que|transporta o quê|que produto|que mercadoria/i.test(question);
+      if (isTipoCargaQuestion && !extracted.tipo_carga) {
+        // Try broader extraction for cargo type
+        const tipoCargaAnswer = answer.trim();
+        if (tipoCargaAnswer.length > 2 && tipoCargaAnswer.length < 50) {
+          // Avoid extracting full sentences - just the key product
+          const productWords = tipoCargaAnswer.match(/\b(peças?|pecas?|autopecas?|autopeças?|alumínio|aluminio|ferro|aço|aco|grão|grãos?|alimentos?|químicos?|quimicos?|madeira|cimento|bebidas?|eletrônicos?|eletronicos?|máquinas?|maquinas?|componentes?|industrial|industriais|carnes?|laticínios?|laticinios?|ração|racao)\b/i);
+          if (productWords) {
+            extracted.tipo_carga = productWords[0];
+          } else if (!/pergunt|respond|sim|não|nao|ok|entendi/.test(tipoCargaAnswer)) {
+            // Use the answer if it doesn't look like a filler word
+            extracted.tipo_carga = tipoCargaAnswer.split(/[.,!?]/)[0].trim();
+          }
+        }
+      }
+    }
   }
+  
+  // Fallback: Try to extract values from all text if contextual failed
+  if (!valorMedio) {
+    const valorMatch = allText.match(/(?:R\$|reais)\s*(\d+(?:\.\d{3})*(?:,\d{2})?)|(\d+(?:\.\d{3})*(?:,\d{2})?)\s*(?:mil|reais)/gi);
+    if (valorMatch && valorMatch.length > 0) {
+      valorMedio = valorMatch[0];
+    }
+  }
+  
+  if (valorMedio) extracted.valor_medio = valorMedio;
+  if (maiorValor) extracted.maior_valor = maiorValor;
   
   return extracted;
 }
@@ -3658,11 +3761,19 @@ async function processQueueItem(
 
   // ===== REAL-TIME QUALIFICATION EXTRACTION =====
   // Extract qualification answers from user messages immediately and save to nina_context
-  const userMessagesContent = (recentMessages || [])
+  // ENHANCED: Now includes agent messages for contextual extraction (correlate Q&A)
+  const chronologicalMessages = (recentMessages || []).slice().reverse();
+  
+  const userMessagesContent = chronologicalMessages
     .filter((m: any) => m.from_type === 'user' && m.content)
     .map((m: any) => m.content);
   
-  const extractedQA = extractQualificationFromMessages(userMessagesContent);
+  const agentMessagesContent = chronologicalMessages
+    .filter((m: any) => (m.from_type === 'nina' || m.from_type === 'human') && m.content)
+    .map((m: any) => m.content);
+  
+  // Pass both user and agent messages for contextual extraction
+  const extractedQA = extractQualificationFromMessages(userMessagesContent, agentMessagesContent);
   const existingQA = conversation.nina_context?.qualification_answers || {};
   const mergedQA: { [key: string]: string } = { ...existingQA };
   
@@ -4846,6 +4957,48 @@ Se detectar que era interesse em emprego antes e agora é seguro:
     }
   }
 
+  // ===== DADOS JÁ OBTIDOS - RESUMO PARA O AGENTE =====
+  // Build a clear list of what data we already have
+  const qa = ninaContext?.qualification_answers || {};
+  const collectedData: string[] = [];
+  const pendingData: string[] = [];
+  
+  const fieldsToTrack = [
+    { field: 'contratacao', label: 'Tipo contratação' },
+    { field: 'tipo_carga', label: 'Tipo de carga' },
+    { field: 'valor_medio', label: 'Valor médio' },
+    { field: 'maior_valor', label: 'Maior valor' },
+    { field: 'viagens_mes', label: 'Viagens/mês' },
+    { field: 'tipo_frota', label: 'Tipo de frota' },
+    { field: 'estados', label: 'Estados' },
+    { field: 'antt', label: 'ANTT' },
+    { field: 'cte', label: 'CT-e' },
+  ];
+  
+  for (const item of fieldsToTrack) {
+    if (qa[item.field]) {
+      collectedData.push(`✅ ${item.label}: ${qa[item.field]}`);
+    } else {
+      pendingData.push(`⏳ ${item.label}: PENDENTE`);
+    }
+  }
+  
+  // Add contact CNPJ if available
+  if (contact?.cnpj) {
+    collectedData.push(`✅ CNPJ: ${contact.cnpj}`);
+  } else {
+    pendingData.push(`⏳ CNPJ: PENDENTE`);
+  }
+  
+  if (collectedData.length > 0) {
+    contextInfo += `\n\n## 📊 STATUS DA QUALIFICAÇÃO:\n### JÁ COLETADO (NÃO PERGUNTE):\n${collectedData.join('\n')}`;
+  }
+  
+  if (pendingData.length > 0 && pendingData.length < 6) {
+    contextInfo += `\n\n### AINDA FALTA COLETAR:\n${pendingData.join('\n')}`;
+    contextInfo += `\n\n⚠️ ATENÇÃO: Pergunte APENAS sobre os itens PENDENTES acima.`;
+  }
+
   // ===== ANTI-ECO + VERIFICAÇÃO DE HISTÓRICO =====
   contextInfo += `\n\n## REGRAS CRÍTICAS DE COMUNICAÇÃO:
 
@@ -4859,24 +5012,15 @@ CORRETO: "Quais estados atende?"
 
 ### REGRA VERIFICAR HISTÓRICO (CRÍTICO):
 Antes de fazer QUALQUER pergunta:
-1. LEIA as "ÚLTIMAS RESPOSTAS DO CLIENTE" acima
-2. VERIFIQUE as "INFORMAÇÕES JÁ COLETADAS" acima
-3. Se o dado já foi informado, PULE para a próxima pergunta
+1. LEIA o "STATUS DA QUALIFICAÇÃO" acima
+2. Se o dado já foi coletado (✅), NÃO pergunte novamente
+3. Se o dado está PENDENTE (⏳), você PODE perguntar
+4. Avance para o próximo item pendente automaticamente
 
 ### Se cliente disser "já respondi" ou "já informei":
 - NUNCA peça para repetir
-- Consulte o histórico e reconheça o dado que está lá
-- Responda: "Vi aqui. Sobre [próxima pergunta pendente]?"
-- Continue para o próximo item pendente
-
-### Lista de verificação antes de perguntar:
-- Tipo de contratação (direto/subcontratado) - já informou?
-- Tipo de carga - já mencionou no histórico?
-- Estados/regiões - já apareceu nas mensagens?
-- CNPJ - já está no contexto do cliente?
-- Tipo de frota - própria/agregado/terceiro definido?
-- ANTT - já falou sobre regularização?
-- CT-e - já confirmou se emite ou não?
+- Reconheça: "Vi aqui que você já informou [dado]."
+- Avance imediatamente para o próximo item PENDENTE
 
 ### REGRA DE FINALIZAÇÃO:`;
 
