@@ -130,3 +130,7 @@ verify_jwt = false
 # Processador de campanhas WhatsApp em background
 [functions.process-campaign]
 verify_jwt = false
+
+# Verificador de quality score WhatsApp
+[functions.check-whatsapp-quality]
+verify_jwt = false
