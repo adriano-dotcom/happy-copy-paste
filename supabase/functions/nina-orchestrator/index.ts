@@ -3074,6 +3074,81 @@ async function processQueueItem(
         console.log(`[Nina] 📊 Prospecting deal moved to Em Qualificação`);
       }
     }
+    
+    // ===== PROSPECTING TEMPLATE RESPONSE DETECTION =====
+    // Check if last Nina message was a prospecting template and user is responding
+    const { data: lastNinaMessages } = await supabase
+      .from('messages')
+      .select('id, content, metadata, from_type, created_at')
+      .eq('conversation_id', conversation.id)
+      .eq('from_type', 'nina')
+      .order('created_at', { ascending: false })
+      .limit(2);
+    
+    const lastNinaMessage = lastNinaMessages?.[0];
+    const isProspectingTemplateResponse = lastNinaMessage?.metadata?.is_template === true || 
+                                           lastNinaMessage?.metadata?.is_prospecting === true ||
+                                           // Also check if it's the first user response in a prospecting conversation
+                                           (lastNinaMessages?.length === 1 && conversationMetadata.origin === 'prospeccao');
+    
+    if (isProspectingTemplateResponse) {
+      console.log(`[Nina] 🎯 Prospecting template response detected - user replied to template`);
+      console.log(`[Nina] 🎯 User message: "${message.content?.substring(0, 50)}..."`);
+      
+      // Check for common "what is this about?" type questions
+      const userMsgLower = message.content?.toLowerCase() || '';
+      const isWhatAboutQuestion = /qual\s*(é|e)?\s*(o)?\s*(assunto|setor|referente|motivo|sobre|objetivo)|o que|do que|pra que|sobre o que|em que posso|como posso|quem|oque/i.test(userMsgLower);
+      
+      if (isWhatAboutQuestion) {
+        console.log(`[Nina] 🎯 User asking "what is this about?" - forcing full presentation`);
+        
+        // Force a complete introduction response
+        const contactName = conversation.contact?.call_name || conversation.contact?.name || '';
+        const prospectingIntroMessage = contactName 
+          ? `Oi, ${contactName}! Somos da Jacometo Seguros, uma corretora especializada em seguros para transportadoras.\n\nEntramos em contato pois trabalhamos com proteção de cargas e frotas para empresas de transporte. Você é o responsável por essa área na empresa?`
+          : `Oi! Somos da Jacometo Seguros, uma corretora especializada em seguros para transportadoras.\n\nEntramos em contato pois trabalhamos com proteção de cargas e frotas para empresas de transporte. Você é o responsável por essa área na empresa?`;
+        
+        // Calculate delay
+        const delayMin = settings?.response_delay_min || 1000;
+        const delayMax = settings?.response_delay_max || 3000;
+        const delay = Math.random() * (delayMax - delayMin) + delayMin;
+        
+        // Get AI settings for metadata
+        const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+        
+        // Queue the prospecting introduction message
+        await queueTextResponse(supabase, conversation, message, prospectingIntroMessage, settings, aiSettings, delay, agent);
+        
+        // Mark message as processed
+        const responseTime = Date.now() - new Date(message.sent_at).getTime();
+        await supabase
+          .from('messages')
+          .update({ 
+            processed_by_nina: true,
+            nina_response_time: responseTime
+          })
+          .eq('id', message.id);
+        
+        // Trigger whatsapp-sender
+        try {
+          const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+          fetch(senderUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`
+            },
+            body: JSON.stringify({ triggered_by: 'nina-orchestrator-prospecting-intro' })
+          }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+        } catch (e) {
+          console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+        }
+        
+        console.log(`[Nina] ✅ Prospecting introduction sent, skipping AI call`);
+        return;
+      }
+    }
+    // ===== END PROSPECTING TEMPLATE RESPONSE DETECTION =====
   }
   // ===== END PROSPECTING STAGE UPDATE =====
 
@@ -4626,6 +4701,73 @@ async function processQueueItem(
         console.error('[Nina] Fallback model also failed:', fallbackResponse.status);
       }
     }
+    
+    // ===== PROSPECTING RESPONSE MINIMUM LENGTH VALIDATION =====
+    // For prospecting conversations, ensure response is not just a short greeting
+    if (aiContent && conversationMetadata?.origin === 'prospeccao' && agent?.slug === 'atlas') {
+      const contentTrimmed = aiContent.trim();
+      
+      // Check if response is too short (just a greeting like "Olá, Dami")
+      if (contentTrimmed.length < 50 || /^(ol[aá]|oi|bom dia|boa tarde|boa noite)[,!.]?\s*[\w]{0,20}[!.]?$/i.test(contentTrimmed)) {
+        console.warn(`[Nina] ⚠️ Prospecting response too short: "${contentTrimmed}" (${contentTrimmed.length} chars)`);
+        console.warn('[Nina] 🔄 Regenerating with explicit prospecting instruction...');
+        
+        // Retry with explicit instruction
+        const prospectingForcePrompt = processedPrompt + `
+
+🚨🚨🚨 INSTRUÇÃO CRÍTICA - RESPONDA IMEDIATAMENTE 🚨🚨🚨
+
+O cliente está RESPONDENDO ao template de prospecção que você enviou.
+Você NÃO PODE responder apenas com "Olá" ou saudação curta.
+
+SUA RESPOSTA OBRIGATÓRIA:
+1. Se apresente: "Somos da Jacometo Seguros, corretora especializada em seguros para transportadoras."
+2. Explique o motivo: "Entramos em contato pois trabalhamos com proteção de cargas e frotas."
+3. Faça a pergunta: "Você é o responsável por essa área na empresa?"
+
+MÍNIMO 2 PARÁGRAFOS. PROIBIDO resposta menor que 50 caracteres.`;
+        
+        const retryResponse = await fetch(LOVABLE_AI_URL, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${lovableApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash', // Use more reliable model for retry
+            messages: [
+              { role: 'system', content: prospectingForcePrompt },
+              ...conversationHistory
+            ],
+            temperature: 0.9,
+            max_tokens: 1500
+          })
+        });
+        
+        if (retryResponse.ok) {
+          const retryData = await retryResponse.json();
+          const retryContent = retryData.choices?.[0]?.message?.content;
+          
+          if (retryContent && retryContent.trim().length > 40) {
+            console.log(`[Nina] ✅ Retry successful, new response length: ${retryContent.length}`);
+            aiContent = retryContent;
+          } else {
+            console.warn('[Nina] ⚠️ Retry also returned short response, using hardcoded fallback');
+            const contactName = conversation.contact?.call_name || conversation.contact?.name || '';
+            aiContent = contactName 
+              ? `Oi, ${contactName}! Somos da Jacometo Seguros, corretora especializada em seguros para transportadoras.\n\nEntramos em contato pois trabalhamos com proteção de cargas e frotas para empresas de transporte. Você é o responsável por essa área na empresa?`
+              : `Oi! Somos da Jacometo Seguros, corretora especializada em seguros para transportadoras.\n\nEntramos em contato pois trabalhamos com proteção de cargas e frotas para empresas de transporte. Você é o responsável por essa área na empresa?`;
+          }
+        } else {
+          console.error('[Nina] ❌ Retry failed, using hardcoded fallback');
+          const contactName = conversation.contact?.call_name || conversation.contact?.name || '';
+          aiContent = contactName 
+            ? `Oi, ${contactName}! Somos da Jacometo Seguros, corretora especializada em seguros para transportadoras.\n\nEntramos em contato pois trabalhamos com proteção de cargas e frotas para empresas de transporte. Você é o responsável por essa área na empresa?`
+            : `Oi! Somos da Jacometo Seguros, corretora especializada em seguros para transportadoras.\n\nEntramos em contato pois trabalhamos com proteção de cargas e frotas para empresas de transporte. Você é o responsável por essa área na empresa?`;
+        }
+      }
+    }
+    // ===== END PROSPECTING RESPONSE MINIMUM LENGTH VALIDATION =====
     
     // If still no content, use CONTEXTUAL fallback message instead of generic error
     if (!aiContent) {
