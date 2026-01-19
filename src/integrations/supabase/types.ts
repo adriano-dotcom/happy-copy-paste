@@ -2150,6 +2150,7 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      cleanup_old_queue_data: { Args: never; Returns: undefined }
       cleanup_processed_message_queue: { Args: never; Returns: undefined }
       cleanup_processed_queues: { Args: never; Returns: undefined }
       delete_vault_secret: { Args: { secret_name: string }; Returns: boolean }
