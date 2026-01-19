@@ -75,33 +75,111 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     audio.currentTime = Math.max(0, Math.min(duration, percent * duration));
   };
 
+  const [loadError, setLoadError] = useState(false);
+
+  // If no media URL, show unavailable state
+  if (!mediaUrl) {
+    return (
+      <div className={`space-y-2 ${className}`}>
+        <div className={`flex items-center gap-3 min-w-[260px] py-2 px-3 rounded-lg ${
+          isOutgoing ? 'bg-white/10' : 'bg-slate-700/50'
+        }`}>
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+            isOutgoing ? 'bg-white/20' : 'bg-slate-600'
+          }`}>
+            <Mic className={`w-5 h-5 ${isOutgoing ? 'text-white/60' : 'text-slate-400'}`} />
+          </div>
+          <div className="flex-1">
+            <p className={`text-sm ${isOutgoing ? 'text-white/70' : 'text-slate-400'}`}>
+              Áudio indisponível
+            </p>
+            <p className={`text-xs ${isOutgoing ? 'text-white/50' : 'text-slate-500'}`}>
+              Arquivo não encontrado
+            </p>
+          </div>
+        </div>
+        {hasTranscription && (
+          <div className={`flex items-start gap-2 pt-2 border-t ${
+            isOutgoing ? 'border-white/20' : 'border-slate-700/50'
+          }`}>
+            <Mic className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${
+              isOutgoing ? 'text-cyan-200' : 'text-cyan-400'
+            }`} />
+            <p className={`text-sm italic leading-relaxed ${
+              isOutgoing ? 'text-cyan-100/90' : 'text-slate-300/90'
+            }`}>
+              {transcription}
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // If load error, show error state
+  if (loadError) {
+    return (
+      <div className={`space-y-2 ${className}`}>
+        <div className={`flex items-center gap-3 min-w-[260px] py-2 px-3 rounded-lg ${
+          isOutgoing ? 'bg-red-500/20' : 'bg-red-900/30'
+        }`}>
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+            isOutgoing ? 'bg-red-500/30' : 'bg-red-800/50'
+          }`}>
+            <Mic className={`w-5 h-5 ${isOutgoing ? 'text-red-200' : 'text-red-400'}`} />
+          </div>
+          <div className="flex-1">
+            <p className={`text-sm ${isOutgoing ? 'text-red-100' : 'text-red-300'}`}>
+              Erro ao carregar áudio
+            </p>
+            <p className={`text-xs ${isOutgoing ? 'text-red-200/70' : 'text-red-400/70'}`}>
+              Não foi possível reproduzir
+            </p>
+          </div>
+        </div>
+        {hasTranscription && (
+          <div className={`flex items-start gap-2 pt-2 border-t ${
+            isOutgoing ? 'border-white/20' : 'border-slate-700/50'
+          }`}>
+            <Mic className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${
+              isOutgoing ? 'text-cyan-200' : 'text-cyan-400'
+            }`} />
+            <p className={`text-sm italic leading-relaxed ${
+              isOutgoing ? 'text-cyan-100/90' : 'text-slate-300/90'
+            }`}>
+              {transcription}
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className={`space-y-2 ${className}`}>
       {/* Audio player */}
       <div className="flex items-center gap-2 min-w-[260px] py-1">
         {/* Hidden audio element */}
-        {mediaUrl && (
-          <audio
-            ref={audioRef}
-            src={mediaUrl}
-            onLoadedMetadata={(e) => {
-              setDuration(e.currentTarget.duration);
-            }}
-            onTimeUpdate={(e) => {
-              setProgress(e.currentTarget.currentTime);
-            }}
-            onEnded={() => setIsPlaying(false)}
-          />
-        )}
+        <audio
+          ref={audioRef}
+          src={mediaUrl}
+          onLoadedMetadata={(e) => {
+            setDuration(e.currentTarget.duration);
+          }}
+          onTimeUpdate={(e) => {
+            setProgress(e.currentTarget.currentTime);
+          }}
+          onEnded={() => setIsPlaying(false)}
+          onError={() => setLoadError(true)}
+        />
         
         {/* Play/Pause button */}
         <button 
           onClick={togglePlay}
-          disabled={!mediaUrl}
           className={`flex items-center justify-center rounded-full transition-all shadow-md shrink-0 ${
             isOutgoing 
-              ? 'w-10 h-10 bg-white text-cyan-600 hover:bg-cyan-50 disabled:opacity-50' 
-              : 'w-12 h-12 bg-cyan-500 text-white hover:bg-cyan-400 disabled:opacity-50 shadow-lg'
+              ? 'w-10 h-10 bg-white text-cyan-600 hover:bg-cyan-50' 
+              : 'w-12 h-12 bg-cyan-500 text-white hover:bg-cyan-400 shadow-lg'
           }`}
         >
           {isPlaying ? (

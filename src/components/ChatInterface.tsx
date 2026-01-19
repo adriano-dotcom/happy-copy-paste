@@ -928,25 +928,57 @@ const ChatInterface: React.FC = () => {
     if (!activeChat) return;
     
     try {
-      toast.loading('Processando áudio...', { id: 'audio-send' });
+      toast.loading('Enviando áudio...', { id: 'audio-send' });
       
-      const { data, error } = await supabase.functions.invoke('simulate-audio-webhook', {
-        body: {
-          phone: activeChat.contactPhone,
-          name: activeChat.contactName,
-          audio_base64: audioBase64,
-          audio_mime_type: mimeType,
-        },
-      });
+      // 1. Convert base64 to Blob
+      const byteCharacters = atob(audioBase64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const audioBlob = new Blob([byteArray], { type: mimeType });
       
-      if (error) throw error;
+      // 2. Upload to Supabase Storage (whatsapp-media bucket)
+      const extension = mimeType.split('/')[1]?.split(';')[0] || 'ogg';
+      const fileName = `${activeChat.contactId}/${Date.now()}_audio.${extension}`;
       
-      const transcriptionPreview = data.transcription?.substring(0, 50);
-      toast.success(`Áudio enviado! Transcrição: "${transcriptionPreview}..."`, { 
-        id: 'audio-send',
-        duration: 4000 
-      });
+      const { error: uploadError } = await supabase.storage
+        .from('whatsapp-media')
+        .upload(fileName, audioBlob, {
+          contentType: mimeType,
+          cacheControl: '3600'
+        });
       
+      if (uploadError) throw uploadError;
+      
+      // 3. Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('whatsapp-media')
+        .getPublicUrl(fileName);
+      
+      // 4. Insert into send queue with from_type: 'human'
+      const { error: queueError } = await supabase
+        .from('send_queue')
+        .insert({
+          conversation_id: activeChat.id,
+          contact_id: activeChat.contactId,
+          message_type: 'audio',
+          from_type: 'human',
+          media_url: publicUrl,
+          metadata: {
+            sender_name: user?.email?.split('@')[0] || 'Operador',
+            mime_type: mimeType
+          },
+          scheduled_at: new Date().toISOString()
+        });
+      
+      if (queueError) throw queueError;
+      
+      // 5. Trigger queue processing
+      await supabase.functions.invoke('trigger-whatsapp-sender');
+      
+      toast.success('Áudio enviado!', { id: 'audio-send' });
       await refetch();
       
     } catch (error) {
