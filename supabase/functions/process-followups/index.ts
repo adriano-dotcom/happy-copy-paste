@@ -795,6 +795,26 @@ serve(async (req) => {
           continue;
         }
 
+        // Check if deal has pending callback (scheduled call) - SKIP if callback is scheduled
+        if (deal?.id) {
+          const { data: pendingCallback } = await supabase
+            .from('deal_activities')
+            .select('id, scheduled_at, type, title')
+            .eq('deal_id', deal.id)
+            .eq('is_completed', false)
+            .in('type', ['call', 'callback'])
+            .gt('scheduled_at', now.toISOString())
+            .order('scheduled_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (pendingCallback) {
+            console.log(`[process-followups] Deal has pending callback "${pendingCallback.title}" scheduled for ${pendingCallback.scheduled_at}, skipping followup for conversation ${conv.id}`);
+            skipped++;
+            continue;
+          }
+        }
+
         // Check within_window_only constraint
         if (automation.within_window_only) {
           if (!isWindowOpen(conv.whatsapp_window_start)) {
@@ -825,6 +845,46 @@ serve(async (req) => {
         const lastMessageFromType = recentMessages?.[0]?.from_type;
         if (lastMessageFromType === 'user') {
           console.log(`[process-followups] Last message from user, skipping conversation ${conv.id}`);
+          skipped++;
+          continue;
+        }
+        
+        // Check for recent messages to prevent duplicates (race condition) - skip if message sent in last 5 minutes
+        const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+        const recentAgentMessage = recentMessages?.find(m => 
+          m.from_type !== 'user' && new Date(m.sent_at) > fiveMinutesAgo
+        );
+        if (recentAgentMessage) {
+          const secondsAgo = Math.floor((now.getTime() - new Date(recentAgentMessage.sent_at).getTime()) / 1000);
+          console.log(`[process-followups] Agent message sent ${secondsAgo}s ago, skipping to prevent duplicate for ${conv.id}`);
+          skipped++;
+          continue;
+        }
+        
+        // Check if last agent message indicates scheduled callback (patterns that show callback was confirmed)
+        const lastAgentMessage = recentMessages?.find(m => m.from_type !== 'user')?.content?.toLowerCase() || '';
+        const CALLBACK_CONFIRMATION_PATTERNS = [
+          'vamos entrar em contato',
+          'entraremos em contato',
+          'ligaremos',
+          'retornaremos',
+          'ligar para você',
+          'retornar sua ligação',
+          'agendado para',
+          'agendei para',
+          'marcado para',
+          'te ligo',
+          'ligamos',
+          'retorno',
+          'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira',
+          'segunda feira', 'terça feira', 'quarta feira', 'quinta feira', 'sexta feira',
+          'pela manhã', 'pela tarde', 'de manhã', 'à tarde', 'as 9', 'às 9', 'as 10', 'às 10',
+          'as 11', 'às 11', 'as 14', 'às 14', 'as 15', 'às 15', 'as 16', 'às 16',
+        ];
+        
+        const hasCallbackConfirmation = CALLBACK_CONFIRMATION_PATTERNS.some(p => lastAgentMessage.includes(p));
+        if (hasCallbackConfirmation) {
+          console.log(`[process-followups] Last agent message indicates callback confirmation, skipping followup for ${conv.id}`);
           skipped++;
           continue;
         }
