@@ -1356,7 +1356,7 @@ function extractQualificationFromMessages(
   // Patterns for cargo qualification fields - ENHANCED with more variations
   const patterns: { [key: string]: RegExp } = {
     contratacao: /\b(direto|subcontratado|ambos|contratado direto|subcontrata|sub-contratado)\b/i,
-    tipo_carga: /\b(alumínio|aluminio|ferro|grão|grãos|graos|grao|alimento|alimentos|químico|quimicos|químicos|madeira|cimento|frigorific|refrigerad|seca|geral|carga geral|paletizada|granel|container|containers|bebidas?|perecíveis|pereciveis|eletrônicos|eletronicos|máquinas|maquinas|equipamentos?|peças|pecas|peca|peça|autopeças|autopecas|pecas? automotivas?|componentes?|industriais?|combustível|combustivel|carne|carnes|leite|laticínios|laticinios|ração|racao|agrícola|agricola|soja|milho|trigo|fertilizante|defensivos?|insumos?)\b/i,
+    tipo_carga: /\b(alumínio|aluminio|ferro|grão|grãos|graos|grao|alimento|alimentos|químico|quimicos|químicos|madeira|cimento|frigorific|refrigerad|seca|geral|carga geral|paletizada|granel|container|containers|bebidas?|perecíveis|pereciveis|eletrônicos|eletronicos|máquinas|maquinas|equipamentos?|peças|pecas|peca|peça|autopeças|autopecas|pecas? automotivas?|componentes?|industriais?|combustível|combustivel|carne|carnes|leite|laticínios|laticinios|ração|racao|agrícola|agricola|soja|milho|trigo|fertilizante|defensivos?|insumos?|petróleo|petroleo|gás|gas|óleo|oleo|diesel|produto químico|produto quimico|material de construção|material de construcao|aço|aco|materia prima|matéria prima|bobinas?|chapas?|tubos?|perfis?|vergalhão|vergalhao|areia|brita|pedra|cascalho|terra|entulho|lixo|reciclável|reciclavel|sucata|embalagens?|papelão|papelao|plástico|plastico|têxtil|textil|tecido|roupa|vestuário|vestuario|móveis|moveis|eletrodomésticos|eletrodomesticos|medicamentos?|farmacêutico|farmaceutico|cosmético|cosmetico|calçado|calcado|sapato|couro)\b/i,
     tipo_frota: /\b(própria|propria|próprio|proprio|agregado|agregados|terceiro|terceiros|frota própria|frota propria|mista)\b/i,
     antt: /\b(regularizada|pessoa física|pessoa fisica|ativa|não tenho antt|nao tenho antt|em processo|sim tenho|tenho sim|antt ok|antt ativa|regular|em dia)\b/i,
     cte: /\b(sim|não|nao|emito|emite|vou começar|vou comecar|já emito|ja emito|emitimos|não emito|nao emito|emissão|emissao|em meu nome|no meu nome|cte proprio|cte próprio)\b/i,
@@ -1414,82 +1414,116 @@ function extractQualificationFromMessages(
   }
   
   // ===== ENHANCED VALUE EXTRACTION =====
-  // Extract valor médio and maior valor with improved patterns
-  const valorPatterns = [
-    // Pattern: "140 mil", "R$ 140 mil", "140.000", "R$ 140.000"
-    /R?\$?\s*(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*(mil|reais)?/gi,
-    // Pattern: "140" followed by "mil" (split messages)
-    /(\d{2,3})\s*$/i, // Ends with number like "140"
-  ];
-  
-  // Also try to extract from individual messages (handles split responses like "140" + "mil")
   let valorMedio: string | null = null;
   let maiorValor: string | null = null;
   
   // ===== CONTEXTUAL EXTRACTION: Correlate questions with answers =====
   if (agentMessages && agentMessages.length > 0 && userMessages.length > 0) {
-    // Look for question-answer pairs
-    for (let i = 0; i < agentMessages.length && i < userMessages.length; i++) {
+    // Build a timeline of alternating agent questions and user answers
+    // Look for question-answer pairs more intelligently
+    
+    for (let i = 0; i < agentMessages.length; i++) {
       const question = (agentMessages[i] || '').toLowerCase();
-      const answer = (userMessages[i] || '').toLowerCase();
       
-      // Check if agent asked about valor medio/average value
-      const isValorMedioQuestion = /valor médio|valor medio|média por carga|media por carga|quanto vale|valor da carga|valor por viagem/i.test(question);
-      if (isValorMedioQuestion && !valorMedio) {
-        // Try to extract number from answer
-        const numMatch = answer.match(/(\d+(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*(mil|reais)?/);
-        if (numMatch) {
-          valorMedio = numMatch[0].trim();
-        } else {
-          // Handle just numbers like "140"
-          const simpleNum = answer.match(/(\d{2,3})\s*$/);
-          if (simpleNum) {
-            // Check next user message for "mil"
-            const nextAnswer = userMessages[i + 1]?.toLowerCase() || '';
-            if (nextAnswer.includes('mil')) {
-              valorMedio = `${simpleNum[1]} mil`;
-            } else {
-              valorMedio = `R$ ${simpleNum[1]}.000`; // Assume thousands
+      // Find user responses that came AFTER this question
+      // In a typical conversation flow, user message i responds to agent message i
+      const possibleAnswers = [
+        userMessages[i]?.toLowerCase() || '',
+        userMessages[i + 1]?.toLowerCase() || '' // Also check next message in case of split
+      ].filter(Boolean);
+      
+      for (const answer of possibleAnswers) {
+        // Check if agent asked about valor medio/average value
+        const isValorMedioQuestion = /valor médio|valor medio|média por carga|media por carga|quanto vale|valor da carga|valor por viagem|média de valor|media de valor|valor em média|valor em media/i.test(question);
+        if (isValorMedioQuestion && !valorMedio) {
+          // Try to extract number from answer
+          const numMatch = answer.match(/(\d+(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*(mil|reais)?/);
+          if (numMatch) {
+            valorMedio = numMatch[0].trim();
+          } else {
+            // Handle just numbers like "140"
+            const simpleNum = answer.match(/^(\d{2,4})\s*$/);
+            if (simpleNum) {
+              // Check if answer says "mil" somewhere
+              if (answer.includes('mil') || possibleAnswers.some(a => a.includes('mil'))) {
+                valorMedio = `${simpleNum[1]} mil`;
+              } else {
+                valorMedio = `R$ ${simpleNum[1]}.000`; // Assume thousands
+              }
             }
           }
         }
-      }
-      
-      // Check if agent asked about maior valor/highest value
-      const isMaiorValorQuestion = /maior valor|maior carga|mais caro|mais alto|carga mais valiosa|maior operação|maior operacao/i.test(question);
-      if (isMaiorValorQuestion && !maiorValor) {
-        const numMatch = answer.match(/(\d+(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*(mil|milhão|milhao|reais)?/);
-        if (numMatch) {
-          maiorValor = numMatch[0].trim();
-        } else {
-          const simpleNum = answer.match(/(\d{2,4})\s*$/);
-          if (simpleNum) {
-            const nextAnswer = userMessages[i + 1]?.toLowerCase() || '';
-            if (nextAnswer.includes('mil')) {
-              maiorValor = `${simpleNum[1]} mil`;
-            } else if (nextAnswer.includes('milh')) {
-              maiorValor = `${simpleNum[1]} milhão`;
-            } else {
-              maiorValor = `R$ ${simpleNum[1]}.000`;
+        
+        // Check if agent asked about maior valor/highest value
+        const isMaiorValorQuestion = /maior valor|maior carga|mais caro|mais alto|carga mais valiosa|maior operação|maior operacao|valor mais alto|carga de maior valor/i.test(question);
+        if (isMaiorValorQuestion && !maiorValor) {
+          const numMatch = answer.match(/(\d+(?:[.,]\d{3})*(?:[.,]\d{2})?)\s*(mil|milhão|milhao|reais)?/);
+          if (numMatch) {
+            maiorValor = numMatch[0].trim();
+          } else {
+            const simpleNum = answer.match(/^(\d{2,4})\s*$/);
+            if (simpleNum) {
+              if (answer.includes('mil') || possibleAnswers.some(a => a.includes('mil'))) {
+                maiorValor = `${simpleNum[1]} mil`;
+              } else if (answer.includes('milh') || possibleAnswers.some(a => a.includes('milh'))) {
+                maiorValor = `${simpleNum[1]} milhão`;
+              } else {
+                maiorValor = `R$ ${simpleNum[1]}.000`;
+              }
             }
           }
         }
-      }
-      
-      // Check if agent asked about tipo de carga
-      const isTipoCargaQuestion = /tipo de carga|que tipo|qual carga|transporta o que|transporta o quê|que produto|que mercadoria/i.test(question);
-      if (isTipoCargaQuestion && !extracted.tipo_carga) {
-        // Try broader extraction for cargo type
-        const tipoCargaAnswer = answer.trim();
-        if (tipoCargaAnswer.length > 2 && tipoCargaAnswer.length < 50) {
-          // Avoid extracting full sentences - just the key product
-          const productWords = tipoCargaAnswer.match(/\b(peças?|pecas?|autopecas?|autopeças?|alumínio|aluminio|ferro|aço|aco|grão|grãos?|alimentos?|químicos?|quimicos?|madeira|cimento|bebidas?|eletrônicos?|eletronicos?|máquinas?|maquinas?|componentes?|industrial|industriais|carnes?|laticínios?|laticinios?|ração|racao)\b/i);
-          if (productWords) {
-            extracted.tipo_carga = productWords[0];
-          } else if (!/pergunt|respond|sim|não|nao|ok|entendi/.test(tipoCargaAnswer)) {
-            // Use the answer if it doesn't look like a filler word
-            extracted.tipo_carga = tipoCargaAnswer.split(/[.,!?]/)[0].trim();
+        
+        // Check if agent asked about tipo de carga
+        const isTipoCargaQuestion = /tipo de carga|que tipo|qual carga|transporta o que|transporta o quê|que produto|que mercadoria|o que você transporta|o que voce transporta/i.test(question);
+        if (isTipoCargaQuestion && !extracted.tipo_carga) {
+          const tipoCargaAnswer = answer.trim();
+          if (tipoCargaAnswer.length > 2 && tipoCargaAnswer.length < 50) {
+            // Extended list of cargo types
+            const productWords = tipoCargaAnswer.match(/\b(peças?|pecas?|autopecas?|autopeças?|alumínio|aluminio|ferro|aço|aco|grão|grãos?|alimentos?|químicos?|quimicos?|madeira|cimento|bebidas?|eletrônicos?|eletronicos?|máquinas?|maquinas?|componentes?|industrial|industriais|carnes?|laticínios?|laticinios?|ração|racao|soja|milho|trigo|fertilizante|defensivo|insumo|petróleo|petroleo|gás|gas|óleo|oleo|diesel|produto|material|bobina|chapa|tubo|perfil|vergalhão|vergalhao|areia|brita|pedra|terra|embalagem|papelão|papelao|plástico|plastico|têxtil|textil|tecido|roupa|móveis|moveis|eletrodoméstico|medicamento|farmacêutico|cosmético|calçado|sapato|couro)\b/i);
+            if (productWords) {
+              extracted.tipo_carga = productWords[0];
+            } else if (!/pergunt|respond|sim|não|nao|ok|entendi|certo|blz|beleza/.test(tipoCargaAnswer)) {
+              // Use the answer if it doesn't look like a filler word
+              extracted.tipo_carga = tipoCargaAnswer.split(/[.,!?]/)[0].trim();
+            }
           }
+        }
+        
+        // Check if agent asked about viagens/mes
+        const isViagensMesQuestion = /quantas viagens|viagens por mês|viagens por mes|viagens ao mês|viagens ao mes|média de viagens|media de viagens|quantas vezes|frequência|frequencia/i.test(question);
+        if (isViagensMesQuestion && !extracted.viagens_mes) {
+          const numMatch = answer.match(/(\d+)\s*(viagens?|vezes?)?/);
+          if (numMatch) {
+            extracted.viagens_mes = numMatch[1];
+          }
+        }
+      }
+    }
+  }
+  
+  // ===== HANDLE FRAGMENTED RESPONSES: "140" + "mil" in consecutive messages =====
+  for (let i = 0; i < userMessages.length - 1; i++) {
+    const current = (userMessages[i] || '').trim();
+    const next = (userMessages[i + 1] || '').trim().toLowerCase();
+    
+    // Detect pattern: number + unit in next message
+    const numMatch = current.match(/^(\d{2,4})$/);
+    if (numMatch && next) {
+      if (next === 'mil' || next.startsWith('mil ') || next.includes('mil reais')) {
+        const value = `${numMatch[1]} mil`;
+        // Assign to valor_medio or maior_valor based on which is missing
+        if (!valorMedio) {
+          valorMedio = value;
+          console.log(`[Extraction] Detected fragmented valor: "${current}" + "${next}" = "${value}"`);
+        } else if (!maiorValor) {
+          maiorValor = value;
+        }
+      }
+      if (next.includes('milh') || next === 'milhão' || next === 'milhao') {
+        const value = `${numMatch[1]} milhão`;
+        if (!maiorValor) {
+          maiorValor = value;
         }
       }
     }
@@ -1507,6 +1541,102 @@ function extractQualificationFromMessages(
   if (maiorValor) extracted.maior_valor = maiorValor;
   
   return extracted;
+}
+
+// ===== QUESTION TRACKING: Detect which questions the agent has already asked =====
+function detectQuestionsAskedByAgent(agentMessages: string[]): Record<string, string> {
+  const questionsAsked: Record<string, string> = {};
+  
+  const questionPatterns: Array<{ field: string; patterns: RegExp[] }> = [
+    { 
+      field: 'tipo_carga', 
+      patterns: [
+        /tipo de carga/i, /que transporta/i, /qual carga/i, /o que você transporta/i, 
+        /o que voce transporta/i, /que produto/i, /que mercadoria/i, /tipo de produto/i
+      ] 
+    },
+    { 
+      field: 'valor_medio', 
+      patterns: [
+        /valor médio/i, /valor medio/i, /média por carga/i, /media por carga/i, 
+        /quanto vale/i, /valor da carga/i, /valor por viagem/i, /valor em média/i
+      ] 
+    },
+    { 
+      field: 'maior_valor', 
+      patterns: [
+        /maior valor/i, /mais caro/i, /maior carga/i, /carga mais valiosa/i,
+        /maior operação/i, /maior operacao/i, /valor mais alto/i
+      ] 
+    },
+    { 
+      field: 'viagens_mes', 
+      patterns: [
+        /viagens.*mês/i, /viagens.*mes/i, /quantas viagens/i, /média de viagens/i, 
+        /media de viagens/i, /quantas vezes/i, /frequência/i
+      ] 
+    },
+    { 
+      field: 'estados', 
+      patterns: [
+        /quais estados/i, /que estados/i, /atende onde/i, /que regiões/i,
+        /que regioes/i, /onde atua/i, /rotas/i
+      ] 
+    },
+    { 
+      field: 'cnpj', 
+      patterns: [
+        /qual.*cnpj/i, /seu cnpj/i, /me passa.*cnpj/i, /número do cnpj/i,
+        /numero do cnpj/i, /cnpj da empresa/i
+      ] 
+    },
+    { 
+      field: 'tipo_frota', 
+      patterns: [
+        /frota própria/i, /frota propria/i, /agregados?.*terceiros?/i, 
+        /terceirizada/i, /veículos próprios/i, /veiculos proprios/i
+      ] 
+    },
+    { 
+      field: 'antt', 
+      patterns: [
+        /antt.*regularizada/i, /rntrc/i, /antt em dia/i, /situação.*antt/i,
+        /situacao.*antt/i, /antt.*ativa/i
+      ] 
+    },
+    { 
+      field: 'cte', 
+      patterns: [
+        /emite ct-e/i, /emite cte/i, /conhecimento de transporte/i, 
+        /ct-e.*nome/i, /cte.*nome/i, /emissão de ct/i, /emissao de ct/i
+      ] 
+    },
+    { 
+      field: 'contratacao', 
+      patterns: [
+        /contratado direto/i, /subcontratado/i, /trabalha como/i,
+        /tipo de contratação/i, /tipo de contratacao/i, /direto ou subcontratado/i
+      ] 
+    },
+    {
+      field: 'email',
+      patterns: [
+        /qual.*email/i, /seu email/i, /melhor email/i, /email para/i,
+        /e-mail/i, /endereco de email/i, /endereço de email/i
+      ]
+    }
+  ];
+  
+  for (const msg of agentMessages) {
+    const lowerMsg = msg.toLowerCase();
+    for (const q of questionPatterns) {
+      if (!questionsAsked[q.field] && q.patterns.some(p => p.test(lowerMsg))) {
+        questionsAsked[q.field] = new Date().toISOString();
+      }
+    }
+  }
+  
+  return questionsAsked;
 }
 
 // Sanitize text for TTS - simplify URLs for natural speech
@@ -3807,6 +3937,45 @@ async function processQueueItem(
     
     console.log(`[Nina] 📝 Qualification answers extracted in real-time:`, mergedQA);
   }
+  
+  // ===== QUESTION TRACKING: Detect and persist which questions the agent has asked =====
+  const detectedQuestionsAsked = detectQuestionsAskedByAgent(agentMessagesContent);
+  const existingQuestionsAsked = (conversation.nina_context?.questions_asked || {}) as Record<string, string>;
+  
+  // Merge: preserve existing, add new
+  let hasNewQuestions = false;
+  const mergedQuestionsAsked = { ...existingQuestionsAsked };
+  for (const [field, timestamp] of Object.entries(detectedQuestionsAsked)) {
+    if (!mergedQuestionsAsked[field]) {
+      mergedQuestionsAsked[field] = timestamp;
+      hasNewQuestions = true;
+    }
+  }
+  
+  if (hasNewQuestions) {
+    await supabase
+      .from('conversations')
+      .update({
+        nina_context: {
+          ...conversation.nina_context,
+          qualification_answers: mergedQA,
+          questions_asked: mergedQuestionsAsked,
+          last_question_tracking: new Date().toISOString()
+        }
+      })
+      .eq('id', conversation.id);
+    
+    // Update local reference
+    conversation.nina_context = {
+      ...conversation.nina_context,
+      qualification_answers: mergedQA,
+      questions_asked: mergedQuestionsAsked
+    };
+    
+    console.log(`[Nina] 🔍 Questions asked by agent tracked:`, Object.keys(mergedQuestionsAsked));
+  }
+  // ===== END QUESTION TRACKING =====
+
   // ===== END REAL-TIME QUALIFICATION EXTRACTION =====
 
   // ===== EMAIL CAPTURE AFTER QUALIFICATION =====
@@ -4999,10 +5168,40 @@ Se detectar que era interesse em emprego antes e agora é seguro:
     contextInfo += `\n\n⚠️ ATENÇÃO: Pergunte APENAS sobre os itens PENDENTES acima.`;
   }
 
+  // ===== PERGUNTAS JÁ FEITAS PELO AGENTE =====
+  if (ninaContext?.questions_asked && Object.keys(ninaContext.questions_asked).length > 0) {
+    const fieldLabelsForQuestions: Record<string, string> = {
+      contratacao: 'Tipo de contratação (direto/subcontratado)',
+      tipo_carga: 'Tipo de carga transportada',
+      estados: 'Estados/regiões atendidos',
+      viagens_mes: 'Quantidade de viagens por mês',
+      valor_medio: 'Valor médio por carga',
+      maior_valor: 'Maior valor transportado',
+      tipo_frota: 'Tipo de frota (própria/agregada)',
+      antt: 'Situação da ANTT/RNTRC',
+      cte: 'Emissão de CT-e',
+      cnpj: 'CNPJ da empresa',
+      email: 'Email para contato'
+    };
+    
+    const askedList = Object.entries(ninaContext.questions_asked)
+      .filter(([_, timestamp]) => timestamp)
+      .map(([field]) => fieldLabelsForQuestions[field] || field);
+    
+    if (askedList.length > 0) {
+      contextInfo += `\n\n## ⚠️ PERGUNTAS QUE VOCÊ JÁ FEZ (NÃO REPITA!):`;
+      for (const q of askedList) {
+        contextInfo += `\n- ❌ ${q}`;
+      }
+      contextInfo += `\n\n🚫 PROIBIDO perguntar sobre estes itens novamente!`;
+      contextInfo += `\nSe não recebeu resposta clara, prossiga para o próximo item PENDENTE.`;
+    }
+  }
+
   // ===== ANTI-ECO + VERIFICAÇÃO DE HISTÓRICO =====
   contextInfo += `\n\n## REGRAS CRÍTICAS DE COMUNICAÇÃO:
 
-### REGRA ANTI-ECO:
+### REGRA ANTI-ECO (CRÍTICO):
 - NUNCA repita ou resuma o que o cliente acabou de dizer
 - Vá DIRETO para a próxima pergunta ou ação
 - NÃO use frases como "Entendi que você...", "Então você transporta...", "Certo, [resposta]..."
@@ -5010,17 +5209,21 @@ Se detectar que era interesse em emprego antes e agora é seguro:
 ERRADO: "Entendi, alimentos. Quais estados atende?"
 CORRETO: "Quais estados atende?"
 
-### REGRA VERIFICAR HISTÓRICO (CRÍTICO):
+### REGRA VERIFICAR ANTES DE PERGUNTAR (OBRIGATÓRIO):
 Antes de fazer QUALQUER pergunta:
-1. LEIA o "STATUS DA QUALIFICAÇÃO" acima
-2. Se o dado já foi coletado (✅), NÃO pergunte novamente
-3. Se o dado está PENDENTE (⏳), você PODE perguntar
-4. Avance para o próximo item pendente automaticamente
+1. LEIA o "STATUS DA QUALIFICAÇÃO" → Se está ✅, NÃO pergunte
+2. LEIA "PERGUNTAS QUE VOCÊ JÁ FEZ" → Se listado, NÃO pergunte novamente
+3. Avance APENAS para itens ⏳ PENDENTES que você AINDA NÃO PERGUNTOU
 
-### Se cliente disser "já respondi" ou "já informei":
-- NUNCA peça para repetir
-- Reconheça: "Vi aqui que você já informou [dado]."
-- Avance imediatamente para o próximo item PENDENTE
+### REGRA DE RESPOSTAS NUMÉRICAS:
+- Se cliente responde só número (ex: "140"), assuma que são valores razoáveis para carga
+- "140" sozinho provavelmente significa "140 mil reais"
+- Aguarde próxima mensagem se precisar de mais contexto, mas NÃO repita a pergunta
+
+### Se cliente reclamar "já respondi" ou "já informei":
+- NÃO peça para repetir
+- Diga: "Desculpe! Vi aqui que você já informou. Vamos continuar..."
+- Avance IMEDIATAMENTE para próximo item PENDENTE
 
 ### REGRA DE FINALIZAÇÃO:`;
 
