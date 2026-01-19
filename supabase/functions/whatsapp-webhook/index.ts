@@ -997,6 +997,9 @@ async function processIncomingMessageWithBackground(
 }
 
 // ===== PROCESS MEDIA AND UPDATE MESSAGE =====
+// Limite de tamanho para OCR de PDFs (5MB) - evita estouro de memória
+const MAX_PDF_SIZE_FOR_OCR = 5 * 1024 * 1024;
+
 async function processMediaAndUpdateMessage(
   supabase: any,
   messageId: string,
@@ -1008,124 +1011,149 @@ async function processMediaAndUpdateMessage(
   try {
     let mediaUrl: string | null = null;
     let content: string | null = null;
+    let mediaBuffer: ArrayBuffer | null = null;
+    let mimeType: string | null = null;
     
+    // ============================================
+    // FASE 1: Download e Upload para Storage
+    // ============================================
     switch (message.type) {
       case 'image': {
-        const imageCaption = message.image?.caption || null;
         const imageMediaId = message.image?.id;
-        
         if (imageMediaId && settings?.whatsapp_access_token) {
           console.log('[Webhook Media] Processing image:', imageMediaId);
-          const { storageUrl, mediaBuffer, mimeType } = 
-            await downloadAndStoreMedia(supabase, settings, imageMediaId, normalizedPhone, 'image');
-          
-          if (storageUrl) {
-            mediaUrl = storageUrl;
-          }
-          
-          // Try OCR
-          if (mediaBuffer && mimeType && lovableApiKey) {
-            const extractedText = await extractTextFromImage(mediaBuffer, mimeType, lovableApiKey);
-            if (extractedText) {
-              content = imageCaption 
-                ? `${imageCaption}\n\n[Texto extraído da imagem: ${extractedText}]`
-                : `[Texto extraído da imagem: ${extractedText}]`;
-            } else {
-              content = imageCaption || '[imagem]';
-            }
-          } else {
-            content = imageCaption || '[imagem]';
-          }
+          const result = await downloadAndStoreMedia(supabase, settings, imageMediaId, normalizedPhone, 'image');
+          mediaUrl = result.storageUrl || null;
+          mediaBuffer = result.mediaBuffer;
+          mimeType = result.mimeType;
         }
+        content = message.image?.caption || '[imagem]';
         break;
       }
       
       case 'audio': {
         const audioMediaId = message.audio?.id;
-        
         if (audioMediaId && settings?.whatsapp_access_token) {
           console.log('[Webhook Media] Processing audio:', audioMediaId);
-          const { storageUrl, mediaBuffer, mimeType } = 
-            await downloadAndStoreMedia(supabase, settings, audioMediaId, normalizedPhone, 'audio');
-          
-          if (storageUrl) {
-            mediaUrl = storageUrl;
-          }
-          
-          // Try transcription
-          if (mediaBuffer && mimeType) {
-            const transcription = await transcribeAudio(mediaBuffer, mimeType, supabase);
-            content = transcription || '[áudio]';
-          } else {
-            content = '[áudio]';
-          }
+          const result = await downloadAndStoreMedia(supabase, settings, audioMediaId, normalizedPhone, 'audio');
+          mediaUrl = result.storageUrl || null;
+          mediaBuffer = result.mediaBuffer;
+          mimeType = result.mimeType;
         }
+        content = '[áudio]';
         break;
       }
       
       case 'video': {
         const videoMediaId = message.video?.id;
-        const videoCaption = message.video?.caption || null;
-        
         if (videoMediaId && settings?.whatsapp_access_token) {
           console.log('[Webhook Media] Processing video:', videoMediaId);
-          const { storageUrl } = await downloadAndStoreMedia(
-            supabase, settings, videoMediaId, normalizedPhone, 'video'
-          );
-          if (storageUrl) {
-            mediaUrl = storageUrl;
-          }
+          const result = await downloadAndStoreMedia(supabase, settings, videoMediaId, normalizedPhone, 'video');
+          mediaUrl = result.storageUrl || null;
         }
-        content = videoCaption || '[vídeo]';
+        content = message.video?.caption || '[vídeo]';
         break;
       }
       
       case 'document': {
-        const docFilename = message.document?.filename || '[documento]';
         const docMediaId = message.document?.id;
-        const docMimeType = message.document?.mime_type || '';
-        
         if (docMediaId && settings?.whatsapp_access_token) {
           console.log('[Webhook Media] Processing document:', docMediaId);
-          const { storageUrl, mediaBuffer, mimeType } = await downloadAndStoreMedia(
-            supabase, settings, docMediaId, normalizedPhone, 'document'
-          );
-          
-          if (storageUrl) {
-            mediaUrl = storageUrl;
-          }
-          
-          // Check if PDF and try OCR
-          const isPdf = docFilename.toLowerCase().endsWith('.pdf') || 
-                        docMimeType.includes('pdf') ||
-                        (mimeType && mimeType.includes('pdf'));
-          
-          if (isPdf && mediaBuffer && lovableApiKey) {
-            console.log('[Webhook Media] PDF detected, attempting OCR...');
-            const extractedText = await extractTextFromPDF(mediaBuffer, lovableApiKey);
-            if (extractedText) {
-              content = `${docFilename}\n\n[Texto extraído do documento: ${extractedText}]`;
-            } else {
-              content = docFilename;
-            }
-          } else {
-            content = docFilename;
-          }
+          const result = await downloadAndStoreMedia(supabase, settings, docMediaId, normalizedPhone, 'document');
+          mediaUrl = result.storageUrl || null;
+          mediaBuffer = result.mediaBuffer;
+          mimeType = result.mimeType;
         }
+        content = message.document?.filename || '[documento]';
         break;
       }
     }
 
-    // Update message with processed content and media URL
+    // ============================================
+    // FASE 2: SALVAR media_url IMEDIATAMENTE
+    // Garante que o arquivo fique acessível mesmo se OCR falhar
+    // ============================================
+    if (mediaUrl) {
+      console.log('[Webhook Media] Saving media_url immediately:', mediaUrl);
+      const { error: urlSaveError } = await supabase
+        .from('messages')
+        .update({ media_url: mediaUrl })
+        .eq('id', messageId);
+      
+      if (urlSaveError) {
+        console.error('[Webhook Media] Error saving media_url:', urlSaveError);
+      } else {
+        console.log('[Webhook Media] media_url saved successfully for message:', messageId);
+      }
+    }
+
+    // ============================================
+    // FASE 3: OCR/Transcrição (em try/catch separado)
+    // Se falhar, o arquivo já está acessível
+    // ============================================
+    try {
+      switch (message.type) {
+        case 'image': {
+          if (mediaBuffer && mimeType && lovableApiKey) {
+            const extractedText = await extractTextFromImage(mediaBuffer, mimeType, lovableApiKey);
+            if (extractedText) {
+              const imageCaption = message.image?.caption || null;
+              content = imageCaption 
+                ? `${imageCaption}\n\n[Texto extraído da imagem: ${extractedText}]`
+                : `[Texto extraído da imagem: ${extractedText}]`;
+            }
+          }
+          break;
+        }
+        
+        case 'audio': {
+          if (mediaBuffer && mimeType) {
+            const transcription = await transcribeAudio(mediaBuffer, mimeType, supabase);
+            if (transcription) {
+              content = transcription;
+            }
+          }
+          break;
+        }
+        
+        case 'document': {
+          const docFilename = message.document?.filename || '[documento]';
+          const docMimeType = message.document?.mime_type || '';
+          
+          const isPdf = docFilename.toLowerCase().endsWith('.pdf') || 
+                        docMimeType.includes('pdf') ||
+                        (mimeType && mimeType.includes('pdf'));
+          
+          // Verificar tamanho antes de tentar OCR (evita estouro de memória)
+          const bufferSize = mediaBuffer?.byteLength || 0;
+          const sizeOk = bufferSize > 0 && bufferSize < MAX_PDF_SIZE_FOR_OCR;
+          
+          if (isPdf && mediaBuffer && lovableApiKey && sizeOk) {
+            console.log(`[Webhook Media] PDF detected (${(bufferSize / 1024 / 1024).toFixed(2)}MB), attempting OCR...`);
+            const extractedText = await extractTextFromPDF(mediaBuffer, lovableApiKey);
+            if (extractedText) {
+              content = `${docFilename}\n\n[Texto extraído do documento: ${extractedText}]`;
+            }
+          } else if (isPdf && bufferSize >= MAX_PDF_SIZE_FOR_OCR) {
+            console.log(`[Webhook Media] PDF too large for OCR (${(bufferSize / 1024 / 1024).toFixed(2)}MB > 5MB), skipping OCR`);
+          }
+          break;
+        }
+      }
+    } catch (ocrError) {
+      // OCR falhou, mas arquivo já está salvo - apenas logamos
+      console.error('[Webhook Media] OCR/Transcription failed (file still accessible):', ocrError);
+    }
+
+    // ============================================
+    // FASE 4: Atualizar content e finalizar
+    // ============================================
     const updateData: any = {
       metadata: { processing: false }
     };
     
     if (content) {
       updateData.content = content;
-    }
-    if (mediaUrl) {
-      updateData.media_url = mediaUrl;
     }
 
     const { error: updateError } = await supabase
