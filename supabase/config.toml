@@ -126,3 +126,7 @@ verify_jwt = true
 # Função para gerar resumo de handoff
 [functions.generate-handoff-summary]
 verify_jwt = false
+
+# Processador de campanhas WhatsApp em background
+[functions.process-campaign]
+verify_jwt = false
