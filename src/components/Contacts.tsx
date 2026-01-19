@@ -20,6 +20,7 @@ import { Checkbox } from './ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { BulkSendTemplateModal } from './BulkSendTemplateModal';
 import { supabase } from '@/integrations/supabase/client';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 const statusOptions = [
   { value: 'new', label: 'Novo Lead', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
@@ -62,7 +63,29 @@ interface ExtendedContact extends Contact {
   conversationStatus?: string;
   // Template sent status
   hasTemplateSent?: boolean;
+  templateName?: string;
 }
+
+// Format template name for display
+const formatTemplateName = (name?: string): string => {
+  if (!name) return 'Enviado';
+  
+  // Remove numeric prefixes like "1_", "01_", "2_"
+  let formatted = name.replace(/^\d+_/, '');
+  
+  // Replace underscores with spaces
+  formatted = formatted.replace(/_/g, ' ');
+  
+  // Capitalize first letter of each word
+  formatted = formatted.replace(/\b\w/g, l => l.toUpperCase());
+  
+  // Limit size to fit in badge
+  if (formatted.length > 15) {
+    formatted = formatted.substring(0, 13) + '...';
+  }
+  
+  return formatted;
+};
 
 const Contacts: React.FC = () => {
   const navigate = useNavigate();
@@ -1183,10 +1206,19 @@ const Contacts: React.FC = () => {
                   {activeTab === 'outbound' && (
                     <td className="px-4 py-4">
                       {(contact as ExtendedContact).hasTemplateSent ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-500/10 text-green-400 border border-green-500/20 inline-flex items-center gap-1">
-                          <Send className="w-3 h-3" />
-                          Enviado
-                        </span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-500/10 text-green-400 border border-green-500/20 inline-flex items-center gap-1 cursor-help max-w-[120px]">
+                              <Send className="w-3 h-3 flex-shrink-0" />
+                              <span className="truncate">
+                                {formatTemplateName((contact as ExtendedContact).templateName)}
+                              </span>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{(contact as ExtendedContact).templateName || 'Template enviado'}</p>
+                          </TooltipContent>
+                        </Tooltip>
                       ) : (
                         <span className="text-slate-600 text-xs">-</span>
                       )}
