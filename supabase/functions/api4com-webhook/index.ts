@@ -265,13 +265,24 @@ serve(async (req) => {
     let normalizedEvent = '';
     const eventLower = eventType.toLowerCase();
     
-    if (['hangup', 'ended', 'completed', 'terminated', 'disconnect', 'disconnected', 'finish', 'finished', 'end'].includes(eventLower)) {
+    // API4Com specific events - channel-hangup, channel-answered, etc.
+    const isChannelHangup = eventLower === 'channel-hangup' || eventLower === 'channel_hangup' || 
+                            eventLower === 'channel-destroy' || eventLower === 'channel_destroy';
+    const isChannelAnswered = eventLower === 'channel-answered' || eventLower === 'channel_answered' ||
+                              eventLower === 'channel-bridge' || eventLower === 'channel_bridge';
+    const isChannelRinging = eventLower === 'channel-ringing' || eventLower === 'channel_ringing' ||
+                             eventLower === 'channel-progress' || eventLower === 'channel_progress';
+    const isChannelDialing = eventLower === 'channel-originate' || eventLower === 'channel_originate' ||
+                             eventLower === 'channel-create' || eventLower === 'channel_create';
+    
+    if (isChannelHangup || ['hangup', 'ended', 'completed', 'terminated', 'disconnect', 'disconnected', 'finish', 'finished', 'end'].includes(eventLower)) {
       normalizedEvent = 'hangup';
-    } else if (['answered', 'answer', 'connected', 'connect', 'in-progress', 'talking', 'active'].includes(eventLower)) {
+      console.log('[api4com-webhook] 🎯 Recognized hangup event:', eventType);
+    } else if (isChannelAnswered || ['answered', 'answer', 'connected', 'connect', 'in-progress', 'talking', 'active'].includes(eventLower)) {
       normalizedEvent = 'answered';
-    } else if (['ringing', 'ring', 'alerting', 'alert'].includes(eventLower)) {
+    } else if (isChannelRinging || ['ringing', 'ring', 'alerting', 'alert'].includes(eventLower)) {
       normalizedEvent = 'ringing';
-    } else if (['dialing', 'dial', 'initiated', 'initiating', 'queued', 'pending', 'starting'].includes(eventLower)) {
+    } else if (isChannelDialing || ['dialing', 'dial', 'initiated', 'initiating', 'queued', 'pending', 'starting'].includes(eventLower)) {
       normalizedEvent = 'dialing';
     } else if (['no-answer', 'no_answer', 'noanswer', 'timeout', 'unanswered'].includes(eventLower)) {
       normalizedEvent = 'no_answer';
@@ -282,8 +293,14 @@ serve(async (req) => {
     } else if (['cancelled', 'canceled', 'aborted', 'cancel'].includes(eventLower)) {
       normalizedEvent = 'cancelled';
     } else {
-      console.log('[api4com-webhook] ⚠️ Unknown event type:', eventType);
-      normalizedEvent = eventLower;
+      console.log('[api4com-webhook] ⚠️ Unknown event type:', eventType, '- treating as potential hangup');
+      // Treat unknown events with hangup indicators as hangup
+      if (hangupCause || recordUrl || duration > 0) {
+        normalizedEvent = 'hangup';
+        console.log('[api4com-webhook] 🔄 Converting unknown event to hangup due to hangupCause/recordUrl/duration');
+      } else {
+        normalizedEvent = eventLower;
+      }
     }
 
     // Helper to find call log by multiple criteria
@@ -357,22 +374,49 @@ serve(async (req) => {
 
     // Process based on event type
     if (normalizedEvent === 'hangup') {
-      // Determine final status
+      // Determine final status based on API4Com hangup causes
       let status = 'completed';
       const hangupCauseLower = hangupCause.toLowerCase();
       
-      if (hangupCauseLower.includes('no_answer') || hangupCauseLower.includes('no answer')) {
+      console.log('[api4com-webhook] 🔍 Processing hangup:', {
+        hangupCause,
+        hangupCauseLower,
+        duration,
+        hasRecording: !!recordUrl,
+        recordUrl: recordUrl ? recordUrl.substring(0, 50) + '...' : null,
+      });
+      
+      // API4Com specific hangup causes
+      if (hangupCauseLower.includes('originator_cancel') || hangupCauseLower === 'originator_cancel') {
+        // Cancelled by the operator before answered
+        status = duration > 0 ? 'completed' : 'cancelled';
+        console.log('[api4com-webhook] 📱 Originator cancel detected, status:', status);
+      } else if (hangupCauseLower.includes('normal_clearing') || hangupCauseLower === 'normal_clearing' || 
+                 hangupCauseLower.includes('normal clearing')) {
+        // Normal call termination
+        status = duration > 0 ? 'completed' : 'no_answer';
+        console.log('[api4com-webhook] ✅ Normal clearing detected, status:', status);
+      } else if (hangupCauseLower.includes('user_busy') || hangupCauseLower === 'user_busy' ||
+                 hangupCauseLower.includes('busy')) {
+        status = 'busy';
+      } else if (hangupCauseLower.includes('no_answer') || hangupCauseLower.includes('no answer') ||
+                 hangupCauseLower.includes('no_user_response') || hangupCauseLower === 'no_user_response') {
         status = 'no_answer';
-      } else if (hangupCauseLower.includes('busy')) {
+      } else if (hangupCauseLower.includes('call_rejected') || hangupCauseLower === 'call_rejected') {
         status = 'busy';
       } else if (hangupCauseLower.includes('failed') || hangupCauseLower.includes('number_changed') || 
-                 hangupCauseLower.includes('unallocated') || hangupCauseLower.includes('not_registered')) {
+                 hangupCauseLower.includes('unallocated') || hangupCauseLower.includes('not_registered') ||
+                 hangupCauseLower.includes('invalid_number') || hangupCauseLower.includes('destination_out_of_order')) {
         status = 'failed';
       } else if (duration > 0) {
+        // Has duration = call was answered at some point
         status = 'completed';
       } else {
+        // No duration, unknown cause = probably not answered
         status = 'no_answer';
       }
+      
+      console.log('[api4com-webhook] 📊 Final status determined:', status);
 
       const callLog = await findCallLog();
       
@@ -381,33 +425,43 @@ serve(async (req) => {
           console.log('[api4com-webhook] 🔧 Correcting client-side status:', callLog.status, '→', status);
         }
         
+        // Build update data - ALWAYS save recording if present
+        const updateData: Record<string, unknown> = {
+          status: status,
+          ended_at: new Date().toISOString(),
+          answered_at: answeredAt ? new Date(answeredAt).toISOString() : (callLog.answered_at || null),
+          duration_seconds: duration || callLog.duration_seconds || 0,
+          hangup_cause: hangupCause || callLog.hangup_cause,
+          metadata: {
+            webhook_data: body,
+            updated_at: new Date().toISOString(),
+            previous_status: callLog.status,
+            event_type_original: eventType,
+          }
+        };
+        
+        // CRITICAL: Always save recording URL if present, even for cancelled calls
+        if (recordUrl) {
+          updateData.record_url = recordUrl;
+          updateData.transcription_status = 'pending';
+          console.log('[api4com-webhook] 🎤 Recording URL detected, will save:', recordUrl.substring(0, 80));
+        }
+        
         const { error: updateError } = await supabase
           .from('call_logs')
-          .update({
-            status: status,
-            ended_at: new Date().toISOString(),
-            answered_at: answeredAt ? new Date(answeredAt).toISOString() : (callLog.answered_at || null),
-            duration_seconds: duration,
-            hangup_cause: hangupCause,
-            record_url: recordUrl,
-            transcription_status: recordUrl ? 'pending' : null,
-            metadata: {
-              webhook_data: body,
-              updated_at: new Date().toISOString(),
-              previous_status: callLog.status,
-            }
-          })
+          .update(updateData)
           .eq('id', callLog.id);
 
         if (updateError) {
           console.error('[api4com-webhook] ❌ Update error:', updateError);
         } else {
-          console.log('[api4com-webhook] ✅ Call log updated:', { 
+          console.log('[api4com-webhook] ✅ Call log updated successfully:', { 
             id: callLog.id, 
             previousStatus: callLog.status,
             newStatus: status, 
-            duration, 
-            hasRecording: !!recordUrl 
+            duration: duration || callLog.duration_seconds || 0, 
+            hasRecording: !!recordUrl,
+            recordingSaved: !!recordUrl,
           });
           
           // Trigger transcription if recording exists
