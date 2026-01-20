@@ -1323,10 +1323,12 @@ function isQualificationComplete(contact: any, qualificationAnswers: { [key: str
 
 // ===== ATLAS VEHICLE QUALIFICATION HANDOFF CHECK =====
 // Check if Atlas vehicle lead is ready for handoff (name + phone + email)
+// UPDATED: Para SUBCONTRATADOS, exigir dados específicos do veículo
 interface AtlasHandoffResult {
   readyForHandoff: boolean;
   missingField: string | null;
   qualificationData: { [key: string]: string };
+  isSubcontratado?: boolean;
 }
 
 function detectAtlasVehicleHandoff(
@@ -1341,13 +1343,65 @@ function detectAtlasVehicleHandoff(
   
   const qa = ninaContext?.qualification_answers || {};
   
+  // ===== DETECT SUBCONTRATADO =====
+  const isSubcontratado = 
+    qa?.contratacao?.toLowerCase()?.includes('subcontratado') ||
+    qa?.contratacao?.toLowerCase()?.includes('sub-contratado') ||
+    qa?.contratacao?.toLowerCase()?.includes('agregado') ||
+    qa?.contratacao?.toLowerCase()?.includes('terceirizado') ||
+    qa?.cte?.toLowerCase()?.includes('não') ||
+    qa?.cte?.toLowerCase()?.includes('nao');
+  
+  // Para SUBCONTRATADOS: NÃO oferece carga, apenas veículo
+  if (isSubcontratado) {
+    console.log('[Nina][Atlas] 🚛 SUBCONTRATADO DETECTADO - verificando requisitos de veículo');
+    
+    // Requisitos OBRIGATÓRIOS para subcontratado fazer handoff:
+    // 1. Dados do veículo (quantidade OU tipo)
+    const hasVehicleData = !!(
+      qa?.quantidade_veiculos || 
+      qa?.qtd_veiculos ||
+      qa?.tipos_veiculos || 
+      qa?.tipo_veiculo ||
+      qa?.modelo_veiculo
+    );
+    
+    // 2. Email para contato
+    const hasEmail = !!(contact?.email && contact.email.includes('@'));
+    
+    console.log(`[Nina][Atlas] Subcontratado - VehicleData: ${hasVehicleData ? '✓' : '✗'}, Email: ${hasEmail ? '✓' : '✗'}`);
+    console.log(`[Nina][Atlas] QA data: quantidade=${qa?.quantidade_veiculos || qa?.qtd_veiculos || 'N/A'}, tipo=${qa?.tipo_veiculo || qa?.tipos_veiculos || 'N/A'}`);
+    
+    if (!hasVehicleData) {
+      console.log('[Nina][Atlas] ⚠️ Subcontratado SEM dados de veículo - NÃO fazer handoff');
+      return { 
+        readyForHandoff: false, 
+        missingField: 'dados_veiculo', 
+        qualificationData: qa,
+        isSubcontratado: true
+      };
+    }
+    
+    if (!hasEmail) {
+      console.log('[Nina][Atlas] ⚠️ Subcontratado SEM email - NÃO fazer handoff');
+      return { 
+        readyForHandoff: false, 
+        missingField: 'email', 
+        qualificationData: qa,
+        isSubcontratado: true
+      };
+    }
+    
+    console.log('[Nina][Atlas] ✅ Subcontratado com dados de veículo + email - pronto para handoff!');
+    return { readyForHandoff: true, missingField: null, qualificationData: qa, isSubcontratado: true };
+  }
+  
+  // ===== LEAD NORMAL (não subcontratado) =====
   // Check if this is a vehicle lead (based on context/keywords)
   const isVehicleLead = 
     qa?.tipo_veiculo ||
     qa?.quantidade_veiculos ||
     qa?.modelo_veiculo ||
-    qa?.uso_veiculo ||
-    qa?.ano_veiculo ||
     ninaContext?.detected_vehicle_interest === true ||
     ninaContext?.vehicle_qualification_started === true;
   
@@ -1395,13 +1449,14 @@ function extractQualificationFromMessages(
   };
   
   // Patterns for vehicle/fleet qualification fields (Atlas agent)
+  // UPDATED: Removed "empresa" from uso_veiculo - too generic and causes false positives
   const vehiclePatterns: { [key: string]: RegExp } = {
-    tipo_veiculo: /\b(carro|carros|moto|motos|caminhão|caminhao|caminhões|caminhoes|van|vans|utilitário|utilitario|pickup|picape|sedan|suv|hatch|veículo|veiculo|veículos|veiculos|automóvel|automovel|automóveis|automoveis)\b/i,
-    quantidade_veiculos: /\b(\d+)\s*(veículo|veiculo|carro|moto|caminhão|caminhao|unidade|automóvel|automovel)s?\b/i,
-    uso_veiculo: /\b(particular|comercial|trabalho|táxi|taxi|uber|app|aplicativo|entrega|delivery|frota|empresa|pessoal|passeio|lazer)\b/i,
+    tipo_veiculo: /\b(carro|carros|moto|motos|caminhão|caminhao|caminhões|caminhoes|van|vans|utilitário|utilitario|pickup|picape|sedan|suv|hatch|veículo|veiculo|veículos|veiculos|automóvel|automovel|automóveis|automoveis|carreta|carretas|truck|trucks|bitruck|cavalo mecânico|cavalo mecanico)\b/i,
+    quantidade_veiculos: /\b(\d+)\s*(veículo|veiculo|carro|moto|caminhão|caminhao|caminhões|caminhoes|carreta|carretas|truck|unidade|automóvel|automovel)s?\b/i,
+    uso_veiculo: /\b(particular|comercial|trabalho|táxi|taxi|uber|app|aplicativo|entrega|delivery|frota comercial|uso pessoal|passeio|lazer|frete|transporte)\b/i,
     ano_veiculo: /\b(20[0-2][0-9]|19[89][0-9])\b/,
-    modelo_veiculo: /(civic|corolla|onix|hb20|gol|uno|argo|polo|creta|kicks|compass|renegade|hilux|s10|ranger|toro|strada|saveiro|fiat|volkswagen|chevrolet|ford|toyota|honda|hyundai|jeep|renault|nissan|mitsubishi|peugeot|citroen)/i,
-    cobertura_desejada: /\b(completo|completa|básico|basico|terceiros?|roubo|furto|colisão|colisao|incêndio|incendio|perda total|franquia)\b/i,
+    modelo_veiculo: /(civic|corolla|onix|hb20|gol|uno|argo|polo|creta|kicks|compass|renegade|hilux|s10|ranger|toro|strada|saveiro|fiat|volkswagen|chevrolet|ford|toyota|honda|hyundai|jeep|renault|nissan|mitsubishi|peugeot|citroen|scania|volvo|mercedes|man|iveco|daf)/i,
+    cobertura_desejada: /\b(completo|completa|básico|basico|terceiros?|roubo|furto|colisão|colisao|incêndio|incendio|perda total|franquia|casco)\b/i,
   };
   
   // Apply vehicle patterns
@@ -3638,8 +3693,29 @@ async function processQueueItem(
       const contactPhone = updatedContact?.phone_number || '-';
       const contactEmail = updatedContact?.email || '-';
       
-      // Build handoff farewell message
-      const handoffMessage = `Perfeito, ${contactName}! 🎯 Já tenho todas as informações necessárias. Vou encaminhar para nossa equipe comercial que vai preparar a cotação e entrar em contato em breve. Obrigado pelo contato!`;
+      // ===== MENSAGEM DE HANDOFF DIFERENCIADA =====
+      // Para SUBCONTRATADOS: não falar de cotação, pegar dados do veículo
+      // Para leads normais: mensagem padrão
+      let handoffMessage: string;
+      
+      if (vehicleHandoffCheck.isSubcontratado) {
+        // Subcontratado COM dados de veículo - handoff para seguro de veículo
+        const qa = vehicleHandoffCheck.qualificationData;
+        const qtdVeiculos = qa?.quantidade_veiculos || qa?.qtd_veiculos || '';
+        const tipoVeiculo = qa?.tipo_veiculo || qa?.tipos_veiculos || '';
+        
+        if (qtdVeiculos || tipoVeiculo) {
+          // Tem dados do veículo
+          handoffMessage = `Perfeito, ${contactName}! 🚛 O Alessandro, nosso corretor especialista, vai entrar em contato para pegar os detalhes dos veículos e preparar a melhor proposta de seguro. Obrigado pelo contato!`;
+        } else {
+          // Fallback se chegou aqui sem dados (não deveria acontecer)
+          handoffMessage = `Perfeito, ${contactName}! Nosso corretor vai entrar em contato para entender melhor suas necessidades de seguro. Obrigado!`;
+        }
+        console.log('[Nina] 🚛 Usando mensagem de handoff para SUBCONTRATADO');
+      } else {
+        // Lead normal com dados completos
+        handoffMessage = `Perfeito, ${contactName}! 🎯 Já tenho todas as informações necessárias. Vou encaminhar para nossa equipe comercial que vai preparar a cotação e entrar em contato em breve. Obrigado pelo contato!`;
+      }
       
       // Calculate delay
       const delayMin = settings?.response_delay_min || 1000;
