@@ -53,6 +53,7 @@ interface Campaign {
   description?: string;
 }
 
+const MAX_IMPORT_ROWS = 5000;
 const REQUIRED_FIELDS = ['name', 'phone'];
 const FIELD_LABELS: Record<string, string> = {
   name: 'Nome',
@@ -212,6 +213,16 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
       
       if (parsedHeaders.length === 0) {
         toast.error('Arquivo CSV inválido');
+        return;
+      }
+
+      // Validate row limit
+      if (parsedRows.length > MAX_IMPORT_ROWS) {
+        toast.error(`O arquivo possui ${parsedRows.length.toLocaleString('pt-BR')} linhas. O limite máximo é de ${MAX_IMPORT_ROWS.toLocaleString('pt-BR')} linhas por importação.`);
+        setFile(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
         return;
       }
 
@@ -619,6 +630,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                 <Upload className="w-12 h-12 mx-auto text-slate-500 mb-4" />
                 <p className="text-slate-300 font-medium mb-2">Clique para selecionar ou arraste o arquivo</p>
                 <p className="text-sm text-slate-500">Arquivos CSV suportados</p>
+                <p className="text-xs text-slate-500 mt-2">Limite máximo: 5.000 contatos por importação</p>
                 <input
                   ref={fileInputRef}
                   type="file"
