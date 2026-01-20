@@ -361,28 +361,70 @@ serve(async (req) => {
 
     console.log(`[Nina] Processing ${queueItems.length} messages`);
 
-    // Get Nina settings
-    const { data: settings } = await supabase
-      .from('nina_settings')
-      .select('*')
-      .maybeSingle();
+    // Get Nina settings with retry logic for transient failures
+    let settings = null;
+    let settingsRetry = 0;
+    const MAX_SETTINGS_RETRIES = 3;
+
+    while (!settings && settingsRetry < MAX_SETTINGS_RETRIES) {
+      const { data, error: settingsError } = await supabase
+        .from('nina_settings')
+        .select('*')
+        .maybeSingle();
+      
+      if (data) {
+        settings = data;
+        break;
+      }
+      
+      settingsRetry++;
+      if (settingsRetry < MAX_SETTINGS_RETRIES) {
+        console.log(`[Nina] ⚠️ Settings não encontrado, tentativa ${settingsRetry}/${MAX_SETTINGS_RETRIES}, aguardando...`);
+        if (settingsError) {
+          console.error(`[Nina] Settings error:`, settingsError);
+        }
+        await new Promise(r => setTimeout(r, 1000 * settingsRetry)); // 1s, 2s backoff
+      }
+    }
 
     if (!settings) {
-      console.log('[Nina] Sistema não configurado, marcando mensagens como não processadas');
+      console.error('[Nina] Sistema não configurado após múltiplas tentativas');
+      
+      // Implementar reagendamento automático para falhas transitórias
       for (const item of queueItems) {
-        await supabase
-          .from('nina_processing_queue')
-          .update({ 
-            status: 'failed', 
-            processed_at: new Date().toISOString(),
-            error_message: 'Sistema não configurado - acesse /settings para configurar'
-          })
-          .eq('id', item.id);
+        const newRetryCount = ((item as any).retry_count || 0) + 1;
+        
+        if (newRetryCount < 3) {
+          // Reagendar para 5 minutos no futuro
+          console.log(`[Nina] Reagendando item ${item.id} (tentativa ${newRetryCount}/3)`);
+          await supabase
+            .from('nina_processing_queue')
+            .update({ 
+              status: 'pending',
+              retry_count: newRetryCount,
+              scheduled_for: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+              error_message: `Falha transitória de settings - reagendado (tentativa ${newRetryCount})`
+            })
+            .eq('id', item.id);
+        } else {
+          // Após 3 tentativas, marcar como failed definitivo
+          console.error(`[Nina] Item ${item.id} falhou após ${newRetryCount} tentativas`);
+          await supabase
+            .from('nina_processing_queue')
+            .update({ 
+              status: 'failed', 
+              processed_at: new Date().toISOString(),
+              error_message: 'Sistema não configurado após 3 tentativas - acesse /settings para configurar'
+            })
+            .eq('id', item.id);
+        }
       }
+      
       return new Response(JSON.stringify({ 
         processed: 0, 
         reason: 'system_not_configured',
-        message: 'Acesse /settings para configurar o sistema' 
+        message: 'Acesse /settings para configurar o sistema',
+        rescheduled: queueItems.filter((item: any) => ((item as any).retry_count || 0) + 1 < 3).length
       }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
