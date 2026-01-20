@@ -95,6 +95,95 @@ async function sendDocumentHealthAlert(supabase: any, docs: any[]) {
   console.log(`[CleanupQueues] Marked ${docs.length} documents as alerted`);
 }
 
+// ============================================
+// HELPER: Enviar alerta de mensagens falhadas
+// ============================================
+async function sendFailedMessagesAlert(supabase: any, failedItems: any[]) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  
+  // Formatar lista de mensagens falhadas
+  const itemList = failedItems.map(item => {
+    const contact = (item.conversations as any)?.contacts;
+    return `
+      <tr>
+        <td style="padding: 8px; border: 1px solid #ddd;">${contact?.name || 'Desconhecido'}</td>
+        <td style="padding: 8px; border: 1px solid #ddd;">${contact?.phone_number || '-'}</td>
+        <td style="padding: 8px; border: 1px solid #ddd;">${(item.error_message || '-').substring(0, 60)}</td>
+        <td style="padding: 8px; border: 1px solid #ddd;">${new Date(item.processed_at).toLocaleString('pt-BR')}</td>
+      </tr>
+    `;
+  }).join('');
+  
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 700px;">
+      <h2 style="color: #e53e3e;">⚠️ Alerta: Mensagens não processadas</h2>
+      <p>As seguintes mensagens falharam no processamento e estão pendentes há mais de 1 hora:</p>
+      
+      <table style="border-collapse: collapse; width: 100%; margin: 20px 0;">
+        <thead>
+          <tr style="background-color: #f8f9fa;">
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Contato</th>
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Telefone</th>
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Erro</th>
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Falhou em</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemList}
+        </tbody>
+      </table>
+      
+      <p><strong>Ação recomendada:</strong> Verifique as configurações do sistema ou reprocesse manualmente via chat.</p>
+      
+      <p style="color: #666; font-size: 12px;">
+        Este é um alerta automático do sistema de monitoramento de filas.
+      </p>
+    </div>
+  `;
+  
+  // Enviar para admin e atendimento
+  const recipients = ['adriano@jacometo.com.br', 'atendimento@jacometo.com.br'];
+  
+  for (const email of recipients) {
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`
+        },
+        body: JSON.stringify({
+          to: email,
+          subject: `⚠️ ${failedItems.length} mensagem(ns) não processada(s) - Ação necessária`,
+          html
+        })
+      });
+      
+      if (response.ok) {
+        console.log(`[CleanupQueues] 📧 Failed messages alert sent to ${email}`);
+      } else {
+        console.error(`[CleanupQueues] Failed to send alert to ${email}:`, await response.text());
+      }
+    } catch (err) {
+      console.error(`[CleanupQueues] Error sending alert to ${email}:`, err);
+    }
+  }
+  
+  // Marcar itens como alertados para evitar spam
+  for (const item of failedItems) {
+    const currentError = item.error_message || '';
+    await supabase
+      .from('nina_processing_queue')
+      .update({ 
+        error_message: `${currentError} [ALERTA ENVIADO ${new Date().toISOString()}]`
+      })
+      .eq('id', item.id);
+  }
+  
+  console.log(`[CleanupQueues] Marked ${failedItems.length} failed items as alerted`);
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -208,7 +297,49 @@ Deno.serve(async (req) => {
       console.log('[CleanupQueues] ✓ All recent documents have media_url');
     }
 
-    // Get current queue stats for reporting
+    // ============================================
+    // HEALTH CHECK: Mensagens failed há mais de 1 hora
+    // ============================================
+    console.log('[CleanupQueues] Checking for failed messages > 1 hour...');
+
+    const failedThreshold = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1 hour ago
+
+    const { data: failedMessages, error: failedError } = await supabase
+      .from('nina_processing_queue')
+      .select(`
+        id,
+        conversation_id,
+        error_message,
+        processed_at,
+        conversations!inner (
+          contact_id,
+          contacts!inner (
+            name,
+            phone_number
+          )
+        )
+      `)
+      .eq('status', 'failed')
+      .lt('processed_at', failedThreshold)
+      .limit(20);
+
+    if (failedError) {
+      console.error('[CleanupQueues] Error checking failed messages:', failedError);
+    } else if (failedMessages && failedMessages.length > 0) {
+      // Filtrar itens que ainda não foram alertados
+      const itemsToAlert = failedMessages.filter(item => 
+        !item.error_message?.includes('[ALERTA ENVIADO')
+      );
+
+      if (itemsToAlert.length > 0) {
+        console.warn(`[CleanupQueues] ⚠️ Found ${itemsToAlert.length} failed messages > 1 hour!`);
+        await sendFailedMessagesAlert(supabase, itemsToAlert);
+      } else {
+        console.log('[CleanupQueues] ✓ All failed messages already alerted');
+      }
+    } else {
+      console.log('[CleanupQueues] ✓ No failed messages older than 1 hour');
+    }
     const { data: ninaStats } = await supabase
       .from('nina_processing_queue')
       .select('status', { count: 'exact' });
