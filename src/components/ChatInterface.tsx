@@ -1938,6 +1938,13 @@ const ChatInterface: React.FC = () => {
                         lastMessageFromUser={chat.lastMessageFromUser} 
                         compact 
                       />
+                      {/* Badge "Sem Resposta" para Atlas/Outbound sem resposta */}
+                      {chat.agentSlug === 'atlas' && !chat.hasUserResponded && (
+                        <span className="px-2 py-0.5 bg-gradient-to-r from-red-500/20 to-orange-500/20 backdrop-blur-sm text-red-400 border border-red-400/30 text-[10px] rounded-full font-medium flex items-center gap-1 shadow-lg shadow-red-500/10">
+                          <MessageSquare className="w-2.5 h-2.5" />
+                          Sem Resposta
+                        </span>
+                      )}
                       {/* Tags with glass effect */}
                       {chat.tags.slice(0, 1).map(tag => (
                         <span key={tag} className="px-2 py-0.5 bg-slate-700/40 backdrop-blur-sm border border-white/10 text-slate-300 text-[10px] rounded-lg font-medium hover:bg-slate-600/40 transition-all">
