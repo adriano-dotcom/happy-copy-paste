@@ -29,7 +29,7 @@ interface GenerateMessageRequest {
   agent_name?: string;
   agent_specialty?: string;
   agent_slug?: string;
-  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'unanswered_question' | 're_qualify';
+  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'unanswered_question' | 're_qualify' | 'direct_question' | 'closing_with_option';
   hours_waiting?: number;
   attempt_number: number;
   conversation_context?: string;
@@ -146,6 +146,28 @@ Retome de forma mais DIRETA e oferecendo valor:
 - Seja mais específico nas opções
 - Ofereça fazer uma ligação rápida se necessário
 - Não seja genérico - use o contexto da conversa`,
+
+  direct_question: `O cliente respondeu inicialmente mas parou de responder.
+Esta é uma tentativa CURTA e DIRETA:
+- Faça UMA única pergunta objetiva de qualificação
+- Máximo 1-2 frases, SEM introdução longa
+- Vá direto ao ponto: "{nome}, vocês já têm seguro hoje?"
+- NÃO ofereça ligação ainda, só faça a pergunta
+- Tom casual mas profissional
+Exemplos:
+- "{nome}, vocês já trabalham com alguma seguradora?"
+- "{nome}, qual tipo de seguro vocês mais precisam?"
+- "{nome}, sua transportadora já tem cobertura de carga?"`,
+
+  closing_with_option: `Esta é a ÚLTIMA tentativa de contato, faça um encerramento ELEGANTE:
+- Reconheça que o cliente pode estar ocupado
+- NÃO seja insistente ou repetitivo
+- Deixe a porta aberta para contato futuro
+- Seja BREVE e respeitoso (máximo 2-3 frases)
+- SEMPRE termine com algo como "Se precisar, é só me chamar aqui!"
+Exemplo:
+"{nome}, caso não tenha interesse agora, sem problemas! Se precisar de seguro pra transportadora no futuro, é só me chamar aqui. Abraço! 🤝"
+NÃO mencione: cotação, proposta, valores (já que não qualificou)`,
 };
 
 // Fallback messages by product - avoids redundant questions
