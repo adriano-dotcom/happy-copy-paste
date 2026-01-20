@@ -5,6 +5,10 @@ interface ProcessingStatus {
   isAggregating: boolean;
   isProcessing: boolean;
   agentName: string | null;
+  hasFailed: boolean;
+  failedCount: number;
+  failedError: string | null;
+  failedItemIds: string[];
 }
 
 export const useNinaProcessingStatus = (conversationId: string | null): ProcessingStatus => {
@@ -12,95 +16,139 @@ export const useNinaProcessingStatus = (conversationId: string | null): Processi
     isAggregating: false,
     isProcessing: false,
     agentName: null,
+    hasFailed: false,
+    failedCount: 0,
+    failedError: null,
+    failedItemIds: [],
   });
   
-  const agentNameCacheRef = useRef<string | null>(null);
-
+  // Cache the agent name to prevent flickering
+  const agentNameRef = useRef<string | null>(null);
+  
   const checkStatus = useCallback(async () => {
     if (!conversationId) {
-      setStatus({ isAggregating: false, isProcessing: false, agentName: null });
+      setStatus({
+        isAggregating: false,
+        isProcessing: false,
+        agentName: null,
+        hasFailed: false,
+        failedCount: 0,
+        failedError: null,
+        failedItemIds: [],
+      });
       return;
     }
-
-    const { data: queueItems } = await supabase
-      .from('nina_processing_queue')
-      .select('status, scheduled_for, context_data')
-      .eq('conversation_id', conversationId)
-      .in('status', ['pending', 'processing'])
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    if (!queueItems || queueItems.length === 0) {
-      setStatus({ isAggregating: false, isProcessing: false, agentName: null });
-      return;
-    }
-
-    const item = queueItems[0];
-    const scheduledFor = item.scheduled_for ? new Date(item.scheduled_for) : null;
-    const isScheduledInFuture = scheduledFor && scheduledFor > new Date();
-
-    // Use cached agent name or fetch if not available
-    let agentName = agentNameCacheRef.current;
     
-    if (!agentName) {
-      const { data: conversation } = await supabase
-        .from('conversations')
-        .select('current_agent_id, agents:current_agent_id(name)')
-        .eq('id', conversationId)
-        .single();
+    try {
+      // Check for pending/processing items
+      const { data: queueItems, error: queueError } = await supabase
+        .from('nina_processing_queue')
+        .select('id, status, scheduled_for')
+        .eq('conversation_id', conversationId)
+        .in('status', ['pending', 'processing'])
+        .order('created_at', { ascending: false })
+        .limit(1);
+      
+      if (queueError) {
+        console.error('[ProcessingStatus] Error checking queue:', queueError);
+        return;
+      }
 
-      agentName = (conversation?.agents as any)?.name || 'Íris';
-      agentNameCacheRef.current = agentName;
+      // Check for failed items
+      const { data: failedItems, error: failedError } = await supabase
+        .from('nina_processing_queue')
+        .select('id, error_message')
+        .eq('conversation_id', conversationId)
+        .eq('status', 'failed')
+        .order('processed_at', { ascending: false })
+        .limit(10);
+
+      if (failedError) {
+        console.error('[ProcessingStatus] Error checking failed items:', failedError);
+      }
+
+      const hasFailed = failedItems && failedItems.length > 0;
+      const failedIds = failedItems?.map(item => item.id) || [];
+      const firstError = failedItems?.[0]?.error_message || null;
+      
+      // Get agent name from conversation if we're processing
+      if (queueItems && queueItems.length > 0) {
+        const { data: convData } = await supabase
+          .from('conversations')
+          .select('agents(name)')
+          .eq('id', conversationId)
+          .single();
+        
+        if (convData?.agents) {
+          agentNameRef.current = (convData.agents as any).name;
+        }
+      }
+      
+      const item = queueItems?.[0];
+      let isAggregating = false;
+      let isProcessing = false;
+      
+      if (item) {
+        if (item.status === 'processing') {
+          isProcessing = true;
+        } else if (item.status === 'pending') {
+          // Check if scheduled_for is in the future
+          const scheduledFor = item.scheduled_for ? new Date(item.scheduled_for) : null;
+          if (scheduledFor && scheduledFor > new Date()) {
+            isAggregating = true;
+          } else {
+            isProcessing = true;
+          }
+        }
+      }
+      
+      setStatus({
+        isAggregating,
+        isProcessing,
+        agentName: agentNameRef.current,
+        hasFailed,
+        failedCount: failedIds.length,
+        failedError: firstError,
+        failedItemIds: failedIds,
+      });
+    } catch (err) {
+      console.error('[ProcessingStatus] Unexpected error:', err);
     }
-
-    setStatus({
-      isAggregating: item.status === 'pending' && isScheduledInFuture,
-      isProcessing: item.status === 'processing' || (item.status === 'pending' && !isScheduledInFuture),
-      agentName,
-    });
   }, [conversationId]);
-
+  
   useEffect(() => {
-    if (!conversationId) {
-      setStatus({ isAggregating: false, isProcessing: false, agentName: null });
-      agentNameCacheRef.current = null;
-      return;
-    }
-
-    // Initial check
+    // Check immediately
     checkStatus();
-
-    // Subscribe to realtime changes instead of polling
+    
+    // Subscribe to changes
     const channel = supabase
-      .channel(`nina-processing-${conversationId}`)
+      .channel(`nina-status-${conversationId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'nina_processing_queue',
-          filter: `conversation_id=eq.${conversationId}`,
+          filter: conversationId ? `conversation_id=eq.${conversationId}` : undefined,
         },
         () => {
           checkStatus();
         }
       )
       .subscribe();
-
-    // Minimal polling only for scheduled_for timing check (every 10s instead of 2s)
-    // This handles the edge case where scheduled_for time passes
-    const interval = setInterval(() => {
-      // Only check if we're currently aggregating (waiting for scheduled time)
+    
+    // Also poll occasionally since scheduled_for time passes while in aggregating state
+    const pollInterval = setInterval(() => {
       if (status.isAggregating) {
         checkStatus();
       }
-    }, 10000);
-
+    }, 1000);
+    
     return () => {
-      supabase.removeChannel(channel);
-      clearInterval(interval);
+      channel.unsubscribe();
+      clearInterval(pollInterval);
     };
   }, [conversationId, checkStatus, status.isAggregating]);
-
+  
   return status;
 };

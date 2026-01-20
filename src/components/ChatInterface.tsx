@@ -46,7 +46,7 @@ import { SendWhatsAppTemplateModal } from './SendWhatsAppTemplateModal';
 import { AudioPlayer } from './AudioPlayer';
 import { QuickQuestionsDropdown } from './QuickQuestionsDropdown';
 import { formatRegionFromPhone } from '@/utils/dddRegionMapper';
-import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, MessageToneAssistant, ConversationSummaryNotes, PDFPreviewModal, VideoThumbnailPreview } from './chat';
+import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, MessageToneAssistant, ConversationSummaryNotes, PDFPreviewModal, VideoThumbnailPreview, FailedProcessingBanner } from './chat';
 import { EmailComposeModal } from './EmailComposeModal';
 import { SendToPipedriveModal } from './chat/SendToPipedriveModal';
 
@@ -209,7 +209,7 @@ const ChatInterface: React.FC = () => {
   const activeChat = conversations.find(c => c.id === selectedChatId);
   
   // Nina processing status for typing indicator
-  const { isAggregating, isProcessing, agentName } = useNinaProcessingStatus(selectedChatId);
+  const { isAggregating, isProcessing, agentName, hasFailed, failedCount, failedError, failedItemIds } = useNinaProcessingStatus(selectedChatId);
   
   // Load agent qualification questions when agent changes
   useEffect(() => {
@@ -2403,6 +2403,17 @@ const ChatInterface: React.FC = () => {
                   </>
                 );
               })()}
+              
+              {/* Failed Processing Banner */}
+              {hasFailed && activeChat && (
+                <FailedProcessingBanner
+                  conversationId={activeChat.id}
+                  failedCount={failedCount}
+                  errorMessage={failedError}
+                  failedItemIds={failedItemIds}
+                  onReprocessed={() => refetch()}
+                />
+              )}
               
               {/* Typing Indicator - shows when AI is aggregating or processing */}
               {(isAggregating || isProcessing) && (
