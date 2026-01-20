@@ -1753,6 +1753,38 @@ function detectQuestionsAskedByAgent(agentMessages: string[]): Record<string, st
         /qual.*email/i, /seu email/i, /melhor email/i, /email para/i,
         /e-mail/i, /endereco de email/i, /endereço de email/i
       ]
+    },
+    // ===== NEW: Tracking questions about existing insurance =====
+    {
+      field: 'vencimento_seguro',
+      patterns: [
+        /quando vence/i, /data de vencimento/i, /vence quando/i,
+        /apolice.*venc/i, /renovacao/i, /proximo vencimento/i,
+        /vencimento do seguro/i, /data.*renovar/i, /quando renova/i
+      ]
+    },
+    {
+      field: 'satisfacao_seguradora',
+      patterns: [
+        /satisfeit/i, /atendimento/i, /gosta da seguradora/i,
+        /esta content/i, /quer trocar/i, /satisfacao/i,
+        /como é o atendimento/i, /como e o atendimento/i
+      ]
+    },
+    {
+      field: 'tem_seguro_veiculo',
+      patterns: [
+        /tem seguro.*veicul/i, /seguro.*frota.*hoje/i, /veiculos.*segurados/i,
+        /ja tem seguro/i, /seguro dos veiculos/i, /tem seguro.*carro/i,
+        /frota.*segurad/i, /veiculos.*cobert/i
+      ]
+    },
+    {
+      field: 'tem_seguro_carga',
+      patterns: [
+        /seguro de carga/i, /rctr-?c/i, /carga.*segurad/i,
+        /quanto a carga/i, /seguro.*mercadoria/i, /tem seguro.*carga/i
+      ]
     }
   ];
   
@@ -1766,6 +1798,119 @@ function detectQuestionsAskedByAgent(agentMessages: string[]): Record<string, st
   }
   
   return questionsAsked;
+}
+
+// ===== DETECT "ALREADY HAS INSURANCE" STATUS =====
+interface InsuranceStatus {
+  has_vehicle_insurance: boolean;
+  has_cargo_insurance: boolean;
+  is_satisfied: boolean | null;
+  is_dissatisfied: boolean | null;
+  renewal_date: string | null;
+}
+
+function detectExistingInsurance(userMessages: string[], agentMessages: string[]): InsuranceStatus {
+  const allUserText = userMessages.join(' ').toLowerCase();
+  
+  const status: InsuranceStatus = {
+    has_vehicle_insurance: false,
+    has_cargo_insurance: false,
+    is_satisfied: null,
+    is_dissatisfied: null,
+    renewal_date: null
+  };
+  
+  // Patterns for "has vehicle insurance"
+  const hasVehicleInsurancePatterns = [
+    /ja temos?.*seguro/i, /tenho sim.*seguro/i, /temos sim.*seguro/i,
+    /todos segurados/i, /todas as placas/i, /todos os veiculos/i,
+    /frota segurada/i, /ja temos.*cobert/i, /tenho seguro/i,
+    /temos seguro/i, /sim.*ja temos/i, /sim.*temos seguro/i,
+    /sim.*ja tenho/i, /ja tenho.*seguro/i, /temos.*apolice/i
+  ];
+  
+  // Patterns for "has cargo insurance"
+  const hasCargoInsurancePatterns = [
+    /rctr-?c.*sim/i, /sim.*rctr/i, /seguro de carga.*sim/i,
+    /sim.*seguro de carga/i, /carga segurada/i, /ja temos.*carga/i,
+    /temos seguro de carga/i, /temos rctr/i, /temos.*cobertura.*carga/i
+  ];
+  
+  // Patterns for satisfaction/dissatisfaction
+  const satisfiedPatterns = [
+    /satisfeit/i, /content[ea]/i, /bem atendid/i, /gosto/i,
+    /nao reclamo/i, /tranquilo/i, /ok com/i, /feliz com/i,
+    /bom atendimento/i, /sem problemas/i, /tudo certo/i
+  ];
+  
+  const dissatisfiedPatterns = [
+    /insatisfeit/i, /caro demais/i, /ruim/i, /pessimo/i,
+    /atendimento ruim/i, /demora/i, /nao gostei/i, /quero trocar/i,
+    /nao ta bom/i, /nao está bom/i, /problema/i, /complicado/i,
+    /dificil/i, /precario/i, /fraco/i, /deixa a desejar/i
+  ];
+  
+  // Check patterns
+  if (hasVehicleInsurancePatterns.some(p => p.test(allUserText))) {
+    status.has_vehicle_insurance = true;
+  }
+  
+  if (hasCargoInsurancePatterns.some(p => p.test(allUserText))) {
+    status.has_cargo_insurance = true;
+  }
+  
+  if (satisfiedPatterns.some(p => p.test(allUserText))) {
+    status.is_satisfied = true;
+  }
+  
+  if (dissatisfiedPatterns.some(p => p.test(allUserText))) {
+    status.is_dissatisfied = true;
+  }
+  
+  // Extract renewal date
+  const vencimentoPatterns = [
+    /vence.*(?:em|no|dia)?\s*(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/i,
+    /vencimento.*(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/i,
+    /renova.*(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/i,
+  ];
+  
+  for (const pattern of vencimentoPatterns) {
+    const match = allUserText.match(pattern);
+    if (match && match[1]) {
+      status.renewal_date = match[1];
+      break;
+    }
+  }
+  
+  // Also check for month names
+  const monthPatterns = /(janeiro|fevereiro|marco|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)/i;
+  const monthMatch = allUserText.match(monthPatterns);
+  if (monthMatch && !status.renewal_date) {
+    // Check for context like "vence em janeiro"
+    const contextMatch = allUserText.match(new RegExp(`vence.*${monthMatch[1]}|${monthMatch[1]}.*vence|renova.*${monthMatch[1]}`, 'i'));
+    if (contextMatch) {
+      status.renewal_date = monthMatch[1];
+    }
+  }
+  
+  // Check for relative dates
+  const relativeDatePatterns = [
+    { pattern: /proximo mes|mes que vem/i, value: 'próximo mês' },
+    { pattern: /daqui (\d+) meses?/i, value: 'em alguns meses' },
+    { pattern: /fim do ano/i, value: 'fim do ano' },
+    { pattern: /inicio do ano/i, value: 'início do ano' },
+    { pattern: /final do ano/i, value: 'final do ano' },
+    { pattern: /começo do ano/i, value: 'começo do ano' },
+  ];
+  
+  for (const { pattern, value } of relativeDatePatterns) {
+    if (pattern.test(allUserText) && !status.renewal_date) {
+      status.renewal_date = value;
+      break;
+    }
+  }
+  
+  return status;
 }
 
 // Sanitize text for TTS - simplify URLs for natural speech
@@ -4200,6 +4345,65 @@ async function processQueueItem(
     console.log(`[Nina] 🔍 Questions asked by agent tracked:`, Object.keys(mergedQuestionsAsked));
   }
   // ===== END QUESTION TRACKING =====
+  
+  // ===== EXISTING INSURANCE DETECTION =====
+  // Detect if lead already has insurance and track status
+  const existingInsuranceStatus = conversation.nina_context?.insurance_status || {};
+  const detectedInsuranceStatus = detectExistingInsurance(userMessagesContent, agentMessagesContent);
+  
+  // Merge with existing - don't overwrite true values
+  const mergedInsuranceStatus = {
+    has_vehicle_insurance: existingInsuranceStatus.has_vehicle_insurance || detectedInsuranceStatus.has_vehicle_insurance,
+    has_cargo_insurance: existingInsuranceStatus.has_cargo_insurance || detectedInsuranceStatus.has_cargo_insurance,
+    is_satisfied: detectedInsuranceStatus.is_satisfied ?? existingInsuranceStatus.is_satisfied,
+    is_dissatisfied: detectedInsuranceStatus.is_dissatisfied ?? existingInsuranceStatus.is_dissatisfied,
+    renewal_date: detectedInsuranceStatus.renewal_date || existingInsuranceStatus.renewal_date
+  };
+  
+  // Check if anything changed
+  const insuranceStatusChanged = 
+    mergedInsuranceStatus.has_vehicle_insurance !== existingInsuranceStatus.has_vehicle_insurance ||
+    mergedInsuranceStatus.has_cargo_insurance !== existingInsuranceStatus.has_cargo_insurance ||
+    mergedInsuranceStatus.is_satisfied !== existingInsuranceStatus.is_satisfied ||
+    mergedInsuranceStatus.is_dissatisfied !== existingInsuranceStatus.is_dissatisfied ||
+    mergedInsuranceStatus.renewal_date !== existingInsuranceStatus.renewal_date;
+  
+  if (insuranceStatusChanged && (mergedInsuranceStatus.has_vehicle_insurance || mergedInsuranceStatus.has_cargo_insurance)) {
+    console.log(`[Nina] 🛡️ Existing insurance detected:`, mergedInsuranceStatus);
+    
+    await supabase
+      .from('conversations')
+      .update({
+        nina_context: {
+          ...conversation.nina_context,
+          qualification_answers: mergedQA,
+          questions_asked: mergedQuestionsAsked,
+          insurance_status: mergedInsuranceStatus,
+          last_insurance_detection: new Date().toISOString()
+        }
+      })
+      .eq('id', conversation.id);
+    
+    // Update local reference
+    conversation.nina_context = {
+      ...conversation.nina_context,
+      qualification_answers: mergedQA,
+      questions_asked: mergedQuestionsAsked,
+      insurance_status: mergedInsuranceStatus
+    };
+    
+    // Also update qualification_answers with insurance status for tracking
+    if (mergedInsuranceStatus.has_vehicle_insurance && !mergedQA.tem_seguro_veiculo) {
+      mergedQA.tem_seguro_veiculo = 'sim';
+    }
+    if (mergedInsuranceStatus.has_cargo_insurance && !mergedQA.tem_seguro_carga) {
+      mergedQA.tem_seguro_carga = 'sim';
+    }
+    if (mergedInsuranceStatus.renewal_date && !mergedQA.vencimento_seguro) {
+      mergedQA.vencimento_seguro = mergedInsuranceStatus.renewal_date;
+    }
+  }
+  // ===== END EXISTING INSURANCE DETECTION =====
 
   // ===== END REAL-TIME QUALIFICATION EXTRACTION =====
 
@@ -5379,7 +5583,12 @@ Se detectar que era interesse em emprego antes e agora é seguro:
       quantidade_vidas: 'Quantidade de vidas',
       idades: 'Idades dos beneficiários',
       cidade: 'Cidade/região',
-      operadora_preferida: 'Operadora preferida'
+      operadora_preferida: 'Operadora preferida',
+      // New insurance status fields
+      tem_seguro_veiculo: 'Já tem seguro de veículo',
+      tem_seguro_carga: 'Já tem seguro de carga',
+      vencimento_seguro: 'Vencimento do seguro',
+      satisfacao_seguradora: 'Satisfação com seguradora'
     };
     
     for (const [key, value] of Object.entries(qa)) {
@@ -5390,6 +5599,47 @@ Se detectar que era interesse em emprego antes e agora é seguro:
     
     if (answeredFields.length > 0) {
       contextInfo += `\n\n## INFORMAÇÕES JÁ COLETADAS (NÃO PERGUNTE NOVAMENTE, NÃO REPITA):\n${answeredFields.join('\n')}`;
+    }
+  }
+  
+  // ===== EXISTING INSURANCE CONTEXT - CRITICAL FOR RENEWAL FLOW =====
+  if (ninaContext?.insurance_status) {
+    const ins = ninaContext.insurance_status;
+    
+    if (ins.has_vehicle_insurance || ins.has_cargo_insurance) {
+      contextInfo += `\n\n## ⚠️ ATENÇÃO: LEAD JÁ TEM SEGURO!`;
+      
+      if (ins.has_vehicle_insurance) {
+        contextInfo += `\n- ✅ Confirmou que JÁ TEM seguro de VEÍCULOS/FROTA`;
+      }
+      if (ins.has_cargo_insurance) {
+        contextInfo += `\n- ✅ Confirmou que JÁ TEM seguro de CARGA/RCTR-C`;
+      }
+      if (ins.renewal_date) {
+        contextInfo += `\n- 📅 Vencimento informado: ${ins.renewal_date}`;
+      }
+      if (ins.is_dissatisfied) {
+        contextInfo += `\n- 😞 INSATISFEITO com seguradora atual (oportunidade!)`;
+      } else if (ins.is_satisfied) {
+        contextInfo += `\n- 😊 Satisfeito com seguradora atual`;
+      }
+      
+      contextInfo += `\n
+### 🎯 FLUXO OBRIGATÓRIO PARA LEAD QUE JÁ TEM SEGURO:
+
+1. **NÃO pergunte** "qual seguro você precisa?" - ELE JÁ TEM!
+2. **Pergunte o VENCIMENTO** se ainda não informou: "Quando vence a apólice atual?"
+3. **Pergunte sobre SATISFAÇÃO** se não informou: "Está satisfeito com o atendimento?"
+4. **Ofereça COTAÇÃO COMPARATIVA**: "Posso preparar uma cotação comparativa sem compromisso!"
+5. **CROSS-SELL**: Se só falou de veículo, pergunte sobre CARGA. Se só falou de carga, pergunte sobre VEÍCULO.
+
+### Exemplo de resposta correta:
+"Ótimo! E quando vence a apólice atual? Posso preparar uma cotação comparativa pra vocês avaliarem na renovação!"
+
+### ❌ NUNCA FAÇA:
+- Follow-up genérico "o que você precisa?"
+- Repetir pergunta sobre produto
+- Ignorar que ele já tem seguro`;
     }
   }
 
