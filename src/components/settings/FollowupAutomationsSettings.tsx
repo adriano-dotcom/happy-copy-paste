@@ -43,6 +43,7 @@ const AI_PROMPT_TYPE_LABELS: Record<string, { emoji: string; label: string; shor
   'soft_reengagement': { emoji: '💬', label: 'Retomada suave', short: 'Retomada' },
   'last_chance': { emoji: '🔔', label: 'Última chance', short: 'Encerramento' },
   'schedule_call': { emoji: '📞', label: 'Agendar conversa', short: 'Ligação' },
+  'schedule_renewal': { emoji: '📅', label: 'Renovação de Seguro', short: 'Renovação' },
 };
 
 interface Automation {
@@ -158,6 +159,7 @@ export default function FollowupAutomationsSettings() {
     { value: 'soft_reengagement', label: 'Retomada Suave', desc: 'Mensagem amigável' },
     { value: 'last_chance', label: 'Última Chance', desc: 'Encerramento amigável' },
     { value: 'schedule_call', label: 'Agendar Conversa', desc: 'Perguntar melhor horário para ligar' },
+    { value: 'schedule_renewal', label: 'Renovação de Seguro', desc: 'Para leads que já têm seguro' },
   ];
 
   // Função para mover item na sequência
