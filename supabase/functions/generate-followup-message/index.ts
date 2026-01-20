@@ -29,7 +29,7 @@ interface GenerateMessageRequest {
   agent_name?: string;
   agent_specialty?: string;
   agent_slug?: string;
-  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'unanswered_question' | 're_qualify' | 'direct_question' | 'closing_with_option';
+  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'unanswered_question' | 're_qualify' | 'direct_question' | 'closing_with_option' | 'schedule_renewal';
   hours_waiting?: number;
   attempt_number: number;
   conversation_context?: string;
@@ -168,6 +168,24 @@ Exemplos:
 Exemplo:
 "{nome}, caso não tenha interesse agora, sem problemas! Se precisar de seguro pra transportadora no futuro, é só me chamar aqui. Abraço! 🤝"
 NÃO mencione: cotação, proposta, valores (já que não qualificou)`,
+
+  schedule_renewal: `O cliente JÁ TEM SEGURO e informou isso anteriormente.
+NUNCA pergunte "o que você precisa?" ou "qual seguro?" - ELE JÁ TEM!
+
+Sua missão é AVANÇAR para a renovação:
+1. Se NÃO perguntou vencimento: "Quando vence a apólice atual?"
+2. Se já tem vencimento: "Posso preparar uma cotação comparativa pra vocês avaliarem na renovação?"
+3. CROSS-SELL: Se só falou de veículo, pergunte sobre CARGA. Se só falou de carga, pergunte sobre VEÍCULO.
+
+Seja CONSULTIVO e ofereça VALOR:
+- Cotação comparativa sem compromisso
+- Análise das coberturas atuais
+- Condições especiais para renovação
+
+Exemplos:
+- "{nome}, quando vence o seguro atual? Posso preparar uma cotação comparativa!"
+- "{nome}, e sobre o seguro de carga, vocês têm RCTR-C?"
+- "Posso preparar uma proposta pra vocês compararem na renovação, sem compromisso!"`
 };
 
 // Fallback messages by product - avoids redundant questions
@@ -202,6 +220,14 @@ const FALLBACK_MESSAGES_BY_PRODUCT: Record<string, string[]> = {
     "Oi {nome}! Me conta o que você transporta que te passo as opções de seguro!",
     "{nome}, quer que eu te ligue pra explicar as coberturas disponíveis?",
     "E aí {nome}! Qual sua principal preocupação: proteger a carga ou o veículo?",
+  ],
+  has_insurance: [
+    "{nome}, quando vence a apólice atual? Posso preparar uma cotação comparativa!",
+    "{nome}, vocês já pensaram em fazer uma cotação comparativa pra renovação?",
+    "Oi {nome}! E sobre o seguro de carga, vocês têm RCTR-C ou o embarcador contrata?",
+    "{nome}, se quiser posso preparar uma proposta pra vocês compararem na renovação!",
+    "{nome}, está satisfeito com o atendimento da seguradora atual?",
+    "Oi {nome}! Posso te ajudar a avaliar as coberturas antes da renovação?",
   ],
 };
 
