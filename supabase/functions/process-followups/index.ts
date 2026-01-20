@@ -565,7 +565,8 @@ async function getMessageForAttempt(
   unansweredQuestion?: string,
   isQualified: boolean = true,
   detectedProduct?: DetectedProduct,
-  answeredQualifications?: AnsweredQualifications // NOVO: tópicos já respondidos
+  answeredQualifications?: AnsweredQualifications,
+  insuranceStatus?: InsuranceStatus | null // NOVO: status de seguro existente
 ): Promise<string> {
   const sequence = automation.messages_sequence;
   
@@ -576,7 +577,8 @@ async function getMessageForAttempt(
       supabaseUrl, supabaseServiceKey, conv,
       're_qualify', attemptNumber, hoursWaiting,
       agentName, agentSpecialty, agentSlug, lastMessageSent,
-      conversationContext, unansweredQuestion, isQualified, detectedProduct, answeredQualifications
+      conversationContext, unansweredQuestion, isQualified, detectedProduct, answeredQualifications,
+      insuranceStatus
     );
   }
   
@@ -603,7 +605,8 @@ async function getMessageForAttempt(
           supabaseUrl, supabaseServiceKey, conv,
           lastItem.ai_prompt_type, attemptNumber, hoursWaiting,
           agentName, agentSpecialty, agentSlug, lastMessageSent,
-          conversationContext, unansweredQuestion, isQualified, detectedProduct, answeredQualifications
+          conversationContext, unansweredQuestion, isQualified, detectedProduct, answeredQualifications,
+          insuranceStatus
         );
       }
       return replaceVariables(lastItem.content || automation.free_text_message || 'Oi {nome}!', conv);
@@ -615,12 +618,13 @@ async function getMessageForAttempt(
 
   // Generate AI message or use manual content
   if (sequenceItem.type === 'ai_generated' && sequenceItem.ai_prompt_type) {
-    console.log(`[process-followups] Generating AI message for attempt ${attemptNumber}, type: ${sequenceItem.ai_prompt_type}, has context: ${!!conversationContext}, has unanswered: ${!!unansweredQuestion}, qualified: ${isQualified}, product: ${detectedProduct || 'none'}`);
+    console.log(`[process-followups] Generating AI message for attempt ${attemptNumber}, type: ${sequenceItem.ai_prompt_type}, has context: ${!!conversationContext}, has unanswered: ${!!unansweredQuestion}, qualified: ${isQualified}, product: ${detectedProduct || 'none'}, hasInsurance: ${!!(insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance)}`);
     return await generateAIMessage(
       supabaseUrl, supabaseServiceKey, conv,
       sequenceItem.ai_prompt_type, attemptNumber, hoursWaiting,
       agentName, agentSpecialty, agentSlug, lastMessageSent,
-      conversationContext, unansweredQuestion, isQualified, detectedProduct, answeredQualifications
+      conversationContext, unansweredQuestion, isQualified, detectedProduct, answeredQualifications,
+      insuranceStatus
     );
   }
 
@@ -987,6 +991,12 @@ serve(async (req) => {
               console.log(`[process-followups] Last message for anti-repetition: "${lastMessageSent.substring(0, 40)}..."`);
             }
             
+            // Extract insurance status from nina_context
+            const insuranceStatus = conv.nina_context?.insurance_status || null;
+            if (insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance) {
+              console.log(`[process-followups] Lead has existing insurance - will use schedule_renewal prompt`);
+            }
+            
             // Get message content based on attempt number, sequence, and conversation context
             const messageContent = await getMessageForAttempt(
               automation,
@@ -1003,7 +1013,8 @@ serve(async (req) => {
               conversationAnalysis.unansweredQuestion || undefined,
               leadIsQualified,
               detectedProduct,
-              conversationAnalysis.answeredQualifications // NOVO: tópicos já respondidos
+              conversationAnalysis.answeredQualifications,
+              insuranceStatus // NOVO: status de seguro existente
             );
             
             console.log(`[process-followups] Sending message (attempt ${attemptNumber}) to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
