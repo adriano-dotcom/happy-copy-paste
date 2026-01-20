@@ -1660,7 +1660,7 @@ export const api = {
       `)
       .eq('is_active', true)
       .order('last_message_at', { ascending: false })
-      .limit(100);
+      .limit(200);
 
     const { data: conversations, error: convError } = await query;
     
