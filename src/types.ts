@@ -349,6 +349,8 @@ export interface UIConversation {
   dealOwnerName: string | null;
   // Human review status
   needsHumanReview: boolean;
+  // Outbound tracking
+  hasUserResponded: boolean;
 }
 
 export interface UIMessage {
@@ -381,6 +383,9 @@ export function transformDBToUIConversation(
   
   // Determine if last message was from user (client)
   const lastMessageFromUser = lastMsg?.from_type === 'user';
+  
+  // Check if user has responded at least once (for outbound tracking)
+  const hasUserResponded = messages.some(m => m.from_type === 'user');
 
   // Calculate WhatsApp window status
   const windowStart = conv.whatsapp_window_start ? new Date(conv.whatsapp_window_start) : null;
@@ -430,7 +435,9 @@ export function transformDBToUIConversation(
     dealOwnerId: (conv as any).dealOwnerId || null,
     dealOwnerName: (conv as any).dealOwnerName || null,
     // Human review status (defaults to true for new/unknown conversations)
-    needsHumanReview: conv.needs_human_review ?? true
+    needsHumanReview: conv.needs_human_review ?? true,
+    // Outbound tracking
+    hasUserResponded
   };
 }
 
