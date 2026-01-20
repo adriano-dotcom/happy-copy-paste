@@ -10,8 +10,16 @@ interface MessageSequenceItem {
   attempt: number;
   type: 'manual' | 'ai_generated';
   content?: string;
-  ai_prompt_type?: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'direct_question' | 'closing_with_option';
+  ai_prompt_type?: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'direct_question' | 'closing_with_option' | 'schedule_renewal';
   delay_hours?: number;
+}
+
+// Interface para status de seguro existente (detectado no nina_context)
+interface InsuranceStatus {
+  has_vehicle_insurance?: boolean;
+  has_cargo_insurance?: boolean;
+  satisfaction?: 'satisfied' | 'dissatisfied' | null;
+  renewal_date?: string | null;
 }
 
 interface Automation {
@@ -58,6 +66,10 @@ interface EligibleConversation {
       products_discussed?: string[];
       interests?: string[];
     };
+  };
+  nina_context?: {
+    insurance_status?: InsuranceStatus;
+    questions_asked?: Record<string, string>;
   };
 }
 
@@ -170,16 +182,29 @@ const FALLBACK_MESSAGES_BY_PRODUCT: Record<string, string[]> = {
     "{nome}, quer que eu te ligue pra explicar as coberturas disponíveis?",
     "E aí {nome}! Qual sua principal preocupação: proteger a carga ou o veículo?",
   ],
+  // Mensagens específicas para leads que já têm seguro
+  has_insurance: [
+    "{nome}, sobre a renovação: quando vence a apólice atual? Posso preparar uma cotação comparativa!",
+    "Oi {nome}! Você mencionou que já tem seguro. Está satisfeito com a seguradora atual?",
+    "{nome}, além do seguro do veículo, vocês têm RCTR-C pra proteger a carga? É fundamental pro transporte!",
+    "E aí {nome}! Sobre sua apólice atual: quando vence? Consigo te passar uma proposta antes da renovação!",
+    "{nome}, você tem seguro de carga também? É diferente do seguro do veículo e essencial pra transportador!",
+    "Oi {nome}! Pra sua renovação, me confirma: quando vence o seguro atual?",
+    "{nome}, posso te ligar pra fazer uma cotação comparativa antes da renovação? 5 min!",
+  ],
 };
 
 // Get a varied fallback that's different from the last message, using product-specific messages
 function getVariedFallback(
   contactName: string, 
   lastMessage?: string,
-  detectedProduct?: DetectedProduct
+  detectedProduct?: DetectedProduct,
+  hasExistingInsurance: boolean = false
 ): string {
   const name = contactName || 'Cliente';
-  const productKey = detectedProduct || 'generico';
+  
+  // Se lead já tem seguro, usar mensagens específicas de renovação
+  const productKey = hasExistingInsurance ? 'has_insurance' : (detectedProduct || 'generico');
   const messages = FALLBACK_MESSAGES_BY_PRODUCT[productKey] || FALLBACK_MESSAGES_BY_PRODUCT.generico;
   
   let attempts = 0;
@@ -211,7 +236,8 @@ async function generateAIMessage(
   unansweredQuestion?: string,
   isQualified: boolean = true,
   detectedProduct?: DetectedProduct,
-  answeredQualifications?: AnsweredQualifications // NOVO: tópicos já respondidos
+  answeredQualifications?: AnsweredQualifications,
+  insuranceStatus?: InsuranceStatus | null // NOVO: status de seguro existente
 ): Promise<string> {
   try {
     // Se o agente é Íris (transportadores) e o prompt é schedule_call, usar prompt específico
@@ -221,14 +247,21 @@ async function generateAIMessage(
       console.log(`[process-followups] Using transportador-specific prompt for Íris`);
     }
     
-    // Se há pergunta sem resposta, sobrescrever o prompt type
-    if (unansweredQuestion && promptType !== 'last_chance') {
+    // NOVO: Se lead já tem seguro, forçar schedule_renewal (exceto last_chance)
+    const hasExistingInsurance = insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance;
+    if (hasExistingInsurance && promptType !== 'last_chance' && promptType !== 'schedule_renewal') {
+      finalPromptType = 'schedule_renewal';
+      console.log(`[process-followups] Lead has existing insurance - forcing schedule_renewal prompt`);
+    }
+    
+    // Se há pergunta sem resposta, sobrescrever o prompt type (mas não se for schedule_renewal)
+    if (unansweredQuestion && promptType !== 'last_chance' && finalPromptType !== 'schedule_renewal') {
       finalPromptType = 'unanswered_question';
       console.log(`[process-followups] Overriding prompt to unanswered_question due to pending question`);
     }
     
-    // Se lead não qualificado, forçar re_qualify
-    if (!isQualified && promptType !== 'last_chance') {
+    // Se lead não qualificado, forçar re_qualify (mas não se for schedule_renewal)
+    if (!isQualified && promptType !== 'last_chance' && finalPromptType !== 'schedule_renewal') {
       finalPromptType = 're_qualify';
       console.log(`[process-followups] Lead NOT qualified - forcing re_qualify prompt`);
     }
@@ -241,7 +274,7 @@ async function generateAIMessage(
       console.log(`[process-followups] Already answered qualifications: ${answeredTopics.join(', ') || 'none'}`);
     }
     
-    console.log(`[process-followups] Generating AI message, prompt: ${finalPromptType}, context: ${conversationContext ? 'yes' : 'no'}, unanswered: ${unansweredQuestion ? 'yes' : 'no'}, qualified: ${isQualified}, product: ${detectedProduct || 'none'}`);
+    console.log(`[process-followups] Generating AI message, prompt: ${finalPromptType}, context: ${conversationContext ? 'yes' : 'no'}, unanswered: ${unansweredQuestion ? 'yes' : 'no'}, qualified: ${isQualified}, product: ${detectedProduct || 'none'}, hasInsurance: ${hasExistingInsurance || false}`);
     
     const response = await fetch(`${supabaseUrl}/functions/v1/generate-followup-message`, {
       method: 'POST',
@@ -263,20 +296,22 @@ async function generateAIMessage(
         unanswered_question: unansweredQuestion,
         is_qualified: isQualified,
         detected_product: detectedProduct,
-        answered_qualifications: answeredQualifications, // NOVO: tópicos já respondidos
+        answered_qualifications: answeredQualifications,
+        insurance_status: insuranceStatus, // NOVO: passar status de seguro
       }),
     });
 
     if (!response.ok) {
       console.error('[process-followups] AI message generation failed:', response.status);
-      return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct);
+      return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasExistingInsurance);
     }
 
     const data = await response.json();
-    return data.message || getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct);
+    return data.message || getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasExistingInsurance);
   } catch (error) {
     console.error('[process-followups] Error generating AI message:', error);
-    return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct);
+    const hasExistingInsurance = insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance;
+    return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasExistingInsurance);
   }
 }
 
@@ -714,6 +749,7 @@ serve(async (req) => {
           status,
           whatsapp_window_start,
           current_agent_id,
+          nina_context,
           contacts!inner (
             name,
             call_name,
@@ -773,6 +809,7 @@ serve(async (req) => {
           current_agent_id: convRaw.current_agent_id,
           pipeline_id: null,
           client_memory: (convRaw.contacts as any)?.client_memory,
+          nina_context: (convRaw as any).nina_context,
         };
 
         // Check if deal is lost (skip if lost_at is set or in "Perdido" stage)
