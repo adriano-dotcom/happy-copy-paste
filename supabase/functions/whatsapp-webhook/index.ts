@@ -913,9 +913,45 @@ async function processIncomingMessageWithBackground(
         content = message.document?.filename || '[documento - processando...]';
         pendingMediaProcessing = true;
         break;
+      
+      // ===== INTERACTIVE BUTTON REPLY SUPPORT =====
+      case 'interactive':
+        messageType = 'text';
+        if (message.interactive?.type === 'button_reply') {
+          const buttonId = message.interactive.button_reply?.id;
+          const buttonTitle = message.interactive.button_reply?.title;
+          content = buttonTitle || '[resposta de botão]';
+          console.log('[Webhook BG] Button reply received:', buttonId, buttonTitle);
+        } else if (message.interactive?.type === 'list_reply') {
+          const listId = message.interactive.list_reply?.id;
+          const listTitle = message.interactive.list_reply?.title;
+          content = listTitle || '[resposta de lista]';
+          console.log('[Webhook BG] List reply received:', listId, listTitle);
+        } else {
+          content = '[resposta interativa]';
+        }
+        break;
+      // ===== END INTERACTIVE BUTTON REPLY SUPPORT =====
+      
       default:
         content = `[${message.type}]`;
     }
+
+    // ===== BUILD MESSAGE METADATA =====
+    let messageMetadata: Record<string, any> = { 
+      raw: message, 
+      original_type: message.type, 
+      processing: pendingMediaProcessing 
+    };
+    
+    // Add button reply context if applicable
+    if (message.type === 'interactive' && message.interactive?.type === 'button_reply') {
+      messageMetadata.is_button_reply = true;
+      messageMetadata.button_id = message.interactive.button_reply?.id;
+      messageMetadata.button_title = message.interactive.button_reply?.title;
+      console.log('[Webhook BG] Button metadata added:', messageMetadata.button_id);
+    }
+    // ===== END MESSAGE METADATA =====
 
     // 4. Create message record IMMEDIATELY (before media processing)
     const { data: dbMessage, error: msgError } = await supabase
@@ -930,7 +966,7 @@ async function processIncomingMessageWithBackground(
         media_url: mediaUrl,
         media_type: mediaType,
         sent_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
-        metadata: { raw: message, original_type: message.type, processing: pendingMediaProcessing }
+        metadata: messageMetadata
       })
       .select()
       .single();
