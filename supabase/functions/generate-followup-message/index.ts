@@ -29,6 +29,7 @@ interface InsuranceStatus {
   has_cargo_insurance?: boolean;
   satisfaction?: 'satisfied' | 'dissatisfied' | null;
   renewal_date?: string | null;
+  hasSoftRejection?: boolean; // NOVO: detectado desinteresse leve
 }
 
 interface GenerateMessageRequest {
@@ -37,7 +38,7 @@ interface GenerateMessageRequest {
   agent_name?: string;
   agent_specialty?: string;
   agent_slug?: string;
-  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'unanswered_question' | 're_qualify' | 'direct_question' | 'closing_with_option' | 'closing_with_option_insurance' | 'schedule_renewal';
+  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'unanswered_question' | 're_qualify' | 'direct_question' | 'closing_with_option' | 'closing_with_option_insurance' | 'schedule_renewal' | 'ask_insurance_renewal';
   hours_waiting?: number;
   attempt_number: number;
   conversation_context?: string;
@@ -46,7 +47,7 @@ interface GenerateMessageRequest {
   is_qualified?: boolean;
   detected_product?: DetectedProduct;
   answered_qualifications?: AnsweredQualifications; // tópicos já respondidos
-  insurance_status?: InsuranceStatus; // NOVO: status de seguro existente
+  insurance_status?: InsuranceStatus; // status de seguro existente
 }
 
 // Terms forbidden for unqualified leads (they imply a quote is ready when it's not)
@@ -216,7 +217,29 @@ Seja CONSULTIVO e ofereça VALOR:
 Exemplos:
 - "{nome}, quando vence o seguro atual? Posso preparar uma cotação comparativa!"
 - "{nome}, e sobre o seguro de carga, vocês têm RCTR-C?"
-- "Posso preparar uma proposta pra vocês compararem na renovação, sem compromisso!"`
+- "Posso preparar uma proposta pra vocês compararem na renovação, sem compromisso!"`,
+
+  // NOVO: Pergunta sobre seguro para leads que fizeram soft rejection
+  ask_insurance_renewal: `O cliente disse que NÃO TEM INTERESSE ou NÃO PRECISA AGORA.
+Esta é a ÚLTIMA E ÚNICA tentativa de contato. Seja BREVE e RESPEITOSO:
+
+VOCÊ DEVE:
+1. Perguntar SE o cliente tem seguro atualmente (de carga ou veículo)
+2. Se sim, perguntar quando vence para oferecer cotação comparativa
+3. Deixar a porta aberta para contato futuro
+4. Máximo 2 frases
+5. Tom amigável, SEM PRESSÃO
+
+NUNCA:
+- Insistir ou parecer desesperado
+- Fazer múltiplas perguntas
+- Usar frases genéricas como "posso te ajudar?"
+- Repetir a mesma abordagem de antes
+
+Exemplos:
+- "{nome}, entendo! Só uma curiosidade: vocês já têm seguro de carga ou veículo hoje? Se tiver, quando vence? Fico à disposição pra comparar valores 😉"
+- "{nome}, tranquilo! Pergunta rápida: vocês têm seguro na frota hoje? Quando vence? Me chama aqui quando quiser cotar!"
+- "{nome}, sem problemas! Vocês já estão segurados? Se sim, posso fazer uma cotação comparativa pra renovação, sem compromisso!"`
 };
 
 // Fallback messages by product - avoids redundant questions
