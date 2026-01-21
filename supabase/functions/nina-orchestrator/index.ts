@@ -1364,8 +1364,8 @@ function isQualificationComplete(contact: any, qualificationAnswers: { [key: str
 }
 
 // ===== ATLAS VEHICLE QUALIFICATION HANDOFF CHECK =====
-// Check if Atlas vehicle lead is ready for handoff (name + phone + email)
-// UPDATED: Para SUBCONTRATADOS, exigir dados específicos do veículo
+// Check if Atlas vehicle lead is ready for handoff (quantidade + tipo de veículo)
+// UPDATED: Removida exigência de email - telefone já está garantido pelo WhatsApp
 interface AtlasHandoffResult {
   readyForHandoff: boolean;
   missingField: string | null;
@@ -1399,42 +1399,35 @@ function detectAtlasVehicleHandoff(
     console.log('[Nina][Atlas] 🚛 SUBCONTRATADO DETECTADO - verificando requisitos de veículo');
     
     // Requisitos OBRIGATÓRIOS para subcontratado fazer handoff:
-    // 1. Dados do veículo (quantidade OU tipo)
-    const hasVehicleData = !!(
-      qa?.quantidade_veiculos || 
-      qa?.qtd_veiculos ||
-      qa?.tipos_veiculos || 
-      qa?.tipo_veiculo ||
-      qa?.modelo_veiculo
-    );
+    // 1. Quantidade de veículos
+    const hasQuantidade = !!(qa?.quantidade_veiculos || qa?.qtd_veiculos);
+    // 2. Tipo de veículo
+    const hasTipo = !!(qa?.tipo_veiculo || qa?.tipos_veiculos || qa?.modelo_veiculo);
     
-    // 2. Email para contato
-    const hasEmail = !!(contact?.email && contact.email.includes('@'));
-    
-    console.log(`[Nina][Atlas] Subcontratado - VehicleData: ${hasVehicleData ? '✓' : '✗'}, Email: ${hasEmail ? '✓' : '✗'}`);
+    console.log(`[Nina][Atlas] Subcontratado - Quantidade: ${hasQuantidade ? '✓' : '✗'}, Tipo: ${hasTipo ? '✓' : '✗'}`);
     console.log(`[Nina][Atlas] QA data: quantidade=${qa?.quantidade_veiculos || qa?.qtd_veiculos || 'N/A'}, tipo=${qa?.tipo_veiculo || qa?.tipos_veiculos || 'N/A'}`);
     
-    if (!hasVehicleData) {
-      console.log('[Nina][Atlas] ⚠️ Subcontratado SEM dados de veículo - NÃO fazer handoff');
+    if (!hasQuantidade) {
+      console.log('[Nina][Atlas] ⚠️ Subcontratado SEM quantidade de veículos - NÃO fazer handoff');
       return { 
         readyForHandoff: false, 
-        missingField: 'dados_veiculo', 
+        missingField: 'quantidade_veiculos', 
         qualificationData: qa,
         isSubcontratado: true
       };
     }
     
-    if (!hasEmail) {
-      console.log('[Nina][Atlas] ⚠️ Subcontratado SEM email - NÃO fazer handoff');
+    if (!hasTipo) {
+      console.log('[Nina][Atlas] ⚠️ Subcontratado SEM tipo de veículo - NÃO fazer handoff');
       return { 
         readyForHandoff: false, 
-        missingField: 'email', 
+        missingField: 'tipo_veiculo', 
         qualificationData: qa,
         isSubcontratado: true
       };
     }
     
-    console.log('[Nina][Atlas] ✅ Subcontratado com dados de veículo + email - pronto para handoff!');
+    console.log('[Nina][Atlas] ✅ Subcontratado com quantidade + tipo de veículo - pronto para handoff!');
     return { readyForHandoff: true, missingField: null, qualificationData: qa, isSubcontratado: true };
   }
   
@@ -1454,20 +1447,17 @@ function detectAtlasVehicleHandoff(
   
   console.log('[Nina][Atlas] 🚗 Checking vehicle lead handoff requirements...');
   
-  // Check essential data for vehicle leads
-  const hasName = !!(contact?.name && contact.name.trim().length > 1);
-  const hasPhone = !!(contact?.phone_number && contact.phone_number.length >= 10);
-  const hasEmail = !!(contact?.email && contact.email.includes('@'));
+  // Para leads de veículo, exigir apenas: quantidade + tipo
+  const hasQuantidade = !!(qa?.quantidade_veiculos || qa?.qtd_veiculos);
+  const hasTipo = !!(qa?.tipo_veiculo || qa?.tipos_veiculos || qa?.modelo_veiculo);
   
-  console.log(`[Nina][Atlas] Name: ${hasName ? '✓' : '✗'} (${contact?.name || 'N/A'})`);
-  console.log(`[Nina][Atlas] Phone: ${hasPhone ? '✓' : '✗'} (${contact?.phone_number || 'N/A'})`);
-  console.log(`[Nina][Atlas] Email: ${hasEmail ? '✓' : '✗'} (${contact?.email || 'N/A'})`);
+  console.log(`[Nina][Atlas] Vehicle Lead - Quantidade: ${hasQuantidade ? '✓' : '✗'}, Tipo: ${hasTipo ? '✓' : '✗'}`);
+  console.log(`[Nina][Atlas] QA data: quantidade=${qa?.quantidade_veiculos || qa?.qtd_veiculos || 'N/A'}, tipo=${qa?.tipo_veiculo || qa?.tipos_veiculos || 'N/A'}`);
   
-  if (!hasName) return { readyForHandoff: false, missingField: 'nome', qualificationData: qa };
-  if (!hasPhone) return { readyForHandoff: false, missingField: 'telefone', qualificationData: qa };
-  if (!hasEmail) return { readyForHandoff: false, missingField: 'email', qualificationData: qa };
+  if (!hasQuantidade) return { readyForHandoff: false, missingField: 'quantidade_veiculos', qualificationData: qa };
+  if (!hasTipo) return { readyForHandoff: false, missingField: 'tipo_veiculo', qualificationData: qa };
   
-  console.log('[Nina][Atlas] ✅ All vehicle lead requirements met - ready for handoff!');
+  console.log('[Nina][Atlas] ✅ Vehicle lead com quantidade + tipo - pronto para handoff!');
   return { readyForHandoff: true, missingField: null, qualificationData: qa };
 }
 
