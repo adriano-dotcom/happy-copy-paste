@@ -23,13 +23,21 @@ interface AnsweredQualifications {
   tipo_frota: boolean;          // tipos de veículos
 }
 
+// Interface para status de seguro existente
+interface InsuranceStatus {
+  has_vehicle_insurance?: boolean;
+  has_cargo_insurance?: boolean;
+  satisfaction?: 'satisfied' | 'dissatisfied' | null;
+  renewal_date?: string | null;
+}
+
 interface GenerateMessageRequest {
   contact_name: string;
   contact_company?: string;
   agent_name?: string;
   agent_specialty?: string;
   agent_slug?: string;
-  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'unanswered_question' | 're_qualify' | 'direct_question' | 'closing_with_option' | 'schedule_renewal';
+  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'unanswered_question' | 're_qualify' | 'direct_question' | 'closing_with_option' | 'closing_with_option_insurance' | 'schedule_renewal';
   hours_waiting?: number;
   attempt_number: number;
   conversation_context?: string;
@@ -37,7 +45,8 @@ interface GenerateMessageRequest {
   last_message_sent?: string;
   is_qualified?: boolean;
   detected_product?: DetectedProduct;
-  answered_qualifications?: AnsweredQualifications; // NOVO: tópicos já respondidos
+  answered_qualifications?: AnsweredQualifications; // tópicos já respondidos
+  insurance_status?: InsuranceStatus; // NOVO: status de seguro existente
 }
 
 // Terms forbidden for unqualified leads (they imply a quote is ready when it's not)
@@ -168,6 +177,28 @@ Exemplos:
 Exemplo:
 "{nome}, caso não tenha interesse agora, sem problemas! Se precisar de seguro pra transportadora no futuro, é só me chamar aqui. Abraço! 🤝"
 NÃO mencione: cotação, proposta, valores (já que não qualificou)`,
+
+  // NOVO: Encerramento elegante específico para leads com seguro existente
+  closing_with_option_insurance: `O cliente JÁ TEM SEGURO mas parou de responder suas perguntas sobre renovação.
+Esta é uma mensagem de ENCERRAMENTO ELEGANTE e RESPEITOSO:
+
+VOCÊ DEVE:
+- Agradecer o contato de forma BREVE (1 frase)
+- Mencionar que fica à disposição para quando precisar RENOVAR ou COMPARAR valores
+- NUNCA perguntar "o que você precisa?" - ELE JÁ TEM SEGURO!
+- Máximo 2 frases
+- Tom profissional, amigável e respeitoso
+
+Exemplos:
+"{nome}, agradeço o contato! Quando precisar cotar a renovação, é só me chamar aqui. Abraço! 🤝"
+"{nome}, fico à disposição pra quando quiser comparar valores na renovação. Bom trabalho! 👍"
+"{nome}, caso queira uma cotação comparativa no futuro, é só me chamar. Abraço!"
+
+NUNCA use:
+- "O que você precisa?"
+- "Qual tipo de seguro?"
+- "Posso te ajudar com algo?"
+- Perguntas genéricas de qualificação`,
 
   schedule_renewal: `O cliente JÁ TEM SEGURO e informou isso anteriormente.
 NUNCA pergunte "o que você precisa?" ou "qual seguro?" - ELE JÁ TEM!
@@ -371,8 +402,19 @@ serve(async (req) => {
       last_message_sent,
       is_qualified = true,
       detected_product = null,
-      answered_qualifications = null // NOVO: tópicos já respondidos
+      answered_qualifications = null,
+      insurance_status = null // NOVO: status de seguro existente
     } = body;
+    
+    // NOVO: Detectar se lead tem seguro existente
+    const hasExistingInsurance = insurance_status?.has_vehicle_insurance || insurance_status?.has_cargo_insurance || false;
+    
+    // NOVO: Se prompt é closing_with_option e lead tem seguro, usar prompt específico
+    let effectivePromptType = prompt_type;
+    if (prompt_type === 'closing_with_option' && hasExistingInsurance) {
+      effectivePromptType = 'closing_with_option_insurance';
+      console.log(`[generate-followup-message] Lead has insurance - using closing_with_option_insurance prompt`);
+    }
     
     // Log answered qualifications
     if (answered_qualifications) {
@@ -382,9 +424,9 @@ serve(async (req) => {
       console.log(`[generate-followup-message] Already answered topics: ${answeredTopics.join(', ') || 'none'}`);
     }
     
-    console.log(`[generate-followup-message] Lead: qualified=${is_qualified ? 'YES' : 'NO'}, product=${detected_product || 'none'}`);
+    console.log(`[generate-followup-message] Lead: qualified=${is_qualified ? 'YES' : 'NO'}, product=${detected_product || 'none'}, hasInsurance=${hasExistingInsurance}`);
 
-    console.log(`[generate-followup-message] Generating ${prompt_type} message for ${contact_name}, attempt ${attempt_number}`);
+    console.log(`[generate-followup-message] Generating ${effectivePromptType} message for ${contact_name}, attempt ${attempt_number}`);
     if (unanswered_question) {
       console.log(`[generate-followup-message] Unanswered question detected: "${unanswered_question.substring(0, 80)}..."`);
     }
@@ -392,7 +434,7 @@ serve(async (req) => {
       console.log(`[generate-followup-message] Last message to avoid: "${last_message_sent.substring(0, 50)}..."`);
     }
 
-    const promptInstruction = PROMPT_TEMPLATES[prompt_type] || PROMPT_TEMPLATES.soft_reengagement;
+    const promptInstruction = PROMPT_TEMPLATES[effectivePromptType] || PROMPT_TEMPLATES.soft_reengagement;
 
     // Build anti-repetition instruction
     const antiRepetitionRule = last_message_sent 

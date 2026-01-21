@@ -128,6 +128,7 @@ interface AnsweredQualifications {
 interface LeadQualification {
   isQualified: boolean;
   detectedProduct: DetectedProduct;
+  hasExistingInsurance: boolean; // NOVO: detectado no histórico de mensagens
 }
 
 // Mensagens de fallback POR PRODUTO - evita perguntas redundantes
@@ -247,23 +248,31 @@ async function generateAIMessage(
       console.log(`[process-followups] Using transportador-specific prompt for Íris`);
     }
     
-    // NOVO: Se lead já tem seguro, forçar schedule_renewal (exceto last_chance)
+    // NOVO: Se lead já tem seguro, lógica simplificada de 2 tentativas
     const hasExistingInsurance = insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance;
-    if (hasExistingInsurance && promptType !== 'last_chance' && promptType !== 'schedule_renewal') {
-      finalPromptType = 'schedule_renewal';
-      console.log(`[process-followups] Lead has existing insurance - forcing schedule_renewal prompt`);
-    }
-    
-    // Se há pergunta sem resposta, sobrescrever o prompt type (mas não se for schedule_renewal)
-    if (unansweredQuestion && promptType !== 'last_chance' && finalPromptType !== 'schedule_renewal') {
-      finalPromptType = 'unanswered_question';
-      console.log(`[process-followups] Overriding prompt to unanswered_question due to pending question`);
-    }
-    
-    // Se lead não qualificado, forçar re_qualify (mas não se for schedule_renewal)
-    if (!isQualified && promptType !== 'last_chance' && finalPromptType !== 'schedule_renewal') {
-      finalPromptType = 're_qualify';
-      console.log(`[process-followups] Lead NOT qualified - forcing re_qualify prompt`);
+    if (hasExistingInsurance) {
+      // Tentativa 1 = schedule_renewal (perguntar vencimento/oferecer cotação comparativa)
+      // Tentativa 2+ = closing_with_option (encerramento elegante)
+      if (attemptNumber >= 2) {
+        finalPromptType = 'closing_with_option';
+        console.log(`[process-followups] 📝 Lead with insurance, attempt ${attemptNumber} - forcing closing_with_option (encerramento elegante)`);
+      } else if (promptType !== 'schedule_renewal') {
+        finalPromptType = 'schedule_renewal';
+        console.log(`[process-followups] Lead has existing insurance - forcing schedule_renewal prompt`);
+      }
+    } else {
+      // Lógica padrão para leads sem seguro
+      // Se há pergunta sem resposta, sobrescrever o prompt type
+      if (unansweredQuestion && promptType !== 'last_chance') {
+        finalPromptType = 'unanswered_question';
+        console.log(`[process-followups] Overriding prompt to unanswered_question due to pending question`);
+      }
+      
+      // Se lead não qualificado, forçar re_qualify
+      if (!isQualified && promptType !== 'last_chance') {
+        finalPromptType = 're_qualify';
+        console.log(`[process-followups] Lead NOT qualified - forcing re_qualify prompt`);
+      }
     }
     
     // Log answered qualifications
@@ -398,6 +407,48 @@ function analyzeAnsweredQualifications(
   return result;
 }
 
+// Detectar se lead tem seguro existente a partir do histórico de mensagens
+function detectExistingInsuranceFromMessages(messages: Array<{ content: string | null; from_type: string }>): boolean {
+  const userMessages = messages
+    .filter(m => m.from_type === 'user')
+    .map(m => m.content?.toLowerCase() || '')
+    .join(' ');
+  
+  // Patterns que indicam que o lead JÁ TEM seguro
+  const HAS_INSURANCE_PATTERNS = [
+    /j[áa] tenho seguro/i,
+    /j[áa] t[ôo] segurado/i,
+    /j[áa] tem seguro/i,
+    /j[áa] possuo seguro/i,
+    /tudo certo no momento/i,
+    /t[áa] tudo ok/i,
+    /t[áa] tudo certo/i,
+    /todas.*placas.*segurad/i,
+    /todos.*ve[íi]culos.*segurad/i,
+    /quando.*vencer/i,
+    /perto de vencer/i,
+    /entro em cota[çc][ãa]o/i,
+    /renovar.*seguro/i,
+    /renova[çc][ãa]o/i,
+    /ap[óo]lice.*vence/i,
+    /vencimento da ap[óo]lice/i,
+    /j[áa] tenho.*cobertura/i,
+    /atual.*seguradora/i,
+    /minha seguradora/i,
+    /n[ãa]o preciso agora/i,
+    /por enquanto n[ãa]o/i,
+    /depois.*renovar/i,
+  ];
+  
+  const hasInsurance = HAS_INSURANCE_PATTERNS.some(pattern => pattern.test(userMessages));
+  
+  if (hasInsurance) {
+    console.log(`[process-followups] 🔍 Detected existing insurance from user messages`);
+  }
+  
+  return hasInsurance;
+}
+
 function analyzeConversationHistory(messages: Array<{ content: string | null; from_type: string; sent_at: string }>): ConversationAnalysis {
   const emptyQualifications: AnsweredQualifications = {
     tipo_empresa: false, tipo_operacao: false, perfil_transportador: false,
@@ -510,28 +561,28 @@ function analyzeLeadQualification(
   if (leadProfile?.qualification_score && leadProfile.qualification_score >= 40) {
     console.log(`[process-followups] Lead qualified: score >= 40 (${leadProfile.qualification_score})`);
     const product = leadProfile?.products_discussed?.[0] as DetectedProduct || detectProduct(userContent);
-    return { isQualified: true, detectedProduct: product };
+    return { isQualified: true, detectedProduct: product, hasExistingInsurance: false };
   }
   
   // Critério 2: Estágio 'qualified' ou 'engaged'
   if (leadProfile?.lead_stage && ['qualified', 'engaged'].includes(leadProfile.lead_stage)) {
     console.log(`[process-followups] Lead qualified: stage is ${leadProfile.lead_stage}`);
     const product = leadProfile?.products_discussed?.[0] as DetectedProduct || detectProduct(userContent);
-    return { isQualified: true, detectedProduct: product };
+    return { isQualified: true, detectedProduct: product, hasExistingInsurance: false };
   }
   
   // Critério 3: Produtos discutidos preenchido
   if (leadProfile?.products_discussed && leadProfile.products_discussed.length > 0) {
     console.log(`[process-followups] Lead qualified: has products_discussed`);
     const product = leadProfile.products_discussed[0] as DetectedProduct;
-    return { isQualified: true, detectedProduct: product };
+    return { isQualified: true, detectedProduct: product, hasExistingInsurance: false };
   }
   
   // Critério 4: Usuário mencionou produto nas mensagens
   const detectedProduct = detectProduct(userContent);
   if (detectedProduct) {
     console.log(`[process-followups] Lead qualified: user mentioned ${detectedProduct} keywords`);
-    return { isQualified: true, detectedProduct };
+    return { isQualified: true, detectedProduct, hasExistingInsurance: false };
   }
   
   // Check for general insurance keywords that indicate some interest but no specific product
@@ -542,11 +593,11 @@ function analyzeLeadQualification(
   
   if (generalKeywords.some(kw => userContent.includes(kw))) {
     console.log(`[process-followups] Lead qualified with general keywords but no specific product`);
-    return { isQualified: true, detectedProduct: null };
+    return { isQualified: true, detectedProduct: null, hasExistingInsurance: false };
   }
   
   console.log(`[process-followups] Lead NOT qualified: no criteria met`);
-  return { isQualified: false, detectedProduct: null };
+  return { isQualified: false, detectedProduct: null, hasExistingInsurance: false };
 }
 
 // Get message for current attempt from sequence
@@ -936,11 +987,16 @@ serve(async (req) => {
           console.log(`[process-followups] Detected unanswered question in ${conv.id}: "${conversationAnalysis.unansweredQuestion.substring(0, 60)}..."`);
         }
         
-        // Analyze lead qualification and detect product
-        const leadQualification = analyzeLeadQualification(conv.client_memory, recentMessages || []);
-        const leadIsQualified = leadQualification.isQualified;
-        const detectedProduct = leadQualification.detectedProduct;
-        console.log(`[process-followups] Lead qualification for ${conv.id}: qualified=${leadIsQualified}, product=${detectedProduct || 'none'}`);
+            // Analyze lead qualification and detect product
+            const leadQualification = analyzeLeadQualification(conv.client_memory, recentMessages || []);
+            const leadIsQualified = leadQualification.isQualified;
+            const detectedProduct = leadQualification.detectedProduct;
+            
+            // NOVO: Detectar seguro existente também pelo histórico de mensagens
+            const hasInsuranceFromMessages = detectExistingInsuranceFromMessages(recentMessages || []);
+            const hasExistingInsuranceDetected = hasInsuranceFromMessages || leadQualification.hasExistingInsurance;
+            
+            console.log(`[process-followups] Lead qualification for ${conv.id}: qualified=${leadIsQualified}, product=${detectedProduct || 'none'}, hasInsuranceFromMessages=${hasInsuranceFromMessages}`);
 
         // Check previous follow-ups from this automation (now including message_content for anti-repetition)
         const { data: previousLogs, error: logsError } = await supabase
@@ -991,10 +1047,26 @@ serve(async (req) => {
               console.log(`[process-followups] Last message for anti-repetition: "${lastMessageSent.substring(0, 40)}..."`);
             }
             
-            // Extract insurance status from nina_context
-            const insuranceStatus = conv.nina_context?.insurance_status || null;
-            if (insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance) {
-              console.log(`[process-followups] Lead has existing insurance - will use schedule_renewal prompt`);
+            // Extract insurance status from nina_context OU detecção via mensagens
+            let insuranceStatus = conv.nina_context?.insurance_status || null;
+            
+            // NOVO: Se detectamos via mensagens mas não está no nina_context, criar o status
+            if (hasExistingInsuranceDetected && !insuranceStatus) {
+              insuranceStatus = { has_vehicle_insurance: true };
+              console.log(`[process-followups] 🔍 Insurance detected from messages - creating status`);
+            }
+            
+            const hasExistingInsurance = insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance || false;
+            
+            // NOVO: Para leads com seguro existente, LIMITAR a 2 tentativas máximo
+            // 1ª = schedule_renewal, 2ª = closing_with_option
+            if (hasExistingInsurance) {
+              console.log(`[process-followups] Lead has existing insurance - using simplified 2-step flow`);
+              
+              // Se já é a 2ª tentativa ou mais, forçar encerramento elegante
+              if (attemptNumber >= 2) {
+                console.log(`[process-followups] 📝 Attempt ${attemptNumber} for lead with insurance - forcing closing_with_option (encerramento elegante)`);
+              }
             }
             
             // Get message content based on attempt number, sequence, and conversation context
