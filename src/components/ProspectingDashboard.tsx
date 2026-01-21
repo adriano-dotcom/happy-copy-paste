@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Megaphone, TrendingUp, TrendingDown, RefreshCw, Target, Users, MessageSquare, XCircle, Rocket, Shield, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Megaphone, TrendingUp, TrendingDown, RefreshCw, Target, Users, MessageSquare, XCircle, Rocket, Shield, AlertTriangle, CheckCircle, MousePointerClick } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ProspectingFunnel } from './prospecting/ProspectingFunnel';
@@ -13,7 +14,7 @@ import { PeriodComparison } from './prospecting/PeriodComparison';
 import { CampaignTable } from './prospecting/CampaignTable';
 import { ProspectingKPICard } from './prospecting/ProspectingKPICard';
 import { CampaignManager } from './campaigns/CampaignManager';
-
+import { ButtonMetricsDashboard } from './prospecting/ButtonMetricsDashboard';
 interface QualityStatus {
   rating: 'GREEN' | 'YELLOW' | 'RED';
   tier?: string;
@@ -370,9 +371,24 @@ const ProspectingDashboard: React.FC = () => {
             <p className="text-sm text-slate-400">Visão completa das campanhas de outbound</p>
           </div>
         </div>
+      </div>
 
-        <div className="flex items-center gap-3">
-          {/* Quality Score Badge */}
+      {/* Tabs for different views */}
+      <Tabs defaultValue="campaigns" className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <TabsList className="bg-slate-800/50 border border-slate-700">
+            <TabsTrigger value="campaigns" className="data-[state=active]:bg-violet-500/20 data-[state=active]:text-violet-400">
+              <Megaphone className="w-4 h-4 mr-2" />
+              Campanhas
+            </TabsTrigger>
+            <TabsTrigger value="triagem" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
+              <MousePointerClick className="w-4 h-4 mr-2" />
+              Triagem Interativa
+            </TabsTrigger>
+          </TabsList>
+
+          <div className="flex items-center gap-3">
+            {/* Quality Score Badge */}
           {qualityStatus && (
             <TooltipProvider>
               <Tooltip>
@@ -454,87 +470,94 @@ const ProspectingDashboard: React.FC = () => {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
-        </div>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <ProspectingKPICard
-          title="Templates Enviados"
-          value={metrics?.templatesSent || 0}
-          trend={getTrendValue(metrics?.templatesSent || 0, metrics?.prevTemplatesSent || 0)}
-          trendUp={(metrics?.templatesSent || 0) >= (metrics?.prevTemplatesSent || 0)}
-          icon={<MessageSquare className="w-5 h-5" />}
-          color="violet"
-        />
-        <ProspectingKPICard
-          title="Taxa de Resposta"
-          value={`${(metrics?.responseRate || 0).toFixed(1)}%`}
-          trend={getTrendValue(metrics?.responseRate || 0, metrics?.prevResponseRate || 0, true)}
-          trendUp={(metrics?.responseRate || 0) >= (metrics?.prevResponseRate || 0)}
-          icon={<Users className="w-5 h-5" />}
-          color="cyan"
-        />
-        <ProspectingKPICard
-          title="Taxa de Rejeição"
-          value={`${(metrics?.rejectionRate || 0).toFixed(1)}%`}
-          trend={getTrendValue(metrics?.rejectionRate || 0, metrics?.prevRejectionRate || 0, true)}
-          trendUp={(metrics?.rejectionRate || 0) <= (metrics?.prevRejectionRate || 0)}
-          icon={<XCircle className="w-5 h-5" />}
-          color="rose"
-          invertTrend
-        />
-        <ProspectingKPICard
-          title="Conversão Final"
-          value={`${(metrics?.conversionRate || 0).toFixed(1)}%`}
-          trend={getTrendValue(metrics?.conversionRate || 0, metrics?.prevConversionRate || 0, true)}
-          trendUp={(metrics?.conversionRate || 0) >= (metrics?.prevConversionRate || 0)}
-          icon={<Target className="w-5 h-5" />}
-          color="emerald"
-        />
-      </div>
-
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Funnel */}
-        <ProspectingFunnel
-          templatesSent={metrics?.templatesSent || 0}
-          responses={metrics?.responsesReceived || 0}
-          positives={metrics?.positiveResponses || 0}
-          qualified={metrics?.qualifiedDeals || 0}
-          converted={metrics?.convertedDeals || 0}
-          loading={loading}
-        />
-
-        {/* Template Ranking */}
-        <TemplateRanking templates={templates} loading={loading} />
-      </div>
-
-      {/* Period Comparison Chart */}
-      <div className="mb-6">
-        <PeriodComparison data={trendData} loading={loading} />
-      </div>
-
-      {/* Campaign Table */}
-      <CampaignTable campaigns={campaigns} loading={loading} />
-
-      {/* Active Campaigns Manager */}
-      <Card className="mt-6 bg-slate-900/50 border-slate-800">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/30">
-              <Rocket className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <CardTitle className="text-lg text-white">Campanhas de Disparo</CardTitle>
-              <p className="text-sm text-slate-400">Gerenciamento de campanhas WhatsApp em massa</p>
-            </div>
           </div>
-        </CardHeader>
-        <CardContent>
-          <CampaignManager />
-        </CardContent>
-      </Card>
+        </div>
+
+        {/* Campaigns Tab Content */}
+        <TabsContent value="campaigns" className="mt-0 space-y-6">
+          {/* KPI Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <ProspectingKPICard
+              title="Templates Enviados"
+              value={metrics?.templatesSent || 0}
+              trend={getTrendValue(metrics?.templatesSent || 0, metrics?.prevTemplatesSent || 0)}
+              trendUp={(metrics?.templatesSent || 0) >= (metrics?.prevTemplatesSent || 0)}
+              icon={<MessageSquare className="w-5 h-5" />}
+              color="violet"
+            />
+            <ProspectingKPICard
+              title="Taxa de Resposta"
+              value={`${(metrics?.responseRate || 0).toFixed(1)}%`}
+              trend={getTrendValue(metrics?.responseRate || 0, metrics?.prevResponseRate || 0, true)}
+              trendUp={(metrics?.responseRate || 0) >= (metrics?.prevResponseRate || 0)}
+              icon={<Users className="w-5 h-5" />}
+              color="cyan"
+            />
+            <ProspectingKPICard
+              title="Taxa de Rejeição"
+              value={`${(metrics?.rejectionRate || 0).toFixed(1)}%`}
+              trend={getTrendValue(metrics?.rejectionRate || 0, metrics?.prevRejectionRate || 0, true)}
+              trendUp={(metrics?.rejectionRate || 0) <= (metrics?.prevRejectionRate || 0)}
+              icon={<XCircle className="w-5 h-5" />}
+              color="rose"
+              invertTrend
+            />
+            <ProspectingKPICard
+              title="Conversão Final"
+              value={`${(metrics?.conversionRate || 0).toFixed(1)}%`}
+              trend={getTrendValue(metrics?.conversionRate || 0, metrics?.prevConversionRate || 0, true)}
+              trendUp={(metrics?.conversionRate || 0) >= (metrics?.prevConversionRate || 0)}
+              icon={<Target className="w-5 h-5" />}
+              color="emerald"
+            />
+          </div>
+
+          {/* Main Content Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Funnel */}
+            <ProspectingFunnel
+              templatesSent={metrics?.templatesSent || 0}
+              responses={metrics?.responsesReceived || 0}
+              positives={metrics?.positiveResponses || 0}
+              qualified={metrics?.qualifiedDeals || 0}
+              converted={metrics?.convertedDeals || 0}
+              loading={loading}
+            />
+
+            {/* Template Ranking */}
+            <TemplateRanking templates={templates} loading={loading} />
+          </div>
+
+          {/* Period Comparison Chart */}
+          <PeriodComparison data={trendData} loading={loading} />
+
+          {/* Campaign Table */}
+          <CampaignTable campaigns={campaigns} loading={loading} />
+
+          {/* Active Campaigns Manager */}
+          <Card className="bg-slate-900/50 border-slate-800">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/30">
+                  <Rocket className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg text-white">Campanhas de Disparo</CardTitle>
+                  <p className="text-sm text-slate-400">Gerenciamento de campanhas WhatsApp em massa</p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CampaignManager />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Triagem Tab Content */}
+        <TabsContent value="triagem" className="mt-0">
+          <ButtonMetricsDashboard />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
