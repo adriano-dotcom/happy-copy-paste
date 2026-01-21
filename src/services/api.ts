@@ -2330,4 +2330,27 @@ export const api = {
 
     return conversationsWithMessages;
   },
+
+  /**
+   * Bulk archive conversations (set is_active to false for multiple)
+   * Used to remove unresponsive leads from the active queue
+   */
+  bulkArchiveConversations: async (conversationIds: string[]): Promise<number> => {
+    console.log(`[API] Bulk archiving ${conversationIds.length} conversations`);
+    
+    const { data, error } = await supabase
+      .from('conversations')
+      .update({ is_active: false })
+      .in('id', conversationIds)
+      .select('id');
+
+    if (error) {
+      console.error('[API] Error bulk archiving conversations:', error);
+      throw error;
+    }
+    
+    const count = data?.length || 0;
+    console.log(`[API] Successfully archived ${count} conversations`);
+    return count;
+  },
 };
