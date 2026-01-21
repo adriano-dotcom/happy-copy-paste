@@ -2841,6 +2841,204 @@ async function processQueueItem(
   }
   // ===== END SOFT REJECTION STEP 2 =====
 
+  // ===== INTERACTIVE BUTTON REPLY HANDLING =====
+  // Handle responses from interactive buttons (triaging buttons after Íris greeting)
+  const isButtonReply = message.metadata?.is_button_reply === true;
+  const buttonId = message.metadata?.button_id;
+  
+  if (isButtonReply && buttonId) {
+    console.log(`[Nina] 🔘 Button reply detected: ${buttonId}`);
+    
+    // Handle "Foi engano" button
+    if (buttonId === 'btn_engano') {
+      console.log('[Nina] 🚫 User clicked "Foi engano" - pausing conversation');
+      
+      const enganoResponse = 'Sem problema! Se precisar de seguro de transporte no futuro, é só me chamar. 😊';
+      
+      const delayMin = settings?.response_delay_min || 1000;
+      const delayMax = settings?.response_delay_max || 3000;
+      const delay = Math.random() * (delayMax - delayMin) + delayMin;
+      const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+      
+      await queueTextResponse(supabase, conversation, message, enganoResponse, settings, aiSettings, delay, agent);
+      
+      // Pause conversation
+      await supabase
+        .from('conversations')
+        .update({ 
+          status: 'paused',
+          nina_context: {
+            ...ninaContext,
+            triaging_result: 'engano',
+            triaging_at: new Date().toISOString()
+          }
+        })
+        .eq('id', conversation.id);
+      
+      // Add tag for tracking
+      const currentTags = conversation.contact?.tags || [];
+      if (!currentTags.includes('engano')) {
+        await supabase
+          .from('contacts')
+          .update({ tags: [...currentTags, 'engano'] })
+          .eq('id', conversation.contact_id);
+      }
+      
+      // Mark message as processed
+      await supabase
+        .from('messages')
+        .update({ processed_by_nina: true })
+        .eq('id', message.id);
+      
+      // Trigger whatsapp-sender
+      try {
+        const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+        fetch(senderUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`
+          },
+          body: JSON.stringify({ triggered_by: 'nina-orchestrator-btn-engano' })
+        }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+      } catch (e) {
+        console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+      }
+      
+      console.log('[Nina] ✅ "Foi engano" handled, conversation paused');
+      return;
+    }
+    
+    // Handle "Outros seguros" button - handoff to Sofia
+    if (buttonId === 'btn_outros_seguros') {
+      console.log('[Nina] 🔄 User clicked "Outros seguros" - handoff to Sofia');
+      
+      // Find Sofia agent
+      const sofiaAgent = agents.find((a: Agent) => a.slug === 'sofia');
+      
+      if (sofiaAgent) {
+        // Update conversation to use Sofia
+        const updatedContext = {
+          ...ninaContext,
+          handoff_from_agent: agent?.name || 'Íris',
+          handoff_reason: 'user_requested_other_insurance',
+          handoff_at: new Date().toISOString(),
+          triaging_result: 'outros_seguros'
+        };
+        
+        await supabase
+          .from('conversations')
+          .update({ 
+            current_agent_id: sofiaAgent.id,
+            nina_context: updatedContext
+          })
+          .eq('id', conversation.id);
+        
+        // Send Sofia's greeting
+        const sofiaGreeting = `Oi! Sou a Sofia, também da Jacometo! 😊
+
+Trabalho com vários tipos de seguro:
+• 🚗 Auto (carro, moto)
+• 🏠 Residencial
+• 💼 Empresarial
+• ✈️ Viagem
+• 💚 Vida
+
+Qual desses te interessa?`;
+        
+        const delayMin = settings?.response_delay_min || 1000;
+        const delayMax = settings?.response_delay_max || 3000;
+        const delay = Math.random() * (delayMax - delayMin) + delayMin;
+        const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+        
+        await queueTextResponse(supabase, conversation, message, sofiaGreeting, settings, aiSettings, delay, sofiaAgent);
+        
+        // Move deal to "Outros Seguros" pipeline
+        const { data: currentDeal } = await supabase
+          .from('deals')
+          .select('id')
+          .eq('contact_id', conversation.contact_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (currentDeal) {
+          const { data: outrosSeguros } = await supabase
+            .from('pipelines')
+            .select('id')
+            .eq('slug', 'outros-seguros')
+            .single();
+          
+          if (outrosSeguros) {
+            const { data: firstStage } = await supabase
+              .from('pipeline_stages')
+              .select('id')
+              .eq('pipeline_id', outrosSeguros.id)
+              .order('position', { ascending: true })
+              .limit(1)
+              .single();
+            
+            await supabase
+              .from('deals')
+              .update({ 
+                pipeline_id: outrosSeguros.id,
+                stage_id: firstStage?.id
+              })
+              .eq('id', currentDeal.id);
+            
+            console.log(`[Nina] 📦 Deal moved to "Outros Seguros" pipeline`);
+          }
+        }
+        
+        // Mark message as processed
+        await supabase
+          .from('messages')
+          .update({ processed_by_nina: true })
+          .eq('id', message.id);
+        
+        // Trigger whatsapp-sender
+        try {
+          const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+          fetch(senderUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`
+            },
+            body: JSON.stringify({ triggered_by: 'nina-orchestrator-btn-outros-seguros' })
+          }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+        } catch (e) {
+          console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+        }
+        
+        console.log('[Nina] ✅ Handoff to Sofia complete');
+        return;
+      } else {
+        console.log('[Nina] ⚠️ Sofia agent not found, continuing normal flow');
+      }
+    }
+    
+    // Handle "Sou transportador" button - continue normal qualification
+    if (buttonId === 'btn_transportador') {
+      console.log('[Nina] ✅ User clicked "Sou transportador" - continuing qualification');
+      
+      // Store triaging result and continue normal flow
+      await supabase
+        .from('conversations')
+        .update({ 
+          nina_context: {
+            ...ninaContext,
+            triaging_result: 'transportador',
+            triaging_confirmed_at: new Date().toISOString()
+          }
+        })
+        .eq('id', conversation.id);
+      
+      // Don't return - let the AI continue the qualification flow
+    }
+  }
+  // ===== END INTERACTIVE BUTTON REPLY HANDLING =====
+
   // ===== SOFT REJECTION STEP 1: ASK FOR RENEWAL DATE =====
   // Check if this is a prospecting conversation and message is a soft rejection
   if (conversationMetadata.origin === 'prospeccao' && message.content && isSoftRejection(message.content)) {
@@ -4774,6 +4972,26 @@ async function processQueueItem(
     // Queue the greeting message
     await queueTextResponse(supabase, conversation, message, greetingContent, settings, aiSettings, delay, agent);
     
+    // ===== SEND INTERACTIVE TRIAGING BUTTONS AFTER GREETING (Íris cargo flow) =====
+    if (hasCargoInterest && agent.slug === 'iris') {
+      const buttonDelay = delay + 2500; // 2.5s after greeting
+      
+      await queueInteractiveButtons(
+        supabase,
+        conversation,
+        'Só pra eu entender melhor:',
+        [
+          { id: 'btn_transportador', title: 'Sou transportador' },
+          { id: 'btn_outros_seguros', title: 'Outros seguros' },
+          { id: 'btn_engano', title: 'Foi engano' }
+        ],
+        buttonDelay,
+        agent
+      );
+      console.log('[Nina] 🔘 Triaging buttons queued after Íris greeting');
+    }
+    // ===== END TRIAGING BUTTONS =====
+    
     // Mark message as processed
     const responseTime = Date.now() - new Date(message.sent_at).getTime();
     await supabase
@@ -5401,6 +5619,66 @@ async function queueTextResponse(
 
   console.log('[Nina] Text response(s) queued for sending');
 }
+
+// ===== INTERACTIVE BUTTONS SUPPORT =====
+// Helper function to queue interactive button messages
+async function queueInteractiveButtons(
+  supabase: any,
+  conversation: any,
+  bodyText: string,
+  buttons: Array<{ id: string; title: string }>,
+  delay: number,
+  agent?: Agent | null
+) {
+  // Validate buttons (WhatsApp max 3 buttons, 20 chars each)
+  if (buttons.length > 3) {
+    console.warn('[Nina] Warning: More than 3 buttons provided, truncating to 3');
+    buttons = buttons.slice(0, 3);
+  }
+  
+  const validatedButtons = buttons.map(btn => ({
+    id: btn.id.substring(0, 256), // Button ID max 256 chars
+    title: btn.title.substring(0, 20) // Button title max 20 chars
+  }));
+  
+  const interactivePayload = {
+    type: 'button',
+    body: { text: bodyText },
+    action: {
+      buttons: validatedButtons.map(btn => ({
+        type: 'reply',
+        reply: { id: btn.id, title: btn.title }
+      }))
+    }
+  };
+
+  const { error: sendQueueError } = await supabase
+    .from('send_queue')
+    .insert({
+      conversation_id: conversation.id,
+      contact_id: conversation.contact_id,
+      content: bodyText,
+      from_type: 'nina',
+      message_type: 'interactive',
+      priority: 1,
+      scheduled_at: new Date(Date.now() + delay).toISOString(),
+      metadata: {
+        interactive_payload: interactivePayload,
+        button_context: 'triagem_inicial',
+        buttons: validatedButtons,
+        agent_id: agent?.id,
+        agent_name: agent?.name
+      }
+    });
+
+  if (sendQueueError) {
+    console.error('[Nina] Error queuing interactive buttons:', sendQueueError);
+    throw sendQueueError;
+  }
+
+  console.log('[Nina] 🔘 Interactive buttons queued:', validatedButtons.map(b => b.title).join(', '));
+}
+// ===== END INTERACTIVE BUTTONS SUPPORT =====
 
 function getDefaultSystemPrompt(): string {
   return `Você é Nina, assistente virtual inteligente da empresa. Seu papel é:

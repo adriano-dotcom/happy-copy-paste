@@ -370,6 +370,14 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
       };
       break;
     
+    // ===== INTERACTIVE BUTTONS SUPPORT =====
+    case 'interactive':
+      payload.type = 'interactive';
+      payload.interactive = queueItem.metadata?.interactive_payload;
+      console.log('[Sender] Interactive payload:', JSON.stringify(payload.interactive));
+      break;
+    // ===== END INTERACTIVE BUTTONS SUPPORT =====
+    
     default:
       payload.type = 'text';
       payload.text = { body: queueItem.content };
