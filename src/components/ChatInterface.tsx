@@ -58,7 +58,7 @@ interface AgentQuestion {
 const ChatInterface: React.FC = () => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const { conversations, loading, sendMessage, updateStatus, markAsRead, markAsViewed, assignConversation, archiveConversation, unarchiveConversation, fetchArchivedConversations, refetch } = useConversations();
+  const { conversations, loading, sendMessage, updateStatus, markAsRead, markAsViewed, assignConversation, archiveConversation, unarchiveConversation, fetchArchivedConversations, bulkArchiveConversations, refetch } = useConversations();
   const { user } = useAuth();
   const { sdrName, companyName } = useCompanySettings();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
@@ -1277,6 +1277,15 @@ const ChatInterface: React.FC = () => {
     return Array.from(ownersMap.values());
   }, [conversations, selectedPipelineFilter, selectedStatusFilter]);
 
+  // Calculate Atlas conversations without user response (for bulk archive)
+  const atlasNoResponseConversations = useMemo(() => {
+    return conversations.filter(c => 
+      c.agentSlug === 'atlas' && 
+      !c.hasUserResponded && 
+      c.isActive !== false
+    );
+  }, [conversations]);
+
   const filteredConversations = conversations
     .filter(chat => {
       // Hide closed conversations by default (unless toggle is on)
@@ -1642,6 +1651,29 @@ const ChatInterface: React.FC = () => {
               {viewingArchived ? 'Voltar aos Ativos' : 'Arquivados'}
               {!viewingArchived && <span className={`text-[10px] ${viewingArchived ? 'text-white/80' : 'opacity-60'}`}>({archivedCount})</span>}
             </button>
+            {/* Arquivar Sem Resposta (Atlas) - só aparece quando filtro Atlas ativo */}
+            {selectedStatusFilter === 'atlas' && atlasNoResponseConversations.length > 0 && !viewingArchived && (
+              <button
+                onClick={async () => {
+                  const count = atlasNoResponseConversations.length;
+                  if (confirm(`Arquivar ${count} conversas do Atlas sem resposta?`)) {
+                    try {
+                      const ids = atlasNoResponseConversations.map(c => c.id);
+                      await bulkArchiveConversations(ids);
+                      toast.success(`${count} conversas arquivadas com sucesso`);
+                      setArchivedCount(prev => prev + count);
+                    } catch (e) {
+                      toast.error('Erro ao arquivar conversas');
+                    }
+                  }
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all duration-300 bg-gradient-to-r from-red-500/20 to-orange-500/20 backdrop-blur-xl text-red-300 border border-red-400/30 hover:from-red-500/30 hover:to-orange-500/30 hover:scale-[1.02]"
+              >
+                <Archive className="w-4 h-4" />
+                Arquivar Sem Resposta
+                <span className="text-[10px] opacity-80">({atlasNoResponseConversations.length})</span>
+              </button>
+            )}
             {/* Sem Funil - depois de Arquivados */}
             {!viewingArchived && (
               <button
