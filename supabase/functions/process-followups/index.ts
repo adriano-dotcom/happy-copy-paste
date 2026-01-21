@@ -20,6 +20,7 @@ interface InsuranceStatus {
   has_cargo_insurance?: boolean;
   satisfaction?: 'satisfied' | 'dissatisfied' | null;
   renewal_date?: string | null;
+  hasSoftRejection?: boolean; // NOVO: detectado desinteresse leve
 }
 
 interface Automation {
@@ -128,7 +129,8 @@ interface AnsweredQualifications {
 interface LeadQualification {
   isQualified: boolean;
   detectedProduct: DetectedProduct;
-  hasExistingInsurance: boolean; // NOVO: detectado no histórico de mensagens
+  hasExistingInsurance: boolean; // detectado no histórico de mensagens
+  hasSoftRejection: boolean; // NOVO: detectado desinteresse leve ("não preciso agora", etc)
 }
 
 // Mensagens de fallback POR PRODUTO - evita perguntas redundantes
@@ -248,19 +250,33 @@ async function generateAIMessage(
       console.log(`[process-followups] Using transportador-specific prompt for Íris`);
     }
     
-    // NOVO: Se lead já tem seguro, lógica simplificada de 2 tentativas
-    const hasExistingInsurance = insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance;
-    if (hasExistingInsurance) {
-      // Tentativa 1 = schedule_renewal (perguntar vencimento/oferecer cotação comparativa)
-      // Tentativa 2+ = closing_with_option (encerramento elegante)
+    // NOVO: Se lead fez SOFT REJECTION, lógica simplificada de 1 tentativa
+    const hasSoftRejection = insuranceStatus?.hasSoftRejection;
+    if (hasSoftRejection) {
+      // Tentativa 1 = ask_insurance_renewal (pergunta se tem seguro e vencimento)
+      // Tentativa 2+ = NÃO ENVIA (retorna null para parar automação)
       if (attemptNumber >= 2) {
-        finalPromptType = 'closing_with_option';
-        console.log(`[process-followups] 📝 Lead with insurance, attempt ${attemptNumber} - forcing closing_with_option (encerramento elegante)`);
-      } else if (promptType !== 'schedule_renewal') {
-        finalPromptType = 'schedule_renewal';
-        console.log(`[process-followups] Lead has existing insurance - forcing schedule_renewal prompt`);
+        console.log(`[process-followups] 🛑 Soft rejection - attempt ${attemptNumber} - STOPPING automation (no more messages)`);
+        return null as unknown as string; // Signal to stop automation
+      } else {
+        finalPromptType = 'ask_insurance_renewal';
+        console.log(`[process-followups] 🚫 Soft rejection - attempt 1 - using ask_insurance_renewal prompt`);
       }
-    } else {
+    }
+    // Se lead já tem seguro, lógica simplificada de 2 tentativas
+    else {
+      const hasExistingInsurance = insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance;
+      if (hasExistingInsurance) {
+        // Tentativa 1 = schedule_renewal (perguntar vencimento/oferecer cotação comparativa)
+        // Tentativa 2+ = closing_with_option (encerramento elegante)
+        if (attemptNumber >= 2) {
+          finalPromptType = 'closing_with_option';
+          console.log(`[process-followups] 📝 Lead with insurance, attempt ${attemptNumber} - forcing closing_with_option (encerramento elegante)`);
+        } else if (promptType !== 'schedule_renewal') {
+          finalPromptType = 'schedule_renewal';
+          console.log(`[process-followups] Lead has existing insurance - forcing schedule_renewal prompt`);
+        }
+      } else {
       // Lógica padrão para leads sem seguro
       // Se há pergunta sem resposta, sobrescrever o prompt type
       if (unansweredQuestion && promptType !== 'last_chance') {
@@ -268,10 +284,11 @@ async function generateAIMessage(
         console.log(`[process-followups] Overriding prompt to unanswered_question due to pending question`);
       }
       
-      // Se lead não qualificado, forçar re_qualify
-      if (!isQualified && promptType !== 'last_chance') {
-        finalPromptType = 're_qualify';
-        console.log(`[process-followups] Lead NOT qualified - forcing re_qualify prompt`);
+        // Se lead não qualificado, forçar re_qualify
+        if (!isQualified && promptType !== 'last_chance') {
+          finalPromptType = 're_qualify';
+          console.log(`[process-followups] Lead NOT qualified - forcing re_qualify prompt`);
+        }
       }
     }
     
@@ -283,7 +300,9 @@ async function generateAIMessage(
       console.log(`[process-followups] Already answered qualifications: ${answeredTopics.join(', ') || 'none'}`);
     }
     
-    console.log(`[process-followups] Generating AI message, prompt: ${finalPromptType}, context: ${conversationContext ? 'yes' : 'no'}, unanswered: ${unansweredQuestion ? 'yes' : 'no'}, qualified: ${isQualified}, product: ${detectedProduct || 'none'}, hasInsurance: ${hasExistingInsurance || false}`);
+    const hasInsurance = insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance || false;
+    console.log(`[process-followups] Generating AI message, prompt: ${finalPromptType}, context: ${conversationContext ? 'yes' : 'no'}, unanswered: ${unansweredQuestion ? 'yes' : 'no'}, qualified: ${isQualified}, product: ${detectedProduct || 'none'}, hasInsurance: ${hasInsurance}`);
+
     
     const response = await fetch(`${supabaseUrl}/functions/v1/generate-followup-message`, {
       method: 'POST',
@@ -312,15 +331,15 @@ async function generateAIMessage(
 
     if (!response.ok) {
       console.error('[process-followups] AI message generation failed:', response.status);
-      return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasExistingInsurance);
+      return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasInsurance);
     }
 
     const data = await response.json();
-    return data.message || getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasExistingInsurance);
+    return data.message || getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasInsurance);
   } catch (error) {
     console.error('[process-followups] Error generating AI message:', error);
-    const hasExistingInsurance = insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance;
-    return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasExistingInsurance);
+    const hasInsuranceErr = insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance || false;
+    return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasInsuranceErr);
   }
 }
 
@@ -435,8 +454,6 @@ function detectExistingInsuranceFromMessages(messages: Array<{ content: string |
     /j[áa] tenho.*cobertura/i,
     /atual.*seguradora/i,
     /minha seguradora/i,
-    /n[ãa]o preciso agora/i,
-    /por enquanto n[ãa]o/i,
     /depois.*renovar/i,
   ];
   
@@ -447,6 +464,61 @@ function detectExistingInsuranceFromMessages(messages: Array<{ content: string |
   }
   
   return hasInsurance;
+}
+
+// NOVO: Detectar soft rejection (desinteresse leve) a partir do histórico de mensagens
+function detectSoftRejectionFromMessages(messages: Array<{ content: string | null; from_type: string }>): boolean {
+  const userMessages = messages
+    .filter(m => m.from_type === 'user')
+    .map(m => m.content?.toLowerCase() || '')
+    .join(' ');
+  
+  // Patterns que indicam SOFT REJECTION - desinteresse leve mas não agressivo
+  const SOFT_REJECTION_PATTERNS = [
+    // Desinteresse direto
+    /n[ãa]o tenho interesse/i,
+    /n[ãa]o quero/i,
+    /sem interesse/i,
+    /n[ãa]o preciso/i,
+    /n[ãa]o preciso agora/i,
+    /no momento n[ãa]o/i,
+    /por enquanto n[ãa]o/i,
+    /agora n[ãa]o/i,
+    /n[ãa]o [ée] o momento/i,
+    /talvez depois/i,
+    /talvez mais tarde/i,
+    /outro momento/i,
+    /mais pra frente/i,
+    /mais para frente/i,
+    /depois eu vejo/i,
+    /depois a gente v[êe]/i,
+    // Satisfação atual / corretor próprio
+    /estou satisfeito/i,
+    /t[ôo] satisfeito/i,
+    /bem atendido/i,
+    /bem servido/i,
+    /j[áa] tenho corretor/i,
+    /meu corretor/i,
+    /corretor de confian[çc]a/i,
+    // Renovação automática
+    /renova autom[áa]tico/i,
+    /renova[çc][ãa]o autom[áa]tica/i,
+    /renovando autom[áa]tico/i,
+    // Desnecessidade
+    /n[ãa]o uso mais/i,
+    /parei de/i,
+    /vendi o/i,
+    /n[ãa]o trabalho mais/i,
+    /n[ãa]o transporto mais/i,
+  ];
+  
+  const hasSoftRejection = SOFT_REJECTION_PATTERNS.some(pattern => pattern.test(userMessages));
+  
+  if (hasSoftRejection) {
+    console.log(`[process-followups] 🚫 Detected SOFT REJECTION from user messages`);
+  }
+  
+  return hasSoftRejection;
 }
 
 function analyzeConversationHistory(messages: Array<{ content: string | null; from_type: string; sent_at: string }>): ConversationAnalysis {
@@ -561,28 +633,28 @@ function analyzeLeadQualification(
   if (leadProfile?.qualification_score && leadProfile.qualification_score >= 40) {
     console.log(`[process-followups] Lead qualified: score >= 40 (${leadProfile.qualification_score})`);
     const product = leadProfile?.products_discussed?.[0] as DetectedProduct || detectProduct(userContent);
-    return { isQualified: true, detectedProduct: product, hasExistingInsurance: false };
+    return { isQualified: true, detectedProduct: product, hasExistingInsurance: false, hasSoftRejection: false };
   }
   
   // Critério 2: Estágio 'qualified' ou 'engaged'
   if (leadProfile?.lead_stage && ['qualified', 'engaged'].includes(leadProfile.lead_stage)) {
     console.log(`[process-followups] Lead qualified: stage is ${leadProfile.lead_stage}`);
     const product = leadProfile?.products_discussed?.[0] as DetectedProduct || detectProduct(userContent);
-    return { isQualified: true, detectedProduct: product, hasExistingInsurance: false };
+    return { isQualified: true, detectedProduct: product, hasExistingInsurance: false, hasSoftRejection: false };
   }
   
   // Critério 3: Produtos discutidos preenchido
   if (leadProfile?.products_discussed && leadProfile.products_discussed.length > 0) {
     console.log(`[process-followups] Lead qualified: has products_discussed`);
     const product = leadProfile.products_discussed[0] as DetectedProduct;
-    return { isQualified: true, detectedProduct: product, hasExistingInsurance: false };
+    return { isQualified: true, detectedProduct: product, hasExistingInsurance: false, hasSoftRejection: false };
   }
   
   // Critério 4: Usuário mencionou produto nas mensagens
   const detectedProduct = detectProduct(userContent);
   if (detectedProduct) {
     console.log(`[process-followups] Lead qualified: user mentioned ${detectedProduct} keywords`);
-    return { isQualified: true, detectedProduct, hasExistingInsurance: false };
+    return { isQualified: true, detectedProduct, hasExistingInsurance: false, hasSoftRejection: false };
   }
   
   // Check for general insurance keywords that indicate some interest but no specific product
@@ -593,11 +665,11 @@ function analyzeLeadQualification(
   
   if (generalKeywords.some(kw => userContent.includes(kw))) {
     console.log(`[process-followups] Lead qualified with general keywords but no specific product`);
-    return { isQualified: true, detectedProduct: null, hasExistingInsurance: false };
+    return { isQualified: true, detectedProduct: null, hasExistingInsurance: false, hasSoftRejection: false };
   }
   
   console.log(`[process-followups] Lead NOT qualified: no criteria met`);
-  return { isQualified: false, detectedProduct: null, hasExistingInsurance: false };
+  return { isQualified: false, detectedProduct: null, hasExistingInsurance: false, hasSoftRejection: false };
 }
 
 // Get message for current attempt from sequence
@@ -1048,7 +1120,10 @@ serve(async (req) => {
             }
             
             // Extract insurance status from nina_context OU detecção via mensagens
-            let insuranceStatus = conv.nina_context?.insurance_status || null;
+            let insuranceStatus: InsuranceStatus | null = conv.nina_context?.insurance_status || null;
+            
+            // NOVO: Detectar soft rejection (desinteresse leve)
+            const hasSoftRejectionDetected = detectSoftRejectionFromMessages(recentMessages || []);
             
             // NOVO: Se detectamos via mensagens mas não está no nina_context, criar o status
             if (hasExistingInsuranceDetected && !insuranceStatus) {
@@ -1056,11 +1131,28 @@ serve(async (req) => {
               console.log(`[process-followups] 🔍 Insurance detected from messages - creating status`);
             }
             
+            // NOVO: Adicionar soft rejection ao status
+            if (hasSoftRejectionDetected) {
+              insuranceStatus = { ...insuranceStatus, hasSoftRejection: true };
+              console.log(`[process-followups] 🚫 Soft rejection detected from messages - adding to status`);
+            }
+            
             const hasExistingInsurance = insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance || false;
             
-            // NOVO: Para leads com seguro existente, LIMITAR a 2 tentativas máximo
-            // 1ª = schedule_renewal, 2ª = closing_with_option
-            if (hasExistingInsurance) {
+            // NOVO: Para leads com SOFT REJECTION, LIMITAR a 1 tentativa
+            // 1ª = ask_insurance_renewal (pergunta se tem seguro e vencimento)
+            // 2ª+ = NÃO ENVIA (encerra automação)
+            if (hasSoftRejectionDetected) {
+              console.log(`[process-followups] Lead has soft rejection - using simplified 1-step flow`);
+              
+              if (attemptNumber >= 2) {
+                console.log(`[process-followups] 🛑 Attempt ${attemptNumber} for lead with soft rejection - STOPPING (no more messages)`);
+                skipped++;
+                continue;
+              }
+            }
+            // Para leads com seguro existente (sem soft rejection), LIMITAR a 2 tentativas máximo
+            else if (hasExistingInsurance) {
               console.log(`[process-followups] Lead has existing insurance - using simplified 2-step flow`);
               
               // Se já é a 2ª tentativa ou mais, forçar encerramento elegante
@@ -1088,6 +1180,23 @@ serve(async (req) => {
               conversationAnalysis.answeredQualifications,
               insuranceStatus // NOVO: status de seguro existente
             );
+            
+            // NOVO: Se messageContent é null (soft rejection após 1ª tentativa), parar automação
+            if (!messageContent || messageContent === 'null') {
+              console.log(`[process-followups] ⏹️ No message to send (soft rejection limit reached) - marking and skipping`);
+              
+              // Atualizar nina_context para indicar que automação foi encerrada
+              await supabase.from('conversations').update({
+                nina_context: {
+                  ...conv.nina_context,
+                  followup_stopped: true,
+                  followup_stopped_reason: 'soft_rejection_limit'
+                }
+              }).eq('id', conv.id);
+              
+              skipped++;
+              continue;
+            }
             
             console.log(`[process-followups] Sending message (attempt ${attemptNumber}) to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
 
