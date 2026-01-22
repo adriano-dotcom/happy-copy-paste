@@ -63,35 +63,85 @@ CATEGORIAS VÁLIDAS: prompt, process, communication, qualification, closing, obj
 
 OUTPUT: Retorne APENAS JSON válido no formato especificado, sem markdown ou texto extra.`;
 
+function sanitizeAndParseJSON(content: string): ConsolidationResult {
+  // Remove markdown code blocks
+  let cleaned = content.replace(/^```(?:json)?\s*/gi, '').replace(/\s*```$/gi, '').trim();
+  
+  // Find JSON boundaries
+  const startIdx = cleaned.indexOf('{');
+  const endIdx = cleaned.lastIndexOf('}');
+  
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
+    throw new Error('No JSON object found');
+  }
+  
+  let jsonStr = cleaned.substring(startIdx, endIdx + 1);
+  
+  // Fix common JSON issues from LLM output
+  // 1. Remove trailing commas before ] or }
+  jsonStr = jsonStr.replace(/,\s*([\]}])/g, '$1');
+  
+  // 2. Fix unescaped newlines in strings (replace with space)
+  jsonStr = jsonStr.replace(/(?<!\\)\\n/g, ' ');
+  
+  // 3. Remove any control characters
+  jsonStr = jsonStr.replace(/[\x00-\x1F\x7F]/g, ' ');
+  
+  try {
+    const result = JSON.parse(jsonStr) as ConsolidationResult;
+    
+    // Ensure arrays exist
+    result.consolidated_insights = result.consolidated_insights || [];
+    result.discarded_insights = result.discarded_insights || [];
+    result.daily_summary = result.daily_summary || '';
+    
+    // Deduplicate and validate merged_from arrays
+    result.consolidated_insights = result.consolidated_insights.map(insight => ({
+      ...insight,
+      merged_from: [...new Set(insight.merged_from || [])],
+      examples: insight.examples || [],
+    }));
+    
+    return result;
+  } catch (e) {
+    console.error('[Consolidate] JSON parse error:', e);
+    console.error('[Consolidate] Problematic JSON (first 500 chars):', jsonStr.substring(0, 500));
+    throw e;
+  }
+}
+
 async function callAIToConsolidate(
   insights: LearningInsight[], 
   agentName: string,
-  lovableApiKey: string
+  lovableApiKey: string,
+  attempt: number = 1
 ): Promise<ConsolidationResult> {
-  const insightsText = insights.map((i, idx) => 
+  const maxAttempts = 2;
+  
+  // Limit examples to reduce token count and JSON complexity
+  const simplifiedInsights = insights.slice(0, 30).map((i, idx) => 
     `[${idx + 1}] ID: ${i.id}
     Título: ${i.title}
-    Descrição: ${i.description}
-    Sugestão: ${i.suggestion || 'N/A'}
+    Descrição: ${i.description.slice(0, 150)}
+    Sugestão: ${(i.suggestion || 'N/A').slice(0, 100)}
     Categoria: ${i.category}
     Prioridade: ${i.priority}
-    Ocorrências: ${i.occurrence_count}
-    Exemplos: ${JSON.stringify(i.examples || []).slice(0, 200)}`
+    Ocorrências: ${i.occurrence_count}`
   ).join('\n\n');
 
   const userPrompt = `Agente: ${agentName}
-Total de insights pendentes: ${insights.length}
+Total de insights pendentes: ${insights.length} (mostrando ${Math.min(30, insights.length)})
 
 INSIGHTS PARA CONSOLIDAR:
-${insightsText}
+${simplifiedInsights}
 
-Retorne o JSON no formato:
+IMPORTANTE: Retorne APENAS JSON válido, sem markdown, sem comentários. Formato:
 {
   "consolidated_insights": [
     {
-      "title": "Título consolidado claro",
-      "description": "Descrição unificada do problema",
-      "suggestion": "Ação específica para corrigir",
+      "title": "string",
+      "description": "string",
+      "suggestion": "string",
       "priority": 1,
       "merged_from": ["id1", "id2"],
       "total_occurrences": 15,
@@ -101,65 +151,48 @@ Retorne o JSON no formato:
     }
   ],
   "discarded_insights": ["id_baixo_valor"],
-  "daily_summary": "Resumo executivo de 2-3 linhas sobre os principais temas identificados"
+  "daily_summary": "Resumo executivo de 2-3 linhas"
 }`;
 
-  const response = await fetch(LOVABLE_AI_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${lovableApiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
-      messages: [
-        { role: 'system', content: SUPERVISOR_PROMPT },
-        { role: 'user', content: userPrompt }
-      ],
-      temperature: 0.3,
-      max_tokens: 4000,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('AI API error:', errorText);
-    throw new Error(`AI API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  let content = data.choices?.[0]?.message?.content || '';
-  
-  console.log('[Consolidate] Raw AI response length:', content.length);
-  
-  // Remove markdown code blocks - more robust regex
-  content = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  
-  // Parse JSON from response - find the outermost JSON object
-  const startIdx = content.indexOf('{');
-  const endIdx = content.lastIndexOf('}');
-  
-  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
-    console.error('No valid JSON object found in AI response');
-    throw new Error('Invalid AI response format');
-  }
-  
-  const jsonStr = content.substring(startIdx, endIdx + 1);
-
   try {
-    const result = JSON.parse(jsonStr) as ConsolidationResult;
+    const response = await fetch(LOVABLE_AI_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${lovableApiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          { role: 'system', content: SUPERVISOR_PROMPT },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.2,
+        max_tokens: 3000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Consolidate] AI API error:', errorText);
+      throw new Error(`AI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
     
-    // Deduplicate merged_from arrays
-    result.consolidated_insights = result.consolidated_insights.map(insight => ({
-      ...insight,
-      merged_from: [...new Set(insight.merged_from)],
-    }));
+    console.log(`[Consolidate] AI response length: ${content.length} chars (attempt ${attempt})`);
     
-    console.log('[Consolidate] Successfully parsed', result.consolidated_insights.length, 'consolidated insights');
+    const result = await sanitizeAndParseJSON(content);
+    console.log(`[Consolidate] Parsed ${result.consolidated_insights.length} consolidated insights`);
+    
     return result;
   } catch (e) {
-    console.error('Failed to parse JSON:', e);
-    throw new Error('Failed to parse AI response');
+    if (attempt < maxAttempts) {
+      console.log(`[Consolidate] Retrying (attempt ${attempt + 1})...`);
+      return callAIToConsolidate(insights, agentName, lovableApiKey, attempt + 1);
+    }
+    throw new Error(`Failed after ${maxAttempts} attempts: ${e}`);
   }
 }
 
