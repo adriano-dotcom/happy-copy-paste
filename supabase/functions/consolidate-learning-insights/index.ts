@@ -6,7 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const LOVABLE_AI_URL = "https://api.lovable.ai/v1/chat/completions";
+// Lovable AI Gateway endpoint - updated 2026-01-22
+const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
 interface LearningInsight {
   id: string;
@@ -127,19 +128,37 @@ Retorne o JSON no formato:
   }
 
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
+  let content = data.choices?.[0]?.message?.content || '';
   
-  // Parse JSON from response
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    console.error('No JSON found in AI response:', content);
+  console.log('[Consolidate] Raw AI response length:', content.length);
+  
+  // Remove markdown code blocks - more robust regex
+  content = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  
+  // Parse JSON from response - find the outermost JSON object
+  const startIdx = content.indexOf('{');
+  const endIdx = content.lastIndexOf('}');
+  
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
+    console.error('No valid JSON object found in AI response');
     throw new Error('Invalid AI response format');
   }
+  
+  const jsonStr = content.substring(startIdx, endIdx + 1);
 
   try {
-    return JSON.parse(jsonMatch[0]) as ConsolidationResult;
+    const result = JSON.parse(jsonStr) as ConsolidationResult;
+    
+    // Deduplicate merged_from arrays
+    result.consolidated_insights = result.consolidated_insights.map(insight => ({
+      ...insight,
+      merged_from: [...new Set(insight.merged_from)],
+    }));
+    
+    console.log('[Consolidate] Successfully parsed', result.consolidated_insights.length, 'consolidated insights');
+    return result;
   } catch (e) {
-    console.error('Failed to parse AI response:', content);
+    console.error('Failed to parse JSON:', e);
     throw new Error('Failed to parse AI response');
   }
 }
