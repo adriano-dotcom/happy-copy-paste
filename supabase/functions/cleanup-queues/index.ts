@@ -1,6 +1,212 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ============================================
+// HELPER: Verificar taxa de "Foi Engano" nos botões
+// ============================================
+async function checkButtonEnganoRate(supabase: any) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  
+  console.log('[CleanupQueues] Checking button engano rate...');
+  
+  // Período: últimas 24 horas
+  const periodStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  
+  // Buscar mensagens interativas enviadas (triagem Íris)
+  const { data: sentMessages, error: sentError } = await supabase
+    .from('messages')
+    .select('id, metadata')
+    .eq('from_type', 'nina')
+    .gte('sent_at', periodStart)
+    .not('metadata', 'is', null);
+  
+  if (sentError) {
+    console.error('[CleanupQueues] Error fetching sent messages:', sentError);
+    return;
+  }
+  
+  // Filtrar apenas mensagens interativas (botões de triagem)
+  const interactiveMessages = (sentMessages || []).filter((m: { id: string; metadata: Record<string, unknown> | null }) => {
+    const meta = m.metadata as Record<string, unknown>;
+    return meta?.is_interactive === true;
+  });
+  
+  const interactiveCount = interactiveMessages.length;
+  
+  console.log(`[CleanupQueues] Interactive buttons sent (24h): ${interactiveCount}`);
+  
+  // Se não tem volume suficiente, não verificar
+  if (interactiveCount < 10) {
+    console.log('[CleanupQueues] ⏭️ Not enough samples for engano rate check (need ≥10)');
+    return;
+  }
+  
+  // Buscar cliques em botões (respostas do usuário)
+  const { data: buttonClicks, error: clicksError } = await supabase
+    .from('messages')
+    .select('id, metadata')
+    .eq('from_type', 'user')
+    .gte('sent_at', periodStart)
+    .not('metadata', 'is', null);
+  
+  if (clicksError) {
+    console.error('[CleanupQueues] Error fetching button clicks:', clicksError);
+    return;
+  }
+  
+  // Filtrar cliques em "Foi engano"
+  const enganoClicks = (buttonClicks || []).filter((m: { id: string; metadata: Record<string, unknown> | null }) => {
+    const meta = m.metadata as Record<string, unknown>;
+    return meta?.button_id === 'btn_engano' || (meta?.is_button_reply === true && meta?.button_id === 'btn_engano');
+  });
+  
+  const enganoCount = enganoClicks.length;
+  
+  // Calcular taxa
+  const enganoRate = (enganoCount / interactiveCount) * 100;
+  
+  console.log(`[CleanupQueues] 📊 Button stats (24h): 
+    - Interactive sent: ${interactiveCount}
+    - Engano clicks: ${enganoCount}
+    - Engano rate: ${enganoRate.toFixed(1)}%`);
+  
+  // Limiar de alerta: 15%
+  const THRESHOLD = 15;
+  
+  if (enganoRate > THRESHOLD) {
+    // Verificar se já enviou alerta hoje
+    const today = new Date().toISOString().split('T')[0];
+    
+    const { data: settings, error: settingsError } = await supabase
+      .from('nina_settings')
+      .select('id, button_engano_alert_date')
+      .maybeSingle();
+    
+    if (settingsError) {
+      console.error('[CleanupQueues] Error fetching settings:', settingsError);
+      return;
+    }
+    
+    const lastAlertDate = settings?.button_engano_alert_date;
+    
+    if (lastAlertDate === today) {
+      console.log('[CleanupQueues] ⏭️ Engano rate alert already sent today');
+      return;
+    }
+    
+    console.warn(`[CleanupQueues] 🚨 High engano rate detected: ${enganoRate.toFixed(1)}% (threshold: ${THRESHOLD}%)`);
+    
+    // Enviar alerta
+    await sendEnganoRateAlert(supabaseUrl, supabaseKey, {
+      interactiveCount,
+      enganoCount,
+      enganoRate,
+      threshold: THRESHOLD
+    });
+    
+    // Marcar que alertou hoje
+    if (settings?.id) {
+      await supabase
+        .from('nina_settings')
+        .update({ button_engano_alert_date: today })
+        .eq('id', settings.id);
+      
+      console.log('[CleanupQueues] ✓ Marked engano alert as sent for today');
+    }
+  } else {
+    console.log(`[CleanupQueues] ✓ Engano rate within acceptable limits (${enganoRate.toFixed(1)}% ≤ ${THRESHOLD}%)`);
+  }
+}
+
+// ============================================
+// HELPER: Enviar alerta de taxa de engano elevada
+// ============================================
+async function sendEnganoRateAlert(
+  supabaseUrl: string,
+  supabaseKey: string,
+  stats: {
+    interactiveCount: number;
+    enganoCount: number;
+    enganoRate: number;
+    threshold: number;
+  }
+) {
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px;">
+      <h2 style="color: #e53e3e;">🚨 Alerta: Taxa de "Foi Engano" Elevada</h2>
+      
+      <p>A taxa de cliques em <strong>"Foi engano"</strong> nos botões de triagem 
+      está acima do limite aceitável nas últimas 24 horas.</p>
+      
+      <div style="background: #fef2f2; border: 1px solid #fecaca; 
+                  border-radius: 8px; padding: 16px; margin: 20px 0;">
+        <table style="width: 100%;">
+          <tr>
+            <td style="padding: 8px 0;"><strong>Taxa Atual:</strong></td>
+            <td style="color: #dc2626; font-size: 24px; font-weight: bold;">
+              ${stats.enganoRate.toFixed(1)}%
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0;"><strong>Limite Aceitável:</strong></td>
+            <td style="color: #059669;">${stats.threshold}%</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0;"><strong>Botões Enviados:</strong></td>
+            <td>${stats.interactiveCount}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0;"><strong>Cliques "Foi Engano":</strong></td>
+            <td style="color: #dc2626;">${stats.enganoCount}</td>
+          </tr>
+        </table>
+      </div>
+      
+      <h3 style="color: #1e293b;">📋 Ações Recomendadas</h3>
+      <ul style="line-height: 1.8;">
+        <li>Verificar segmentação da campanha de prospecção</li>
+        <li>Revisar a lista de contatos usada no disparo</li>
+        <li>Confirmar se os leads são do nicho de transporte de cargas</li>
+        <li>Avaliar qualidade das fontes de captação (Meta, Google, etc)</li>
+      </ul>
+      
+      <p style="color: #666; font-size: 12px; margin-top: 30px;">
+        Este alerta é enviado automaticamente quando a taxa de "Foi engano" 
+        ultrapassa ${stats.threshold}% em um período de 24 horas.
+        Você receberá no máximo 1 alerta por dia.
+      </p>
+    </div>
+  `;
+  
+  const recipients = ['adriano@jacometo.com.br', 'atendimento@jacometo.com.br'];
+  
+  for (const email of recipients) {
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`
+        },
+        body: JSON.stringify({
+          to: email,
+          subject: `🚨 Taxa de "Foi Engano" em ${stats.enganoRate.toFixed(1)}% - Verificar Segmentação`,
+          html
+        })
+      });
+      
+      if (response.ok) {
+        console.log(`[CleanupQueues] 📧 Engano rate alert sent to ${email}`);
+      } else {
+        console.error(`[CleanupQueues] Failed to send engano alert to ${email}:`, await response.text());
+      }
+    } catch (err) {
+      console.error(`[CleanupQueues] Error sending engano alert to ${email}:`, err);
+    }
+  }
+}
+
+// ============================================
 // HELPER: Enviar alerta de documentos órfãos
 // ============================================
 async function sendDocumentHealthAlert(supabase: any, docs: any[]) {
@@ -340,6 +546,12 @@ Deno.serve(async (req) => {
     } else {
       console.log('[CleanupQueues] ✓ No failed messages older than 1 hour');
     }
+
+    // ============================================
+    // HEALTH CHECK: Taxa de "Foi Engano" elevada
+    // ============================================
+    await checkButtonEnganoRate(supabase);
+
     const { data: ninaStats } = await supabase
       .from('nina_processing_queue')
       .select('status', { count: 'exact' });

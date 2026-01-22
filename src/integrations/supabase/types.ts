@@ -1357,6 +1357,7 @@ export type Database = {
           business_days: number[]
           business_hours_end: string
           business_hours_start: string
+          button_engano_alert_date: string | null
           calcom_api_key: string | null
           calcom_key_in_vault: boolean | null
           company_name: string | null
@@ -1423,6 +1424,7 @@ export type Database = {
           business_days?: number[]
           business_hours_end?: string
           business_hours_start?: string
+          button_engano_alert_date?: string | null
           calcom_api_key?: string | null
           calcom_key_in_vault?: boolean | null
           company_name?: string | null
@@ -1489,6 +1491,7 @@ export type Database = {
           business_days?: number[]
           business_hours_end?: string
           business_hours_start?: string
+          button_engano_alert_date?: string | null
           calcom_api_key?: string | null
           calcom_key_in_vault?: boolean | null
           company_name?: string | null
