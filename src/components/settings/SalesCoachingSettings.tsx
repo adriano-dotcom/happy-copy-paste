@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 import LearningInsightsCard from './LearningInsightsCard';
 import AgentDailySummaryCard from './AgentDailySummaryCard';
+import ConsolidatedInsightsReview from './ConsolidatedInsightsReview';
+import BulkInsightActions from './BulkInsightActions';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -124,11 +126,14 @@ export default function SalesCoachingSettings() {
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedReport, setExpandedReport] = useState<string | null>(null);
+  const [insightCounts, setInsightCounts] = useState<Record<string, { pending: number; reviewing: number; total: number }>>({});
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     fetchReports();
     fetchAgents();
     fetchPipelines();
+    fetchInsightCounts();
   }, []);
 
   const fetchAgents = async () => {
@@ -137,6 +142,35 @@ export default function SalesCoachingSettings() {
       .select('id, name, specialty')
       .eq('is_active', true);
     setAgents(data || []);
+  };
+
+  const fetchInsightCounts = async () => {
+    const { data } = await supabase
+      .from('learning_insights')
+      .select('agent_id, status')
+      .in('status', ['pending', 'reviewing']);
+    
+    if (data) {
+      const counts: Record<string, { pending: number; reviewing: number; total: number }> = {};
+      data.forEach((insight) => {
+        const agentId = insight.agent_id || 'general';
+        if (!counts[agentId]) {
+          counts[agentId] = { pending: 0, reviewing: 0, total: 0 };
+        }
+        if (insight.status === 'pending') {
+          counts[agentId].pending++;
+        } else if (insight.status === 'reviewing') {
+          counts[agentId].reviewing++;
+        }
+        counts[agentId].total++;
+      });
+      setInsightCounts(counts);
+    }
+  };
+
+  const handleRefreshAll = () => {
+    setRefreshKey(prev => prev + 1);
+    fetchInsightCounts();
   };
 
   const fetchPipelines = async () => {
@@ -296,8 +330,35 @@ export default function SalesCoachingSettings() {
       {/* Supervisor Consolidation Card */}
       <AgentDailySummaryCard agents={agents} />
 
+      {/* Consolidated Insights Review - NEW */}
+      <ConsolidatedInsightsReview 
+        key={`consolidated-${refreshKey}`}
+        agents={agents} 
+        onRefresh={handleRefreshAll} 
+      />
+
+      {/* Bulk Actions for Pending Insights */}
+      <div className="flex items-center justify-between p-4 rounded-xl bg-slate-900/40 backdrop-blur-xl border border-slate-700/30">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30">
+            <Lightbulb className="h-5 w-5 text-amber-400" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">Insights Pendentes</h3>
+            <p className="text-xs text-slate-400">
+              {Object.values(insightCounts).reduce((sum, c) => sum + c.pending, 0)} pendentes • {Object.values(insightCounts).reduce((sum, c) => sum + c.reviewing, 0)} em revisão
+            </p>
+          </div>
+        </div>
+        <BulkInsightActions 
+          agents={agents} 
+          counts={insightCounts} 
+          onComplete={handleRefreshAll} 
+        />
+      </div>
+
       {/* Learning Insights Card - Knowledge Base */}
-      <LearningInsightsCard agents={agents} />
+      <LearningInsightsCard key={`learning-${refreshKey}`} agents={agents} />
 
       {/* Agent/Department Summary Cards - iOS 18 Style */}
       {latestReportsByAgent.length > 0 && (
