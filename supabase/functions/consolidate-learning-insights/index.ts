@@ -63,49 +63,72 @@ CATEGORIAS VÁLIDAS: prompt, process, communication, qualification, closing, obj
 
 OUTPUT: Retorne APENAS JSON válido no formato especificado, sem markdown ou texto extra.`;
 
-function sanitizeAndParseJSON(content: string): ConsolidationResult {
-  // Remove markdown code blocks
-  let cleaned = content.replace(/^```(?:json)?\s*/gi, '').replace(/\s*```$/gi, '').trim();
+interface CompactAIResponse {
+  consolidated?: Array<{
+    title: string;
+    desc: string;
+    sug: string;
+    pri: number;
+    idx: number[];
+    occ: number;
+    impact: string;
+    cat: string;
+  }>;
+  del?: number[];
+  sum?: string;
+}
+
+function sanitizeAndParseJSON(content: string, indexToId: Record<number, string>): ConsolidationResult {
+  // Remove markdown code blocks (more aggressive)
+  let cleaned = content
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/gi, '')
+    .trim();
   
   // Find JSON boundaries
   const startIdx = cleaned.indexOf('{');
   const endIdx = cleaned.lastIndexOf('}');
   
   if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
-    throw new Error('No JSON object found');
+    throw new Error('No JSON object found in response');
   }
   
   let jsonStr = cleaned.substring(startIdx, endIdx + 1);
   
-  // Fix common JSON issues from LLM output
-  // 1. Remove trailing commas before ] or }
-  jsonStr = jsonStr.replace(/,\s*([\]}])/g, '$1');
-  
-  // 2. Fix unescaped newlines in strings (replace with space)
-  jsonStr = jsonStr.replace(/(?<!\\)\\n/g, ' ');
-  
-  // 3. Remove any control characters
+  // JSON fixes:
+  // 1. Remove trailing commas
+  jsonStr = jsonStr.replace(/,(\s*[\]}])/g, '$1');
+  // 2. Remove control characters
   jsonStr = jsonStr.replace(/[\x00-\x1F\x7F]/g, ' ');
+  // 3. Fix newlines
+  jsonStr = jsonStr.replace(/\\n/g, ' ');
   
   try {
-    const result = JSON.parse(jsonStr) as ConsolidationResult;
+    const parsed = JSON.parse(jsonStr) as CompactAIResponse;
     
-    // Ensure arrays exist
-    result.consolidated_insights = result.consolidated_insights || [];
-    result.discarded_insights = result.discarded_insights || [];
-    result.daily_summary = result.daily_summary || '';
-    
-    // Deduplicate and validate merged_from arrays
-    result.consolidated_insights = result.consolidated_insights.map(insight => ({
-      ...insight,
-      merged_from: [...new Set(insight.merged_from || [])],
-      examples: insight.examples || [],
+    // Convert compact format to full format
+    const consolidated_insights: ConsolidatedInsight[] = (parsed.consolidated || []).map(c => ({
+      title: c.title || '',
+      description: c.desc || '',
+      suggestion: c.sug || '',
+      priority: c.pri || 3,
+      merged_from: (c.idx || []).map(i => indexToId[i]).filter(Boolean),
+      total_occurrences: c.occ || 1,
+      impact: (c.impact as 'alto' | 'médio' | 'baixo') || 'médio',
+      category: c.cat || 'process',
+      examples: [],
     }));
     
-    return result;
+    const discarded_insights: string[] = (parsed.del || []).map(i => indexToId[i]).filter(Boolean);
+    
+    return {
+      consolidated_insights,
+      discarded_insights,
+      daily_summary: parsed.sum || '',
+    };
   } catch (e) {
     console.error('[Consolidate] JSON parse error:', e);
-    console.error('[Consolidate] Problematic JSON (first 500 chars):', jsonStr.substring(0, 500));
+    console.error('[Consolidate] Problematic JSON (first 600 chars):', jsonStr.substring(0, 600));
     throw e;
   }
 }
@@ -116,43 +139,33 @@ async function callAIToConsolidate(
   lovableApiKey: string,
   attempt: number = 1
 ): Promise<ConsolidationResult> {
-  const maxAttempts = 2;
+  const maxAttempts = 3;
   
-  // Limit examples to reduce token count and JSON complexity
-  const simplifiedInsights = insights.slice(0, 30).map((i, idx) => 
-    `[${idx + 1}] ID: ${i.id}
-    Título: ${i.title}
-    Descrição: ${i.description.slice(0, 150)}
-    Sugestão: ${(i.suggestion || 'N/A').slice(0, 100)}
-    Categoria: ${i.category}
-    Prioridade: ${i.priority}
-    Ocorrências: ${i.occurrence_count}`
-  ).join('\n\n');
+  // Limit insights to prevent JSON overflow - use indices instead of UUIDs
+  const maxInsights = insights.length > 80 ? 15 : insights.length > 50 ? 20 : 30;
+  const insightsToProcess = insights.slice(0, maxInsights);
+  
+  // Create index-to-ID mapping for later use
+  const indexToId: Record<number, string> = {};
+  const simplifiedInsights = insightsToProcess.map((i, idx) => {
+    indexToId[idx + 1] = i.id;
+    return `[${idx + 1}] ${i.title.slice(0, 60)} | ${i.category} | Ocorrências: ${i.occurrence_count}`;
+  }).join('\n');
 
   const userPrompt = `Agente: ${agentName}
-Total de insights pendentes: ${insights.length} (mostrando ${Math.min(30, insights.length)})
+Total: ${insights.length} insights (processando ${insightsToProcess.length})
 
-INSIGHTS PARA CONSOLIDAR:
+INSIGHTS:
 ${simplifiedInsights}
 
-IMPORTANTE: Retorne APENAS JSON válido, sem markdown, sem comentários. Formato:
-{
-  "consolidated_insights": [
-    {
-      "title": "string",
-      "description": "string",
-      "suggestion": "string",
-      "priority": 1,
-      "merged_from": ["id1", "id2"],
-      "total_occurrences": 15,
-      "impact": "alto",
-      "category": "prompt",
-      "examples": []
-    }
-  ],
-  "discarded_insights": ["id_baixo_valor"],
-  "daily_summary": "Resumo executivo de 2-3 linhas"
-}`;
+Retorne JSON puro (sem markdown):
+{"consolidated":[{"title":"string","desc":"string","sug":"string","pri":1,"idx":[1,2,3],"occ":10,"impact":"alto","cat":"prompt"}],"del":[4,5],"sum":"Resumo breve"}
+
+Regras:
+- Use ÍNDICES (números) em idx e del, NÃO UUIDs
+- Máximo 6 consolidated
+- impact: alto/médio/baixo
+- cat: prompt/process/communication/qualification/closing/objection_handling`;
 
   try {
     const response = await fetch(LOVABLE_AI_URL, {
@@ -167,8 +180,8 @@ IMPORTANTE: Retorne APENAS JSON válido, sem markdown, sem comentários. Formato
           { role: 'system', content: SUPERVISOR_PROMPT },
           { role: 'user', content: userPrompt }
         ],
-        temperature: 0.2,
-        max_tokens: 3000,
+        temperature: 0.1,
+        max_tokens: 2000,
       }),
     });
 
@@ -183,16 +196,24 @@ IMPORTANTE: Retorne APENAS JSON válido, sem markdown, sem comentários. Formato
     
     console.log(`[Consolidate] AI response length: ${content.length} chars (attempt ${attempt})`);
     
-    const result = await sanitizeAndParseJSON(content);
+    const result = sanitizeAndParseJSON(content, indexToId);
     console.log(`[Consolidate] Parsed ${result.consolidated_insights.length} consolidated insights`);
     
     return result;
   } catch (e) {
     if (attempt < maxAttempts) {
       console.log(`[Consolidate] Retrying (attempt ${attempt + 1})...`);
+      await new Promise(r => setTimeout(r, 1000)); // Delay between retries
       return callAIToConsolidate(insights, agentName, lovableApiKey, attempt + 1);
     }
-    throw new Error(`Failed after ${maxAttempts} attempts: ${e}`);
+    
+    // Fallback: return minimal valid result instead of throwing
+    console.warn(`[Consolidate] All ${maxAttempts} attempts failed for ${agentName}, using fallback`);
+    return {
+      consolidated_insights: [],
+      discarded_insights: [],
+      daily_summary: `Consolidação automática falhou após ${maxAttempts} tentativas. ${insights.length} insights mantidos para revisão manual.`
+    };
   }
 }
 
