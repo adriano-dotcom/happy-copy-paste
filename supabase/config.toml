@@ -135,6 +135,10 @@ verify_jwt = false
 [functions.check-whatsapp-quality]
 verify_jwt = false
 
+# Consolidador de Learning Insights (Supervisor)
+[functions.consolidate-learning-insights]
+verify_jwt = false
+
 # Sincronização de chamadas travadas API4Com
 [functions.api4com-sync-stuck-calls]
 verify_jwt = true
