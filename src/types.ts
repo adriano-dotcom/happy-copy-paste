@@ -4,7 +4,8 @@ export enum MessageType {
   IMAGE = 'image',
   AUDIO = 'audio',
   DOCUMENT = 'document',
-  VIDEO = 'video'
+  VIDEO = 'video',
+  INTERACTIVE = 'interactive'
 }
 
 export enum MessageDirection {
@@ -202,7 +203,7 @@ export interface TagDefinition {
 export type ConversationStatus = 'nina' | 'human' | 'paused' | 'closed';
 export type MessageFromType = 'user' | 'nina' | 'human';
 export type DBMessageStatus = 'sent' | 'delivered' | 'read' | 'failed' | 'processing';
-export type DBMessageType = 'text' | 'audio' | 'image' | 'document' | 'video';
+export type DBMessageType = 'text' | 'audio' | 'image' | 'document' | 'video' | 'interactive';
 
 export interface ClientMemory {
   last_updated: string | null;
@@ -467,6 +468,7 @@ function mapDBMessageType(type: DBMessageType): MessageType {
     case 'audio': return MessageType.AUDIO;
     case 'document': return MessageType.DOCUMENT;
     case 'video': return MessageType.VIDEO;
+    case 'interactive': return MessageType.INTERACTIVE;
     default: return MessageType.TEXT;
   }
 }
