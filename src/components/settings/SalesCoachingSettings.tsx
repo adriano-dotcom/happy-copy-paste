@@ -27,6 +27,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import LearningInsightsCard from './LearningInsightsCard';
+import AgentDailySummaryCard from './AgentDailySummaryCard';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -291,6 +292,9 @@ export default function SalesCoachingSettings() {
           </div>
         </div>
       </div>
+
+      {/* Supervisor Consolidation Card */}
+      <AgentDailySummaryCard agents={agents} />
 
       {/* Learning Insights Card - Knowledge Base */}
       <LearningInsightsCard agents={agents} />

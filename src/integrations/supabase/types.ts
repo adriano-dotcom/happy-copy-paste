@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_daily_summaries: {
+        Row: {
+          agent_id: string
+          consolidation_ratio: number | null
+          created_at: string | null
+          discarded_count: number | null
+          executive_summary: string | null
+          id: string
+          insights_after: number
+          insights_before: number
+          pipeline_id: string | null
+          summary_date: string
+          top_priorities: Json | null
+          updated_at: string | null
+        }
+        Insert: {
+          agent_id: string
+          consolidation_ratio?: number | null
+          created_at?: string | null
+          discarded_count?: number | null
+          executive_summary?: string | null
+          id?: string
+          insights_after?: number
+          insights_before?: number
+          pipeline_id?: string | null
+          summary_date: string
+          top_priorities?: Json | null
+          updated_at?: string | null
+        }
+        Update: {
+          agent_id?: string
+          consolidation_ratio?: number | null
+          created_at?: string | null
+          discarded_count?: number | null
+          executive_summary?: string | null
+          id?: string
+          insights_after?: number
+          insights_before?: number
+          pipeline_id?: string | null
+          summary_date?: string
+          top_priorities?: Json | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       agents: {
         Row: {
           audio_response_enabled: boolean | null
@@ -1066,6 +1111,7 @@ export type Database = {
           agent_id: string | null
           applied_at: string | null
           category: string
+          consolidated_into: string | null
           created_at: string | null
           description: string
           examples: Json | null
@@ -1088,6 +1134,7 @@ export type Database = {
           agent_id?: string | null
           applied_at?: string | null
           category?: string
+          consolidated_into?: string | null
           created_at?: string | null
           description: string
           examples?: Json | null
@@ -1110,6 +1157,7 @@ export type Database = {
           agent_id?: string | null
           applied_at?: string | null
           category?: string
+          consolidated_into?: string | null
           created_at?: string | null
           description?: string
           examples?: Json | null
@@ -1134,6 +1182,13 @@ export type Database = {
             columns: ["agent_id"]
             isOneToOne: false
             referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "learning_insights_consolidated_into_fkey"
+            columns: ["consolidated_into"]
+            isOneToOne: false
+            referencedRelation: "learning_insights"
             referencedColumns: ["id"]
           },
           {
