@@ -1544,6 +1544,29 @@ const ChatInterface: React.FC = () => {
       );
     }
 
+    // Interactive button message (triagem Iris)
+    if (msg.type === MessageType.INTERACTIVE || msg.metadata?.buttons) {
+      const buttons = msg.metadata?.buttons || [];
+      const bodyText = msg.content || msg.metadata?.interactive_payload?.body?.text || 'Escolha uma opção:';
+      
+      return (
+        <div className="max-w-xs">
+          {bodyText && <p className="text-sm mb-2 whitespace-pre-wrap">{bodyText}</p>}
+          <div className="flex flex-col gap-1.5">
+            {buttons.map((btn: { id: string; title: string }, index: number) => (
+              <div 
+                key={btn.id || index}
+                className="flex items-center gap-2 bg-slate-700/50 rounded-lg px-3 py-2 border border-slate-600/50"
+              >
+                <span className="text-xs text-cyan-400">↪</span>
+                <span className="text-sm text-slate-300">{btn.title}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
     return <p className="leading-relaxed whitespace-pre-wrap">{msg.content}</p>;
   };
 

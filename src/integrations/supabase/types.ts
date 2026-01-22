@@ -2807,7 +2807,13 @@ export type Database = {
       member_status: "active" | "invited" | "disabled"
       message_from: "user" | "nina" | "human"
       message_status: "sent" | "delivered" | "read" | "failed" | "processing"
-      message_type: "text" | "audio" | "image" | "document" | "video"
+      message_type:
+        | "text"
+        | "audio"
+        | "image"
+        | "document"
+        | "video"
+        | "interactive"
       queue_status: "pending" | "processing" | "completed" | "failed"
       team_assignment: "mateus" | "igor" | "fe" | "vendas" | "suporte"
     }
@@ -2944,7 +2950,14 @@ export const Constants = {
       member_status: ["active", "invited", "disabled"],
       message_from: ["user", "nina", "human"],
       message_status: ["sent", "delivered", "read", "failed", "processing"],
-      message_type: ["text", "audio", "image", "document", "video"],
+      message_type: [
+        "text",
+        "audio",
+        "image",
+        "document",
+        "video",
+        "interactive",
+      ],
       queue_status: ["pending", "processing", "completed", "failed"],
       team_assignment: ["mateus", "igor", "fe", "vendas", "suporte"],
     },
