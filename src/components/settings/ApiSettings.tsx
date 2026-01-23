@@ -50,6 +50,7 @@ const VOICE_OPTIONS = [
   { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', desc: 'Masculina, britânica' },
   { id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', desc: 'Feminina, britânica' },
   { id: 'pqHfZKP75CvOlQylNhV4', name: 'Bill', desc: 'Masculina, americana' },
+  { id: 'RGymW84CSmfVugnA5tvA', name: 'Roberta', desc: 'Feminina, suave e confiante' },
 ];
 
 const MODEL_OPTIONS = [
