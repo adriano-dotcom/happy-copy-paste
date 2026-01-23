@@ -648,6 +648,101 @@ function detectOutOfScopeInsurance(messageContent: string, currentAgentSlug: str
   return { isOutOfScope: false, insuranceType: null, friendlyName: null, detectedKeyword: null };
 }
 
+// ===== REFERRAL CONTACT DETECTION (Atlas prospecting only) =====
+interface ReferralContactResult {
+  hasReferralContact: boolean;
+  phoneNumber: string | null;
+  referralName: string | null;
+  matchedKeyword: string | null;
+}
+
+function detectReferralContact(messageContent: string): ReferralContactResult {
+  const content = messageContent.toLowerCase();
+  const originalContent = messageContent; // Keep original for name extraction
+  
+  // Padrões de número de telefone brasileiro
+  const phonePatterns = [
+    /(\d{2}[\s.-]?\d{4,5}[\s.-]?\d{4})/,      // 28 99983 4654, 28-99983-4654
+    /(\d{10,11})/,                              // 28999834654
+    /(\(\d{2}\)[\s]?\d{4,5}[\s.-]?\d{4})/,     // (28) 99983-4654
+  ];
+  
+  // Keywords que indicam referência a outra pessoa responsável/decisor
+  const referralKeywords = [
+    'responsável', 'responsavel', 'dono', 'proprietário', 'proprietario',
+    'gerente', 'gestor', 'diretor', 'sócio', 'socio', 'patrão', 'patrao',
+    'fala com', 'liga pra', 'liga pro', 'liga para', 'falar com',
+    'o número é', 'o numero é', 'o número do', 'o numero do',
+    'whatsapp do', 'zap do', 'whats do', 'número dele', 'numero dele',
+    'quem cuida', 'quem decide', 'quem resolve', 'quem manda',
+    'decisor', 'dono da empresa', 'chefe', 'responsável pelo',
+    'passa o contato', 'anota aí', 'anota ai', 'anota o número',
+    'chama', 'procura o', 'procura a', 'contato do', 'contato da',
+    'o cara que', 'a pessoa que', 'quem responde', 'quem atende',
+    'falar direto com', 'fala direto com', 'conversa com'
+  ];
+  
+  // Verificar se tem número de telefone
+  let phoneMatch: string | null = null;
+  for (const pattern of phonePatterns) {
+    const match = content.match(pattern);
+    if (match) {
+      // Limpar e validar - precisa ter pelo menos 10 dígitos
+      const cleanNumber = match[1].replace(/\D/g, '');
+      if (cleanNumber.length >= 10) {
+        phoneMatch = match[1];
+        break;
+      }
+    }
+  }
+  
+  // Verificar se tem keyword de referência
+  let matchedKeyword: string | null = null;
+  for (const keyword of referralKeywords) {
+    if (content.includes(keyword)) {
+      matchedKeyword = keyword;
+      break;
+    }
+  }
+  
+  // Só retorna positivo se tiver AMBOS: número e keyword de referência
+  if (phoneMatch && matchedKeyword) {
+    // Tentar extrair nome do responsável
+    const namePatterns = [
+      /(?:fala com|liga pra|liga para|procura|chama)\s+(?:o\s+|a\s+)?([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)/i,
+      /(?:responsável|dono|gestor|gerente|diretor|sócio|patrão)\s+(?:é\s+)?(?:o\s+|a\s+)?([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)/i,
+      /(?:contato do|contato da|número do|numero do|zap do|whats do)\s+([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)/i,
+    ];
+    
+    let referralName: string | null = null;
+    for (const pattern of namePatterns) {
+      const nameMatch = originalContent.match(pattern);
+      if (nameMatch && nameMatch[1] && nameMatch[1].length >= 2 && nameMatch[1].length <= 30) {
+        // Capitalizar primeira letra
+        referralName = nameMatch[1].split(' ').map((w: string) => 
+          w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+        ).join(' ');
+        break;
+      }
+    }
+    
+    console.log(`[Nina][ReferralDetection] ✅ Referral contact detected!`);
+    console.log(`[Nina][ReferralDetection]   Phone: ${phoneMatch}`);
+    console.log(`[Nina][ReferralDetection]   Keyword: "${matchedKeyword}"`);
+    console.log(`[Nina][ReferralDetection]   Referral Name: ${referralName || 'not extracted'}`);
+    
+    return {
+      hasReferralContact: true,
+      phoneNumber: phoneMatch,
+      referralName,
+      matchedKeyword
+    };
+  }
+  
+  return { hasReferralContact: false, phoneNumber: null, referralName: null, matchedKeyword: null };
+}
+// ===== END REFERRAL CONTACT DETECTION =====
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -3931,6 +4026,131 @@ Qual desses te interessa?`;
     }
   }
   // ===== END OUT OF SCOPE INSURANCE DETECTION =====
+
+  // ===== REFERRAL CONTACT DETECTION (Atlas prospecting only) =====
+  // Detect when lead provides phone number/name of responsible party - pause for human follow-up
+  if (message.content && agent?.slug === 'atlas') {
+    const referralCheck = detectReferralContact(message.content);
+    
+    if (referralCheck.hasReferralContact) {
+      console.log(`[Nina] 📞 REFERRAL CONTACT DETECTED for Atlas prospecting`);
+      console.log(`[Nina]   Phone: ${referralCheck.phoneNumber}`);
+      console.log(`[Nina]   Referral Name: ${referralCheck.referralName || 'not detected'}`);
+      console.log(`[Nina]   Matched Keyword: ${referralCheck.matchedKeyword}`);
+      
+      // Respostas de agradecimento profissionais (variadas)
+      const thankYouResponses = [
+        "Perfeito! Obrigado pela informação. Vou repassar para nossa equipe entrar em contato diretamente com a pessoa responsável. Tenha um ótimo dia! 🙏",
+        "Excelente! Agradeço por compartilhar o contato. Nossa equipe vai entrar em contato com a pessoa responsável em breve. Obrigado pela atenção! 👍",
+        "Ótimo! Obrigado por me direcionar. Vou passar essa informação para que nossa equipe entre em contato direto com o responsável. Até breve! ✨",
+        "Entendido! Muito obrigado pela informação. Nossa equipe comercial vai fazer contato direto com o responsável. Agradeço sua colaboração! 🤝"
+      ];
+      
+      const selectedResponse = thankYouResponses[Math.floor(Math.random() * thankYouResponses.length)];
+      
+      // 1. Salvar contato do responsável no deal/notes
+      const { data: currentDeal } = await supabase
+        .from('deals')
+        .select('id, notes')
+        .eq('contact_id', conversation.contact_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (currentDeal) {
+        const newNote = `📞 CONTATO DO RESPONSÁVEL FORNECIDO:\n` +
+          `Telefone: ${referralCheck.phoneNumber}\n` +
+          (referralCheck.referralName ? `Nome: ${referralCheck.referralName}\n` : '') +
+          `Data: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
+        
+        await supabase
+          .from('deals')
+          .update({
+            notes: currentDeal.notes ? `${currentDeal.notes}\n\n${newNote}` : newNote
+          })
+          .eq('id', currentDeal.id);
+        
+        console.log(`[Nina] 📝 Referral contact saved to deal notes`);
+      }
+      
+      // 2. Salvar na memória do contato
+      const clientMemory = conversation.contact?.client_memory || {};
+      await supabase
+        .from('contacts')
+        .update({
+          client_memory: {
+            ...clientMemory,
+            referral_contact: {
+              phone: referralCheck.phoneNumber,
+              name: referralCheck.referralName,
+              provided_at: new Date().toISOString(),
+              original_message: message.content?.substring(0, 200)
+            }
+          }
+        })
+        .eq('id', conversation.contact_id);
+      
+      console.log(`[Nina] 💾 Referral contact saved to client_memory`);
+      
+      // 3. Enviar resposta de agradecimento
+      const delayMin = settings?.response_delay_min || 1000;
+      const delayMax = settings?.response_delay_max || 3000;
+      const delay = Math.random() * (delayMax - delayMin) + delayMin;
+      const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+      
+      await queueTextResponse(supabase, conversation, message, selectedResponse, settings, aiSettings, delay, agent);
+      
+      // 4. PAUSAR conversa para humano assumir
+      const updatedNinaContext = {
+        ...(ninaContext || {}),
+        referral_contact_received: true,
+        referral_phone: referralCheck.phoneNumber,
+        referral_name: referralCheck.referralName,
+        paused_reason: 'referral_contact_provided',
+        paused_at: new Date().toISOString(),
+        followup_stopped: true  // Parar follow-ups automáticos
+      };
+      
+      await supabase
+        .from('conversations')
+        .update({
+          status: 'paused',
+          nina_context: updatedNinaContext
+        })
+        .eq('id', conversation.id);
+      
+      console.log(`[Nina] ⏸️ Conversation PAUSED - referral contact provided, human follow-up required`);
+      
+      // 5. Marcar mensagem como processada
+      const responseTime = Date.now() - new Date(message.sent_at).getTime();
+      await supabase
+        .from('messages')
+        .update({ 
+          processed_by_nina: true,
+          nina_response_time: responseTime
+        })
+        .eq('id', message.id);
+      
+      // 6. Disparar envio da mensagem
+      try {
+        const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+        fetch(senderUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`
+          },
+          body: JSON.stringify({ triggered_by: 'nina-orchestrator-referral-contact' })
+        }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+      } catch (e) {
+        console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+      }
+      
+      console.log(`[Nina] ✅ Referral contact handled - conversation PAUSED for human follow-up`);
+      return;
+    }
+  }
+  // ===== END REFERRAL CONTACT DETECTION =====
 
   // ===== CALLBACK REQUEST DETECTION =====
   // Detect when lead wants to be called back at a specific time
