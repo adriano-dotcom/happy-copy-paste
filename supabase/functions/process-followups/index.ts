@@ -108,17 +108,30 @@ function normalizeContactName(name: string | null): string {
 }
 
 // Replace variables in message template
-function replaceVariables(message: string, conv: EligibleConversation): string {
+// ANTI-REPETIÇÃO: Remove nome após 1ª tentativa para evitar repetição
+function replaceVariables(message: string, conv: EligibleConversation, attemptNumber: number = 1): string {
   const name = normalizeContactName(conv.contact_name || conv.contact_call_name);
   const callName = normalizeContactName(conv.contact_call_name || conv.contact_name);
   const company = conv.contact_company || '';
   
-  return message
+  let result = message
     .replace(/{nome}/gi, name)
     .replace(/{name}/gi, name)
     .replace(/{call_name}/gi, callName)
     .replace(/{empresa}/gi, company)
     .replace(/{company}/gi, company);
+  
+  // NOVO: Remover nome na 2ª+ tentativa para evitar repetição
+  if (attemptNumber > 1) {
+    // Remover padrões como "Oi Nome," ou "Nome, " no início
+    result = result.replace(new RegExp(`^(Oi |E aí |Olá )?${name},? ?`, 'i'), '');
+    // Capitalizar primeira letra após remoção
+    if (result.length > 0) {
+      result = result.charAt(0).toUpperCase() + result.slice(1);
+    }
+  }
+  
+  return result;
 }
 
 // Detected product type from conversation
@@ -147,94 +160,171 @@ interface LeadQualification {
   hasSoftRejection: boolean; // NOVO: detectado desinteresse leve ("não preciso agora", etc)
 }
 
-// Mensagens de fallback POR PRODUTO - evita perguntas redundantes
-// Inclui perguntas de qualificação específicas para transportadores
-const FALLBACK_MESSAGES_BY_PRODUCT: Record<string, string[]> = {
+// TEMAS DE FALLBACK - organizados para evitar repetição semântica
+// Cada tema é perguntado UMA VEZ e nunca mais repetido
+interface FallbackTheme {
+  tema: string;
+  mensagens: string[];
+}
+
+const FALLBACK_THEMES_BY_PRODUCT: Record<string, FallbackTheme[]> = {
   carga: [
-    // Perguntas de qualificação de perfil do transportador
-    "{nome}, você é transportador de carga própria ou presta serviço pra terceiros?",
-    "Oi {nome}! Você é transportador pessoa jurídica ou autônomo? Assim te passo as melhores opções!",
-    "{nome}, me confirma: você tem transportadora ou é motorista autônomo?",
-    "E aí {nome}! Você faz transporte próprio ou terceirizado? Me conta pra eu montar a proposta certa!",
-    "{nome}, você é transportador ou embarcador da carga? Me fala que te ajudo melhor!",
-    // Perguntas de aprofundamento sobre a operação
-    "{nome}, sobre o seguro de carga: qual tipo de mercadoria você transporta?",
-    "Oi {nome}! Pra sua carga, você precisa de cobertura pra qual rota principal?",
-    "{nome}, posso te ligar pra falar sobre as coberturas de carga? 5 min!",
-    "E aí {nome}! Pra gente avançar, me conta o valor médio das cargas que você transporta!",
-    "{nome}, qual seu maior receio: roubo, acidente ou avaria da carga?",
-    "{nome}, quantas viagens você faz por mês em média? Assim calculo a melhor cobertura!",
+    // TEMA 1: Perfil (perguntado apenas 1x - ESCOLHER UMA das opções)
+    { tema: 'perfil', mensagens: [
+      "Você é transportador ou embarcador da carga? Me fala que te ajudo melhor!"
+    ]},
+    // TEMA 2: Rota
+    { tema: 'rota', mensagens: [
+      "Pra sua carga, qual a rota principal que você faz?",
+      "Quais estados você atende com mais frequência?"
+    ]},
+    // TEMA 3: Mercadoria
+    { tema: 'mercadoria', mensagens: [
+      "Qual tipo de mercadoria você transporta?",
+      "Me conta o que você transporta que te passo as melhores opções!"
+    ]},
+    // TEMA 4: Valor/Volume
+    { tema: 'valor', mensagens: [
+      "Qual o valor médio das cargas?",
+      "Quantas viagens você faz por mês em média?"
+    ]},
+    // TEMA 5: Oferta de ligação
+    { tema: 'ligacao', mensagens: [
+      "Posso te ligar pra falar sobre as coberturas? 5 min!"
+    ]},
   ],
   veiculo: [
-    // Perguntas de qualificação de perfil
-    "{nome}, o veículo é seu próprio ou da empresa?",
-    "Oi {nome}! Você usa o veículo pra trabalho ou uso pessoal?",
-    "{nome}, é veículo próprio ou financiado? Me conta que te passo as opções certas!",
-    // Perguntas de aprofundamento
-    "{nome}, sobre o seguro do veículo: é pra uso profissional ou pessoal?",
-    "Oi {nome}! Pra te passar as opções certas, me conta qual o modelo do veículo!",
-    "{nome}, posso te ligar pra falar sobre as coberturas do seu veículo? 5 min!",
-    "E aí {nome}! O veículo é pra transporte de carga ou de passageiros?",
-    "{nome}, qual ano do veículo? Assim te passo valores mais precisos!",
+    { tema: 'uso', mensagens: [
+      "O veículo é pra uso profissional ou pessoal?"
+    ]},
+    { tema: 'modelo', mensagens: [
+      "Me conta qual o modelo e ano do veículo!",
+      "Qual veículo você quer segurar?"
+    ]},
+    { tema: 'ligacao', mensagens: [
+      "Posso te ligar pra falar sobre as coberturas? 5 min!"
+    ]},
   ],
   frota: [
-    // Perguntas de qualificação de perfil
-    "{nome}, a frota é própria da empresa ou terceirizada?",
-    "Oi {nome}! Vocês são transportadora ou usam os veículos pra operação própria?",
-    "{nome}, os motoristas são CLT ou agregados? Isso influencia na cobertura!",
-    // Perguntas de aprofundamento
-    "{nome}, sobre o seguro de frota: quantos veículos você tem hoje?",
-    "Oi {nome}! Sua frota é só de caminhões ou tem outros tipos de veículo?",
-    "{nome}, posso te ligar pra falar sobre as opções de seguro pra frota? 5 min!",
-    "E aí {nome}! Os veículos da frota fazem que tipo de transporte?",
-    "{nome}, pra montar a melhor proposta, me conta quantos veículos são na frota!",
+    { tema: 'quantidade', mensagens: [
+      "Quantos veículos tem na frota hoje?",
+      "Me conta quantos veículos são na frota!"
+    ]},
+    { tema: 'tipo', mensagens: [
+      "A frota é só de caminhões ou tem outros tipos?",
+      "Quais tipos de veículos tem na frota?"
+    ]},
+    { tema: 'ligacao', mensagens: [
+      "Posso te ligar pra falar sobre seguro de frota? 5 min!"
+    ]},
   ],
   generico: [
-    "{nome}, me conta: qual tipo de seguro você está buscando? Posso te ajudar!",
-    "Oi {nome}! Você precisa de seguro pra transporte, frota ou carga? Me fala que te ajudo!",
-    "{nome}, posso te ligar rapidinho pra entender sua necessidade? 5 min!",
-    "E aí {nome}! Ainda precisa de ajuda com seguro? Me conta o que você busca!",
-    "{nome}, tô aqui pra te ajudar! É pra proteger veículo, carga ou os dois?",
-    "Oi {nome}! Me conta o que você transporta que te passo as opções de seguro!",
-    "{nome}, quer que eu te ligue pra explicar as coberturas disponíveis?",
-    "E aí {nome}! Qual sua principal preocupação: proteger a carga ou o veículo?",
+    { tema: 'necessidade', mensagens: [
+      "Qual tipo de seguro você está buscando?",
+      "É pra proteger veículo, carga ou os dois?"
+    ]},
+    { tema: 'ligacao', mensagens: [
+      "Posso te ligar pra entender sua necessidade? 5 min!"
+    ]},
   ],
-  // Mensagens específicas para leads que já têm seguro
   has_insurance: [
-    "{nome}, sobre a renovação: quando vence a apólice atual? Posso preparar uma cotação comparativa!",
-    "Oi {nome}! Você mencionou que já tem seguro. Está satisfeito com a seguradora atual?",
-    "{nome}, além do seguro do veículo, vocês têm RCTR-C pra proteger a carga? É fundamental pro transporte!",
-    "E aí {nome}! Sobre sua apólice atual: quando vence? Consigo te passar uma proposta antes da renovação!",
-    "{nome}, você tem seguro de carga também? É diferente do seguro do veículo e essencial pra transportador!",
-    "Oi {nome}! Pra sua renovação, me confirma: quando vence o seguro atual?",
-    "{nome}, posso te ligar pra fazer uma cotação comparativa antes da renovação? 5 min!",
+    { tema: 'vencimento', mensagens: [
+      "Quando vence a apólice atual? Posso preparar uma cotação comparativa!",
+      "Sobre sua apólice atual: quando vence? Consigo te passar uma proposta antes!"
+    ]},
+    { tema: 'crosssell', mensagens: [
+      "Além do seguro do veículo, vocês têm RCTR-C pra proteger a carga?",
+      "Você tem seguro de carga também? É diferente do seguro do veículo!"
+    ]},
   ],
 };
 
-// Get a varied fallback that's different from the last message, using product-specific messages
+// Rastrear temas já perguntados por conversa (salvo em nina_context.followup_themes_asked)
+interface FollowupThemesAsked {
+  [tema: string]: boolean;
+}
+
+// Grupos de perguntas semanticamente similares - para evitar repetição de mesmo tema
+const SIMILAR_QUESTION_GROUPS = [
+  // Grupo: Perfil do transportador (PJ/autônomo/transportador/embarcador)
+  ['pessoa jurídica', 'autônomo', 'transportadora', 'motorista autônomo', 'pj', 'embarcador', 'transportador'],
+  // Grupo: Tipo de operação
+  ['próprio', 'terceirizado', 'agregado', 'presta serviço'],
+  // Grupo: Modelo/ano do veículo
+  ['modelo', 'ano do veículo', 'qual veículo'],
+  // Grupo: Quantidade
+  ['quantos veículos', 'quantas viagens', 'quantos caminhões'],
+];
+
+// Verificar se duas mensagens são semanticamente similares
+function isSimilarToLastMessage(newMessage: string, lastMessage?: string): boolean {
+  if (!lastMessage) return false;
+  
+  const newLower = newMessage.toLowerCase();
+  const lastLower = lastMessage.toLowerCase();
+  
+  // Verificar se pertencem ao mesmo grupo de perguntas similares
+  for (const group of SIMILAR_QUESTION_GROUPS) {
+    const newHasGroup = group.some(kw => newLower.includes(kw));
+    const lastHasGroup = group.some(kw => lastLower.includes(kw));
+    if (newHasGroup && lastHasGroup) {
+      console.log(`[process-followups] 🔄 Detected similar question pattern in group: ${group[0]}...`);
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// Get a varied fallback based on THEMES - never repeat same theme
 function getVariedFallback(
   contactName: string, 
   lastMessage?: string,
   detectedProduct?: DetectedProduct,
-  hasExistingInsurance: boolean = false
-): string {
+  hasExistingInsurance: boolean = false,
+  themesAsked?: FollowupThemesAsked,
+  attemptNumber: number = 1
+): { message: string; tema: string } {
   const name = contactName || 'Cliente';
   
   // Se lead já tem seguro, usar mensagens específicas de renovação
   const productKey = hasExistingInsurance ? 'has_insurance' : (detectedProduct || 'generico');
-  const messages = FALLBACK_MESSAGES_BY_PRODUCT[productKey] || FALLBACK_MESSAGES_BY_PRODUCT.generico;
+  const themes = FALLBACK_THEMES_BY_PRODUCT[productKey] || FALLBACK_THEMES_BY_PRODUCT.generico;
   
+  // Encontrar primeiro tema NÃO perguntado ainda
+  const askedThemes = themesAsked || {};
+  let selectedTheme: FallbackTheme | null = null;
+  
+  for (const theme of themes) {
+    if (!askedThemes[theme.tema]) {
+      selectedTheme = theme;
+      break;
+    }
+  }
+  
+  // Se todos os temas já foram perguntados, usar último tema (ligação)
+  if (!selectedTheme) {
+    selectedTheme = themes[themes.length - 1];
+    console.log(`[process-followups] ⚠️ All themes exhausted, using last theme: ${selectedTheme.tema}`);
+  }
+  
+  // Escolher mensagem do tema que não seja similar à última
+  let fallback: string = '';
   let attempts = 0;
-  let fallback: string;
   
   do {
-    const randomIndex = Math.floor(Math.random() * messages.length);
-    fallback = messages[randomIndex].replace('{nome}', name);
+    const randomIndex = Math.floor(Math.random() * selectedTheme.mensagens.length);
+    fallback = selectedTheme.mensagens[randomIndex];
     attempts++;
-  } while (lastMessage && fallback === lastMessage && attempts < 10);
+  } while (isSimilarToLastMessage(fallback, lastMessage) && attempts < 5);
   
-  console.log(`[process-followups] Fallback selected for product "${productKey}": "${fallback.substring(0, 50)}..."`);
-  return fallback;
+  // Aplicar nome apenas na 1ª tentativa
+  if (attemptNumber <= 1) {
+    fallback = `${name}, ${fallback.charAt(0).toLowerCase()}${fallback.slice(1)}`;
+  }
+  
+  console.log(`[process-followups] Fallback selected for product "${productKey}", tema "${selectedTheme.tema}": "${fallback.substring(0, 50)}..."`);
+  return { message: fallback, tema: selectedTheme.tema };
 }
 
 // Generate AI message using edge function
@@ -345,15 +435,21 @@ async function generateAIMessage(
 
     if (!response.ok) {
       console.error('[process-followups] AI message generation failed:', response.status);
-      return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasInsurance);
+      const fallbackResult = getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasInsurance);
+      return fallbackResult.message;
     }
 
     const data = await response.json();
-    return data.message || getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasInsurance);
+    if (!data.message) {
+      const fallbackResult = getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasInsurance);
+      return fallbackResult.message;
+    }
+    return data.message;
   } catch (error) {
     console.error('[process-followups] Error generating AI message:', error);
     const hasInsuranceErr = insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance || false;
-    return getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasInsuranceErr);
+    const fallbackResult = getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasInsuranceErr);
+    return fallbackResult.message;
   }
 }
 
@@ -1054,14 +1150,28 @@ serve(async (req) => {
           continue;
         }
         
-        // Check for recent messages to prevent duplicates (race condition) - skip if message sent in last 5 minutes
-        const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+        // FIX RACE CONDITION: Aumentar trava de 5 para 10 minutos
+        const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
         const recentAgentMessage = recentMessages?.find(m => 
-          m.from_type !== 'user' && new Date(m.sent_at) > fiveMinutesAgo
+          m.from_type !== 'user' && new Date(m.sent_at) > tenMinutesAgo
         );
         if (recentAgentMessage) {
           const secondsAgo = Math.floor((now.getTime() - new Date(recentAgentMessage.sent_at).getTime()) / 1000);
           console.log(`[process-followups] Agent message sent ${secondsAgo}s ago, skipping to prevent duplicate for ${conv.id}`);
+          skipped++;
+          continue;
+        }
+        
+        // FIX RACE CONDITION: Verificar também se há mensagem pendente na send_queue
+        const { data: pendingQueue } = await supabase
+          .from('send_queue')
+          .select('id, created_at')
+          .eq('conversation_id', conv.id)
+          .in('status', ['pending', 'processing'])
+          .limit(1);
+        
+        if (pendingQueue && pendingQueue.length > 0) {
+          console.log(`[process-followups] Message already pending in send_queue for ${conv.id}, skipping to prevent duplicate`);
           skipped++;
           continue;
         }
@@ -1128,7 +1238,23 @@ serve(async (req) => {
         // Determine current attempt number
         const attemptNumber = (previousLogs?.length || 0) + 1;
 
-        // Check max attempts
+        // Get agent info for AI generation (moved up for Íris check)
+        const agentInfo = conv.current_agent_id ? agentsMap[conv.current_agent_id] : null;
+
+        // LIMITE RÍGIDO PARA ÍRIS: max 2 (outbound) ou 3 (inbound) tentativas
+        if (agentInfo?.slug === 'iris') {
+          const isFromTemplate = (conv.nina_context?.metadata as any)?.origin === 'template' || 
+                                 (conv.nina_context?.metadata as any)?.origin === 'prospeccao';
+          const irisMaxAttempts = isFromTemplate ? 2 : 3;
+          
+          if (attemptNumber > irisMaxAttempts) {
+            console.log(`[process-followups] 🛑 ÍRIS limit reached: attempt ${attemptNumber} > max ${irisMaxAttempts} (${isFromTemplate ? 'outbound' : 'inbound'})`);
+            skipped++;
+            continue;
+          }
+        }
+
+        // Check max attempts (regra geral)
         if (attemptNumber > automation.max_attempts) {
           console.log(`[process-followups] Max attempts reached for conversation ${conv.id}`);
           skipped++;
@@ -1148,9 +1274,6 @@ serve(async (req) => {
         // Calculate hours waited
         const msWaited = now.getTime() - new Date(conv.last_message_at).getTime();
         const hoursWaited = msWaited / (1000 * 60 * 60);
-
-        // Get agent info for AI generation
-        const agentInfo = conv.current_agent_id ? agentsMap[conv.current_agent_id] : null;
 
         try {
           if (automation.automation_type === 'free_text') {
