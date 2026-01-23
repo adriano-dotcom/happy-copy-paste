@@ -75,6 +75,7 @@ const VOICES = [
   { id: '9BWtsMINqrJLrRacOk9x', name: 'Aria', gender: 'Feminina' },
   { id: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger', gender: 'Masculina' },
   { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', gender: 'Feminina' },
+  { id: 'RGymW84CSmfVugnA5tvA', name: 'Roberta', gender: 'Feminina' },
   { id: 'FGY2WhTYpPnrIDTdsKH5', name: 'Laura', gender: 'Feminina' },
   { id: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie', gender: 'Masculina' },
   { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', gender: 'Masculina' },
