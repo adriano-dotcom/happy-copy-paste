@@ -184,7 +184,38 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'to procurando trampo', 'tô procurando trampo', 'procuro trampo', 'preciso de trampo',
       'alguma vaga disponivel', 'alguma vaga disponível', 'tem alguma vaga',
       'procura gente pra trabalhar', 'procura gente para trabalhar',
-      'ta contratando', 'tá contratando', 'tao contratando', 'tão contratando'
+      'ta contratando', 'tá contratando', 'tao contratando', 'tão contratando',
+      // ===== EXPANDED INFORMAL PHRASES (added 2026-01-23) =====
+      // Variações "tem como trabalhar"
+      'tem como trabalhar aí', 'tem como trabalhar ai', 'tem como trabalhar aí com vocês',
+      'tem como eu trabalhar', 'como faz pra trabalhar aí', 'como faço pra trabalhar ai',
+      'como faz pra trabalhar ai', 'como faço pra trabalhar aí',
+      // Variações "preciso de renda/dinheiro"
+      'preciso de renda', 'preciso de uma renda', 'preciso fazer uma grana',
+      'preciso ganhar dinheiro', 'preciso de um trampo', 'precisando de renda',
+      'precisando de grana', 'preciso de um bico',
+      // Variações "arrumar trabalho/emprego"
+      'quero arrumar emprego', 'quero arrumar um emprego', 'quero arrumar trabalho',
+      'quero arrumar um trabalho', 'to querendo arrumar trampo', 'tô querendo arrumar trampo',
+      'conseguir um emprego', 'conseguir emprego',
+      // Variações informais genéricas
+      'vocês tão pegando gente', 'voces tao pegando gente', 'cês tão pegando', 'ces tao pegando',
+      'tem serviço aí', 'tem serviço ai', 'tem trampo aí', 'tem trampo ai',
+      'tem trabalho aí', 'tem trabalho ai', 'dá pra trampar aí', 'da pra trampar ai',
+      'posso trampar aí', 'posso trampar ai', 'to sem trampo', 'tô sem trampo', 'estou sem trampo',
+      'to desempregado', 'tô desempregado',
+      // Variações "procurando alguma coisa"
+      'to procurando alguma coisa', 'tô procurando alguma coisa', 'procurando qualquer coisa',
+      'preciso de qualquer coisa', 'aceito qualquer trabalho', 'aceito qualquer trampo',
+      'to precisando de qualquer coisa', 'tô precisando de qualquer coisa',
+      // Variações "vaga de motorista/ajudante"
+      'vaga de motorista', 'vaga pra motorista', 'vaga para motorista',
+      'vaga de ajudante', 'vaga pra ajudante', 'vaga para ajudante',
+      'procuro vaga de motorista', 'procuro vaga de ajudante',
+      'sou motorista e procuro', 'sou ajudante e procuro',
+      // Gírias e expressões regionais
+      'cola aí pra trampar', 'manda um salve sobre vaga', 'rola vaga aí', 'rola trabalho ai',
+      'tem como colar aí', 'tem vaguinha aí', 'tem vaguinha ai'
     ],
     response: 'Olá! Agradecemos seu contato. Somos uma corretora especializada em seguros de transporte e carga. No momento, não temos vagas em aberto. Desejamos sucesso na sua busca! 🙏',
     pauseConversation: true,
