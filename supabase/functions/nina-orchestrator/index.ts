@@ -172,9 +172,19 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'curriculo', 'currículo', 'meu cv',
       'oportunidade de emprego', 'oportunidades de emprego',
       'quero trabalhar aí', 'quero trabalhar ai', 'quero trabalhar com vocês', 'quero trabalhar com voces',
-      'vocês precisam de', 'voces precisam de', 'precisam de motorista', 'precisam de ajudante'
-      // REMOVED: 'vaga', 'vagas', 'trabalho', 'trabalhar', 'contratar', 'contratando' - too generic!
-      // REMOVED: 'ajudante', 'operador', 'auxiliar', 'motorista' - could be legitimate leads
+      'vocês precisam de', 'voces precisam de', 'precisam de motorista', 'precisam de ajudante',
+      // ===== INFORMAL JOB-SEEKING PHRASES (added 2026-01-23) =====
+      'procura pessoal pra trabalhar', 'procura pessoal para trabalhar',
+      'procuram pessoal pra trabalhar', 'procuram pessoal para trabalhar',
+      'precisa de pessoal pra trabalhar', 'precisa de pessoal para trabalhar',
+      'precisa de gente pra trabalhar', 'precisa de gente para trabalhar',
+      'precisa de funcionario', 'precisa de funcionários', 'precisa de funcionarios',
+      'ta precisando de gente', 'tá precisando de gente', 'está precisando de gente',
+      'voces contratam', 'vocês contratam', 'cês contratam',
+      'to procurando trampo', 'tô procurando trampo', 'procuro trampo', 'preciso de trampo',
+      'alguma vaga disponivel', 'alguma vaga disponível', 'tem alguma vaga',
+      'procura gente pra trabalhar', 'procura gente para trabalhar',
+      'ta contratando', 'tá contratando', 'tao contratando', 'tão contratando'
     ],
     response: 'Olá! Agradecemos seu contato. Somos uma corretora especializada em seguros de transporte e carga. No momento, não temos vagas em aberto. Desejamos sucesso na sua busca! 🙏',
     pauseConversation: true,
@@ -249,7 +259,30 @@ function detectDisqualificationCategory(messageContent: string): Disqualificatio
   const content = messageContent.toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   
-  // ===== INSURANCE INTEREST CHECK - MUST COME FIRST =====
+  // ===== EXPLICIT JOB SEEKER CHECK - MUST COME FIRST =====
+  // These phrases are UNAMBIGUOUS job seeking - disqualify even if there was prior insurance interest
+  // This handles cases where lead asks about insurance first, then asks for a job
+  const explicitJobSeekerPhrases = [
+    'procura pessoal pra trabalhar', 'procura pessoal para trabalhar',
+    'procuram pessoal pra trabalhar', 'procuram pessoal para trabalhar',
+    'precisa de pessoal pra trabalhar', 'precisa de gente pra trabalhar',
+    'ta precisando de gente', 'tá precisando de gente', 'está precisando de gente',
+    'voces contratam', 'vocês contratam', 'cês contratam',
+    'ta contratando', 'tá contratando', 'tao contratando', 'tão contratando',
+    'procura gente pra trabalhar', 'procura gente para trabalhar'
+  ];
+  
+  const isExplicitJobSeeker = explicitJobSeekerPhrases.some(phrase => 
+    content.includes(phrase.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+  );
+  
+  if (isExplicitJobSeeker) {
+    console.log(`[Nina][Disqualification] 💼 EXPLICIT job seeker detected - overriding any insurance interest`);
+    return DISQUALIFICATION_CATEGORIES.find(c => c.key === 'job_seeker')!;
+  }
+  // ===== END EXPLICIT JOB SEEKER CHECK =====
+  
+  // ===== INSURANCE INTEREST CHECK =====
   // If the message mentions insurance-related terms, do NOT disqualify
   // This prevents false positives when leads say "onde eu trabalho, a gente tá sem seguro"
   const insuranceTerms = [
