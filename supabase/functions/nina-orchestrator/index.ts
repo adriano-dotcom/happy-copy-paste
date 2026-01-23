@@ -283,6 +283,46 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     pauseConversation: true,
     reason: 'Spam/golpe detectado',
     emoji: '🚫'
+  },
+  {
+    key: 'freight_seeker',
+    tag: 'frete',
+    keywords: [
+      // Busca direta de frete
+      'preciso fazer um frete', 'preciso de um frete', 'quero fazer um frete',
+      'preciso fazer frete', 'quero contratar frete', 'contratar um frete',
+      'onde posso contratar frete', 'onde contrato frete', 'como contratar frete',
+      'quanto custa um frete', 'quanto custa o frete', 'quanto custa pra fazer frete',
+      'quanto custa fazer um frete', 'valor do frete', 'preço do frete', 'preco do frete',
+      'orcamento de frete', 'orçamento de frete', 'cotacao de frete', 'cotação de frete',
+      // Busca de transportadora
+      'vocês fazem transporte', 'voces fazem transporte', 'fazem transporte',
+      'vocês transportam', 'voces transportam', 'vocês entregam', 'voces entregam',
+      'preciso de uma transportadora', 'preciso de transportadora',
+      'indicam transportadora', 'indicação de transportadora', 'indicacao de transportadora',
+      'conhecem transportadora', 'conhecem alguma transportadora',
+      // Variações informais
+      'tem frete aí', 'tem frete ai', 'faz frete', 'fazem frete',
+      'vocês são transportadora', 'voces sao transportadora',
+      'é transportadora', 'e transportadora', 'são transportadora', 'sao transportadora',
+      'preciso transportar', 'quero transportar', 'preciso enviar', 'quero enviar',
+      'preciso mandar', 'quero mandar', 'preciso despachar', 'quero despachar',
+      // Especificando carga/mercadoria para transporte
+      'preciso levar uma carga', 'preciso levar carga', 'preciso enviar carga',
+      'preciso mandar uma carga', 'transportar mercadoria', 'enviar mercadoria',
+      'mandar mercadoria', 'despachar mercadoria', 'entregar mercadoria',
+      // Perguntando sobre caminhão/veículo
+      'tem caminhão disponível', 'tem caminhao disponivel', 'tem carreta disponível',
+      'preciso de caminhão', 'preciso de caminhao', 'preciso de carreta',
+      'aluguel de caminhão', 'aluguel de caminhao', 'alugar caminhão', 'alugar caminhao',
+      // Rotas/destinos
+      'frete pra', 'frete para', 'entrega pra', 'entrega para',
+      'transportam pra', 'transportam para', 'levam pra', 'levam para'
+    ],
+    response: 'Olá! Entendo que você está buscando serviços de frete ou transporte. Nós não realizamos transporte de cargas - somos uma corretora de seguros especializada em proteger mercadorias durante o transporte. Se você já tem o frete contratado e quer garantir a segurança da sua carga, podemos ajudar! Você já tem uma transportadora? 🚛',
+    pauseConversation: false, // NÃO pausar - tentar converter em lead de seguro
+    reason: 'Busca de frete - esclarecer que somos corretora de seguros',
+    emoji: '🚛'
   }
 ];
 
@@ -312,6 +352,30 @@ function detectDisqualificationCategory(messageContent: string): Disqualificatio
     return DISQUALIFICATION_CATEGORIES.find(c => c.key === 'job_seeker')!;
   }
   // ===== END EXPLICIT JOB SEEKER CHECK =====
+  
+  // ===== EXPLICIT FREIGHT SEEKER CHECK =====
+  // These phrases indicate someone looking for freight/transport services, not insurance
+  // Must come BEFORE insurance check since some terms overlap (carga, transporte)
+  const explicitFreightSeekerPhrases = [
+    'preciso fazer um frete', 'preciso de um frete', 'quero fazer um frete',
+    'quanto custa um frete', 'quanto custa o frete', 'quanto custa pra fazer frete',
+    'vocês fazem transporte', 'voces fazem transporte', 'fazem transporte',
+    'vocês são transportadora', 'voces sao transportadora', 'é transportadora',
+    'preciso de uma transportadora', 'preciso de transportadora',
+    'onde posso contratar frete', 'como contratar frete',
+    'tem frete aí', 'tem frete ai', 'faz frete', 'fazem frete',
+    'vocês transportam', 'voces transportam', 'vocês entregam', 'voces entregam'
+  ];
+  
+  const isExplicitFreightSeeker = explicitFreightSeekerPhrases.some(phrase => 
+    content.includes(phrase.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+  );
+  
+  if (isExplicitFreightSeeker) {
+    console.log(`[Nina][Disqualification] 🚛 EXPLICIT freight seeker detected - clarifying we are insurance brokers`);
+    return DISQUALIFICATION_CATEGORIES.find(c => c.key === 'freight_seeker')!;
+  }
+  // ===== END EXPLICIT FREIGHT SEEKER CHECK =====
   
   // ===== INSURANCE INTEREST CHECK =====
   // If the message mentions insurance-related terms, do NOT disqualify
