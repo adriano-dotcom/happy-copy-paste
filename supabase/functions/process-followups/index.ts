@@ -958,6 +958,20 @@ serve(async (req) => {
           skipped++;
           continue;
         }
+        
+        // Check if conversation has identity mismatch or followup stopped flags
+        const ninaContext = (conv.nina_context || {}) as Record<string, any>;
+        if (ninaContext.identity_mismatch || ninaContext.wrong_contact_detected_at) {
+          console.log(`[process-followups] Identity mismatch detected for ${conv.id}, skipping (wrong contact)`);
+          skipped++;
+          continue;
+        }
+        
+        if (ninaContext.followup_stopped) {
+          console.log(`[process-followups] Followup stopped flag set for ${conv.id}, skipping`);
+          skipped++;
+          continue;
+        }
 
         // Check if deal has pending callback (scheduled call) - SKIP if callback is scheduled
         if (deal?.id) {

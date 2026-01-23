@@ -150,6 +150,8 @@ interface DisqualificationCategory {
   keywords: string[];
   response: string | null;
   pauseConversation: boolean;
+  markAsLost?: boolean; // Flag para marcar deal como perdido
+  setIdentityMismatch?: boolean; // Flag para prevenir follow-ups
   reason: string;
   emoji: string;
 }
@@ -290,15 +292,48 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     key: 'wrong_number',
     tag: 'engano',
     keywords: [
+      // Erros de discagem / envio
       'número errado', 'numero errado', 'errei o número', 'errei o numero',
       'desculpa, engano', 'foi engano', 'liguei errado', 'mandei errado',
       'quem é você', 'quem e voce', 'não conheço', 'nao conheco',
       'quem está falando', 'quem esta falando', 'não te conheço',
-      'nao te conheco', 'errado o contato', 'contato errado'
+      'nao te conheco', 'errado o contato', 'contato errado',
+      // Identidade errada / não é a pessoa certa
+      'não é este contato', 'nao e este contato',
+      'não sou este contato', 'nao sou este contato',
+      'não sou essa pessoa', 'nao sou essa pessoa',
+      'não é comigo', 'nao e comigo',
+      'você ligou para pessoa errada', 'voce ligou para pessoa errada',
+      'você mandou para pessoa errada', 'voce mandou para pessoa errada',
+      'pessoa errada', 'errou de pessoa',
+      // Não é o responsável / não é da empresa
+      'não sou o dono', 'nao sou o dono',
+      'não sou da empresa', 'nao sou da empresa',
+      'não trabalho nessa empresa', 'nao trabalho nessa empresa',
+      'mudou de dono', 'mudou de proprietário', 'mudou de proprietario',
+      'não é aqui', 'nao e aqui',
+      'aqui não é', 'aqui nao e',
+      // Número pessoal / particular
+      'esse número é pessoal', 'esse numero e pessoal',
+      'esse é meu pessoal', 'esse e meu pessoal',
+      'número pessoal', 'numero pessoal',
+      'número particular', 'numero particular',
+      'celular pessoal', 'meu pessoal',
+      // Erros de número
+      'acho que você errou', 'acho que voce errou',
+      'errou de número', 'errou de numero',
+      'mandou errado', 'trocou de número', 'trocou de numero',
+      // Padrões de rejeição de identidade
+      'não sou eu', 'nao sou eu', 'não é meu', 'nao e meu',
+      'sou outra pessoa', 'número antigo', 'numero antigo',
+      'esse whatsapp não é', 'esse whatsapp nao e',
+      'esse zap não é', 'esse zap nao e'
     ],
-    response: 'Olá! Parece que você entrou em contato por engano. Aqui é a Jacometo Seguros, especializada em seguros de transporte e carga. Se precisar de algo nessa área, estamos à disposição! 😊',
+    response: 'Entendo! Peço desculpas pelo engano. Obrigado por avisar. 🙏',
     pauseConversation: true,
-    reason: 'Contato por engano - não é lead de seguro',
+    markAsLost: true, // Nova flag para marcar deal como perdido
+    setIdentityMismatch: true, // Nova flag para prevenir follow-ups
+    reason: 'Contato errado / pessoa errada',
     emoji: '❓'
   },
   {
@@ -861,8 +896,34 @@ function isProspectingRejection(messageContent: string): boolean {
     'esse zap não é', 'esse zap nao e',
     'não sou eu', 'nao sou eu',
     'sou outra pessoa', 'não é meu', 'nao e meu',
-    'número antigo', 'numero antigo', 'mudou de dono'
+    'número antigo', 'numero antigo', 'mudou de dono',
+    // *** NOVAS: Identidade errada / não é este contato ***
+    'não é este contato', 'nao e este contato',
+    'não sou este contato', 'nao sou este contato',
+    'não sou essa pessoa', 'nao sou essa pessoa',
+    'pessoa errada', 'contato errado',
+    'você ligou para pessoa errada', 'voce ligou para pessoa errada',
+    'você mandou para pessoa errada', 'voce mandou para pessoa errada',
+    // Padrão "já disse que não sou"
+    'já disse que não sou', 'ja disse que nao sou',
+    'já comuniquei que não sou', 'ja comuniquei que nao sou',
+    'já falei que não sou', 'ja falei que nao sou',
+    'já te disse que não', 'ja te disse que nao',
+    'está insistindo', 'esta insistindo',
+    'insistindo em falar', 'insistindo em ligar'
   ];
+  
+  // Detectar padrão "não sou [nome]" via regex
+  const notMePatterns = [
+    /n[aã]o\s+sou\s+(?:o\s+|a\s+)?[a-záéíóúâêîôûãõç]+/i,  // "não sou Leonardo", "não sou o João"
+    /j[aá]\s+(?:lhe\s+)?(?:disse|falei|comuniquei)\s+que\s+n[aã]o\s+sou/i,  // "já disse que não sou"
+    /n[aã]o\s+[eé]\s+(?:esse?|esta?)\s+(?:contato|pessoa|n[uú]mero)/i,  // "não é este contato"
+    /(?:esse?|esta?)\s+(?:n[uú]mero|whatsapp|zap)\s+n[aã]o\s+[eé]/i,  // "esse número não é"
+  ];
+  
+  if (notMePatterns.some(pattern => pattern.test(content))) {
+    return true;
+  }
   
   return rejectionPhrases.some(phrase => content.includes(phrase));
 }
@@ -3346,12 +3407,28 @@ Qual desses te interessa?`;
         .update({ processed_by_nina: true })
         .eq('id', message.id);
       
-      // 4. Pausar conversa (se configurado)
+      // 4. Pausar conversa (se configurado) e marcar nina_context
       if (disqualCategory.pauseConversation) {
+        const contextUpdate: any = {
+          paused_reason: disqualCategory.key,
+          paused_at: new Date().toISOString(),
+          followup_stopped: true // Sempre parar follow-ups quando desqualificado
+        };
+        
+        // Se é identidade errada, marcar para prevenir follow-ups futuros
+        if (disqualCategory.setIdentityMismatch) {
+          contextUpdate.identity_mismatch = true;
+          contextUpdate.wrong_contact_detected_at = new Date().toISOString();
+        }
+        
         await supabase
           .from('conversations')
           .update({ 
             status: 'paused',
+            nina_context: {
+              ...(conversation.nina_context || {}),
+              ...contextUpdate
+            },
             metadata: {
               ...(conversation.metadata || {}),
               paused_reason: disqualCategory.key,
@@ -3359,6 +3436,38 @@ Qual desses te interessa?`;
             }
           })
           .eq('id', conversation.id);
+      }
+      
+      // 4.5 Marcar deal como perdido (se configurado)
+      if (disqualCategory.markAsLost) {
+        // Get prospecting pipeline's "Perdido" stage
+        const { data: prospectingPipeline } = await supabase
+          .from('pipelines')
+          .select('id')
+          .eq('slug', 'prospeccao')
+          .maybeSingle();
+        
+        if (prospectingPipeline) {
+          const { data: lostStage } = await supabase
+            .from('pipeline_stages')
+            .select('id')
+            .eq('pipeline_id', prospectingPipeline.id)
+            .eq('title', 'Perdido')
+            .maybeSingle();
+          
+          if (lostStage) {
+            await supabase
+              .from('deals')
+              .update({
+                stage_id: lostStage.id,
+                lost_at: new Date().toISOString(),
+                lost_reason: disqualCategory.reason
+              })
+              .eq('contact_id', conversation.contact_id);
+            
+            console.log(`[Nina] 📉 Deal marked as lost: ${disqualCategory.reason}`);
+          }
+        }
       }
       
       // 5. Disparar envio da mensagem (se houver resposta)
