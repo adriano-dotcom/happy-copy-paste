@@ -33,6 +33,7 @@ const VOICE_OPTIONS = [
   { id: '9BWtsMINqrJLrRacOk9x', name: 'Aria', desc: 'Feminina, natural' },
   { id: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger', desc: 'Masculina, confiante' },
   { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', desc: 'Feminina, suave' },
+  { id: 'RGymW84CSmfVugnA5tvA', name: 'Roberta', desc: 'Feminina, suave e confiante' },
   { id: 'FGY2WhTYpPnrIDTdsKH5', name: 'Laura', desc: 'Feminina, expressiva' },
   { id: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie', desc: 'Masculina, casual' },
   { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', desc: 'Masculina, britânica' },
@@ -50,7 +51,6 @@ const VOICE_OPTIONS = [
   { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', desc: 'Masculina, britânica' },
   { id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', desc: 'Feminina, britânica' },
   { id: 'pqHfZKP75CvOlQylNhV4', name: 'Bill', desc: 'Masculina, americana' },
-  { id: 'RGymW84CSmfVugnA5tvA', name: 'Roberta', desc: 'Feminina, suave e confiante' },
 ];
 
 const MODEL_OPTIONS = [
