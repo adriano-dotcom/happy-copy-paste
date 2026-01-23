@@ -263,14 +263,21 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
   
   if (!isTemplateMessage) {
     // Get conversation to check window
-    const { data: conversation } = await supabase
+    const { data: conversation, error: convError } = await supabase
       .from('conversations')
       .select('whatsapp_window_start')
       .eq('id', queueItem.conversation_id)
       .maybeSingle();
 
+    if (convError) {
+      console.error('[Sender] Error fetching conversation:', convError);
+      throw new Error(`Erro ao buscar conversa: ${convError.message}`);
+    }
+
     if (!conversation) {
-      throw new Error('Conversation not found');
+      console.warn(`[Sender] Conversation ${queueItem.conversation_id} not found - skipping orphan message`);
+      // Don't throw - just skip this message (orphan data)
+      return;
     }
 
     const windowStart = conversation.whatsapp_window_start ? new Date(conversation.whatsapp_window_start) : null;
