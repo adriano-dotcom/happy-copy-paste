@@ -215,7 +215,40 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'sou motorista e procuro', 'sou ajudante e procuro',
       // Gírias e expressões regionais
       'cola aí pra trampar', 'manda um salve sobre vaga', 'rola vaga aí', 'rola trabalho ai',
-      'tem como colar aí', 'tem vaguinha aí', 'tem vaguinha ai'
+      'tem como colar aí', 'tem vaguinha aí', 'tem vaguinha ai',
+      // ===== TYPOS E ERROS DE TRANSCRIÇÃO DE ÁUDIO (added 2026-01-23) =====
+      // Erros em "trabalho/trabalhar"
+      'trabaiho', 'trabayo', 'trabalo', 'trabalio', 'trabaio',
+      'trabaihar', 'trabayar', 'trabalar', 'trabaliar', 'trabaiar',
+      'procuro trabaiho', 'preciso de trabaiho', 'quero trabaihar',
+      'to procurando trabaiho', 'tô procurando trabaiho', 'procurando trabaiho',
+      // Erros em "emprego"
+      'empregu', 'impregu', 'imprego', 'empregadu', 'impregado',
+      'desempregadu', 'dezempregado', 'dezempregadu',
+      'procuro empregu', 'preciso de empregu', 'to desempregadu', 'tô desempregadu',
+      'to sem empregu', 'tô sem empregu', 'procurando empregu',
+      // Erros em "trampo" (gíria)
+      'trampu', 'trampi', 'trampô', 'trampa', 'trampá',
+      'procuro trampu', 'preciso de trampu', 'to sem trampu', 'tô sem trampu',
+      'to procurando trampu', 'tô procurando trampu', 'tem trampu ai', 'tem trampu aí',
+      // Erros em "currículo"
+      'curriculu', 'curiculo', 'curículo', 'curriculo',
+      'manda o curriculu', 'enviar curriculu', 'mandar curriculu',
+      'posso mandar meu curriculu', 'posso enviar meu curriculu',
+      // Erros em "contratando/contratar"
+      'contratanu', 'contratatando', 'contratá', 'contratanu pessoal',
+      'tao contratanu', 'estao contratanu', 'ta contratanu', 'tá contratanu',
+      'voces tao contratanu', 'vocês tão contratanu',
+      // Erros em "precisando/preciso"
+      'precisanu', 'presisando', 'presiso', 'presisu', 'precissu',
+      'to presisando', 'tô presisando', 'ta presisando', 'tá presisando',
+      'presiso de trabalho', 'presiso de emprego', 'presisando de trampo',
+      // Erros em "vaga"
+      'vagá', 'vaguinha ai', 'vagaai', 'tem vagá', 'alguma vagá',
+      // Erros gerais de fala rápida/informal
+      'vcs tao pegando', 'vcs contratam', 'vc contrata', 'vcs precisam',
+      'tem trabio ai', 'tem trabaio ai', 'tem trabayo ai',
+      'to sem trabio', 'to sem trabaio', 'tô sem trabaio'
     ],
     response: 'Olá! Agradecemos seu contato. Somos uma corretora especializada em seguros de transporte e carga. No momento, não temos vagas em aberto. Desejamos sucesso na sua busca! 🙏',
     pauseConversation: true,
