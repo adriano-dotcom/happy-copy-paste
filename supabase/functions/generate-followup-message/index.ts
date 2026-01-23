@@ -58,15 +58,23 @@ const FORBIDDEN_TERMS_FOR_UNQUALIFIED = [
 ];
 
 // Sanitize message for unqualified leads - prevent forbidden terms
+// NOTA: Prompts de prospecção (prospecting_closing, prospecting_no_reply) NÃO devem ser sanitizados
 function sanitizeMessageForUnqualifiedLead(
   message: string, 
   isQualified: boolean,
   contactName: string,
   lastMessage?: string,
   detectedProduct?: DetectedProduct,
-  answeredQualifications?: AnsweredQualifications
+  answeredQualifications?: AnsweredQualifications,
+  promptType?: string // NOVO: tipo de prompt para bypass
 ): string {
   if (isQualified) return message;
+  
+  // Prompts de prospecção são encerramentos profissionais - não devem cair em fallback
+  if (promptType === 'prospecting_closing' || promptType === 'prospecting_no_reply') {
+    console.log(`[generate-followup-message] Skipping sanitization for prospecting prompt: ${promptType}`);
+    return message;
+  }
   
   const lowerMessage = message.toLowerCase();
   const containsForbidden = FORBIDDEN_TERMS_FOR_UNQUALIFIED.some(term => lowerMessage.includes(term));
@@ -690,7 +698,7 @@ Responda APENAS com a mensagem, sem explicações ou aspas.`;
     }
     
     // Sanitize message for unqualified leads - prevent forbidden terms
-    generatedMessage = sanitizeMessageForUnqualifiedLead(generatedMessage, is_qualified, normalizedContactName, last_message_sent, detected_product, answered_qualifications || undefined);
+    generatedMessage = sanitizeMessageForUnqualifiedLead(generatedMessage, is_qualified, normalizedContactName, last_message_sent, detected_product, answered_qualifications || undefined, effectivePromptType);
 
     console.log(`[generate-followup-message] Generated: "${generatedMessage.substring(0, 50)}..."`);
 
