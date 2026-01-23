@@ -10,7 +10,7 @@ interface MessageSequenceItem {
   attempt: number;
   type: 'manual' | 'ai_generated';
   content?: string;
-  ai_prompt_type?: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'direct_question' | 'closing_with_option' | 'schedule_renewal' | 'prospecting_closing' | 'prospecting_no_reply';
+  ai_prompt_type?: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'direct_question' | 'closing_with_option' | 'schedule_renewal' | 'prospecting_closing' | 'prospecting_no_reply' | 'health_closing' | 'health_no_reply';
   delay_hours?: number;
 }
 
@@ -1234,6 +1234,59 @@ serve(async (req) => {
                 }
               }
             }
+            
+            // NOVO: Detectar se é conversa de SAÚDE (Clara)
+            const isHealthConversation = agentInfo?.slug === 'clara';
+            
+            // NOVO: Fluxo SIMPLIFICADO para saúde - apenas 2 tentativas
+            if (isHealthConversation) {
+              console.log(`[process-followups] 🏥 HEALTH conversation detected (clara) - using simplified 2-step flow`);
+              
+              const hasUserResponse = conversationAnalysis.hasUserResponse;
+              
+              if (!hasUserResponse) {
+                // Lead NUNCA respondeu ao contato inicial
+                // Tentativa 1 = health_no_reply (encerramento sem resposta)
+                // Tentativa 2+ = NÃO ENVIA
+                if (attemptNumber >= 2) {
+                  console.log(`[process-followups] 🛑 Health no reply - attempt ${attemptNumber} - STOPPING (max 1 attempt for no-reply)`);
+                  
+                  // Marcar conversa como encerrada
+                  await supabase.from('conversations').update({
+                    nina_context: {
+                      ...conv.nina_context,
+                      followup_stopped: true,
+                      followup_stopped_reason: 'health_no_reply',
+                      closed_at: new Date().toISOString()
+                    }
+                  }).eq('id', conv.id);
+                  
+                  skipped++;
+                  continue;
+                }
+              } else {
+                // Lead respondeu mas parou
+                // Tentativa 1 = direct_question (pergunta curta)
+                // Tentativa 2 = health_closing (encerramento profissional)
+                // Tentativa 3+ = NÃO ENVIA
+                if (attemptNumber >= 3) {
+                  console.log(`[process-followups] 🛑 Health partial response - attempt ${attemptNumber} - STOPPING (max 2 attempts for partial response)`);
+                  
+                  // Marcar conversa como encerrada
+                  await supabase.from('conversations').update({
+                    nina_context: {
+                      ...conv.nina_context,
+                      followup_stopped: true,
+                      followup_stopped_reason: 'health_closed',
+                      closed_at: new Date().toISOString()
+                    }
+                  }).eq('id', conv.id);
+                  
+                  skipped++;
+                  continue;
+                }
+              }
+            }
             // NOVO: Para leads com SOFT REJECTION, LIMITAR a 1 tentativa
             // 1ª = ask_insurance_renewal (pergunta se tem seguro e vencimento)
             // 2ª+ = NÃO ENVIA (encerra automação)
@@ -1256,24 +1309,43 @@ serve(async (req) => {
               }
             }
             
-            // NOVO: Para prospecção, forçar prompts específicos
-            let prospectingPromptType: string | null = null;
+            // NOVO: Para prospecção ou saúde, forçar prompts específicos
+            let forcedPromptType: string | null = null;
+            
             if (isProspectingConversation) {
               const hasUserResponse = conversationAnalysis.hasUserResponse;
               
               if (!hasUserResponse) {
                 // Sem resposta → encerramento direto com site
-                prospectingPromptType = 'prospecting_no_reply';
+                forcedPromptType = 'prospecting_no_reply';
                 console.log(`[process-followups] 📩 Prospecting: no user response - using prospecting_no_reply`);
               } else {
                 // Respondeu mas parou
                 if (attemptNumber === 1) {
-                  prospectingPromptType = 'direct_question';
+                  forcedPromptType = 'direct_question';
                   console.log(`[process-followups] 📩 Prospecting: attempt 1 - using direct_question`);
                 } else {
                   // Tentativa 2 = encerramento profissional com site
-                  prospectingPromptType = 'prospecting_closing';
+                  forcedPromptType = 'prospecting_closing';
                   console.log(`[process-followups] 📩 Prospecting: attempt 2 - using prospecting_closing (professional closing)`);
+                }
+              }
+            } else if (isHealthConversation) {
+              const hasUserResponse = conversationAnalysis.hasUserResponse;
+              
+              if (!hasUserResponse) {
+                // Sem resposta → encerramento direto com site
+                forcedPromptType = 'health_no_reply';
+                console.log(`[process-followups] 🏥 Health: no user response - using health_no_reply`);
+              } else {
+                // Respondeu mas parou
+                if (attemptNumber === 1) {
+                  forcedPromptType = 'direct_question';
+                  console.log(`[process-followups] 🏥 Health: attempt 1 - using direct_question`);
+                } else {
+                  // Tentativa 2 = encerramento profissional com site
+                  forcedPromptType = 'health_closing';
+                  console.log(`[process-followups] 🏥 Health: attempt 2 - using health_closing (professional closing)`);
                 }
               }
             }
@@ -1296,7 +1368,7 @@ serve(async (req) => {
               detectedProduct,
               conversationAnalysis.answeredQualifications,
               insuranceStatus, // status de seguro existente
-              prospectingPromptType // NOVO: forçar prompt de prospecção
+              forcedPromptType // NOVO: forçar prompt de prospecção ou saúde
             );
             
             // NOVO: Se messageContent é null (soft rejection após 1ª tentativa), parar automação
