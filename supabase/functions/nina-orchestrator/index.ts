@@ -350,7 +350,36 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'aluguel de caminhão', 'aluguel de caminhao', 'alugar caminhão', 'alugar caminhao',
       // Rotas/destinos
       'frete pra', 'frete para', 'entrega pra', 'entrega para',
-      'transportam pra', 'transportam para', 'levam pra', 'levam para'
+      'transportam pra', 'transportam para', 'levam pra', 'levam para',
+      // ===== TYPOS E ERROS DE TRANSCRIÇÃO DE ÁUDIO (added 2026-01-23) =====
+      // Erros em "frete"
+      'freti', 'frête', 'fretê', 'frète', 'fretí',
+      'preciso de um freti', 'fazer um freti', 'quanto custa o freti',
+      'contratar freti', 'tem freti ai', 'tem freti aí', 'faz freti',
+      'preciso fazer freti', 'quero fazer freti', 'quero um freti',
+      // Erros em "transporte/transportadora"
+      'transpote', 'trasporte', 'transporti', 'transpoti', 'transporti',
+      'transportadra', 'trasportadora', 'transportadóra', 'trasportadóra',
+      'preciso de trasporte', 'fazem transpote', 'fazem trasporte',
+      'preciso de transportadra', 'preciso de trasportadora',
+      'voces fazem transpote', 'vocês fazem transpote', 'voces fazem trasporte',
+      // Erros em "transportar"
+      'trasportar', 'transpota', 'trasporta', 'transpotar', 'traspotar',
+      'preciso trasportar', 'quero trasportar', 'preciso transpota',
+      // Erros em "caminhão/carreta"
+      'caminhâo', 'caminhãu', 'caminhaum', 'caminham', 'caminhon',
+      'carréta', 'carêta', 'careta', 'carrêta', 'caretá',
+      'preciso de caminhâo', 'tem caminhaum', 'preciso de careta',
+      'tem caminhâo disponivel', 'tem caminhaum disponivel',
+      // Erros em "enviar/entregar"
+      'invia', 'enviá', 'inviar', 'envía',
+      'intrega', 'entregá', 'intregar', 'intregá',
+      'preciso invia', 'preciso intrega', 'quero invia', 'quero intrega',
+      // Erros em "carga/mercadoria"
+      'cárga', 'cargu', 'cargá', 'cargâ',
+      'mercadória', 'mercadóriu', 'mercadoría', 'mercadóri',
+      'enviar cargu', 'transportar cargu', 'levar mercadória',
+      'preciso enviar cargu', 'preciso levar mercadória'
     ],
     response: 'Olá! Entendo que você está buscando serviços de frete ou transporte. Nós não realizamos transporte de cargas - somos uma corretora de seguros especializada em proteger mercadorias durante o transporte. Se você já tem o frete contratado e quer garantir a segurança da sua carga, podemos ajudar! Você já tem uma transportadora? 🚛',
     pauseConversation: false, // NÃO pausar - tentar converter em lead de seguro
@@ -397,7 +426,15 @@ function detectDisqualificationCategory(messageContent: string): Disqualificatio
     'preciso de uma transportadora', 'preciso de transportadora',
     'onde posso contratar frete', 'como contratar frete',
     'tem frete aí', 'tem frete ai', 'faz frete', 'fazem frete',
-    'vocês transportam', 'voces transportam', 'vocês entregam', 'voces entregam'
+    'vocês transportam', 'voces transportam', 'vocês entregam', 'voces entregam',
+    // ===== VARIAÇÕES COM ERROS DE TRANSCRIÇÃO (added 2026-01-23) =====
+    'preciso fazer um freti', 'preciso de um freti', 'quero fazer um freti',
+    'quanto custa um freti', 'quanto custa o freti', 'quanto custa pra fazer freti',
+    'fazem transpote', 'fazem trasporte', 'fazem transporti',
+    'preciso de transportadra', 'preciso de trasportadora', 'preciso de uma trasportadora',
+    'tem freti ai', 'tem freti aí', 'faz freti', 'fazem freti',
+    'voces fazem transpote', 'vocês fazem transpote', 'voces fazem trasporte',
+    'voces trasportam', 'vocês trasportam', 'voces intregam', 'vocês intregam'
   ];
   
   const isExplicitFreightSeeker = explicitFreightSeekerPhrases.some(phrase => 
