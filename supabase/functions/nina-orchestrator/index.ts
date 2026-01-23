@@ -135,6 +135,52 @@ function isFallbackMessage(content: string): boolean {
 }
 // ===== END FALLBACK MESSAGE DETECTION =====
 
+// ===== NAME EXTRACTION UTILITY =====
+function extractNameFromMessage(content: string): string | null {
+  if (!content) return null;
+  
+  // Padrões comuns de resposta com nome
+  const patterns = [
+    /(?:meu nome [eé]|me chamo|sou o?a?\s*)\s*([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)/i,
+    /(?:pode me chamar de|[eé]\s*o?a?\s*)\s*([A-Za-zÀ-ÿ]+)/i,
+    /(?:aqui [eé]\s*o?a?\s*)\s*([A-Za-zÀ-ÿ]+)/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = content.match(pattern);
+    if (match && match[1] && match[1].length >= 2 && match[1].length <= 30) {
+      // Capitalizar primeira letra de cada palavra
+      return match[1].split(' ').map(w => 
+        w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+      ).join(' ');
+    }
+  }
+  
+  // Se for uma resposta curta (1-3 palavras), pode ser só o nome
+  const words = content.trim().split(/\s+/);
+  if (words.length <= 3 && words.length >= 1) {
+    const firstWord = words[0];
+    // Verificar se parece um nome (começa com letra, tamanho razoável)
+    if (firstWord.length >= 2 && firstWord.length <= 20 && /^[A-Za-zÀ-ÿ]+$/.test(firstWord)) {
+      // Verificar se NÃO é uma palavra comum
+      const commonWords = ['sim', 'nao', 'não', 'ok', 'oi', 'ola', 'olá', 'bom', 'boa', 'dia', 'tarde', 'noite', 
+        'obrigado', 'obrigada', 'tchau', 'blz', 'beleza', 'certo', 'entendi', 'legal', 'tudo', 'bem', 'de'];
+      if (!commonWords.includes(firstWord.toLowerCase())) {
+        // Pegar até 2 palavras como nome
+        const nameParts = words.slice(0, 2).filter(w => /^[A-Za-zÀ-ÿ]+$/.test(w) && w.length >= 2);
+        if (nameParts.length > 0) {
+          return nameParts.map(w => 
+            w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+          ).join(' ');
+        }
+      }
+    }
+  }
+  
+  return null;
+}
+// ===== END NAME EXTRACTION UTILITY =====
+
 // ===== TIMEZONE UTILITY =====
 const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
 function toBRT(date: Date | string): string {
@@ -152,6 +198,7 @@ interface DisqualificationCategory {
   pauseConversation: boolean;
   markAsLost?: boolean; // Flag para marcar deal como perdido
   setIdentityMismatch?: boolean; // Flag para prevenir follow-ups
+  resetContactData?: boolean; // Flag para resetar dados do contato (mudança de dono)
   reason: string;
   emoji: string;
 }
@@ -289,6 +336,45 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     emoji: '🤝'
   },
   {
+    key: 'number_owner_changed',
+    tag: 'mudou_dono',
+    keywords: [
+      // Mudança de proprietário do número
+      'esse número agora é meu', 'esse numero agora e meu',
+      'agora esse número é meu', 'agora esse numero e meu',
+      'comprei esse número', 'comprei esse numero',
+      'esse chip agora é meu', 'esse chip agora e meu',
+      'o antigo dono', 'antigo proprietário', 'antigo proprietario',
+      'dono anterior', 'proprietário anterior', 'proprietario anterior',
+      'quem tinha esse número', 'quem tinha esse numero',
+      'não é mais dele', 'nao e mais dele',
+      'não é mais dela', 'nao e mais dela',
+      'saiu da empresa', 'não trabalha mais aqui', 'nao trabalha mais aqui',
+      'foi demitido', 'foi mandado embora',
+      'vendeu a empresa', 'fechou a empresa',
+      'troquei de chip', 'peguei esse número', 'peguei esse numero',
+      'herdei esse número', 'herdei esse numero',
+      'esse número era de', 'esse numero era de',
+      'era do meu', 'era da minha',
+      'agora sou eu', 'agora é meu', 'agora e meu',
+      'novo dono', 'nova dona', 'o dono saiu', 'a dona saiu',
+      'agora é outra pessoa', 'agora e outra pessoa',
+      'não existe mais essa pessoa', 'nao existe mais essa pessoa',
+      'ele vendeu', 'ela vendeu', 'vendeu o negócio', 'vendeu o negocio',
+      'aposentou', 'faleceu', 'mudou de cidade',
+      'não mora mais aqui', 'nao mora mais aqui',
+      'não trabalha mais', 'nao trabalha mais',
+      'esse número era', 'esse numero era'
+    ],
+    response: 'Entendi! Obrigado por avisar. Vou atualizar nosso cadastro. 📝\n\nPosso saber seu nome para registrar corretamente?',
+    pauseConversation: false, // NÃO pausa - queremos continuar qualificando
+    markAsLost: false, // NÃO marca como perdido - é um novo lead potencial
+    setIdentityMismatch: false,
+    resetContactData: true, // NOVA FLAG - reseta dados do contato
+    reason: 'Número mudou de dono - novo lead',
+    emoji: '🔄'
+  },
+  {
     key: 'wrong_number',
     tag: 'engano',
     keywords: [
@@ -310,7 +396,6 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'não sou o dono', 'nao sou o dono',
       'não sou da empresa', 'nao sou da empresa',
       'não trabalho nessa empresa', 'nao trabalho nessa empresa',
-      'mudou de dono', 'mudou de proprietário', 'mudou de proprietario',
       'não é aqui', 'nao e aqui',
       'aqui não é', 'aqui nao e',
       // Número pessoal / particular
@@ -331,8 +416,8 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     ],
     response: 'Entendo! Peço desculpas pelo engano. Obrigado por avisar. 🙏',
     pauseConversation: true,
-    markAsLost: true, // Nova flag para marcar deal como perdido
-    setIdentityMismatch: true, // Nova flag para prevenir follow-ups
+    markAsLost: true,
+    setIdentityMismatch: true,
     reason: 'Contato errado / pessoa errada',
     emoji: '❓'
   },
@@ -3298,6 +3383,72 @@ Qual desses te interessa?`;
   }
   // ===== END INTERACTIVE BUTTON REPLY HANDLING =====
 
+  // ===== NEW OWNER NAME CAPTURE (after number owner change) =====
+  if (ninaContext.awaiting_new_owner_name && message.content) {
+    const possibleName = extractNameFromMessage(message.content);
+    
+    if (possibleName) {
+      // Update contact with new owner name
+      await supabase
+        .from('contacts')
+        .update({
+          name: possibleName,
+          call_name: possibleName.split(' ')[0]
+        })
+        .eq('id', conversation.contact_id);
+      
+      // Clear awaiting flag and continue qualification
+      await supabase
+        .from('conversations')
+        .update({
+          nina_context: {
+            ...ninaContext,
+            awaiting_new_owner_name: false,
+            new_owner_name: possibleName,
+            new_owner_captured_at: new Date().toISOString()
+          }
+        })
+        .eq('id', conversation.id);
+      
+      console.log(`[Nina] ✅ New owner name captured: ${possibleName}`);
+      
+      // Generate welcome message for new owner
+      const welcomeMessage = `Prazer, ${possibleName.split(' ')[0]}! 👋\n\nSou a Nina da Jacometo Seguros. Trabalha com transporte de cargas?`;
+      
+      const delayMin = settings?.response_delay_min || 1000;
+      const delayMax = settings?.response_delay_max || 3000;
+      const delay = Math.random() * (delayMax - delayMin) + delayMin;
+      const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+      
+      await queueTextResponse(supabase, conversation, message, welcomeMessage, settings, aiSettings, delay, agent);
+      
+      // Mark message as processed
+      await supabase
+        .from('messages')
+        .update({ processed_by_nina: true })
+        .eq('id', message.id);
+      
+      // Trigger whatsapp-sender
+      try {
+        const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+        fetch(senderUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`
+          },
+          body: JSON.stringify({ triggered_by: 'nina-orchestrator-new-owner-name' })
+        }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+      } catch (e) {
+        console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+      }
+      
+      console.log(`[Nina] ✅ New owner qualification started for: ${possibleName}`);
+      return;
+    }
+  }
+  // ===== END NEW OWNER NAME CAPTURE =====
+
   // ===== SOFT REJECTION STEP 1: ASK FOR RENEWAL DATE =====
   // Check if this is a prospecting conversation and message is a soft rejection
   if (conversationMetadata.origin === 'prospeccao' && message.content && isSoftRejection(message.content)) {
@@ -3470,6 +3621,79 @@ Qual desses te interessa?`;
         }
       }
       
+      // 4.6 Reset contact data (se configurado - mudança de dono do número)
+      if (disqualCategory.resetContactData) {
+        const contactData = conversation.contact || {};
+        const previousContactData = {
+          name: contactData.name,
+          company: contactData.company,
+          cnpj: contactData.cnpj,
+          email: contactData.email,
+          vertical: contactData.vertical,
+          lead_status: contactData.lead_status,
+          fleet_size: contactData.fleet_size
+        };
+        
+        // Reset contact to "blank" state
+        await supabase
+          .from('contacts')
+          .update({
+            name: null,
+            call_name: null,
+            company: null,
+            cnpj: null,
+            email: null,
+            vertical: null,
+            fleet_size: null,
+            lead_status: 'new',
+            lead_source: 'reused_number',
+            client_memory: {
+              last_updated: new Date().toISOString(),
+              lead_profile: {
+                interests: [],
+                lead_stage: 'new',
+                objections: [],
+                products_discussed: [],
+                communication_style: 'unknown',
+                qualification_score: 0
+              },
+              sales_intelligence: {
+                pain_points: [],
+                next_best_action: 'qualify',
+                budget_indication: 'unknown',
+                decision_timeline: 'unknown'
+              },
+              interaction_summary: {
+                response_pattern: 'unknown',
+                last_contact_reason: '',
+                total_conversations: 0,
+                preferred_contact_time: 'unknown'
+              },
+              conversation_history: [],
+              previous_owner_data: previousContactData,
+              number_owner_changed_at: new Date().toISOString()
+            }
+          })
+          .eq('id', conversation.contact_id);
+        
+        console.log(`[Nina] 🔄 Contact data reset - number changed owner`);
+        console.log(`[Nina] 📦 Previous owner data archived:`, JSON.stringify(previousContactData));
+        
+        // Update conversation context for new owner name capture
+        await supabase
+          .from('conversations')
+          .update({
+            status: 'nina',
+            nina_context: {
+              number_owner_changed: true,
+              previous_owner_archived: true,
+              awaiting_new_owner_name: true,
+              reset_at: new Date().toISOString()
+            }
+          })
+          .eq('id', conversation.id);
+      }
+
       // 5. Disparar envio da mensagem (se houver resposta)
       if (disqualCategory.response) {
         try {
