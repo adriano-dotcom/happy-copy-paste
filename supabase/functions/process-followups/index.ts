@@ -10,7 +10,7 @@ interface MessageSequenceItem {
   attempt: number;
   type: 'manual' | 'ai_generated';
   content?: string;
-  ai_prompt_type?: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'direct_question' | 'closing_with_option' | 'schedule_renewal';
+  ai_prompt_type?: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'direct_question' | 'closing_with_option' | 'schedule_renewal' | 'prospecting_closing' | 'prospecting_no_reply';
   delay_hours?: number;
 }
 
@@ -71,6 +71,9 @@ interface EligibleConversation {
   nina_context?: {
     insurance_status?: InsuranceStatus;
     questions_asked?: Record<string, string>;
+    metadata?: {
+      origin?: string;
+    };
   };
 }
 
@@ -93,10 +96,21 @@ function getWindowMinutesRemaining(windowStart: string | null): number {
   return minutesRemaining;
 }
 
+// Normalizar nome para evitar MAIÚSCULAS (ex: "REINALDO" -> "Reinaldo")
+function normalizeContactName(name: string | null): string {
+  if (!name) return 'Cliente';
+  
+  // Se está todo em maiúsculas, converter para Title Case
+  if (name === name.toUpperCase() && name.length > 2) {
+    return name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  }
+  return name;
+}
+
 // Replace variables in message template
 function replaceVariables(message: string, conv: EligibleConversation): string {
-  const name = conv.contact_name || conv.contact_call_name || 'Cliente';
-  const callName = conv.contact_call_name || conv.contact_name || 'Cliente';
+  const name = normalizeContactName(conv.contact_name || conv.contact_call_name);
+  const callName = normalizeContactName(conv.contact_call_name || conv.contact_name);
   const company = conv.contact_company || '';
   
   return message
@@ -689,9 +703,22 @@ async function getMessageForAttempt(
   isQualified: boolean = true,
   detectedProduct?: DetectedProduct,
   answeredQualifications?: AnsweredQualifications,
-  insuranceStatus?: InsuranceStatus | null // NOVO: status de seguro existente
+  insuranceStatus?: InsuranceStatus | null,
+  forcedPromptType?: string | null // NOVO: forçar tipo de prompt (para prospecção)
 ): Promise<string> {
   const sequence = automation.messages_sequence;
+  
+  // NOVO: Se há um prompt type forçado (prospecção), usar ele diretamente
+  if (forcedPromptType) {
+    console.log(`[process-followups] Using FORCED prompt type: ${forcedPromptType}`);
+    return await generateAIMessage(
+      supabaseUrl, supabaseServiceKey, conv,
+      forcedPromptType, attemptNumber, hoursWaiting,
+      agentName, agentSpecialty, agentSlug, lastMessageSent,
+      conversationContext, unansweredQuestion, isQualified, detectedProduct, answeredQualifications,
+      insuranceStatus
+    );
+  }
   
   // If lead is NOT qualified, force re_qualify prompt
   if (!isQualified) {
@@ -1153,10 +1180,64 @@ serve(async (req) => {
             
             const hasExistingInsurance = insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance || false;
             
+            // NOVO: Detectar se é conversa de PROSPECÇÃO (Atlas)
+            const isProspectingConversation = agentInfo?.slug === 'atlas' || 
+              (conv.nina_context?.metadata?.origin === 'prospeccao');
+            
+            // NOVO: Fluxo SIMPLIFICADO para prospecção - apenas 2 tentativas
+            if (isProspectingConversation) {
+              console.log(`[process-followups] 🎯 PROSPECTING conversation detected (${agentInfo?.slug || 'unknown'}) - using simplified 2-step flow`);
+              
+              // Verificar se lead respondeu pelo menos uma vez
+              const hasUserResponse = conversationAnalysis.hasUserResponse;
+              
+              if (!hasUserResponse) {
+                // Lead NUNCA respondeu ao template inicial
+                // Tentativa 1 = prospecting_no_reply (encerramento sem resposta)
+                // Tentativa 2+ = NÃO ENVIA
+                if (attemptNumber >= 2) {
+                  console.log(`[process-followups] 🛑 Prospecting no reply - attempt ${attemptNumber} - STOPPING (max 1 attempt for no-reply)`);
+                  
+                  // Marcar conversa como encerrada
+                  await supabase.from('conversations').update({
+                    nina_context: {
+                      ...conv.nina_context,
+                      followup_stopped: true,
+                      followup_stopped_reason: 'prospecting_no_reply',
+                      closed_at: new Date().toISOString()
+                    }
+                  }).eq('id', conv.id);
+                  
+                  skipped++;
+                  continue;
+                }
+              } else {
+                // Lead respondeu mas parou
+                // Tentativa 1 = direct_question (pergunta curta)
+                // Tentativa 2 = prospecting_closing (encerramento profissional)
+                // Tentativa 3+ = NÃO ENVIA
+                if (attemptNumber >= 3) {
+                  console.log(`[process-followups] 🛑 Prospecting partial response - attempt ${attemptNumber} - STOPPING (max 2 attempts for partial response)`);
+                  
+                  // Marcar conversa como encerrada
+                  await supabase.from('conversations').update({
+                    nina_context: {
+                      ...conv.nina_context,
+                      followup_stopped: true,
+                      followup_stopped_reason: 'prospecting_closed',
+                      closed_at: new Date().toISOString()
+                    }
+                  }).eq('id', conv.id);
+                  
+                  skipped++;
+                  continue;
+                }
+              }
+            }
             // NOVO: Para leads com SOFT REJECTION, LIMITAR a 1 tentativa
             // 1ª = ask_insurance_renewal (pergunta se tem seguro e vencimento)
             // 2ª+ = NÃO ENVIA (encerra automação)
-            if (hasSoftRejectionDetected) {
+            else if (hasSoftRejectionDetected) {
               console.log(`[process-followups] Lead has soft rejection - using simplified 1-step flow`);
               
               if (attemptNumber >= 2) {
@@ -1172,6 +1253,28 @@ serve(async (req) => {
               // Se já é a 2ª tentativa ou mais, forçar encerramento elegante
               if (attemptNumber >= 2) {
                 console.log(`[process-followups] 📝 Attempt ${attemptNumber} for lead with insurance - forcing closing_with_option (encerramento elegante)`);
+              }
+            }
+            
+            // NOVO: Para prospecção, forçar prompts específicos
+            let prospectingPromptType: string | null = null;
+            if (isProspectingConversation) {
+              const hasUserResponse = conversationAnalysis.hasUserResponse;
+              
+              if (!hasUserResponse) {
+                // Sem resposta → encerramento direto com site
+                prospectingPromptType = 'prospecting_no_reply';
+                console.log(`[process-followups] 📩 Prospecting: no user response - using prospecting_no_reply`);
+              } else {
+                // Respondeu mas parou
+                if (attemptNumber === 1) {
+                  prospectingPromptType = 'direct_question';
+                  console.log(`[process-followups] 📩 Prospecting: attempt 1 - using direct_question`);
+                } else {
+                  // Tentativa 2 = encerramento profissional com site
+                  prospectingPromptType = 'prospecting_closing';
+                  console.log(`[process-followups] 📩 Prospecting: attempt 2 - using prospecting_closing (professional closing)`);
+                }
               }
             }
             
@@ -1192,7 +1295,8 @@ serve(async (req) => {
               leadIsQualified,
               detectedProduct,
               conversationAnalysis.answeredQualifications,
-              insuranceStatus // NOVO: status de seguro existente
+              insuranceStatus, // status de seguro existente
+              prospectingPromptType // NOVO: forçar prompt de prospecção
             );
             
             // NOVO: Se messageContent é null (soft rejection após 1ª tentativa), parar automação

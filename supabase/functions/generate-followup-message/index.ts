@@ -38,7 +38,7 @@ interface GenerateMessageRequest {
   agent_name?: string;
   agent_specialty?: string;
   agent_slug?: string;
-  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'unanswered_question' | 're_qualify' | 'direct_question' | 'closing_with_option' | 'closing_with_option_insurance' | 'schedule_renewal' | 'ask_insurance_renewal';
+  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'unanswered_question' | 're_qualify' | 'direct_question' | 'closing_with_option' | 'closing_with_option_insurance' | 'schedule_renewal' | 'ask_insurance_renewal' | 'prospecting_closing' | 'prospecting_no_reply';
   hours_waiting?: number;
   attempt_number: number;
   conversation_context?: string;
@@ -239,7 +239,56 @@ NUNCA:
 Exemplos:
 - "{nome}, entendo! Só uma curiosidade: vocês já têm seguro de carga ou veículo hoje? Se tiver, quando vence? Fico à disposição pra comparar valores 😉"
 - "{nome}, tranquilo! Pergunta rápida: vocês têm seguro na frota hoje? Quando vence? Me chama aqui quando quiser cotar!"
-- "{nome}, sem problemas! Vocês já estão segurados? Se sim, posso fazer uma cotação comparativa pra renovação, sem compromisso!"`
+- "{nome}, sem problemas! Vocês já estão segurados? Se sim, posso fazer uma cotação comparativa pra renovação, sem compromisso!"`,
+
+  // NOVO: Encerramento profissional para prospecção (Atlas) - Lead respondeu mas parou
+  prospecting_closing: `O lead de PROSPECÇÃO respondeu inicialmente mas parou de interagir.
+Esta é a ÚLTIMA mensagem - faça um encerramento PROFISSIONAL e ELEGANTE:
+
+ESTRUTURA OBRIGATÓRIA:
+1. Reconheça que o lead pode estar ocupado (1 frase curta)
+2. Ofereça disponibilidade para cotar seguro de CARGA e FROTA
+3. SEMPRE termine com: "Confira nossos serviços em jacometoseguros.com.br"
+
+REGRAS:
+- Máximo 3 frases
+- NÃO insista ou seja repetitivo
+- NÃO faça perguntas
+- Tom amigável e profissional
+- Agradeça pelo tempo
+- Use o primeiro nome do cliente de forma natural
+
+EXEMPLOS APROVADOS:
+- "Entendo que você pode estar ocupado no momento. Fico à disposição sempre que precisar cotar seguro de carga ou frota. Confira nossos serviços em jacometoseguros.com.br. Obrigado pelo seu tempo!"
+- "Obrigado por receber minha mensagem! Quando precisar de cotação para seguro de transporte de carga ou frota, estou à disposição. Visite jacometoseguros.com.br para saber mais sobre nossos serviços."
+- "Agradeço sua atenção! Caso precise proteger suas cargas ou frota no futuro, estaremos prontos para ajudar. Acesse jacometoseguros.com.br e conheça nossas soluções."
+- "Fico à disposição para quando precisar de seguro para sua operação. Você pode conhecer mais sobre a Jacometo Seguros em jacometoseguros.com.br. Tenha um ótimo dia!"
+
+NUNCA USE:
+- Perguntas ("Você precisa de algo?")
+- Nome em MAIÚSCULAS
+- Insistência ("Me responde?", "Está aí?")
+- Promessas de cotação não solicitadas`,
+
+  // NOVO: Encerramento para prospecção quando lead NUNCA respondeu ao template
+  prospecting_no_reply: `O lead de prospecção NÃO RESPONDEU ao template inicial.
+Envie UMA mensagem de encerramento educada:
+
+ESTRUTURA:
+1. Agradeça por receber a mensagem
+2. Ofereça disponibilidade para seguro de carga ou frota
+3. SEMPRE termine com: "Visite jacometoseguros.com.br para saber mais."
+
+EXEMPLOS:
+- "Obrigado por receber minha mensagem! Quando precisar de cotação para seguro de transporte de carga ou frota, estou à disposição. Visite jacometoseguros.com.br para saber mais sobre nossos serviços."
+- "Fico à disposição caso precise de proteção para sua operação no futuro. Conheça a Jacometo Seguros em jacometoseguros.com.br. Até mais!"
+- "Agradeço sua atenção! Se precisar de seguro para carga ou frota, é só me chamar. Acesse jacometoseguros.com.br e conheça nossas soluções."
+
+REGRAS:
+- Máximo 2 frases + site
+- NÃO faça perguntas
+- NÃO insista
+- Use o primeiro nome do cliente de forma natural`
 };
 
 // Fallback messages by product - avoids redundant questions
@@ -339,6 +388,17 @@ function filterUnansweredQuestions(
   });
 }
 
+// Normalizar nome para evitar MAIÚSCULAS (ex: "REINALDO" -> "Reinaldo")
+function normalizeContactName(name: string | null): string {
+  if (!name) return 'Cliente';
+  
+  // Se está todo em maiúsculas, converter para Title Case
+  if (name === name.toUpperCase() && name.length > 2) {
+    return name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  }
+  return name;
+}
+
 // Get a fallback message that's different from the last one, using product-specific messages
 function getVariedFallback(
   contactName: string, 
@@ -346,7 +406,7 @@ function getVariedFallback(
   detectedProduct?: DetectedProduct,
   answeredQualifications?: AnsweredQualifications
 ): string {
-  const name = contactName || 'Cliente';
+  const name = normalizeContactName(contactName);
   const productKey = detectedProduct || 'generico';
   let messages = FALLBACK_MESSAGES_BY_PRODUCT[productKey] || FALLBACK_MESSAGES_BY_PRODUCT.generico;
   
@@ -429,6 +489,9 @@ serve(async (req) => {
       insurance_status = null // NOVO: status de seguro existente
     } = body;
     
+    // NORMALIZAR nome para evitar MAIÚSCULAS
+    const normalizedContactName = normalizeContactName(contact_name);
+    
     // NOVO: Detectar se lead tem seguro existente
     const hasExistingInsurance = insurance_status?.has_vehicle_insurance || insurance_status?.has_cargo_insurance || false;
     
@@ -448,8 +511,9 @@ serve(async (req) => {
     }
     
     console.log(`[generate-followup-message] Lead: qualified=${is_qualified ? 'YES' : 'NO'}, product=${detected_product || 'none'}, hasInsurance=${hasExistingInsurance}`);
+    console.log(`[generate-followup-message] Contact name normalized: "${contact_name}" -> "${normalizedContactName}"`);
 
-    console.log(`[generate-followup-message] Generating ${effectivePromptType} message for ${contact_name}, attempt ${attempt_number}`);
+    console.log(`[generate-followup-message] Generating ${effectivePromptType} message for ${normalizedContactName}, attempt ${attempt_number}`);
     if (unanswered_question) {
       console.log(`[generate-followup-message] Unanswered question detected: "${unanswered_question.substring(0, 80)}..."`);
     }
@@ -560,13 +624,15 @@ Reformule a pergunta de forma mais direta ou ofereça opções.`;
     }
 
     const userPrompt = `Gere uma mensagem de follow-up para:
-- Nome do cliente: ${contact_name}
+- Nome do cliente: ${normalizedContactName}
 ${contact_company ? `- Empresa: ${contact_company}` : ''}
 ${hours_waiting ? `- Horas sem resposta: ${Math.round(hours_waiting)}h` : ''}
 - Tentativa número: ${attempt_number}
 ${contextSection}
 ${productContext}
 ${last_message_sent ? `\n❌ NÃO repita nem pareça com: "${last_message_sent}"` : ''}
+
+IMPORTANTE: Use o nome "${normalizedContactName}" (primeira letra maiúscula, resto minúsculo).
 
 Responda APENAS com a mensagem, sem explicações ou aspas.`;
 
@@ -593,7 +659,7 @@ Responda APENAS com a mensagem, sem explicações ou aspas.`;
       console.error('[generate-followup-message] AI Gateway error:', response.status, errorText);
       
       if (response.status === 429 || response.status === 402) {
-        const fallbackMessage = getVariedFallback(contact_name, last_message_sent, detected_product, answered_qualifications || undefined);
+        const fallbackMessage = getVariedFallback(normalizedContactName, last_message_sent, detected_product, answered_qualifications || undefined);
         return new Response(JSON.stringify({ 
           error: response.status === 429 ? 'Rate limit exceeded' : 'Créditos insuficientes',
           message: fallbackMessage,
@@ -620,11 +686,11 @@ Responda APENAS com a mensagem, sem explicações ou aspas.`;
     // Check if message is too similar to last one - regenerate if needed
     if (last_message_sent && messagesTooSimilar(generatedMessage, last_message_sent)) {
       console.log('[generate-followup-message] Generated message too similar to last, using fallback');
-      generatedMessage = getVariedFallback(contact_name, last_message_sent, detected_product, answered_qualifications || undefined);
+      generatedMessage = getVariedFallback(normalizedContactName, last_message_sent, detected_product, answered_qualifications || undefined);
     }
     
     // Sanitize message for unqualified leads - prevent forbidden terms
-    generatedMessage = sanitizeMessageForUnqualifiedLead(generatedMessage, is_qualified, contact_name, last_message_sent, detected_product, answered_qualifications || undefined);
+    generatedMessage = sanitizeMessageForUnqualifiedLead(generatedMessage, is_qualified, normalizedContactName, last_message_sent, detected_product, answered_qualifications || undefined);
 
     console.log(`[generate-followup-message] Generated: "${generatedMessage.substring(0, 50)}..."`);
 
