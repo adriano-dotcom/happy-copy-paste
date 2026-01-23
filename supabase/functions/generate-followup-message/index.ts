@@ -348,48 +348,102 @@ REGRAS:
 - Tom acolhedor e empático (especialista em saúde)`
 };
 
-// Fallback messages by product - avoids redundant questions
-const FALLBACK_MESSAGES_BY_PRODUCT: Record<string, string[]> = {
+// TEMAS DE FALLBACK - organizados para evitar repetição semântica
+interface FallbackTheme {
+  tema: string;
+  mensagens: string[];
+}
+
+const FALLBACK_THEMES_BY_PRODUCT: Record<string, FallbackTheme[]> = {
   carga: [
-    "{nome}, sobre o seguro de carga: qual tipo de mercadoria você transporta?",
-    "Oi {nome}! Sobre seu seguro de carga, você faz transporte próprio ou terceirizado?",
-    "{nome}, posso te ligar pra falar sobre as coberturas de carga? 5 min!",
-    "E aí {nome}! Pra gente avançar no seguro de carga, me conta a rota principal que você faz!",
-    "{nome}, qual o valor médio das cargas que você transporta? Assim te passo as melhores opções!",
+    { tema: 'mercadoria', mensagens: [
+      "Qual tipo de mercadoria você transporta?",
+      "Me conta o que você transporta!"
+    ]},
+    { tema: 'rota', mensagens: [
+      "Pra sua carga, qual a rota principal que você faz?",
+      "Quais estados você atende com mais frequência?"
+    ]},
+    { tema: 'valor', mensagens: [
+      "Qual o valor médio das cargas?",
+      "Quantas viagens você faz por mês em média?"
+    ]},
+    { tema: 'ligacao', mensagens: [
+      "Posso te ligar pra falar sobre as coberturas? 5 min!"
+    ]},
   ],
   veiculo: [
-    "{nome}, sobre o seguro do veículo: é pra uso profissional ou pessoal?",
-    "Oi {nome}! Pra te passar as opções certas, me conta qual o modelo do veículo!",
-    "{nome}, posso te ligar pra falar sobre as coberturas do seu veículo? 5 min!",
-    "E aí {nome}! O veículo é pra transporte de carga ou de passageiros?",
-    "{nome}, o veículo é seu ou de frota? Me conta que te ajudo!",
+    { tema: 'uso', mensagens: [
+      "O veículo é pra uso profissional ou pessoal?"
+    ]},
+    { tema: 'modelo', mensagens: [
+      "Me conta qual o modelo e ano do veículo!",
+      "Qual veículo você quer segurar?"
+    ]},
+    { tema: 'ligacao', mensagens: [
+      "Posso te ligar pra falar sobre as coberturas? 5 min!"
+    ]},
   ],
   frota: [
-    "{nome}, sobre o seguro de frota: quantos veículos você tem hoje?",
-    "Oi {nome}! Sua frota é só de caminhões ou tem outros tipos de veículo?",
-    "{nome}, posso te ligar pra falar sobre as opções de seguro pra frota? 5 min!",
-    "E aí {nome}! Os veículos da frota fazem que tipo de transporte?",
-    "{nome}, pra montar a melhor proposta, me conta quantos veículos são na frota!",
+    { tema: 'quantidade', mensagens: [
+      "Quantos veículos tem na frota hoje?",
+      "Me conta quantos veículos são na frota!"
+    ]},
+    { tema: 'tipo', mensagens: [
+      "A frota é só de caminhões ou tem outros tipos?",
+      "Quais tipos de veículos tem na frota?"
+    ]},
+    { tema: 'ligacao', mensagens: [
+      "Posso te ligar pra falar sobre seguro de frota? 5 min!"
+    ]},
   ],
   generico: [
-    "{nome}, me conta: qual tipo de seguro você está buscando? Posso te ajudar!",
-    "Oi {nome}! Você precisa de seguro pra transporte, frota ou carga? Me fala que te ajudo!",
-    "{nome}, posso te ligar rapidinho pra entender sua necessidade? 5 min!",
-    "E aí {nome}! Ainda precisa de ajuda com seguro? Me conta o que você busca!",
-    "{nome}, tô aqui pra te ajudar! É pra proteger veículo, carga ou os dois?",
-    "Oi {nome}! Me conta o que você transporta que te passo as opções de seguro!",
-    "{nome}, quer que eu te ligue pra explicar as coberturas disponíveis?",
-    "E aí {nome}! Qual sua principal preocupação: proteger a carga ou o veículo?",
+    { tema: 'necessidade', mensagens: [
+      "Qual tipo de seguro você está buscando?",
+      "É pra proteger veículo, carga ou os dois?"
+    ]},
+    { tema: 'ligacao', mensagens: [
+      "Posso te ligar pra entender sua necessidade? 5 min!"
+    ]},
   ],
   has_insurance: [
-    "{nome}, quando vence a apólice atual? Posso preparar uma cotação comparativa!",
-    "{nome}, vocês já pensaram em fazer uma cotação comparativa pra renovação?",
-    "Oi {nome}! E sobre o seguro de carga, vocês têm RCTR-C ou o embarcador contrata?",
-    "{nome}, se quiser posso preparar uma proposta pra vocês compararem na renovação!",
-    "{nome}, está satisfeito com o atendimento da seguradora atual?",
-    "Oi {nome}! Posso te ajudar a avaliar as coberturas antes da renovação?",
+    { tema: 'vencimento', mensagens: [
+      "Quando vence a apólice atual? Posso preparar uma cotação comparativa!",
+      "Sobre sua apólice atual: quando vence?"
+    ]},
+    { tema: 'crosssell', mensagens: [
+      "Além do seguro do veículo, vocês têm RCTR-C pra proteger a carga?",
+      "Você tem seguro de carga também? É diferente do seguro do veículo!"
+    ]},
   ],
 };
+
+// Grupos de perguntas semanticamente similares
+const SIMILAR_QUESTION_GROUPS = [
+  ['pessoa jurídica', 'autônomo', 'transportadora', 'motorista autônomo', 'pj', 'embarcador', 'transportador'],
+  ['próprio', 'terceirizado', 'agregado', 'presta serviço'],
+  ['modelo', 'ano do veículo', 'qual veículo'],
+  ['quantos veículos', 'quantas viagens', 'quantos caminhões'],
+];
+
+// Verificar se duas mensagens são semanticamente similares
+function isSimilarToLastMessage(newMessage: string, lastMessage?: string): boolean {
+  if (!lastMessage) return false;
+  
+  const newLower = newMessage.toLowerCase();
+  const lastLower = lastMessage.toLowerCase();
+  
+  for (const group of SIMILAR_QUESTION_GROUPS) {
+    const newHasGroup = group.some(kw => newLower.includes(kw));
+    const lastHasGroup = group.some(kw => lastLower.includes(kw));
+    if (newHasGroup && lastHasGroup) {
+      console.log(`[generate-followup-message] 🔄 Detected similar question pattern`);
+      return true;
+    }
+  }
+  
+  return false;
+}
 
 // Mapeamento de perguntas para tópicos de qualificação
 const QUESTION_TOPIC_MAP: Record<string, keyof AnsweredQualifications> = {
@@ -461,38 +515,59 @@ function getVariedFallback(
   contactName: string, 
   lastMessage?: string,
   detectedProduct?: DetectedProduct,
-  answeredQualifications?: AnsweredQualifications
+  answeredQualifications?: AnsweredQualifications,
+  attemptNumber: number = 1
 ): string {
   const name = normalizeContactName(contactName);
   const productKey = detectedProduct || 'generico';
-  let messages = FALLBACK_MESSAGES_BY_PRODUCT[productKey] || FALLBACK_MESSAGES_BY_PRODUCT.generico;
+  const themes = FALLBACK_THEMES_BY_PRODUCT[productKey] || FALLBACK_THEMES_BY_PRODUCT.generico;
   
-  // Filtrar mensagens de perguntas já respondidas
-  messages = filterUnansweredQuestions(messages, answeredQualifications);
+  // Encontrar primeiro tema que não foi perguntado (baseado em tópicos respondidos)
+  let selectedTheme: FallbackTheme | null = null;
   
-  // Se todas as perguntas foram respondidas, usar mensagens de avanço
-  if (messages.length === 0) {
-    console.log(`[generate-followup-message] All qualification questions answered - using advancement messages`);
-    messages = [
-      `${name}, já tenho tudo que preciso! Posso te ligar em 5 min pra fechar?`,
-      `Oi ${name}! Com essas informações, consigo te passar as melhores opções. Me manda um horário que te ligo!`,
-      `${name}, perfeito! Que tal uma ligação rápida pra eu te apresentar a proposta?`,
+  for (const theme of themes) {
+    // Verificar se mensagens deste tema ainda não foram respondidas
+    const themeMessages = theme.mensagens;
+    const unansweredMessages = filterUnansweredQuestions(themeMessages, answeredQualifications);
+    
+    if (unansweredMessages.length > 0) {
+      selectedTheme = { ...theme, mensagens: unansweredMessages };
+      break;
+    }
+  }
+  
+  // Se todos os temas já foram respondidos, usar mensagens de avanço
+  if (!selectedTheme) {
+    console.log(`[generate-followup-message] All themes exhausted - using advancement messages`);
+    const advancementMessages = [
+      `Já tenho tudo que preciso! Posso te ligar em 5 min pra fechar?`,
+      `Com essas informações, consigo te passar as melhores opções. Me manda um horário que te ligo!`,
+      `Perfeito! Que tal uma ligação rápida pra eu te apresentar a proposta?`,
     ];
-    // Retornar diretamente sem substituição (já tem o nome)
-    const randomIndex = Math.floor(Math.random() * messages.length);
-    return messages[randomIndex];
+    const randomIndex = Math.floor(Math.random() * advancementMessages.length);
+    let msg = advancementMessages[randomIndex];
+    // Adicionar nome apenas na 1ª tentativa
+    if (attemptNumber <= 1) {
+      msg = `${name}, ${msg.charAt(0).toLowerCase()}${msg.slice(1)}`;
+    }
+    return msg;
   }
   
   let attempts = 0;
-  let fallback: string;
+  let fallback: string = '';
   
   do {
-    const randomIndex = Math.floor(Math.random() * messages.length);
-    fallback = messages[randomIndex].replace('{nome}', name);
+    const randomIndex = Math.floor(Math.random() * selectedTheme.mensagens.length);
+    fallback = selectedTheme.mensagens[randomIndex];
     attempts++;
-  } while (lastMessage && fallback === lastMessage && attempts < 10);
+  } while (isSimilarToLastMessage(fallback, lastMessage) && attempts < 5);
   
-  console.log(`[generate-followup-message] Fallback for product "${productKey}": "${fallback.substring(0, 50)}..."`);
+  // Adicionar nome apenas na 1ª tentativa
+  if (attemptNumber <= 1) {
+    fallback = `${name}, ${fallback.charAt(0).toLowerCase()}${fallback.slice(1)}`;
+  }
+  
+  console.log(`[generate-followup-message] Fallback for product "${productKey}", tema "${selectedTheme.tema}": "${fallback.substring(0, 50)}..."`);
   return fallback;
 }
 
