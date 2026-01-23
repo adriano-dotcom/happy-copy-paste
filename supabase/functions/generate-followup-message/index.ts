@@ -38,7 +38,7 @@ interface GenerateMessageRequest {
   agent_name?: string;
   agent_specialty?: string;
   agent_slug?: string;
-  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'unanswered_question' | 're_qualify' | 'direct_question' | 'closing_with_option' | 'closing_with_option_insurance' | 'schedule_renewal' | 'ask_insurance_renewal' | 'prospecting_closing' | 'prospecting_no_reply';
+  prompt_type: 'qualification' | 'urgency' | 'budget' | 'decision' | 'soft_reengagement' | 'last_chance' | 'schedule_call' | 'schedule_call_transportador' | 'unanswered_question' | 're_qualify' | 'direct_question' | 'closing_with_option' | 'closing_with_option_insurance' | 'schedule_renewal' | 'ask_insurance_renewal' | 'prospecting_closing' | 'prospecting_no_reply' | 'health_closing' | 'health_no_reply';
   hours_waiting?: number;
   attempt_number: number;
   conversation_context?: string;
@@ -70,9 +70,10 @@ function sanitizeMessageForUnqualifiedLead(
 ): string {
   if (isQualified) return message;
   
-  // Prompts de prospecção são encerramentos profissionais - não devem cair em fallback
-  if (promptType === 'prospecting_closing' || promptType === 'prospecting_no_reply') {
-    console.log(`[generate-followup-message] Skipping sanitization for prospecting prompt: ${promptType}`);
+  // Prompts de prospecção e saúde são encerramentos profissionais - não devem cair em fallback
+  if (promptType === 'prospecting_closing' || promptType === 'prospecting_no_reply' || 
+      promptType === 'health_closing' || promptType === 'health_no_reply') {
+    console.log(`[generate-followup-message] Skipping sanitization for closing prompt: ${promptType}`);
     return message;
   }
   
@@ -296,7 +297,55 @@ REGRAS:
 - Máximo 2 frases + site
 - NÃO faça perguntas
 - NÃO insista
-- Use o primeiro nome do cliente de forma natural`
+- Use o primeiro nome do cliente de forma natural`,
+
+  // NOVO: Encerramento profissional para SAÚDE (Clara) - Lead respondeu mas parou
+  health_closing: `O lead de PLANOS DE SAÚDE respondeu inicialmente mas parou de interagir.
+Esta é a ÚLTIMA mensagem - faça um encerramento PROFISSIONAL e ELEGANTE:
+
+ESTRUTURA OBRIGATÓRIA:
+1. Reconheça que o lead pode estar ocupado (1 frase curta)
+2. Ofereça disponibilidade para cotar planos de saúde empresarial, individual ou odontológico
+3. SEMPRE termine com: "Confira nossos serviços em jacometoseguros.com.br"
+
+REGRAS:
+- Máximo 3 frases
+- NÃO insista ou seja repetitivo
+- NÃO faça perguntas
+- Tom amigável, acolhedor e profissional
+- Agradeça pelo tempo
+- Use o primeiro nome do cliente de forma natural
+
+EXEMPLOS APROVADOS:
+- "Entendo que você pode estar ocupado no momento. Fico à disposição sempre que precisar cotar plano de saúde empresarial, familiar ou odontológico. Confira nossos serviços em jacometoseguros.com.br. Obrigada pelo seu tempo!"
+- "Agradeço sua atenção! Quando precisar de cotação de plano de saúde, estou à disposição. Acesse jacometoseguros.com.br e conheça nossas soluções."
+- "Fico à disposição para quando precisar cuidar da saúde da sua equipe ou família. Conheça mais em jacometoseguros.com.br. Tenha um ótimo dia!"
+
+NUNCA USE:
+- Perguntas ("Você precisa de algo?")
+- Nome em MAIÚSCULAS
+- Insistência ("Me responde?", "Está aí?")`,
+
+  // NOVO: Encerramento para SAÚDE quando lead NUNCA respondeu
+  health_no_reply: `O lead de planos de saúde NÃO RESPONDEU ao contato inicial.
+Envie UMA mensagem de encerramento educada:
+
+ESTRUTURA:
+1. Agradeça por receber a mensagem
+2. Ofereça disponibilidade para planos de saúde empresarial, individual ou odontológico
+3. SEMPRE termine com: "Visite jacometoseguros.com.br para saber mais."
+
+EXEMPLOS:
+- "Obrigada por receber minha mensagem! Quando precisar de cotação para plano de saúde, estou à disposição. Visite jacometoseguros.com.br para conhecer nossas soluções."
+- "Fico à disposição caso precise de um plano de saúde para sua empresa ou família. Conheça a Jacometo Seguros em jacometoseguros.com.br. Até mais!"
+- "Agradeço sua atenção! Se precisar de plano de saúde ou odontológico, é só me chamar. Acesse jacometoseguros.com.br e conheça nossos serviços."
+
+REGRAS:
+- Máximo 2 frases + site
+- NÃO faça perguntas
+- NÃO insista
+- Use o primeiro nome do cliente de forma natural
+- Tom acolhedor e empático (especialista em saúde)`
 };
 
 // Fallback messages by product - avoids redundant questions
