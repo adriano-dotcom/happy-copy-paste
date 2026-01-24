@@ -119,40 +119,42 @@ serve(async (req) => {
         : `${k}: ${v.substring(0, 100)}${v.length > 100 ? '...' : ''}`
     ));
     
-    // Extract URL for query parameter auth
+    // Extract URL (used for optional key transport via query params)
     const url = new URL(req.url);
-    
-    // Check for bypass mode (for testing)
-    const bypassAuth = url.searchParams.get('bypass_auth') === 'true';
+
     const ipTrusted = isTrustedIP(clientIP);
-    
-    // Skip auth if from trusted IP or bypass mode is enabled
-    let skipAuth = false;
-    let authReason = '';
-    
-    if (bypassAuth) {
-      skipAuth = true;
-      authReason = 'bypass_param';
-      console.log('[api4com-webhook] ⚠️ Auth bypassed via query param');
-    } else if (ipTrusted) {
-      skipAuth = true;
-      authReason = `trusted_ip:${clientIP}`;
-      console.log('[api4com-webhook] ✅ Trusted IP detected:', clientIP);
+
+    // Validate webhook authentication (NO bypass mechanisms)
+    const webhookKey = Deno.env.get('API4COM_WEBHOOK_KEY');
+    if (!webhookKey) {
+      console.error('[api4com-webhook] SECURITY: API4COM_WEBHOOK_KEY not configured - refusing to process webhook');
+
+      // Log misconfiguration so it's visible in audit trails
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        await logWebhookEvent(supabase, {
+          eventType: 'auth_failed',
+          rawPayload: { clientIP, reason: 'missing_server_key', ipTrusted },
+          clientIP,
+          headers: Object.fromEntries(req.headers.entries()),
+          processingResult: 'error',
+          errorMessage: 'Server misconfiguration: API4COM_WEBHOOK_KEY not configured',
+        });
+      } catch {
+        // ignore logging failures
+      }
+
+      return new Response(
+        JSON.stringify({ error: 'Service Unavailable', message: 'Webhook key not configured' }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
-    
-    if (!skipAuth) {
-      // Validate webhook authentication
-      const webhookKey = Deno.env.get('API4COM_WEBHOOK_KEY');
-      if (!webhookKey) {
-        console.error('[api4com-webhook] SECURITY: API4COM_WEBHOOK_KEY not configured');
-        // Allow request to proceed without auth key - we'll rely on payload validation
-        console.log('[api4com-webhook] ⚠️ No webhook key configured, allowing request from:', clientIP);
-        skipAuth = true;
-        authReason = 'no_key_configured';
-      } else {
-        // Try multiple authentication methods
-        let providedKey: string | null = null;
-        let authMethod = 'none';
+
+    // Try multiple authentication methods
+    let providedKey: string | null = null;
+    let authMethod = 'none';
         
         // Method 1: Headers
         const headerKey = 
@@ -207,52 +209,39 @@ serve(async (req) => {
         const trimmedProvidedKey = providedKey?.trim() || '';
         const trimmedWebhookKey = webhookKey.trim();
         
-        console.log('[api4com-webhook] 🔑 Auth check:', {
-          authMethod,
-          providedKeyFingerprint: getKeyFingerprint(providedKey || ''),
-          expectedKeyFingerprint: getKeyFingerprint(webhookKey),
-          hasQueryParams: url.searchParams.toString().length > 0,
-          clientIP,
-          ipTrusted,
-        });
-        
-        if (!trimmedProvidedKey || trimmedProvidedKey !== trimmedWebhookKey) {
-          // Authentication failed - only allow from trusted IPs
-          if (ipTrusted) {
-            console.log('[api4com-webhook] ✅ Key mismatch but trusted IP:', clientIP);
-            skipAuth = true;
-            authReason = 'trusted_ip_override';
-          } else {
-            console.error('[api4com-webhook] ❌ Authentication failed from:', clientIP);
-            
-            // Log the failed authentication attempt
-            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-            const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-            const supabase = createClient(supabaseUrl, supabaseKey);
-            
-            await logWebhookEvent(supabase, {
-              eventType: 'auth_failed',
-              rawPayload: { authMethod, clientIP, reason: 'key_mismatch' },
-              clientIP,
-              headers: Object.fromEntries(req.headers.entries()),
-              processingResult: 'error',
-              errorMessage: 'Authentication failed - invalid key'
-            });
-            
-            return new Response(
-              JSON.stringify({ error: 'Unauthorized', message: 'Invalid or missing API key' }),
-              { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
-          }
-        } else {
-          skipAuth = true;
-          authReason = `auth_success:${authMethod}`;
-          console.log('[api4com-webhook] ✅ Authentication successful via', authMethod);
-        }
-      }
+    console.log('[api4com-webhook] 🔑 Auth check:', {
+      authMethod,
+      providedKeyFingerprint: getKeyFingerprint(providedKey || ''),
+      expectedKeyFingerprint: getKeyFingerprint(webhookKey),
+      hasQueryParams: url.searchParams.toString().length > 0,
+      clientIP,
+      ipTrusted,
+    });
+
+    if (!trimmedProvidedKey || trimmedProvidedKey !== trimmedWebhookKey) {
+      console.error('[api4com-webhook] ❌ Authentication failed from:', clientIP);
+
+      // Log the failed authentication attempt
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const supabase = createClient(supabaseUrl, supabaseKey);
+
+      await logWebhookEvent(supabase, {
+        eventType: 'auth_failed',
+        rawPayload: { authMethod, clientIP, ipTrusted, reason: 'key_mismatch_or_missing' },
+        clientIP,
+        headers: Object.fromEntries(req.headers.entries()),
+        processingResult: 'error',
+        errorMessage: 'Authentication failed - invalid or missing key',
+      });
+
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized', message: 'Invalid or missing API key' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    console.log('[api4com-webhook] 🔓 Auth result:', { skipAuth, authReason });
+    console.log('[api4com-webhook] ✅ Authentication successful via', authMethod);
 
     const body = await req.json();
     
