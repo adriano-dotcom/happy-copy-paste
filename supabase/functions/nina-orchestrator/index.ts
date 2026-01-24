@@ -203,73 +203,349 @@ interface DisqualificationCategory {
   emoji: string;
 }
 
-// ===== QUALIFICATION CONTEXT PATTERNS =====
-// When the last agent message matches these patterns, user responses like "subcontratado"
-// are QUALIFICATION ANSWERS, NOT job-seeking messages
-const CONTRATACAO_QUESTION_PATTERNS = [
-  /contratado direto.*subcontratado/i,
-  /subcontratado.*contratado direto/i,
-  /tipo de contrata[çc][aã]o/i,
-  /emitindo ct-?e.*ou.*subcontratado/i,
-  /atua como.*direto.*ou.*subcontratado/i,
-  /trabalha como.*direto.*subcontratado/i,
-  /direto ou subcontratado/i,
-  /voc[êe] [eé] contratado/i,
-  /contratado ou subcontratado/i,
-  /você atua como contratado/i,
-  /voce atua como contratado/i,
-  /contratado.*emitindo.*ct-?e/i
-];
+// ===== IRIS QUALIFICATION CONTEXT PATTERNS =====
+// When the last agent message matches these patterns, user responses
+// are QUALIFICATION ANSWERS, NOT job-seeking/disqualification triggers
 
-// Valid qualification answer patterns when responding to contratação questions
-const VALID_CONTRATACAO_ANSWERS = [
-  'subcontratado', 'sub-contratado', 'sub contratado',
-  'contratado direto', 'direto', 'contratado',
-  'sou subcontratado', 'trabalho subcontratado',
-  'faço frete subcontratado', 'faco frete subcontratado',
-  'agregado', 'terceirizado', 'autonomo', 'autônomo',
-  'pj', 'pessoa juridica', 'pessoa jurídica', 'cnpj',
-  'emito cte', 'emito ct-e', 'nao emito', 'não emito',
-  'ambos', 'os dois', 'depende', 'os 2'
-];
+interface QualificationPattern {
+  agentPatterns: RegExp[];
+  validAnswers: string[];
+}
+
+const IRIS_QUALIFICATION_PATTERNS: Record<string, QualificationPattern> = {
+  // Tipo de contratação (já existente e expandido)
+  contratacao: {
+    agentPatterns: [
+      /contratado direto.*subcontratado/i,
+      /subcontratado.*contratado direto/i,
+      /tipo de contrata[çc][aã]o/i,
+      /emitindo ct-?e.*ou.*subcontratado/i,
+      /atua como.*direto.*ou.*subcontratado/i,
+      /trabalha como.*direto.*subcontratado/i,
+      /direto ou subcontratado/i,
+      /voc[êe] [eé] contratado/i,
+      /contratado ou subcontratado/i,
+      /você atua como contratado/i,
+      /voce atua como contratado/i,
+      /contratado.*emitindo.*ct-?e/i
+    ],
+    validAnswers: [
+      'subcontratado', 'sub-contratado', 'sub contratado',
+      'contratado direto', 'direto', 'contratado',
+      'sou subcontratado', 'trabalho subcontratado',
+      'faço frete subcontratado', 'faco frete subcontratado',
+      'agregado', 'terceirizado', 'autonomo', 'autônomo',
+      'pj', 'pessoa juridica', 'pessoa jurídica', 'cnpj',
+      'emito cte', 'emito ct-e', 'nao emito', 'não emito',
+      'ambos', 'os dois', 'depende', 'os 2'
+    ]
+  },
+
+  // Intenção de continuar subcontratado ou virar direto
+  intencao_sub: {
+    agentPatterns: [
+      /pretende continuar.*subcontratado/i,
+      /virar contratado direto/i,
+      /continuar como subcontratado/i,
+      /plano.*virar direto/i,
+      /pretende virar direto/i,
+      /quer virar direto/i
+    ],
+    validAnswers: [
+      'continuar', 'virar direto', 'quero continuar', 'quero virar',
+      'pretendo continuar', 'pretendo virar', 'vou continuar', 'vou virar',
+      'sim', 'nao', 'não', 'ainda nao sei', 'ainda não sei', 'depende',
+      'vou permanecer', 'por enquanto sim', 'por enquanto nao', 'por enquanto não'
+    ]
+  },
+
+  // Tipo de frota
+  tipo_frota: {
+    agentPatterns: [
+      /frota.*pr[óo]pria.*agregados.*terceiros/i,
+      /pr[óo]pria.*agregados.*terceiros/i,
+      /trabalha com frota/i,
+      /tipo de frota/i,
+      /frota [eé]/i,
+      /sua frota [eé]/i,
+      /frota [eé] propria/i,
+      /frota.*ou.*agregados/i
+    ],
+    validAnswers: [
+      'propria', 'própria', 'agregados', 'terceiros', 'mista',
+      'frota propria', 'frota própria', 'so agregados', 'só agregados',
+      'so terceiros', 'só terceiros', 'tudo proprio', 'tudo próprio',
+      'propria e agregados', 'própria e agregados', 'so minha', 'só minha'
+    ]
+  },
+
+  // Tem seguro ativo
+  tem_seguro: {
+    agentPatterns: [
+      /j[áa] tem seguro/i,
+      /seguro.*ativo/i,
+      /ve[íi]culos.*j[áa] t[êe]m seguro/i,
+      /tem seguro de carga/i,
+      /seguro atualmente/i,
+      /tem algum seguro/i,
+      /possui seguro/i
+    ],
+    validAnswers: [
+      'sim', 'nao', 'não', 'tenho', 'nao tenho', 'não tenho',
+      'ativo', 'vencido', 'ja tenho', 'já tenho', 'ainda nao', 'ainda não',
+      'vencendo', 'pra vencer', 'para vencer', 'ta vencendo', 'tá vencendo'
+    ]
+  },
+
+  // Vencimento de apólice
+  vencimento: {
+    agentPatterns: [
+      /quando vence/i,
+      /vence a ap[óo]lice/i,
+      /vencimento.*seguro/i,
+      /data.*vencimento/i,
+      /vence o seguro/i,
+      /quando.*ap[óo]lice.*vence/i
+    ],
+    validAnswers: [
+      'mes que vem', 'mês que vem', 'proximo mes', 'próximo mês',
+      'janeiro', 'fevereiro', 'marco', 'março', 'abril', 'maio',
+      'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
+      'esse mes', 'esse mês', 'semana que vem', 'daqui', 'dias', 'meses',
+      'nao sei', 'não sei', 'vou verificar', 'vou ver'
+    ]
+  },
+
+  // Tipo de mercadoria/carga
+  tipo_mercadoria: {
+    agentPatterns: [
+      /tipo de mercadoria/i,
+      /que.*transporta/i,
+      /tipo de carga/i,
+      /quais.*cargas/i,
+      /o que voc[êe] transporta/i,
+      /mercadoria.*transporta/i,
+      /carga.*transporta/i
+    ],
+    validAnswers: [
+      'geral', 'carga geral', 'seca', 'carga seca', 'frigorificada',
+      'refrigerada', 'graos', 'grãos', 'soja', 'milho', 'alimentos',
+      'bebidas', 'eletronicos', 'eletrônicos', 'maquinas', 'máquinas',
+      'madeira', 'ferro', 'aco', 'aço', 'cimento', 'quimicos', 'químicos',
+      'perigosa', 'de tudo', 'varia', 'depende', 'diversa', 'container',
+      'congelados', 'frios', 'medicamentos', 'combustivel', 'combustível'
+    ]
+  },
+
+  // Regiões/Estados
+  regioes_estados: {
+    agentPatterns: [
+      /quais regi[õo]es/i,
+      /quais estados/i,
+      /onde.*atende/i,
+      /regi[õo]es.*atende/i,
+      /estados.*atende/i,
+      /onde.*roda/i,
+      /rota principal/i
+    ],
+    validAnswers: [
+      'sp', 'rj', 'mg', 'pr', 'sc', 'rs', 'ba', 'go', 'mt', 'ms', 'df',
+      'sao paulo', 'são paulo', 'rio', 'minas', 'parana', 'paraná',
+      'sul', 'sudeste', 'nordeste', 'centro-oeste', 'norte',
+      'todo brasil', 'brasil todo', 'nacional', 'interestadual', 'regional',
+      'sul e sudeste', 'norte e nordeste', 'interior', 'capital'
+    ]
+  },
+
+  // Quantidade de veículos
+  qtd_veiculos: {
+    agentPatterns: [
+      /quantos ve[íi]culos/i,
+      /quantas carretas/i,
+      /quantos caminh[õo]es/i,
+      /tamanho da frota/i,
+      /ve[íi]culos.*tem na frota/i,
+      /quantas unidades/i,
+      /quantos.*na frota/i
+    ],
+    validAnswers: [
+      '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '15', '20', '30', '50', '100',
+      'um', 'uma', 'dois', 'duas', 'tres', 'três', 'quatro', 'cinco',
+      'dez', 'vinte', 'trinta', 'poucos', 'varios', 'vários', 'muitos',
+      'so um', 'só um', 'so uma', 'só uma', 'mais de', 'menos de', 'aproximadamente'
+    ]
+  },
+
+  // Tipos de veículos
+  tipos_veiculos: {
+    agentPatterns: [
+      /quais tipos de ve[íi]culos/i,
+      /carretas.*trucks.*vans/i,
+      /tipo de ve[íi]culo/i,
+      /que ve[íi]culos.*tem/i,
+      /quais ve[íi]culos/i
+    ],
+    validAnswers: [
+      'carreta', 'carretas', 'truck', 'trucks', 'bitrem', 'rodotrem',
+      'van', 'vans', 'furgao', 'furgão', 'cavalo', 'toco', 'bi-truck',
+      'caminhao', 'caminhão', 'caminhoes', 'caminhões', 'utilitario', 'utilitário',
+      '3/4', 'tres quartos', 'três quartos', 'semi reboque', 'bau', 'baú'
+    ]
+  },
+
+  // Viagens por mês
+  viagens_mes: {
+    agentPatterns: [
+      /quantas viagens/i,
+      /viagens.*m[êe]s/i,
+      /fretes.*m[êe]s/i,
+      /media.*viagens/i,
+      /média.*viagens/i,
+      /frequencia.*viagens/i,
+      /frequência.*viagens/i
+    ],
+    validAnswers: [
+      '1', '2', '3', '5', '10', '15', '20', '30', '50', '100',
+      'uma', 'duas', 'poucas', 'muitas', 'varia', 'depende',
+      'diario', 'diário', 'semanal', 'mensal', 'quinzenal',
+      'toda semana', 'todo dia', 'varias por semana', 'várias por semana'
+    ]
+  },
+
+  // Valor médio/máximo
+  valor_carga: {
+    agentPatterns: [
+      /valor m[ée]dio/i,
+      /maior valor/i,
+      /valor.*carga/i,
+      /quanto vale/i,
+      /valor aproximado/i,
+      /faixa de valor/i
+    ],
+    validAnswers: [
+      'mil', 'mil reais', '50 mil', '100 mil', '200 mil', '500 mil',
+      'milhao', 'milhão', 'depende', 'varia', 'nao sei', 'não sei',
+      'entre', 'mais ou menos', 'aproximadamente', 'r$', 'reais',
+      'baixo valor', 'alto valor', 'medio', 'médio'
+    ]
+  },
+
+  // ANTT
+  antt: {
+    agentPatterns: [
+      /antt.*ativa/i,
+      /antt.*regularizada/i,
+      /tem antt/i,
+      /sua antt/i,
+      /rntrc.*ativo/i,
+      /possui antt/i
+    ],
+    validAnswers: [
+      'sim', 'nao', 'não', 'ativa', 'regularizada', 'tenho',
+      'em dia', 'vencida', 'vencendo', 'renovando', 'preciso renovar',
+      'ta ativa', 'tá ativa', 'ta regular', 'tá regular'
+    ]
+  },
+
+  // CT-e
+  cte: {
+    agentPatterns: [
+      /emite ct-?e/i,
+      /voc[êe].*ct-?e/i,
+      /emiss[ãa]o de ct-?e/i,
+      /pretende emitir/i,
+      /emite conhecimento/i
+    ],
+    validAnswers: [
+      'sim', 'nao', 'não', 'emito', 'nao emito', 'não emito',
+      'ainda nao', 'ainda não', 'pretendo', 'vou emitir', 'ja emito', 'já emito',
+      'tenho', 'nao tenho', 'não tenho'
+    ]
+  },
+
+  // CNPJ
+  cnpj: {
+    agentPatterns: [
+      /qual.*cnpj/i,
+      /cnpj da.*empresa/i,
+      /n[úu]mero do cnpj/i,
+      /me passa.*cnpj/i,
+      /pode informar.*cnpj/i,
+      /cnpj.*consulta/i
+    ],
+    validAnswers: [
+      'tenho', 'vou mandar', 'mando', 'ja mando', 'já mando', 'segue',
+      'sim', 'vou passar', 'anota ai', 'anota aí'
+    ]
+  }
+};
 
 /**
- * Check if user response is answering a qualification question about work type
- * NOT a job-seeking message
+ * Check if user response is answering ANY Iris qualification question
+ * Returns true if disqualification check should be skipped
  */
-function isQualificationAnswerAboutContratacao(
+function isIrisQualificationAnswer(
   userMessage: string, 
-  lastAgentMessage: string | null
-): boolean {
-  if (!lastAgentMessage) return false;
-  
-  const lowerAgentMsg = lastAgentMessage.toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const lowerUserMsg = userMessage.toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  
-  // Check if agent asked about contratacao type
-  const isContratacaoQuestion = CONTRATACAO_QUESTION_PATTERNS.some(pattern =>
-    pattern.test(lowerAgentMsg)
-  );
-  
-  if (!isContratacaoQuestion) return false;
-  
-  // User response patterns that are valid qualification answers
-  const isValidAnswer = VALID_CONTRATACAO_ANSWERS.some(answer =>
-    lowerUserMsg.includes(answer.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
-  );
-  
-  if (isValidAnswer) {
-    console.log('[Nina][Context] ✅ User response is a qualification answer about contratação type, NOT job-seeking');
-    console.log(`[Nina][Context] Agent question: "${lastAgentMessage.substring(0, 80)}..."`);
-    console.log(`[Nina][Context] User answer: "${userMessage}"`);
-    return true;
+  lastAgentMessage: string | null,
+  agentSlug: string | null
+): { isQualification: boolean; category: string | null } {
+  // Only apply for Iris agent
+  if (agentSlug !== 'iris') {
+    return { isQualification: false, category: null };
   }
   
-  return false;
+  if (!lastAgentMessage) {
+    return { isQualification: false, category: null };
+  }
+  
+  const normalizeText = (text: string) => 
+    text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  
+  const lowerAgentMsg = normalizeText(lastAgentMessage);
+  const lowerUserMsg = normalizeText(userMessage);
+  
+  // Check each qualification category
+  for (const [category, config] of Object.entries(IRIS_QUALIFICATION_PATTERNS)) {
+    // Check if agent asked this type of question
+    const isQuestionMatch = config.agentPatterns.some(pattern => 
+      pattern.test(lowerAgentMsg)
+    );
+    
+    if (!isQuestionMatch) continue;
+    
+    // Check if user response is a valid answer
+    const isValidAnswer = config.validAnswers.some(answer => 
+      lowerUserMsg.includes(normalizeText(answer))
+    );
+    
+    if (isValidAnswer) {
+      console.log(`[Nina][Iris] ✅ Qualification answer - Category: ${category}`);
+      console.log(`[Nina][Iris] Question: "${lastAgentMessage.substring(0, 60)}..."`);
+      console.log(`[Nina][Iris] Answer: "${userMessage}"`);
+      return { isQualification: true, category };
+    }
+  }
+  
+  // Extra check: short numeric answers for "quantos" questions
+  if (/^\d{1,4}$/.test(userMessage.trim())) {
+    if (/quant[oa]s?/i.test(lowerAgentMsg) || /n[úu]mero/i.test(lowerAgentMsg)) {
+      console.log('[Nina][Iris] ✅ Numeric answer to quantity question');
+      return { isQualification: true, category: 'numeric_quantity' };
+    }
+  }
+  
+  // Extra check: CNPJ format (14 digits)
+  const cnpjDigits = userMessage.replace(/\D/g, '');
+  if (cnpjDigits.length === 14) {
+    if (/cnpj/i.test(lowerAgentMsg)) {
+      console.log('[Nina][Iris] ✅ CNPJ number detected');
+      return { isQualification: true, category: 'cnpj' };
+    }
+  }
+  
+  return { isQualification: false, category: null };
 }
-// ===== END QUALIFICATION CONTEXT PATTERNS =====
+// ===== END IRIS QUALIFICATION CONTEXT PATTERNS =====
 
 const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
   {
@@ -579,6 +855,26 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
 function detectDisqualificationCategory(messageContent: string): DisqualificationCategory | null {
   const content = messageContent.toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  
+  // ===== TRANSPORT INDUSTRY CONTEXT PROTECTION =====
+  // If message contains transport-specific terms, it's likely a qualification context
+  // and should NOT be flagged as job_seeker
+  const transportContextTerms = [
+    'subcontratado', 'contratado direto', 'ct-e', 'cte', 'antt', 'rntrc',
+    'carreta', 'truck', 'bitrem', 'rodotrem', 'cavalo', 'frota', 'agregado',
+    'rctr', 'rc-v', 'carga seca', 'frigorificado', 'granel', 'averbacao',
+    'averbação', 'mercadoria', 'frete proprio', 'frete próprio'
+  ];
+
+  const hasTransportContext = transportContextTerms.some(term =>
+    content.includes(term.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+  );
+
+  if (hasTransportContext) {
+    console.log('[Nina][Disqualification] 🚛 Transport context detected - NOT flagging as job_seeker');
+    return null;
+  }
+  // ===== END TRANSPORT INDUSTRY CONTEXT PROTECTION =====
   
   // ===== EXPLICIT JOB SEEKER CHECK - MUST COME FIRST =====
   // These phrases are UNAMBIGUOUS job seeking - disqualify even if there was prior insurance interest
@@ -3850,11 +4146,15 @@ Qual desses te interessa?`;
     
     const lastAgentMessage = lastAgentMsgData?.[0]?.content || null;
     
-    // Check if this is a qualification answer about contratação (not job-seeking)
-    const isQualificationAnswer = isQualificationAnswerAboutContratacao(message.content, lastAgentMessage);
+    // Check if this is a qualification answer for Iris (not job-seeking)
+    const qualificationCheck = isIrisQualificationAnswer(
+      message.content, 
+      lastAgentMessage, 
+      agent?.slug || null
+    );
     
-    if (isQualificationAnswer) {
-      console.log('[Nina] ⏭️ Skipping disqualification check - this is a qualification answer about contratação type');
+    if (qualificationCheck.isQualification) {
+      console.log(`[Nina] ⏭️ Skipping disqualification check - qualification answer (${qualificationCheck.category})`);
       // Continue with normal AI processing - don't disqualify
     } else {
       const disqualCategory = detectDisqualificationCategory(message.content);
