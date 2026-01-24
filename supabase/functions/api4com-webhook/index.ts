@@ -217,10 +217,33 @@ serve(async (req) => {
         });
         
         if (!trimmedProvidedKey || trimmedProvidedKey !== trimmedWebhookKey) {
-          // If auth fails, check if we should allow anyway for API4Com compatibility
-          console.log('[api4com-webhook] ⚠️ Key mismatch, but allowing request from:', clientIP);
-          skipAuth = true;
-          authReason = 'key_mismatch_but_allowed';
+          // Authentication failed - only allow from trusted IPs
+          if (ipTrusted) {
+            console.log('[api4com-webhook] ✅ Key mismatch but trusted IP:', clientIP);
+            skipAuth = true;
+            authReason = 'trusted_ip_override';
+          } else {
+            console.error('[api4com-webhook] ❌ Authentication failed from:', clientIP);
+            
+            // Log the failed authentication attempt
+            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+            const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+            const supabase = createClient(supabaseUrl, supabaseKey);
+            
+            await logWebhookEvent(supabase, {
+              eventType: 'auth_failed',
+              rawPayload: { authMethod, clientIP, reason: 'key_mismatch' },
+              clientIP,
+              headers: Object.fromEntries(req.headers.entries()),
+              processingResult: 'error',
+              errorMessage: 'Authentication failed - invalid key'
+            });
+            
+            return new Response(
+              JSON.stringify({ error: 'Unauthorized', message: 'Invalid or missing API key' }),
+              { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
         } else {
           skipAuth = true;
           authReason = `auth_success:${authMethod}`;
