@@ -203,6 +203,74 @@ interface DisqualificationCategory {
   emoji: string;
 }
 
+// ===== QUALIFICATION CONTEXT PATTERNS =====
+// When the last agent message matches these patterns, user responses like "subcontratado"
+// are QUALIFICATION ANSWERS, NOT job-seeking messages
+const CONTRATACAO_QUESTION_PATTERNS = [
+  /contratado direto.*subcontratado/i,
+  /subcontratado.*contratado direto/i,
+  /tipo de contrata[çc][aã]o/i,
+  /emitindo ct-?e.*ou.*subcontratado/i,
+  /atua como.*direto.*ou.*subcontratado/i,
+  /trabalha como.*direto.*subcontratado/i,
+  /direto ou subcontratado/i,
+  /voc[êe] [eé] contratado/i,
+  /contratado ou subcontratado/i,
+  /você atua como contratado/i,
+  /voce atua como contratado/i,
+  /contratado.*emitindo.*ct-?e/i
+];
+
+// Valid qualification answer patterns when responding to contratação questions
+const VALID_CONTRATACAO_ANSWERS = [
+  'subcontratado', 'sub-contratado', 'sub contratado',
+  'contratado direto', 'direto', 'contratado',
+  'sou subcontratado', 'trabalho subcontratado',
+  'faço frete subcontratado', 'faco frete subcontratado',
+  'agregado', 'terceirizado', 'autonomo', 'autônomo',
+  'pj', 'pessoa juridica', 'pessoa jurídica', 'cnpj',
+  'emito cte', 'emito ct-e', 'nao emito', 'não emito',
+  'ambos', 'os dois', 'depende', 'os 2'
+];
+
+/**
+ * Check if user response is answering a qualification question about work type
+ * NOT a job-seeking message
+ */
+function isQualificationAnswerAboutContratacao(
+  userMessage: string, 
+  lastAgentMessage: string | null
+): boolean {
+  if (!lastAgentMessage) return false;
+  
+  const lowerAgentMsg = lastAgentMessage.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const lowerUserMsg = userMessage.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  
+  // Check if agent asked about contratacao type
+  const isContratacaoQuestion = CONTRATACAO_QUESTION_PATTERNS.some(pattern =>
+    pattern.test(lowerAgentMsg)
+  );
+  
+  if (!isContratacaoQuestion) return false;
+  
+  // User response patterns that are valid qualification answers
+  const isValidAnswer = VALID_CONTRATACAO_ANSWERS.some(answer =>
+    lowerUserMsg.includes(answer.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+  );
+  
+  if (isValidAnswer) {
+    console.log('[Nina][Context] ✅ User response is a qualification answer about contratação type, NOT job-seeking');
+    console.log(`[Nina][Context] Agent question: "${lastAgentMessage.substring(0, 80)}..."`);
+    console.log(`[Nina][Context] User answer: "${userMessage}"`);
+    return true;
+  }
+  
+  return false;
+}
+// ===== END QUALIFICATION CONTEXT PATTERNS =====
+
 const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
   {
     key: 'job_seeker',
@@ -3769,10 +3837,30 @@ Qual desses te interessa?`;
 
   // ===== AUTOMATIC DISQUALIFICATION DETECTION =====
   if (message.content) {
-    const disqualCategory = detectDisqualificationCategory(message.content);
+    // ===== CONTEXT CHECK: Avoid false positives for qualification answers =====
+    // Get last agent message to check if user is answering a qualification question
+    const { data: lastAgentMsgData } = await supabase
+      .from('messages')
+      .select('content')
+      .eq('conversation_id', conversation.id)
+      .in('from_type', ['nina', 'human'])
+      .lt('sent_at', message.sent_at)
+      .order('sent_at', { ascending: false })
+      .limit(1);
     
-    if (disqualCategory) {
-      console.log(`[Nina] ${disqualCategory.emoji} Disqualification detected: ${disqualCategory.key}`);
+    const lastAgentMessage = lastAgentMsgData?.[0]?.content || null;
+    
+    // Check if this is a qualification answer about contratação (not job-seeking)
+    const isQualificationAnswer = isQualificationAnswerAboutContratacao(message.content, lastAgentMessage);
+    
+    if (isQualificationAnswer) {
+      console.log('[Nina] ⏭️ Skipping disqualification check - this is a qualification answer about contratação type');
+      // Continue with normal AI processing - don't disqualify
+    } else {
+      const disqualCategory = detectDisqualificationCategory(message.content);
+    
+      if (disqualCategory) {
+        console.log(`[Nina] ${disqualCategory.emoji} Disqualification detected: ${disqualCategory.key}`);
       
       // 1. Adicionar tag e marcar como frio
       const currentTags = conversation.contact?.tags || [];
@@ -3969,7 +4057,8 @@ Qual desses te interessa?`;
       
       console.log(`[Nina] ✅ ${disqualCategory.key} handled - conversation ${disqualCategory.pauseConversation ? 'paused' : 'active'}`);
       return;
-    }
+      }
+    } // End of else block for disqualification check
   }
   // ===== END AUTOMATIC DISQUALIFICATION DETECTION =====
 
