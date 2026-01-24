@@ -602,6 +602,80 @@ function detectDisqualificationCategory(messageContent: string): Disqualificatio
   }
   return null;
 }
+
+// ===== CURRICULUM/RESUME DOCUMENT DETECTION FUNCTION =====
+// Patterns that indicate a resume/CV document
+const CURRICULUM_PATTERNS = [
+  // Typical resume structure (Portuguese)
+  'experiência profissional', 'experiencia profissional',
+  'dados pessoais', 'objetivo profissional',
+  'formação escolar', 'formacao escolar', 'formação acadêmica', 'formacao academica',
+  'cursos extracurriculares', 'cursos extra',
+  'qualificações', 'qualificacoes', 'habilidades',
+  'informações pessoais', 'informacoes pessoais',
+  // Common CV terms
+  'curriculum vitae', 'currículo vitae', 'curriculo vitae',
+  'experiências', 'experiencias',
+  // Typical fields
+  'estado civil', 'data de nascimento', 'nacionalidade brasileira',
+  'cargo:', 'empresa:', 'período:', 'periodo:',
+  'ensino médio', 'ensino medio', 'ensino fundamental',
+  'superior completo', 'superior incompleto',
+  'técnico em', 'tecnico em',
+  // Availability/salary terms
+  'disponibilidade imediata', 'disponível para',
+  'pretensão salarial', 'pretensao salarial',
+  // Experience structure (common for transport CVs)
+  'auxiliar de', 'ajudante de', 'operador de',
+  'motorista -', 'entregador -',
+  // Driver's license (common in transport CVs)
+  'cnh categoria', 'cnh:', 'habilitação:',
+  // Skills section
+  'conhecimentos em', 'domínio de', 'dominio de',
+  'referências', 'referencias',
+  // Education section markers
+  'grau de escolaridade', 'escolaridade:',
+  'cursos complementares', 'certificações', 'certificacoes'
+];
+
+function detectCurriculumInExtractedText(content: string): boolean {
+  if (!content) return false;
+  
+  // Only check text extracted from documents/images
+  const isExtractedText = content.includes('[Texto extraído') || 
+                          content.includes('[Texto extraido') ||
+                          content.includes('[Texto da imagem') ||
+                          content.includes('[Conteúdo do documento') ||
+                          content.includes('[Conteudo do documento');
+  
+  if (!isExtractedText) return false;
+  
+  const lowerContent = content.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  
+  // Count how many curriculum patterns were found
+  let matchCount = 0;
+  const matchedPatterns: string[] = [];
+  
+  for (const pattern of CURRICULUM_PATTERNS) {
+    const normalizedPattern = pattern.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (lowerContent.includes(normalizedPattern)) {
+      matchCount++;
+      matchedPatterns.push(pattern);
+    }
+  }
+  
+  // If found 3+ typical resume patterns, it's very likely a CV
+  const isCurriculum = matchCount >= 3;
+  
+  if (isCurriculum) {
+    console.log(`[Nina][CV Detection] 📄 Detected ${matchCount} CV patterns: ${matchedPatterns.slice(0, 5).join(', ')}${matchedPatterns.length > 5 ? '...' : ''}`);
+  }
+  
+  return isCurriculum;
+}
+// ===== END CURRICULUM/RESUME DOCUMENT DETECTION FUNCTION =====
+
 // ===== END AUTOMATIC DISQUALIFICATION SYSTEM =====
 
 function detectOutOfScopeInsurance(messageContent: string, currentAgentSlug: string | null): OutOfScopeResult {
@@ -3604,7 +3678,94 @@ Qual desses te interessa?`;
     console.log(`[Nina] ✅ Soft rejection detected, asking for renewal date`);
     return;
   }
-  // ===== END SOFT REJECTION STEP 1 =====
+// ===== END SOFT REJECTION STEP 1 =====
+
+  // ===== CURRICULUM/RESUME DOCUMENT DETECTION =====
+  // Detect job seekers who send resume/CV as document or image
+  // This catches cases where OCR extracted text from a resume
+  if (message.content && detectCurriculumInExtractedText(message.content)) {
+    console.log('[Nina][Disqualification] 📄 Curriculum/Resume document detected via OCR');
+    
+    // Get or create 'emprego' tag
+    const { data: empregoTag } = await supabase
+      .from('tag_definitions')
+      .select('id')
+      .eq('name', 'emprego')
+      .maybeSingle();
+    
+    const tagId = empregoTag?.id || 'emprego';
+    const existingTags = conversation.contact?.tags || [];
+    
+    if (!existingTags.includes(tagId)) {
+      await supabase
+        .from('contacts')
+        .update({ 
+          tags: [...existingTags, tagId],
+          client_memory: {
+            ...(conversation.contact?.client_memory || {}),
+            lead_profile: {
+              ...(conversation.contact?.client_memory?.lead_profile || {}),
+              lead_stage: 'cold',
+              qualification_score: 0,
+              disqualification_reason: 'Enviou currículo - busca emprego'
+            }
+          }
+        })
+        .eq('id', conversation.contact_id);
+      console.log('[Nina] 🏷️ Tag "emprego" applied for curriculum sender');
+    }
+    
+    // Send thank you message
+    const thankYouMessage = 'Olá! Vi que você enviou seu currículo. Agradecemos o interesse! Somos uma corretora de seguros de transporte e não temos vagas abertas no momento. Desejamos sucesso na sua busca profissional! 🙏';
+    
+    const delayMin = settings?.response_delay_min || 1000;
+    const delayMax = settings?.response_delay_max || 3000;
+    const delay = Math.random() * (delayMax - delayMin) + delayMin;
+    const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+    
+    await queueTextResponse(supabase, conversation, message, thankYouMessage, settings, aiSettings, delay, agent);
+    
+    // Mark message as processed
+    await supabase
+      .from('messages')
+      .update({ processed_by_nina: true })
+      .eq('id', message.id);
+    
+    // Update nina_context with job_seeker flag and pause conversation
+    await supabase
+      .from('conversations')
+      .update({
+        status: 'paused',
+        nina_context: {
+          ...(conversation.nina_context || {}),
+          disqualified_category: 'job_seeker_curriculum',
+          followup_stopped: true,
+          followup_stopped_reason: 'curriculum_sent',
+          paused_reason: 'job_seeker_curriculum',
+          paused_at: new Date().toISOString()
+        }
+      })
+      .eq('id', conversation.id);
+    
+    // Trigger whatsapp-sender
+    try {
+      const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+      fetch(senderUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({ triggered_by: 'nina-curriculum-detection' })
+      }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+    } catch (e) {
+      console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+    }
+    
+    console.log('[Nina] ✅ Curriculum sender handled: thanked, tagged "emprego", paused');
+    return;
+  }
+  // ===== END CURRICULUM/RESUME DOCUMENT DETECTION =====
 
   // ===== AUTOMATIC DISQUALIFICATION DETECTION =====
   if (message.content) {
