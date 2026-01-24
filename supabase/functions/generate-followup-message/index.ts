@@ -426,13 +426,14 @@ const SIMILAR_QUESTION_GROUPS = [
   ['quantos veículos', 'quantas viagens', 'quantos caminhões'],
 ];
 
-// TEMAS DE FOLLOW-UP PARA ROTAÇÃO (Íris/carga)
+// TEMAS DE FOLLOW-UP PARA ROTAÇÃO - por agente
 interface FollowupTheme {
   name: string;
   keywords: string[];
   alternatives: string[];
 }
 
+// ÍRIS - Seguro de carga/transporte (default)
 const IRIS_FOLLOWUP_THEMES: FollowupTheme[] = [
   { 
     name: 'perfil', 
@@ -461,10 +462,153 @@ const IRIS_FOLLOWUP_THEMES: FollowupTheme[] = [
   },
 ];
 
-// Identificar tema de uma mensagem
-function identifyMessageTheme(message: string): string | null {
+// CLARA - Planos de Saúde
+const CLARA_FOLLOWUP_THEMES: FollowupTheme[] = [
+  { 
+    name: 'tipo_plano', 
+    keywords: ['família', 'empresa', 'cnpj', 'empresarial', 'individual', 'familiar'],
+    alternatives: ['Quantas pessoas seriam incluídas no plano?', 'Qual cidade precisa de cobertura?']
+  },
+  { 
+    name: 'beneficiarios', 
+    keywords: ['quantas pessoas', 'quantos', 'incluídos', 'beneficiários', 'dependentes'],
+    alternatives: ['Quais são as idades dos beneficiários?', 'Tem preferência por alguma operadora?']
+  },
+  { 
+    name: 'operadora', 
+    keywords: ['unimed', 'bradesco', 'sulamerica', 'amil', 'hapvida', 'notredame', 'operadora', 'preferência'],
+    alternatives: ['Alguém tem alguma condição de saúde que precisamos considerar?', 'É plano para você/família ou empresa?']
+  },
+  { 
+    name: 'cobertura', 
+    keywords: ['cidade', 'região', 'cobertura', 'abrangência', 'onde', 'localização'],
+    alternatives: ['Vocês precisam de plano odontológico também?', 'Qual o número de funcionários da empresa?']
+  },
+  { 
+    name: 'saude', 
+    keywords: ['condição', 'doença', 'pré-existente', 'tratamento', 'saúde'],
+    alternatives: ['Posso te ajudar com alguma dúvida sobre os planos?', 'Quer que eu te ligue pra explicar melhor as opções?']
+  },
+  { 
+    name: 'odonto', 
+    keywords: ['dental', 'odonto', 'dentista', 'odontológico'],
+    alternatives: ['É pra você/família ou empresa com CNPJ?', 'Quantas pessoas precisam do plano?']
+  },
+];
+
+// ATLAS - Prospecção/Frotas (B2B outbound)
+const ATLAS_FOLLOWUP_THEMES: FollowupTheme[] = [
+  { 
+    name: 'responsavel', 
+    keywords: ['responsável', 'decisor', 'quem cuida', 'setor', 'área', 'seguros'],
+    alternatives: ['Vocês têm seguro dos veículos da frota hoje?', 'Trabalham mais com carga própria ou de terceiros?']
+  },
+  { 
+    name: 'seguro_atual', 
+    keywords: ['seguro', 'segurado', 'apólice', 'cobertura', 'proteção'],
+    alternatives: ['Quantos veículos tem na frota?', 'Que tipo de carga vocês transportam?']
+  },
+  { 
+    name: 'frota', 
+    keywords: ['frota', 'veículos', 'caminhões', 'caminhão', 'carretas', 'quantidade'],
+    alternatives: ['Quando vence o seguro atual de vocês?', 'Estão satisfeitos com a seguradora de hoje?']
+  },
+  { 
+    name: 'carga', 
+    keywords: ['carga', 'mercadoria', 'transporta', 'frete', 'transporte'],
+    alternatives: ['Quais estados vocês atendem?', 'Posso fazer uma cotação comparativa sem compromisso?']
+  },
+  { 
+    name: 'renovacao', 
+    keywords: ['vence', 'renovação', 'vencimento', 'prazo', 'quando'],
+    alternatives: ['Vocês têm RCTR-C pra proteger a carga?', 'Quantos veículos tem na operação hoje?']
+  },
+  { 
+    name: 'cotacao', 
+    keywords: ['cotação', 'valor', 'preço', 'orçamento', 'proposta'],
+    alternatives: ['Posso te ligar pra apresentar as opções? 5 minutos!', 'Quais estados vocês atendem com a frota?']
+  },
+];
+
+// SOFIA - Triagem/Recepcionista (generalist)
+const SOFIA_FOLLOWUP_THEMES: FollowupTheme[] = [
+  { 
+    name: 'tipo_seguro', 
+    keywords: ['seguro', 'proteção', 'cobertura', 'preciso', 'procurando'],
+    alternatives: ['É pra carro, moto ou outro veículo?', 'Posso te direcionar pro especialista certo!']
+  },
+  { 
+    name: 'veiculo', 
+    keywords: ['carro', 'moto', 'veículo', 'auto', 'automóvel'],
+    alternatives: ['É um veículo só ou uma frota de empresa?', 'É pra uso pessoal ou profissional?']
+  },
+  { 
+    name: 'transporte', 
+    keywords: ['caminhão', 'carreta', 'transportadora', 'carga', 'frete'],
+    alternatives: ['É pra proteger a CARGA ou o VEÍCULO em si?', 'Você é transportador ou embarcador?']
+  },
+  { 
+    name: 'saude', 
+    keywords: ['saúde', 'plano', 'médico', 'hospital', 'odonto'],
+    alternatives: ['É pra você/família ou empresa?', 'Quantas pessoas seriam incluídas?']
+  },
+  { 
+    name: 'empresa', 
+    keywords: ['empresa', 'cnpj', 'comercial', 'empresarial', 'corporativo'],
+    alternatives: ['Qual tipo de seguro a empresa precisa?', 'Posso te passar pro especialista que vai te ajudar melhor!']
+  },
+];
+
+// FALLBACKS ESTÁTICOS por agente (último recurso quando IA falha repetidamente)
+const AGENT_STATIC_FALLBACKS: Record<string, string[]> = {
+  iris: [
+    'Qual tipo de mercadoria você transporta?',
+    'Quais estados você atende?',
+    'Posso te ligar pra falar sobre as coberturas?',
+    'Quantas viagens você faz por mês em média?'
+  ],
+  clara: [
+    'Quantas pessoas seriam incluídas no plano?',
+    'Qual cidade precisa de cobertura?',
+    'Alguém tem condição de saúde que precisamos considerar?',
+    'Posso te ligar pra explicar as opções?'
+  ],
+  atlas: [
+    'Vocês têm seguro dos veículos da frota hoje?',
+    'Quantos veículos tem na operação?',
+    'Quando vence o seguro de vocês?',
+    'Posso fazer uma cotação comparativa?'
+  ],
+  sofia: [
+    'Posso te direcionar pro especialista certo!',
+    'É seguro pra veículo, carga ou saúde?',
+    'É pra uso pessoal ou empresa?',
+    'Como posso te ajudar hoje?'
+  ]
+};
+
+// Obter temas corretos baseado no agente
+function getAgentThemes(agentSlug?: string): FollowupTheme[] {
+  switch (agentSlug) {
+    case 'iris':
+      return IRIS_FOLLOWUP_THEMES;
+    case 'clara':
+      return CLARA_FOLLOWUP_THEMES;
+    case 'atlas':
+      return ATLAS_FOLLOWUP_THEMES;
+    case 'sofia':
+      return SOFIA_FOLLOWUP_THEMES;
+    default:
+      return IRIS_FOLLOWUP_THEMES; // fallback para Íris (padrão transportes)
+  }
+}
+
+// Identificar tema de uma mensagem (agora recebe agentSlug)
+function identifyMessageTheme(message: string, agentSlug?: string): string | null {
   const lowerMsg = message.toLowerCase();
-  for (const theme of IRIS_FOLLOWUP_THEMES) {
+  const themes = getAgentThemes(agentSlug);
+  
+  for (const theme of themes) {
     if (theme.keywords.some(kw => lowerMsg.includes(kw))) {
       return theme.name;
     }
@@ -472,13 +616,32 @@ function identifyMessageTheme(message: string): string | null {
   return null;
 }
 
-// Obter alternativas baseado no tema da última mensagem
-function getThemeAlternatives(lastMessage: string): string[] {
-  const theme = identifyMessageTheme(lastMessage);
-  if (!theme) return [];
+// Obter alternativas baseado no tema da última mensagem (agora recebe agentSlug)
+function getThemeAlternatives(lastMessage: string, agentSlug?: string): string[] {
+  const themes = getAgentThemes(agentSlug);
+  const themeName = identifyMessageTheme(lastMessage, agentSlug);
   
-  const themeConfig = IRIS_FOLLOWUP_THEMES.find(t => t.name === theme);
+  if (!themeName) return [];
+  
+  const themeConfig = themes.find(t => t.name === themeName);
   return themeConfig?.alternatives || [];
+}
+
+// Obter fallback estático do agente (quando IA falha repetidamente)
+function getStaticFallback(agentSlug: string, lastMessage?: string): string {
+  const fallbacks = AGENT_STATIC_FALLBACKS[agentSlug] || AGENT_STATIC_FALLBACKS.iris;
+  
+  if (!lastMessage) return fallbacks[0];
+  
+  // Encontrar primeiro fallback que não seja similar à última mensagem
+  for (const fallback of fallbacks) {
+    if (calculateWordSimilarity(fallback, lastMessage) < 0.3) {
+      return fallback;
+    }
+  }
+  
+  // Se todos similares, usar o último (geralmente oferta de ligação)
+  return fallbacks[fallbacks.length - 1];
 }
 
 // Verificar se duas mensagens são semanticamente similares
@@ -682,6 +845,7 @@ serve(async (req) => {
       contact_company, 
       agent_name, 
       agent_specialty,
+      agent_slug, // Slug do agente para temas de anti-repetição
       prompt_type, 
       hours_waiting,
       attempt_number,
@@ -693,6 +857,8 @@ serve(async (req) => {
       answered_qualifications = null,
       insurance_status = null // NOVO: status de seguro existente
     } = body;
+    
+    console.log(`[generate-followup-message] Agent slug: ${agent_slug || 'not specified (using iris default)'}`)
     
     // NORMALIZAR nome para evitar MAIÚSCULAS
     const normalizedContactName = normalizeContactName(contact_name);
@@ -728,9 +894,9 @@ serve(async (req) => {
 
     const promptInstruction = PROMPT_TEMPLATES[effectivePromptType] || PROMPT_TEMPLATES.soft_reengagement;
 
-    // Build anti-repetition instruction - FORTALECER A REGRA
-    const lastTheme = last_message_sent ? identifyMessageTheme(last_message_sent) : null;
-    const themeAlternatives = last_message_sent ? getThemeAlternatives(last_message_sent) : [];
+    // Build anti-repetition instruction - FORTALECER A REGRA (usando temas específicos do agente)
+    const lastTheme = last_message_sent ? identifyMessageTheme(last_message_sent, agent_slug) : null;
+    const themeAlternatives = last_message_sent ? getThemeAlternatives(last_message_sent, agent_slug) : [];
     
     const antiRepetitionRule = last_message_sent 
       ? `\n\n🚫 REGRA CRÍTICA ANTI-REPETIÇÃO - VIOLAÇÃO = FALHA TOTAL:
@@ -913,7 +1079,7 @@ Responda APENAS com a mensagem, sem explicações ou aspas.`;
         
         // Tentar regenerar com instrução mais forte
         try {
-          const retryAlternatives = getThemeAlternatives(last_message_sent);
+          const retryAlternatives = getThemeAlternatives(last_message_sent, agent_slug);
           const retryResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -953,11 +1119,17 @@ ${retryAlternatives.length > 0 ? `Use uma dessas alternativas: ${retryAlternativ
           generatedMessage = getVariedFallback(normalizedContactName, last_message_sent, detected_product, answered_qualifications || undefined);
         }
         
-        // Verificar novamente - se ainda similar, usar fallback
+        // Verificar novamente - se ainda similar, usar fallback estático do agente
         const newSimilarity = calculateWordSimilarity(generatedMessage, last_message_sent);
         if (newSimilarity > 0.5) {
-          console.log(`[generate-followup-message] Retry still too similar (${(newSimilarity * 100).toFixed(0)}%) - using fallback`);
-          generatedMessage = getVariedFallback(normalizedContactName, last_message_sent, detected_product, answered_qualifications || undefined);
+          console.log(`[generate-followup-message] Retry still too similar (${(newSimilarity * 100).toFixed(0)}%) - using agent static fallback`);
+          // Tentar fallback estático do agente primeiro
+          const staticFallback = getStaticFallback(agent_slug || 'iris', last_message_sent);
+          if (calculateWordSimilarity(staticFallback, last_message_sent) < 0.4) {
+            generatedMessage = normalizeContactName(contact_name) + ', ' + staticFallback.charAt(0).toLowerCase() + staticFallback.slice(1);
+          } else {
+            generatedMessage = getVariedFallback(normalizedContactName, last_message_sent, detected_product, answered_qualifications || undefined);
+          }
         }
       }
     }
