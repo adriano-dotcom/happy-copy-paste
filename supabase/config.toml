@@ -142,3 +142,7 @@ verify_jwt = false
 # Sincronização de chamadas travadas API4Com
 [functions.api4com-sync-stuck-calls]
 verify_jwt = true
+
+# Relatório semanal de leads desqualificados
+[functions.generate-disqualified-report]
+verify_jwt = false

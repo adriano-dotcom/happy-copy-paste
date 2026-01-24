@@ -931,6 +931,54 @@ export type Database = {
           },
         ]
       }
+      disqualification_reports: {
+        Row: {
+          by_category: Json | null
+          comparison_previous_week: Json | null
+          created_at: string | null
+          id: string
+          insights: string[] | null
+          peak_hours: Json | null
+          report_period_end: string
+          report_period_start: string
+          sent_at: string | null
+          sent_to: string[] | null
+          top_ddds: Json | null
+          total_disqualified: number | null
+          total_leads_period: number | null
+        }
+        Insert: {
+          by_category?: Json | null
+          comparison_previous_week?: Json | null
+          created_at?: string | null
+          id?: string
+          insights?: string[] | null
+          peak_hours?: Json | null
+          report_period_end: string
+          report_period_start: string
+          sent_at?: string | null
+          sent_to?: string[] | null
+          top_ddds?: Json | null
+          total_disqualified?: number | null
+          total_leads_period?: number | null
+        }
+        Update: {
+          by_category?: Json | null
+          comparison_previous_week?: Json | null
+          created_at?: string | null
+          id?: string
+          insights?: string[] | null
+          peak_hours?: Json | null
+          report_period_end?: string
+          report_period_start?: string
+          sent_at?: string | null
+          sent_to?: string[] | null
+          top_ddds?: Json | null
+          total_disqualified?: number | null
+          total_leads_period?: number | null
+        }
+        Relationships: []
+      }
       email_templates: {
         Row: {
           body_html: string
