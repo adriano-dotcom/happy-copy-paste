@@ -426,6 +426,61 @@ const SIMILAR_QUESTION_GROUPS = [
   ['quantos veículos', 'quantas viagens', 'quantos caminhões'],
 ];
 
+// TEMAS DE FOLLOW-UP PARA ROTAÇÃO (Íris/carga)
+interface FollowupTheme {
+  name: string;
+  keywords: string[];
+  alternatives: string[];
+}
+
+const IRIS_FOLLOWUP_THEMES: FollowupTheme[] = [
+  { 
+    name: 'perfil', 
+    keywords: ['transportador', 'embarcador', 'pessoa jurídica', 'autônomo', 'pj'],
+    alternatives: ['Qual tipo de mercadoria você transporta?', 'Quais estados você atende?']
+  },
+  { 
+    name: 'rota', 
+    keywords: ['estado', 'região', 'rota', 'atende', 'viaja'],
+    alternatives: ['Quantas viagens você faz por mês?', 'Qual o valor médio das cargas?']
+  },
+  { 
+    name: 'carga', 
+    keywords: ['mercadoria', 'carga', 'transporta', 'valor', 'viagens'],
+    alternatives: ['Posso te ajudar com alguma dúvida sobre o RCTR-C?', 'Qual melhor horário pra uma ligação rápida?']
+  },
+  { 
+    name: 'duvida', 
+    keywords: ['dúvida', 'duvida', 'entender', 'ajudar', 'explicar'],
+    alternatives: ['Te ligo em 5 min pra resolver? Me manda um "pode ligar"!', 'Qual tipo de carga você geralmente transporta?']
+  },
+  { 
+    name: 'ligacao', 
+    keywords: ['ligar', 'ligo', 'horário', 'telefone', 'ligação'],
+    alternatives: ['Quais estados você atende com mais frequência?', 'Ficou com alguma dúvida sobre as coberturas?']
+  },
+];
+
+// Identificar tema de uma mensagem
+function identifyMessageTheme(message: string): string | null {
+  const lowerMsg = message.toLowerCase();
+  for (const theme of IRIS_FOLLOWUP_THEMES) {
+    if (theme.keywords.some(kw => lowerMsg.includes(kw))) {
+      return theme.name;
+    }
+  }
+  return null;
+}
+
+// Obter alternativas baseado no tema da última mensagem
+function getThemeAlternatives(lastMessage: string): string[] {
+  const theme = identifyMessageTheme(lastMessage);
+  if (!theme) return [];
+  
+  const themeConfig = IRIS_FOLLOWUP_THEMES.find(t => t.name === theme);
+  return themeConfig?.alternatives || [];
+}
+
 // Verificar se duas mensagens são semanticamente similares
 function isSimilarToLastMessage(newMessage: string, lastMessage?: string): boolean {
   if (!lastMessage) return false;
@@ -443,6 +498,24 @@ function isSimilarToLastMessage(newMessage: string, lastMessage?: string): boole
   }
   
   return false;
+}
+
+// Verificar similaridade de palavras (mais rigoroso)
+function calculateWordSimilarity(msg1: string, msg2: string): number {
+  const normalize = (s: string) => s.toLowerCase()
+    .replace(/[^a-záàâãéèêíïóôõöúç0-9 ]/gi, '')
+    .split(' ')
+    .filter(w => w.length > 3);
+  
+  const words1 = new Set(normalize(msg1));
+  const words2 = new Set(normalize(msg2));
+  
+  if (words1.size === 0 || words2.size === 0) return 0;
+  
+  const intersection = [...words1].filter(w => words2.has(w));
+  const similarity = intersection.length / Math.max(words1.size, words2.size);
+  
+  return similarity;
 }
 
 // Mapeamento de perguntas para tópicos de qualificação
@@ -655,15 +728,30 @@ serve(async (req) => {
 
     const promptInstruction = PROMPT_TEMPLATES[effectivePromptType] || PROMPT_TEMPLATES.soft_reengagement;
 
-    // Build anti-repetition instruction
+    // Build anti-repetition instruction - FORTALECER A REGRA
+    const lastTheme = last_message_sent ? identifyMessageTheme(last_message_sent) : null;
+    const themeAlternatives = last_message_sent ? getThemeAlternatives(last_message_sent) : [];
+    
     const antiRepetitionRule = last_message_sent 
-      ? `\n\n⚠️ REGRA CRÍTICA ANTI-REPETIÇÃO:
-Sua última mensagem foi: "${last_message_sent}"
-Você DEVE criar uma mensagem COMPLETAMENTE DIFERENTE:
-- Use outra estrutura de frase
-- Faça outra pergunta ou ofereça algo diferente
-- Mude o CTA (call to action)
-- NÃO comece igual nem use as mesmas palavras-chave`
+      ? `\n\n🚫 REGRA CRÍTICA ANTI-REPETIÇÃO - VIOLAÇÃO = FALHA TOTAL:
+Sua ÚLTIMA mensagem foi EXATAMENTE: "${last_message_sent}"
+
+VOCÊ ESTÁ TERMINANTEMENTE PROIBIDO DE:
+❌ Repetir a mesma estrutura de frase
+❌ Usar as mesmas palavras-chave principais ("transportador", "embarcador" se já usou)
+❌ Fazer a mesma pergunta reformulada (ex: "é transportador ou embarcador?" → "você transporta ou é dono da carga?" = MESMO TEMA = PROIBIDO)
+❌ Começar a mensagem da mesma forma
+❌ Usar o mesmo tema de pergunta
+
+${lastTheme ? `📋 TEMA DA ÚLTIMA MENSAGEM: "${lastTheme}" - VOCÊ DEVE USAR UM TEMA DIFERENTE!` : ''}
+${themeAlternatives.length > 0 ? `\n✅ ALTERNATIVAS OBRIGATÓRIAS (escolha UMA):\n${themeAlternatives.map(a => `• "${a}"`).join('\n')}` : ''}
+
+ESTRATÉGIA DE VARIAÇÃO OBRIGATÓRIA:
+- Se última foi PERGUNTA DE PERFIL → Agora pergunte sobre TIPO DE CARGA ou REGIÃO
+- Se última perguntou sobre CARGA → Agora pergunte sobre DÚVIDAS ou ofereça LIGAÇÃO
+- Se última ofereceu LIGAÇÃO → Agora faça pergunta sobre a OPERAÇÃO
+
+⚠️ ANTES DE RESPONDER: Compare sua resposta com a última mensagem. Se o TEMA for similar, MUDE COMPLETAMENTE.`
       : '';
 
     const systemPrompt = `Você é ${agent_name || 'um assistente de vendas'} ${agent_specialty ? `especializado em ${agent_specialty}` : ''}.
@@ -815,10 +903,63 @@ Responda APENAS com a mensagem, sem explicações ou aspas.`;
     // Clean up the message (remove quotes if present)
     generatedMessage = generatedMessage.replace(/^["']|["']$/g, '').trim();
 
-    // Check if message is too similar to last one - regenerate if needed
-    if (last_message_sent && messagesTooSimilar(generatedMessage, last_message_sent)) {
-      console.log('[generate-followup-message] Generated message too similar to last, using fallback');
-      generatedMessage = getVariedFallback(normalizedContactName, last_message_sent, detected_product, answered_qualifications || undefined);
+    // Check if message is too similar to last one - regenerate with stronger instruction
+    if (last_message_sent) {
+      const similarity = calculateWordSimilarity(generatedMessage, last_message_sent);
+      console.log(`[generate-followup-message] Similarity score: ${(similarity * 100).toFixed(1)}%`);
+      
+      if (similarity > 0.5 || messagesTooSimilar(generatedMessage, last_message_sent)) {
+        console.log('[generate-followup-message] ⚠️ Generated message too similar - forcing retry with different theme');
+        
+        // Tentar regenerar com instrução mais forte
+        try {
+          const retryAlternatives = getThemeAlternatives(last_message_sent);
+          const retryResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'google/gemini-2.5-flash',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt },
+                { role: 'assistant', content: generatedMessage },
+                { role: 'user', content: `⛔ ESSA MENSAGEM É MUITO PARECIDA COM A ANTERIOR! 
+A última foi: "${last_message_sent}"
+A sua foi: "${generatedMessage}"
+Elas têm ${(similarity * 100).toFixed(0)}% de similaridade - INACEITÁVEL!
+
+GERE UMA MENSAGEM SOBRE UM TEMA COMPLETAMENTE DIFERENTE.
+${retryAlternatives.length > 0 ? `Use uma dessas alternativas: ${retryAlternatives.join(' OU ')}` : 'Mude o assunto para tipo de carga, região atendida, dúvidas, ou ofereça ligação.'}`
+                }
+              ],
+              max_tokens: 200,
+              temperature: 0.98, // Temperatura ainda mais alta para forçar variação
+            }),
+          });
+          
+          if (retryResponse.ok) {
+            const retryData = await retryResponse.json();
+            const retryMessage = retryData.choices?.[0]?.message?.content?.trim();
+            if (retryMessage) {
+              generatedMessage = retryMessage.replace(/^["']|["']$/g, '').trim();
+              console.log(`[generate-followup-message] Retry successful: "${generatedMessage.substring(0, 50)}..."`);
+            }
+          }
+        } catch (retryError) {
+          console.error('[generate-followup-message] Retry failed, using fallback:', retryError);
+          generatedMessage = getVariedFallback(normalizedContactName, last_message_sent, detected_product, answered_qualifications || undefined);
+        }
+        
+        // Verificar novamente - se ainda similar, usar fallback
+        const newSimilarity = calculateWordSimilarity(generatedMessage, last_message_sent);
+        if (newSimilarity > 0.5) {
+          console.log(`[generate-followup-message] Retry still too similar (${(newSimilarity * 100).toFixed(0)}%) - using fallback`);
+          generatedMessage = getVariedFallback(normalizedContactName, last_message_sent, detected_product, answered_qualifications || undefined);
+        }
+      }
     }
     
     // Sanitize message for unqualified leads - prevent forbidden terms
