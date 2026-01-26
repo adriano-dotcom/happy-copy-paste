@@ -256,6 +256,22 @@ const SIMILAR_QUESTION_GROUPS = [
   ['quantos veículos', 'quantas viagens', 'quantos caminhões'],
 ];
 
+// ANTI-REPETIÇÃO GLOBAL: Verificar similaridade de palavras entre mensagens
+function calculateWordSimilarity(msg1: string, msg2: string): number {
+  const normalize = (s: string) => s.toLowerCase()
+    .replace(/[^a-záàâãéèêíïóôõöúç0-9 ]/gi, '')
+    .split(' ')
+    .filter(w => w.length > 3);
+  
+  const words1 = new Set(normalize(msg1));
+  const words2 = new Set(normalize(msg2));
+  
+  if (words1.size === 0 || words2.size === 0) return 0;
+  
+  const intersection = [...words1].filter(w => words2.has(w));
+  return intersection.length / Math.max(words1.size, words2.size);
+}
+
 // Verificar se duas mensagens são semanticamente similares
 function isSimilarToLastMessage(newMessage: string, lastMessage?: string): boolean {
   if (!lastMessage) return false;
@@ -1277,10 +1293,29 @@ serve(async (req) => {
 
         try {
           if (automation.automation_type === 'free_text') {
-            // Get last message sent for anti-repetition
-            const lastMessageSent = previousLogs?.[0]?.message_content || undefined;
+            // ANTI-REPETIÇÃO GLOBAL: Buscar última mensagem de QUALQUER automação OU da conversa
+            // 1. Primeiro: buscar de followup_logs (qualquer automação)
+            const { data: globalFollowupLogs } = await supabase
+              .from('followup_logs')
+              .select('message_content, created_at')
+              .eq('conversation_id', conv.id)
+              .eq('status', 'sent')
+              .not('message_content', 'is', null)
+              .order('created_at', { ascending: false })
+              .limit(1);
+
+            // 2. Fallback: última mensagem nina/agent da conversa
+            const lastNinaMessageFromConv = recentMessages?.find(m => 
+              m.from_type !== 'user' && m.content
+            )?.content;
+
+            // Usar o mais recente: global followup log OU mensagem da conversa
+            const lastMessageSent = globalFollowupLogs?.[0]?.message_content || 
+                                    lastNinaMessageFromConv || 
+                                    undefined;
+            
             if (lastMessageSent) {
-              console.log(`[process-followups] Last message for anti-repetition: "${lastMessageSent.substring(0, 40)}..."`);
+              console.log(`[process-followups] Last message for GLOBAL anti-repetition: "${lastMessageSent.substring(0, 40)}..." (source: ${globalFollowupLogs?.[0]?.message_content ? 'followup_logs' : 'conversation'})`);
             }
             
             // Extract insurance status from nina_context OU detecção via mensagens
@@ -1511,7 +1546,35 @@ serve(async (req) => {
               continue;
             }
             
-            console.log(`[process-followups] Sending message (attempt ${attemptNumber}) to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
+            // ANTI-DUPLICIDADE FINAL: Verificar se mensagem gerada é idêntica ou similar a alguma recente
+            const isDuplicateMessage = recentMessages?.some(m => {
+              if (m.from_type === 'user') return false;
+              if (!m.content) return false;
+              
+              // Verificar se é exatamente igual
+              if (m.content.trim().toLowerCase() === messageContent.trim().toLowerCase()) {
+                console.log(`[process-followups] ⛔ DUPLICATE DETECTED: Message identical to recent conversation message`);
+                return true;
+              }
+              
+              // Verificar similaridade alta (>80%)
+              const similarity = calculateWordSimilarity(messageContent, m.content);
+              if (similarity > 0.8) {
+                console.log(`[process-followups] ⛔ DUPLICATE DETECTED: Message ${(similarity * 100).toFixed(0)}% similar to recent message: "${m.content.substring(0, 40)}..."`);
+                return true;
+              }
+              
+              return false;
+            });
+
+            if (isDuplicateMessage) {
+              console.log(`[process-followups] ⏭️ Skipping duplicate message for conversation ${conv.id}`);
+              skipped++;
+              continue;
+            }
+            
+            console.log(`[process-followups] ✅ Sending message (attempt ${attemptNumber}) to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
+            console.log(`[process-followups] 📝 Anti-repetition check PASSED - message is unique`);
 
             // Insert into send_queue
             const { data: queueItem, error: queueError } = await supabase
