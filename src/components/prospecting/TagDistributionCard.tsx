@@ -5,7 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { supabase } from '@/integrations/supabase/client';
-import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 
 interface TagDistributionCardProps {
   period: string;
@@ -160,7 +160,7 @@ export const TagDistributionCard: React.FC<TagDistributionCardProps> = ({ period
               <Tag className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <CardTitle className="text-white text-lg">Tags Geradas</CardTitle>
+              <CardTitle className="text-white text-lg">Tags Geradas ({getPeriodLabel()})</CardTitle>
               <p className="text-sm text-slate-400">Classificação automática de contatos</p>
             </div>
           </div>
@@ -189,7 +189,7 @@ export const TagDistributionCard: React.FC<TagDistributionCardProps> = ({ period
               <BarChart
                 data={data}
                 layout="vertical"
-                margin={{ left: 10, right: 30, top: 5, bottom: 5 }}
+                margin={{ left: 10, right: 40, top: 5, bottom: 5 }}
               >
                 <XAxis 
                   type="number" 
@@ -214,6 +214,13 @@ export const TagDistributionCard: React.FC<TagDistributionCardProps> = ({ period
                   {data.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
+                  <LabelList 
+                    dataKey="count" 
+                    position="right" 
+                    fill="#94a3b8"
+                    fontSize={12}
+                    fontWeight={500}
+                  />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -223,7 +230,7 @@ export const TagDistributionCard: React.FC<TagDistributionCardProps> = ({ period
                 <Badge variant="secondary" className="bg-slate-800 text-slate-300">
                   {totalTags} tags aplicadas
                 </Badge>
-                <span className="text-slate-500 text-sm">({getPeriodLabel()})</span>
+                
               </div>
               <div className="flex items-center gap-1">
                 {data.slice(0, 3).map((tag, i) => (
