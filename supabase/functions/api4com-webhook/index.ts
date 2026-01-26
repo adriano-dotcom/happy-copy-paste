@@ -444,10 +444,13 @@ serve(async (req) => {
       
       // API4Com specific hangup causes
       if (hangupCauseLower.includes('originator_cancel') || hangupCauseLower === 'originator_cancel') {
-        // Cancelled by the operator before answered
-        status = duration > 0 ? 'completed' : 'cancelled';
-        console.log('[api4com-webhook] 📱 Originator cancel detected, status:', status);
-      } else if (hangupCauseLower.includes('normal_clearing') || hangupCauseLower === 'normal_clearing' || 
+        // ORIGINATOR_CANCEL can mean two things:
+        // 1. Operator cancelled manually (quick cancel, < 25s)
+        // 2. Lead didn't answer and call timed out (ring time >= 25s)
+        // We'll classify based on ring time after finding the call log
+        status = duration > 0 ? 'completed' : 'pending_originator_cancel';
+        console.log('[api4com-webhook] 📱 Originator cancel detected, will classify based on ring time');
+      } else if (hangupCauseLower.includes('normal_clearing') || hangupCauseLower === 'normal_clearing' ||
                  hangupCauseLower.includes('normal clearing')) {
         // Normal call termination
         status = duration > 0 ? 'completed' : 'no_answer';
@@ -477,6 +480,25 @@ serve(async (req) => {
       const callLog = await findCallLog();
       
       if (callLog) {
+        // Resolve pending_originator_cancel based on ring time
+        if (status === 'pending_originator_cancel') {
+          const startTime = new Date(callLog.started_at).getTime();
+          const endTime = Date.now();
+          const ringTimeSeconds = (endTime - startTime) / 1000;
+          
+          // If call rang for >= 25 seconds, it's likely the lead didn't answer
+          // If < 25 seconds, the operator probably cancelled manually
+          const ringTimeThreshold = 25;
+          
+          if (ringTimeSeconds >= ringTimeThreshold) {
+            status = 'no_answer';
+            console.log(`[api4com-webhook] 📱 ORIGINATOR_CANCEL classified as no_answer (ring time: ${ringTimeSeconds.toFixed(1)}s >= ${ringTimeThreshold}s)`);
+          } else {
+            status = 'cancelled';
+            console.log(`[api4com-webhook] 📱 ORIGINATOR_CANCEL classified as cancelled (ring time: ${ringTimeSeconds.toFixed(1)}s < ${ringTimeThreshold}s)`);
+          }
+        }
+        
         if (callLog.status === 'cancelled' || callLog.status === 'timeout' || callLog.status === 'completed_manual') {
           console.log('[api4com-webhook] 🔧 Correcting client-side status:', callLog.status, '→', status);
         }
