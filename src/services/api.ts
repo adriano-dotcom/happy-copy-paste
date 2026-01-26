@@ -1654,7 +1654,7 @@ export const api = {
       .select(`
         *,
         contact:contacts(*),
-        agent:agents(id, name, slug),
+        agent:agents!conversations_current_agent_id_fkey(id, name, slug),
         whatsapp_window_start,
         needs_human_review
       `)
@@ -1672,7 +1672,7 @@ export const api = {
         .select(`
           *,
           contact:contacts(*),
-          agent:agents(id, name, slug),
+          agent:agents!conversations_current_agent_id_fkey(id, name, slug),
           whatsapp_window_start,
           needs_human_review
         `)
