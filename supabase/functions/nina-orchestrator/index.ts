@@ -2780,6 +2780,35 @@ function detectExistingInsurance(userMessages: string[], agentMessages: string[]
   return status;
 }
 
+// ===== AUTO-TAG FOR HEALTH PIPELINE =====
+async function addHealthPlanTagIfClara(
+  supabase: any,
+  contactId: string,
+  agentSlug: string | null,
+  currentTags: string[] | null
+): Promise<void> {
+  // Only add tag for Clara agent (health insurance specialist)
+  if (agentSlug !== 'clara') return;
+  
+  const healthTag = 'plano_de_saude';
+  const tags = currentTags || [];
+  
+  // Skip if already has tag
+  if (tags.includes(healthTag)) {
+    console.log(`[Nina] 🏥 Contact already has ${healthTag} tag`);
+    return;
+  }
+  
+  // Add tag
+  await supabase
+    .from('contacts')
+    .update({ tags: [...tags, healthTag] })
+    .eq('id', contactId);
+  
+  console.log(`[Nina] 🏥 Added ${healthTag} tag for Clara/Health pipeline contact`);
+}
+// ===== END AUTO-TAG FOR HEALTH PIPELINE =====
+
 // Sanitize text for TTS - simplify URLs for natural speech
 function sanitizeTextForAudio(text: string): string {
   let sanitized = text;
@@ -4923,6 +4952,14 @@ Qual desses te interessa?`;
       .eq('id', conversation.id);
     console.log(`[Nina] Updated conversation agent to: ${agent.name}`);
 
+    // Auto-add "Plano de Saúde" tag for Clara agent
+    await addHealthPlanTagIfClara(
+      supabase, 
+      conversation.contact_id, 
+      agent.slug, 
+      conversation.contact?.tags
+    );
+
     // Move deal to agent's pipeline if this is a handoff
     if (isHandoff) {
       const { data: agentPipeline } = await supabase
@@ -4958,6 +4995,20 @@ Qual desses te interessa?`;
             .eq('contact_id', conversation.contact_id);
           
           console.log(`[Nina] Deal movido para pipeline: ${agentPipeline.name}, owner: ${nextOwnerId || 'not assigned'}`);
+          
+          // Also ensure tag is added when deal moves to health pipeline
+          const { data: currentContact } = await supabase
+            .from('contacts')
+            .select('tags')
+            .eq('id', conversation.contact_id)
+            .maybeSingle();
+          
+          await addHealthPlanTagIfClara(
+            supabase, 
+            conversation.contact_id, 
+            agent.slug, 
+            currentContact?.tags
+          );
         }
       }
     }
