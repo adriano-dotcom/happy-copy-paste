@@ -10,6 +10,7 @@ import { ProspectingKPICard } from './ProspectingKPICard';
 import { ButtonClicksFunnel } from './ButtonClicksFunnel';
 import { ButtonDistributionChart } from './ButtonDistributionChart';
 import { ButtonEvolutionChart } from './ButtonEvolutionChart';
+import { TagDistributionCard } from './TagDistributionCard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 interface ButtonMetrics {
@@ -337,6 +338,9 @@ export const ButtonMetricsDashboard: React.FC = () => {
           />
         </div>
       )}
+
+      {/* Tag Distribution Card */}
+      <TagDistributionCard period={period} />
 
       {/* Evolution Chart */}
       <ButtonEvolutionChart data={dailyData} />
