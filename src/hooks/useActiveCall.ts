@@ -141,6 +141,8 @@ export const useActiveCall = (conversationId: string | null) => {
     fetchCallHistory();
 
     // Subscribe to realtime updates
+    console.log('[useActiveCall] 🔌 Setting up realtime subscription for conversation:', conversationId);
+    
     const channel = supabase
       .channel(`call-logs-${conversationId}`)
       .on(
@@ -152,7 +154,7 @@ export const useActiveCall = (conversationId: string | null) => {
           filter: `conversation_id=eq.${conversationId}`
         },
         (payload) => {
-          console.log('[useActiveCall] Realtime update:', payload);
+          console.log('[useActiveCall] 📡 Realtime update received:', payload.eventType, payload);
           
           if (payload.eventType === 'INSERT') {
             const newCall = payload.new as CallLog;
@@ -180,9 +182,17 @@ export const useActiveCall = (conversationId: string | null) => {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[useActiveCall] 📡 Subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('[useActiveCall] ✅ Successfully subscribed to call_logs realtime');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[useActiveCall] ❌ Failed to subscribe to call_logs realtime');
+        }
+      });
 
     return () => {
+      console.log('[useActiveCall] 🔌 Removing realtime channel for conversation:', conversationId);
       supabase.removeChannel(channel);
     };
   }, [conversationId]);

@@ -218,7 +218,14 @@ serve(async (req) => {
       ipTrusted,
     });
 
-    if (!trimmedProvidedKey || trimmedProvidedKey !== trimmedWebhookKey) {
+    // TEMPORARY FALLBACK: Accept requests from trusted IPs while client configures key
+    // This allows API4Com webhooks to work even if the provider hasn't been configured to send the key
+    if (!trimmedProvidedKey && ipTrusted) {
+      console.warn('[api4com-webhook] ⚠️ TEMPORARY: Accepting request from trusted IP without key:', clientIP);
+      console.warn('[api4com-webhook] ⚠️ Please configure API4COM_WEBHOOK_KEY in the API4Com panel');
+      // Continue processing - don't return here
+    } else if (!trimmedProvidedKey || trimmedProvidedKey !== trimmedWebhookKey) {
+      // Not from trusted IP and no valid key - reject
       console.error('[api4com-webhook] ❌ Authentication failed from:', clientIP);
 
       // Log the failed authentication attempt
