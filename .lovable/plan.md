@@ -1,206 +1,241 @@
 
 
-## Plano: Correção da Integração API4Com - Indicador de Chamada Travado + Testes
+## Plano: Card de Tags Geradas no Dashboard de Prospecção
 
-### Diagnóstico Final
+### Objetivo
 
-Após investigação detalhada, identifiquei **4 problemas que precisam ser resolvidos**:
-
-| # | Problema | Causa Raiz | Severidade |
-|---|----------|------------|------------|
-| 1 | UI não atualiza quando chamada encerra | Realtime não está entregando eventos de call_logs | **CRÍTICO** |
-| 2 | Webhook API4Com bloqueado | API4Com não está enviando a chave de autenticação | Alto |
-| 3 | Background sync falha | Já foi corrigido mas deploy ainda não ativou | Médio |
-| 4 | Falta de testes automatizados | Nenhum teste para validar webhook | Médio |
+Criar um novo card no Dashboard de Prospecção (`/prospecting`) que exiba as tags aplicadas automaticamente aos contatos durante o processo de triagem e qualificação. Este card permitirá visualizar rapidamente a distribuição e evolução das tags geradas pelo sistema.
 
 ---
 
-### Problema 1: Realtime de call_logs Não Funciona
+### Dados Disponíveis
 
-**Evidência:**
-- Banco mostra `status: cancelled` para a chamada
-- Console logs do frontend mostram eventos Realtime para `conversations`, `messages`, `contacts`
-- Nenhum evento de `call_logs` no console
+Conforme análise do banco de dados, existem as seguintes tags em uso:
 
-**Causa provável:** 
-O Realtime do Supabase **não está entregando eventos de `call_logs`** mesmo que a tabela esteja na publication. Isso pode ser um problema de RLS ou configuração.
+| Tag | Contatos | Categoria |
+|-----|----------|-----------|
+| emprego | 24 | custom |
+| engano | 14 | custom |
+| prospeccao | 3 | custom |
+| transportador | 2 | custom |
+| frota | 1 | interest |
+| frete | 1 | custom |
+| fornecedor | 1 | custom |
 
-**Solução:**
-1. Verificar se o canal Realtime está realmente subscrito
-2. Adicionar logging mais detalhado no hook `useActiveCall`
-3. Forçar refresh manual após o hangup (fallback imediato)
-
----
-
-### Problema 2: Webhook API4Com Bloqueado
-
-**Evidência dos logs:**
-```
-[api4com-webhook] ❌ Authentication failed from: 129.151.39.51
-[api4com-webhook] 🔑 Auth check: { authMethod: "none", providedKeyFingerprint: "null" }
-```
-
-**Causa:**
-A API4Com está enviando webhooks **SEM** a chave de autenticação configurada. O provedor precisa ser configurado do lado deles para enviar a chave.
-
-**Solução:**
-1. Documentar como configurar a chave no painel da API4Com
-2. Adicionar fallback: aceitar IPs confiáveis (129.151.39.51) temporariamente enquanto configura
+As tags são armazenadas em `contacts.tags` (array) e definidas em `tag_definitions`.
 
 ---
 
-### Alterações Planejadas
+### Arquitetura do Card
 
-#### 1. Corrigir UI - Forçar refresh após hangup (ActiveCallIndicator.tsx)
+#### Localização
+- Aba **"Triagem Interativa"** do ProspectingDashboard
+- Posicionado após os gráficos existentes (ButtonClicksFunnel e ButtonDistributionChart)
 
-```typescript
-// Após chamar api4com-hangup com sucesso, forçar atualização local imediata
-const handleHangup = async () => {
-  setIsCancelling(true);
-  try {
-    const { data, error } = await supabase.functions.invoke('api4com-hangup', {
-      body: { call_log_id: call.id, api4com_call_id: call.api4com_call_id }
-    });
-
-    if (error) throw error;
-    
-    // NOVO: Forçar dismiss imediato - não esperar pelo Realtime
-    toast.info('Chamada encerrada');
-    onDismiss?.();
-  } catch (error) {
-    // ...
-  }
-};
-```
-
-**Nota:** O código atual JÁ faz isso (`onDismiss?.()`), então o problema é que `onDismiss` pode não estar sendo passado corretamente.
-
-#### 2. Verificar chamada de onDismiss (ChatInterface.tsx ou onde o componente é usado)
-
-Garantir que `onDismiss={dismissActiveCall}` está sendo passado para o componente.
-
-#### 3. Criar Testes Automatizados para api4com-webhook
-
-```typescript
-// supabase/functions/api4com-webhook/index.test.ts
-
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import "https://deno.land/std@0.224.0/dotenv/load.ts";
-
-const SUPABASE_URL = Deno.env.get("VITE_SUPABASE_URL")!;
-const SUPABASE_ANON_KEY = Deno.env.get("VITE_SUPABASE_PUBLISHABLE_KEY")!;
-
-const webhookUrl = `${SUPABASE_URL}/functions/v1/api4com-webhook`;
-
-Deno.test("api4com-webhook - rejects request without API key (401)", async () => {
-  const response = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ event: "test" }),
-  });
-  
-  assertEquals(response.status, 401);
-  const body = await response.json();
-  assertEquals(body.error, "Unauthorized");
-});
-
-Deno.test("api4com-webhook - accepts request with valid API key", async () => {
-  const webhookKey = Deno.env.get("API4COM_WEBHOOK_KEY");
-  if (!webhookKey) {
-    console.log("Skipping: API4COM_WEBHOOK_KEY not set");
-    return;
-  }
-  
-  const response = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { 
-      "Content-Type": "application/json",
-      "X-Api4com-Key": webhookKey,
-    },
-    body: JSON.stringify({ 
-      event: "channel-hangup",
-      id: "test-123",
-      destination: "5511999999999",
-    }),
-  });
-  
-  // Should return 200 even if call not found (logged as ignored)
-  assertEquals(response.status, 200);
-  await response.text(); // Consume body
-});
-
-Deno.test("api4com-webhook - health check returns 200", async () => {
-  const response = await fetch(webhookUrl, {
-    method: "GET",
-  });
-  
-  assertEquals(response.status, 200);
-  const body = await response.json();
-  assertEquals(body.status, "ok");
-  await response.text();
-});
-```
-
-#### 4. Adicionar Fallback Temporário para IPs Confiáveis
-
-Enquanto o cliente não configura a chave no painel da API4Com, podemos aceitar requests de IPs conhecidos:
-
-```typescript
-// Em api4com-webhook/index.ts - TEMPORÁRIO até configuração do cliente
-
-// Se não tem chave MAS vem de IP confiável, aceitar com warning
-if (!trimmedProvidedKey && ipTrusted) {
-  console.warn('[api4com-webhook] ⚠️ TEMPORARY: Accepting request from trusted IP without key:', clientIP);
-  console.warn('[api4com-webhook] ⚠️ Please configure API4COM_WEBHOOK_KEY in the API4Com panel');
-  // Continuar processamento...
-}
-```
+#### Visual
+- Card no mesmo estilo dos existentes (bg-slate-900/50, border-slate-800/50)
+- Gráfico de barras horizontais mostrando contagem por tag
+- Cores dinâmicas vindas de `tag_definitions.color`
+- Badge com total de tags aplicadas no período
 
 ---
 
-### Fluxo Corrigido
+### Componentes a Criar
+
+#### 1. TagDistributionCard.tsx
+Novo componente em `src/components/prospecting/`
 
 ```text
-1. Usuário clica "Encerrar"
-         ↓
-2. api4com-hangup atualiza DB local (status = cancelled)
-         ↓
-3. API4Com é notificada (pode retornar 404 se já encerrou)
-         ↓
-4. onDismiss() é chamado → UI remove indicador imediatamente
-         ↓
-5. Realtime EVENTUALMENTE entrega o UPDATE (backup)
-         ↓
-6. API4Com envia webhook → atualiza com recording/duration (se disponível)
++------------------------------------------+
+|  Tags Geradas                    [?]     |
+|  Classificação automática de contatos    |
++------------------------------------------+
+|                                          |
+|  ████████████████████  Emprego      24   |
+|  ██████████████       Engano        14   |
+|  ██                   Prospecção     3   |
+|  ██                   Transportador  2   |
+|  █                    Frota          1   |
+|                                          |
+|  Total: 45 tags aplicadas (30 dias)      |
++------------------------------------------+
 ```
+
+#### 2. Integração no ButtonMetricsDashboard
+
+Adicionar o card na grid existente, após o ButtonDistributionChart.
 
 ---
 
-### Resumo das Alterações
+### Alterações nos Arquivos
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/ChatInterface.tsx` ou similar | Verificar se `onDismiss` está sendo passado |
-| `src/hooks/useActiveCall.ts` | Adicionar logging para debug de Realtime |
-| `supabase/functions/api4com-webhook/index.ts` | Adicionar fallback temporário para IPs confiáveis |
-| `supabase/functions/api4com-webhook/index.test.ts` | Criar testes automatizados |
+| `src/components/prospecting/TagDistributionCard.tsx` | **NOVO** - Card com gráfico de barras horizontais |
+| `src/components/prospecting/ButtonMetricsDashboard.tsx` | Importar e renderizar TagDistributionCard |
+
+---
+
+### Implementação Detalhada
+
+#### TagDistributionCard.tsx
+
+**Props:**
+```typescript
+interface TagDistributionCardProps {
+  period: string; // '1', '7', '30' - dias
+}
+```
+
+**Dados buscados:**
+```sql
+SELECT 
+  td.key,
+  td.label,
+  td.color,
+  COUNT(DISTINCT c.id) as count
+FROM tag_definitions td
+LEFT JOIN contacts c ON c.tags @> ARRAY[td.key]
+  AND c.updated_at >= NOW() - INTERVAL '{period} days'
+WHERE td.is_active = true
+GROUP BY td.id
+ORDER BY count DESC
+LIMIT 10
+```
+
+**Funcionalidades:**
+- Gráfico de barras horizontais (usando Recharts BarChart)
+- Tooltip com informações detalhadas
+- Cores personalizadas por tag (vindas do banco)
+- Loading skeleton enquanto carrega
+- Mensagem de "Nenhuma tag aplicada" se vazio
+
+#### Integração no ButtonMetricsDashboard
+
+```typescript
+// Após o grid de charts existente
+<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <ButtonClicksFunnel ... />
+  <ButtonDistributionChart ... />
+</div>
+
+// Adicionar:
+<TagDistributionCard period={period} />
+```
+
+---
+
+### Visual do Componente
+
+```text
+Card com:
+- Header: ícone Tag + título "Tags Geradas" + descrição
+- Gráfico: BarChart horizontal com cores dinâmicas
+- Legenda: Lista com cor + label + contagem + percentual
+- Footer: Total de tags e período selecionado
+```
+
+**Cores padrão por categoria:**
+- `status`: Azul (#3b82f6)
+- `interest`: Verde (#22c55e)
+- `action`: Amarelo (#eab308)
+- `qualification`: Roxo (#8b5cf6)
+- `custom`: Cinza (#64748b) ou cor definida
+
+---
+
+### Fluxo de Dados
+
+```text
+1. ButtonMetricsDashboard renderiza
+2. Passa `period` para TagDistributionCard
+3. TagDistributionCard busca:
+   - tag_definitions (todas ativas)
+   - contacts filtrados por updated_at no período
+4. Agrupa contatos por tag
+5. Renderiza BarChart com dados
+```
 
 ---
 
 ### Seção Técnica
 
-**Por que o Realtime não está entregando eventos de call_logs?**
+#### Query otimizada para buscar tags com contagens
 
-Possíveis causas:
-1. **RLS com função** - A função `is_authenticated_user()` pode não estar sendo avaliada corretamente no contexto do Realtime
-2. **Replica Identity** - A tabela pode precisar de `REPLICA IDENTITY FULL` para o Realtime funcionar com filtros
-3. **Subscription não ativou** - O canal pode não ter sido subscrito corretamente
+```typescript
+// Em TagDistributionCard.tsx
+const fetchTagData = async () => {
+  const periodStart = new Date();
+  periodStart.setDate(periodStart.getDate() - parseInt(period));
+  
+  // Buscar definições de tags
+  const { data: tagDefs } = await supabase
+    .from('tag_definitions')
+    .select('key, label, color, category')
+    .eq('is_active', true);
+  
+  // Buscar contatos com tags no período
+  const { data: contacts } = await supabase
+    .from('contacts')
+    .select('id, tags, updated_at')
+    .gte('updated_at', periodStart.toISOString())
+    .not('tags', 'eq', '{}');
+  
+  // Contar por tag
+  const tagCounts = new Map<string, number>();
+  contacts?.forEach(c => {
+    c.tags?.forEach(tag => {
+      tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+    });
+  });
+  
+  // Combinar com definições
+  return tagDefs?.map(td => ({
+    ...td,
+    count: tagCounts.get(td.key) || 0
+  }))
+  .filter(t => t.count > 0)
+  .sort((a, b) => b.count - a.count);
+};
+```
 
-**Investigação adicional necessária:**
-- Verificar `REPLICA IDENTITY` da tabela call_logs
-- Adicionar logging quando o canal é subscrito
-- Verificar se há erros na subscription
+#### Estilo do BarChart (Recharts)
 
-**Webhook não autenticado:**
-A API4Com precisa ser configurada no painel deles para enviar o header `X-Api4com-Key` ou `X-Api-Key` com o valor do secret `API4COM_WEBHOOK_KEY`. Até que isso seja feito, os webhooks continuarão sendo rejeitados.
+```typescript
+<ResponsiveContainer width="100%" height={data.length * 40 + 40}>
+  <BarChart
+    data={data}
+    layout="vertical"
+    margin={{ left: 80, right: 30 }}
+  >
+    <XAxis type="number" />
+    <YAxis 
+      type="category" 
+      dataKey="label" 
+      width={80}
+      tick={{ fill: '#94a3b8', fontSize: 12 }}
+    />
+    <Tooltip content={<CustomTooltip />} />
+    <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+      {data.map((entry, index) => (
+        <Cell key={index} fill={entry.color} />
+      ))}
+    </Bar>
+  </BarChart>
+</ResponsiveContainer>
+```
+
+---
+
+### Resumo das Entregas
+
+1. **Novo arquivo**: `src/components/prospecting/TagDistributionCard.tsx`
+   - Componente completo com fetch de dados
+   - Gráfico de barras horizontais
+   - Loading state e empty state
+   - Tooltip customizado
+
+2. **Edição**: `src/components/prospecting/ButtonMetricsDashboard.tsx`
+   - Import do TagDistributionCard
+   - Renderização passando period como prop
 
