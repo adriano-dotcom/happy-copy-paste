@@ -16,6 +16,45 @@ function toBRT(date: Date | string): string {
 
 const WHATSAPP_API_URL = "https://graph.facebook.com/v18.0";
 
+// ===== RETRY UTILITY =====
+async function fetchSettingsWithRetry(
+  supabase: any,
+  maxRetries = 3,
+  baseDelayMs = 1000
+): Promise<{ data: any | null; error: any }> {
+  let lastError: any = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const result = await supabase
+      .from('nina_settings')
+      .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_token_in_vault')
+      .maybeSingle();
+    
+    if (!result.error) {
+      return result;
+    }
+    
+    lastError = result.error;
+    const errorStr = String(result.error?.message || '');
+    const isTransient = errorStr.includes('522') || 
+                        errorStr.includes('timeout') ||
+                        errorStr.includes('Connection') ||
+                        errorStr.includes('DOCTYPE');
+    
+    if (!isTransient || attempt === maxRetries) {
+      console.error(`[Sender] Attempt ${attempt}/${maxRetries} failed (non-retryable):`, result.error);
+      return result;
+    }
+    
+    const delay = baseDelayMs * Math.pow(2, attempt - 1);
+    console.log(`[Sender] Attempt ${attempt}/${maxRetries} failed (transient), retrying in ${delay}ms...`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+  
+  return { data: null, error: lastError };
+}
+// ===== END RETRY UTILITY =====
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -28,20 +67,18 @@ serve(async (req) => {
   try {
     console.log('[Sender] Starting send process...');
 
-    // Get WhatsApp credentials from settings
-    const { data: settings, error: settingsError } = await supabase
-      .from('nina_settings')
-      .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_token_in_vault')
-      .maybeSingle();
+    // Get WhatsApp credentials from settings WITH RETRY
+    const { data: settings, error: settingsError } = await fetchSettingsWithRetry(supabase);
 
     if (settingsError) {
-      console.error('[Sender] Error fetching settings:', settingsError);
+      console.error('[Sender] Error fetching settings after retries:', settingsError);
       return new Response(JSON.stringify({ 
         error: 'Erro ao buscar configurações',
         message: settingsError.message,
+        retry_suggested: true,
         processed: 0 
       }), {
-        status: 500,
+        status: 503, // Service Unavailable - suggests retry
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
