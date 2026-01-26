@@ -1,146 +1,169 @@
 
 
-## Plano: Corrigir Status de Chamadas Não Atendidas vs Canceladas
+## Plano: Corrigir Repetição de Mensagens Entre Automações
 
 ### Problema Identificado
 
-O sistema está mostrando "Cancelada" para chamadas que deveriam mostrar "Não Atendeu". Isso acontece porque a API4Com envia `ORIGINATOR_CANCEL` para ambos os casos:
+A mesma mensagem "Lucas, você é transportador ou embarcador da carga?" foi enviada duas vezes porque:
 
-1. **Cancelamento manual**: operador clicou em desligar antes de atender
-2. **Não atendeu**: lead não atendeu e a chamada expirou/foi encerrada
+1. **Duas automações diferentes** processaram a mesma conversa:
+   - "Sem Retorno Inteligente" às 10:05
+   - "Follow-up Prospecção Atlas" às 13:10
 
-### Dados de Análise
-
-| Tempo de Chamada | Quantidade | Cenário Provável |
-|------------------|------------|------------------|
-| 4-12 segundos | 5 | Cancelado pelo operador |
-| 20-45 segundos | 5 | Não atendeu (timeout normal) |
-
-### Solução
-
-Usar o **tempo de chamada** para diferenciar:
-- Se `call_time >= 25 segundos` → "Não Atendeu" (lead não atendeu)
-- Se `call_time < 25 segundos` → "Cancelada" (operador desistiu)
-
-O valor de 25 segundos é baseado no tempo típico de ring (5-6 toques = ~25-30s).
+2. **A verificação anti-repetição é isolada por automação**, não global. Cada automação só vê seus próprios logs anteriores.
 
 ---
 
-### Alterações no Arquivo
+### Correções Propostas
 
-**Arquivo:** `supabase/functions/api4com-webhook/index.ts`
+**Arquivo:** `supabase/functions/process-followups/index.ts`
 
-#### Alteração na linha ~446-449
+#### Correção 1: Buscar última mensagem GLOBAL (linhas ~1280-1284)
 
 **De:**
 ```typescript
-if (hangupCauseLower.includes('originator_cancel') || hangupCauseLower === 'originator_cancel') {
-  // Cancelled by the operator before answered
-  status = duration > 0 ? 'completed' : 'cancelled';
-  console.log('[api4com-webhook] 📱 Originator cancel detected, status:', status);
-}
+// Get last message sent for anti-repetition
+const lastMessageSent = previousLogs?.[0]?.message_content || undefined;
 ```
 
 **Para:**
 ```typescript
-if (hangupCauseLower.includes('originator_cancel') || hangupCauseLower === 'originator_cancel') {
-  // ORIGINATOR_CANCEL can mean two things:
-  // 1. Operator cancelled manually (quick cancel, < 25s)
-  // 2. Lead didn't answer and call timed out (ring time >= 25s)
-  
-  // Calculate ring time from callLog if available, or use webhook timestamps
-  const ringTimeThreshold = 25; // seconds - typical ring time before voicemail
-  
-  // We'll determine this later when we have the call log
-  // For now, mark as 'pending_classification' and resolve below
-  status = duration > 0 ? 'completed' : 'pending_originator_cancel';
-  console.log('[api4com-webhook] 📱 Originator cancel detected, will classify based on ring time');
-}
+// Get last message sent for anti-repetition - GLOBAL (any automation OR conversation messages)
+// 1. First try: get from any automation's followup_logs for this conversation
+const { data: globalFollowupLogs } = await supabase
+  .from('followup_logs')
+  .select('message_content, created_at')
+  .eq('conversation_id', conv.id)
+  .eq('status', 'sent')
+  .not('message_content', 'is', null)
+  .order('created_at', { ascending: false })
+  .limit(1);
+
+// 2. Fallback: get from conversation messages (last nina/agent message)
+const lastNinaMessageFromConv = recentMessages?.find(m => 
+  m.from_type !== 'user' && m.content
+)?.content;
+
+// Use global followup log OR conversation message (whichever is more recent)
+const lastMessageSent = globalFollowupLogs?.[0]?.message_content || 
+                        lastNinaMessageFromConv || 
+                        undefined;
 ```
 
-#### Adicionar classificação baseada no tempo de ring (após linha ~477)
+#### Correção 2: Validar mensagem gerada antes de enviar (linhas ~1514)
 
-Após encontrar o callLog, adicionar lógica para classificar corretamente:
+Antes de inserir na `send_queue`, verificar se a mensagem gerada é idêntica ou muito similar a alguma mensagem recente:
+
+**Adicionar após linha ~1513:**
+```typescript
+// ANTI-DUPLICIDADE FINAL: Verificar se mensagem gerada é idêntica a alguma recente
+const isDuplicateMessage = recentMessages?.some(m => {
+  if (m.from_type === 'user') return false;
+  if (!m.content) return false;
+  
+  // Verificar se é exatamente igual
+  if (m.content.trim().toLowerCase() === messageContent.trim().toLowerCase()) {
+    console.log(`[process-followups] ⛔ DUPLICATE DETECTED: Message identical to recent conversation message`);
+    return true;
+  }
+  
+  // Verificar similaridade alta (>80%)
+  const similarity = calculateWordSimilarity(messageContent, m.content);
+  if (similarity > 0.8) {
+    console.log(`[process-followups] ⛔ DUPLICATE DETECTED: Message ${(similarity * 100).toFixed(0)}% similar to recent message`);
+    return true;
+  }
+  
+  return false;
+});
+
+if (isDuplicateMessage) {
+  console.log(`[process-followups] Skipping duplicate message for conversation ${conv.id}`);
+  skipped++;
+  continue;
+}
+
+console.log(`[process-followups] Sending message (attempt ${attemptNumber}) to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
+```
+
+#### Correção 3: Adicionar função de similaridade no process-followups
+
+Adicionar a função `calculateWordSimilarity` (já existe no generate-followup-message, mas não no process-followups):
 
 ```typescript
-const callLog = await findCallLog();
-
-if (callLog) {
-  // Resolve pending_originator_cancel based on ring time
-  if (status === 'pending_originator_cancel') {
-    const startTime = new Date(callLog.started_at).getTime();
-    const endTime = Date.now();
-    const ringTimeSeconds = (endTime - startTime) / 1000;
-    
-    // If call rang for >= 25 seconds, it's likely the lead didn't answer
-    // If < 25 seconds, the operator probably cancelled manually
-    const ringTimeThreshold = 25;
-    
-    if (ringTimeSeconds >= ringTimeThreshold) {
-      status = 'no_answer';
-      console.log(`[api4com-webhook] 📱 ORIGINATOR_CANCEL classified as no_answer (ring time: ${ringTimeSeconds.toFixed(1)}s >= ${ringTimeThreshold}s)`);
-    } else {
-      status = 'cancelled';
-      console.log(`[api4com-webhook] 📱 ORIGINATOR_CANCEL classified as cancelled (ring time: ${ringTimeSeconds.toFixed(1)}s < ${ringTimeThreshold}s)`);
-    }
-  }
-  // ... resto do código existente
+// Verificar similaridade de palavras
+function calculateWordSimilarity(msg1: string, msg2: string): number {
+  const normalize = (s: string) => s.toLowerCase()
+    .replace(/[^a-záàâãéèêíïóôõöúç0-9 ]/gi, '')
+    .split(' ')
+    .filter(w => w.length > 3);
+  
+  const words1 = new Set(normalize(msg1));
+  const words2 = new Set(normalize(msg2));
+  
+  if (words1.size === 0 || words2.size === 0) return 0;
+  
+  const intersection = [...words1].filter(w => words2.has(w));
+  return intersection.length / Math.max(words1.size, words2.size);
 }
 ```
 
 ---
 
-### Visual Após Correção
-
-| Antes | Depois |
-|-------|--------|
-| Cancelada (45s) | Não Atendeu ✓ |
-| Cancelada (40s) | Não Atendeu ✓ |
-| Cancelada (7s) | Cancelada ✓ |
-| Cancelada (4s) | Cancelada ✓ |
-
----
-
-### Fluxo de Decisão
+### Fluxo Após Correção
 
 ```text
-channel-hangup recebido
+Automação "Sem Retorno Inteligente" processa conversa
          ↓
-hangupCause = ORIGINATOR_CANCEL?
-         ↓ SIM
-Calcular tempo de ring (ended_at - started_at)
+Gera mensagem: "Lucas, você é transportador ou embarcador...?"
          ↓
-Ring time >= 25s? ───────→ status = "no_answer" (Não Atendeu)
-         ↓ NÃO
-status = "cancelled" (Cancelada)
+Envia e salva em followup_logs (10:05)
+         ↓
+3 horas depois...
+         ↓
+Automação "Follow-up Prospecção Atlas" processa conversa
+         ↓
+Busca lastMessageSent GLOBAL de followup_logs
+         ↓
+Encontra: "Lucas, você é transportador ou embarcador...?"
+         ↓
+generate-followup-message recebe last_message_sent
+         ↓
+IA forçada a gerar mensagem DIFERENTE (tema diferente)
+         ↓
+Verificação anti-duplicidade final confirma que é diferente
+         ↓
+Envia nova mensagem com tema diferente (ex: "Qual tipo de mercadoria você transporta?")
 ```
 
 ---
 
 ### Resumo das Alterações
 
-| Linha | Alteração |
-|-------|-----------|
-| ~446-449 | Alterar classificação de ORIGINATOR_CANCEL para usar marcador temporário |
-| ~477-490 | Adicionar lógica de classificação baseada no tempo de ring |
+| Linha Aproximada | Alteração |
+|------------------|-----------|
+| ~250 (nova) | Adicionar função `calculateWordSimilarity` |
+| ~1280-1284 | Substituir busca por automação para busca GLOBAL |
+| ~1514 (novo bloco) | Adicionar verificação anti-duplicidade final antes de enviar |
 
 ---
 
 ### Seção Técnica
 
-**Por que 25 segundos?**
+**Por que a trava de 10 minutos não funcionou?**
 
-O tempo típico de ring antes de cair na caixa postal ou encerrar é:
-- 5-6 toques × 5 segundos/toque = 25-30 segundos
-- Chamadas canceladas manualmente geralmente são encerradas em menos de 15 segundos
+A trava nas linhas 1154-1163 verifica se há mensagem do agente nos últimos 10 minutos. Mas entre as duas mensagens passaram 3 horas, então a trava não se aplica.
 
-**Parâmetro configurável:**
+**Por que buscar de `followup_logs` E de `messages`?**
 
-O threshold de 25 segundos pode ser ajustado se necessário. Valores alternativos:
-- 20s: mais agressivo em classificar como "não atendeu"
-- 30s: mais conservador, só classifica após ring completo
+1. `followup_logs` contém o histórico de TODAS as automações
+2. `messages` contém mensagens enviadas diretamente pelo orchestrator (que não passam por followup_logs)
+3. Usar ambos garante cobertura completa
 
-**Compatibilidade:**
+**Threshold de 80% de similaridade:**
 
-Esta alteração não afeta outros hangup causes (NORMAL_CLEARING, NO_ANSWER, BUSY, etc.) que já funcionam corretamente.
+Escolhido porque:
+- 100% = apenas exatamente igual
+- 80% = detecta reformulações da mesma pergunta
+- Abaixo de 80% pode gerar falsos positivos
 
