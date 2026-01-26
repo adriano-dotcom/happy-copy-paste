@@ -1,184 +1,206 @@
 
-## Plano de Correção: Integração API4Com - Chamadas Não Encerram
 
-### Resumo dos Problemas Identificados
+## Plano: Correção da Integração API4Com - Indicador de Chamada Travado + Testes
 
-Após análise dos logs, código e banco de dados, foram identificados **4 problemas críticos**:
+### Diagnóstico Final
 
-| # | Problema | Impacto | Severidade |
-|---|----------|---------|------------|
-| 1 | Endpoint de hangup incorreto | Chamadas não encerram via API | **CRÍTICO** |
-| 2 | Chamadas travadas no banco | UI mostra "Discando..." eternamente | Alto |
-| 3 | Background sync com JWT inválido | Sync pós-hangup falha | Médio |
-| 4 | Falta cron job de limpeza | Chamadas órfãs persistem | Médio |
+Após investigação detalhada, identifiquei **4 problemas que precisam ser resolvidos**:
 
----
-
-### 1. Corrigir Endpoint de Hangup
-
-**Arquivo:** `supabase/functions/api4com-hangup/index.ts`
-
-O endpoint atual está errado:
-```
-POST /api/v1/dialer/{id}/hangup  ❌
-```
-
-Endpoint correto conforme documentação API4Com:
-```
-POST /api/v1/calls/{id}/hangup  ✅
-```
-
-**Alteração na linha 69:**
-```typescript
-// DE:
-const api4comResponse = await fetch(`https://api.api4com.com/api/v1/dialer/${api4com_call_id}/hangup`, {
-
-// PARA:
-const api4comResponse = await fetch(`https://api.api4com.com/api/v1/calls/${api4com_call_id}/hangup`, {
-```
+| # | Problema | Causa Raiz | Severidade |
+|---|----------|------------|------------|
+| 1 | UI não atualiza quando chamada encerra | Realtime não está entregando eventos de call_logs | **CRÍTICO** |
+| 2 | Webhook API4Com bloqueado | API4Com não está enviando a chave de autenticação | Alto |
+| 3 | Background sync falha | Já foi corrigido mas deploy ainda não ativou | Médio |
+| 4 | Falta de testes automatizados | Nenhum teste para validar webhook | Médio |
 
 ---
 
-### 2. Corrigir Background Sync com JWT Inválido
+### Problema 1: Realtime de call_logs Não Funciona
 
-**Arquivo:** `supabase/functions/api4com-hangup/index.ts`
+**Evidência:**
+- Banco mostra `status: cancelled` para a chamada
+- Console logs do frontend mostram eventos Realtime para `conversations`, `messages`, `contacts`
+- Nenhum evento de `call_logs` no console
 
-O background sync está falhando porque usa `Bearer ${supabaseKey}` (service role) para chamar outra edge function, mas isso não funciona corretamente.
+**Causa provável:** 
+O Realtime do Supabase **não está entregando eventos de `call_logs`** mesmo que a tabela esteja na publication. Isso pode ser um problema de RLS ou configuração.
 
-**Solução:** Usar `apikey` header ao invés de Bearer token:
+**Solução:**
+1. Verificar se o canal Realtime está realmente subscrito
+2. Adicionar logging mais detalhado no hook `useActiveCall`
+3. Forçar refresh manual após o hangup (fallback imediato)
+
+---
+
+### Problema 2: Webhook API4Com Bloqueado
+
+**Evidência dos logs:**
+```
+[api4com-webhook] ❌ Authentication failed from: 129.151.39.51
+[api4com-webhook] 🔑 Auth check: { authMethod: "none", providedKeyFingerprint: "null" }
+```
+
+**Causa:**
+A API4Com está enviando webhooks **SEM** a chave de autenticação configurada. O provedor precisa ser configurado do lado deles para enviar a chave.
+
+**Solução:**
+1. Documentar como configurar a chave no painel da API4Com
+2. Adicionar fallback: aceitar IPs confiáveis (129.151.39.51) temporariamente enquanto configura
+
+---
+
+### Alterações Planejadas
+
+#### 1. Corrigir UI - Forçar refresh após hangup (ActiveCallIndicator.tsx)
 
 ```typescript
-// Linhas 115-121 - Alterar headers da chamada de sync
-const syncResponse = await fetch(`${supabaseUrl}/functions/v1/api4com-sync-call`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'apikey': supabaseKey,               // Usar como apikey
-    'Authorization': `Bearer ${supabaseKey}`,  // E também como Bearer
-  },
-  body: JSON.stringify({ call_log_id }),
+// Após chamar api4com-hangup com sucesso, forçar atualização local imediata
+const handleHangup = async () => {
+  setIsCancelling(true);
+  try {
+    const { data, error } = await supabase.functions.invoke('api4com-hangup', {
+      body: { call_log_id: call.id, api4com_call_id: call.api4com_call_id }
+    });
+
+    if (error) throw error;
+    
+    // NOVO: Forçar dismiss imediato - não esperar pelo Realtime
+    toast.info('Chamada encerrada');
+    onDismiss?.();
+  } catch (error) {
+    // ...
+  }
+};
+```
+
+**Nota:** O código atual JÁ faz isso (`onDismiss?.()`), então o problema é que `onDismiss` pode não estar sendo passado corretamente.
+
+#### 2. Verificar chamada de onDismiss (ChatInterface.tsx ou onde o componente é usado)
+
+Garantir que `onDismiss={dismissActiveCall}` está sendo passado para o componente.
+
+#### 3. Criar Testes Automatizados para api4com-webhook
+
+```typescript
+// supabase/functions/api4com-webhook/index.test.ts
+
+import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import "https://deno.land/std@0.224.0/dotenv/load.ts";
+
+const SUPABASE_URL = Deno.env.get("VITE_SUPABASE_URL")!;
+const SUPABASE_ANON_KEY = Deno.env.get("VITE_SUPABASE_PUBLISHABLE_KEY")!;
+
+const webhookUrl = `${SUPABASE_URL}/functions/v1/api4com-webhook`;
+
+Deno.test("api4com-webhook - rejects request without API key (401)", async () => {
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event: "test" }),
+  });
+  
+  assertEquals(response.status, 401);
+  const body = await response.json();
+  assertEquals(body.error, "Unauthorized");
+});
+
+Deno.test("api4com-webhook - accepts request with valid API key", async () => {
+  const webhookKey = Deno.env.get("API4COM_WEBHOOK_KEY");
+  if (!webhookKey) {
+    console.log("Skipping: API4COM_WEBHOOK_KEY not set");
+    return;
+  }
+  
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { 
+      "Content-Type": "application/json",
+      "X-Api4com-Key": webhookKey,
+    },
+    body: JSON.stringify({ 
+      event: "channel-hangup",
+      id: "test-123",
+      destination: "5511999999999",
+    }),
+  });
+  
+  // Should return 200 even if call not found (logged as ignored)
+  assertEquals(response.status, 200);
+  await response.text(); // Consume body
+});
+
+Deno.test("api4com-webhook - health check returns 200", async () => {
+  const response = await fetch(webhookUrl, {
+    method: "GET",
+  });
+  
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assertEquals(body.status, "ok");
+  await response.text();
 });
 ```
 
----
+#### 4. Adicionar Fallback Temporário para IPs Confiáveis
 
-### 3. Adicionar Fallback Local no Hangup
-
-Mesmo que a chamada à API4Com falhe (por ex: chamada já encerrou no provedor), devemos garantir que o banco de dados seja atualizado localmente.
-
-**Alteração:** Atualizar o banco ANTES de chamar a API4Com e adicionar tratamento para quando a API retorna 404 (chamada já encerrada).
+Enquanto o cliente não configura a chave no painel da API4Com, podemos aceitar requests de IPs conhecidos:
 
 ```typescript
-// Após a chamada à API4Com (linha 77-82):
-// Se 404, significa que a chamada já foi encerrada no provedor - isso é OK
-if (api4comResponse.status === 404) {
-  console.log('[api4com-hangup] Chamada já encerrada no provedor (404) - atualizando banco local');
+// Em api4com-webhook/index.ts - TEMPORÁRIO até configuração do cliente
+
+// Se não tem chave MAS vem de IP confiável, aceitar com warning
+if (!trimmedProvidedKey && ipTrusted) {
+  console.warn('[api4com-webhook] ⚠️ TEMPORARY: Accepting request from trusted IP without key:', clientIP);
+  console.warn('[api4com-webhook] ⚠️ Please configure API4COM_WEBHOOK_KEY in the API4Com panel');
+  // Continuar processamento...
 }
-
-// O update do banco acontece independente do resultado da API4Com
 ```
-
----
-
-### 4. Criar Cron Job para Limpar Chamadas Órfãs
-
-**Arquivo:** `supabase/functions/api4com-sync-stuck-calls/index.ts`
-
-Verificar se já existe e se está configurado no cron. Se não, adicionar um job que rode a cada 5 minutos para:
-1. Buscar chamadas em status `dialing` ou `ringing` há mais de 5 minutos
-2. Tentar sincronizar com o provedor
-3. Se não conseguir, marcar como `timeout`
-
-**Migração SQL para cron job:**
-```sql
-SELECT cron.schedule(
-  'sync-stuck-calls',
-  '*/5 * * * *',  -- A cada 5 minutos
-  $$
-  SELECT net.http_post(
-    url := 'https://xaqepnvvoljtlsyofifu.supabase.co/functions/v1/api4com-sync-stuck-calls',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer ' || current_setting('app.settings.service_role_key', true) || '"}'::jsonb,
-    body := '{}'::jsonb
-  );
-  $$
-);
-```
-
----
-
-### 5. Limpar Chamadas Travadas Imediatamente
-
-**Migração SQL one-time:**
-```sql
--- Marcar todas as chamadas travadas como timeout
-UPDATE call_logs 
-SET 
-  status = 'timeout',
-  ended_at = NOW(),
-  hangup_cause = 'cleanup_orphan'
-WHERE status IN ('dialing', 'ringing')
-  AND started_at < NOW() - INTERVAL '10 minutes';
-```
-
----
-
-### 6. Melhorar Logs de Diagnóstico
-
-Adicionar mais contexto nos logs para facilitar debugging futuro:
-- Logar o formato exato do call_id recebido
-- Logar se a chamada foi encontrada no provedor
-- Logar resposta completa da API4Com em caso de erro
-
----
-
-### Resumo das Alterações
-
-| Arquivo | Tipo | Descrição |
-|---------|------|-----------|
-| `api4com-hangup/index.ts` | Edge Function | Corrigir endpoint `/dialer/` para `/calls/` |
-| `api4com-hangup/index.ts` | Edge Function | Corrigir headers do background sync |
-| `api4com-hangup/index.ts` | Edge Function | Adicionar tratamento para 404 (já encerrada) |
-| Migração SQL | Database | Limpar chamadas órfãs existentes |
-| Migração SQL | Database | Criar cron job para limpeza automática |
 
 ---
 
 ### Fluxo Corrigido
 
 ```text
-Usuário clica "Encerrar"
-        ↓
-api4com-hangup chamada
-        ↓
-1. Atualiza banco local → status = "cancelled"
-        ↓
-2. Chama API4Com: POST /calls/{id}/hangup
-        ↓
-    [200 OK] → Log sucesso
-    [404] → Log "já encerrada" (OK)
-    [Erro] → Log erro, mas banco já atualizado
-        ↓
-3. Background sync (3s delay) → Busca gravação/duração
-        ↓
-UI reflete status atualizado via Realtime
+1. Usuário clica "Encerrar"
+         ↓
+2. api4com-hangup atualiza DB local (status = cancelled)
+         ↓
+3. API4Com é notificada (pode retornar 404 se já encerrou)
+         ↓
+4. onDismiss() é chamado → UI remove indicador imediatamente
+         ↓
+5. Realtime EVENTUALMENTE entrega o UPDATE (backup)
+         ↓
+6. API4Com envia webhook → atualiza com recording/duration (se disponível)
 ```
 
 ---
 
-### Seção Técnica - Detalhes de Implementação
+### Resumo das Alterações
 
-**Problema do Endpoint:**
-A API4Com tem dois conjuntos de endpoints:
-- `/api/v1/dialer` - Para INICIAR chamadas
-- `/api/v1/calls` - Para GERENCIAR chamadas existentes (hangup, status, etc.)
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/components/ChatInterface.tsx` ou similar | Verificar se `onDismiss` está sendo passado |
+| `src/hooks/useActiveCall.ts` | Adicionar logging para debug de Realtime |
+| `supabase/functions/api4com-webhook/index.ts` | Adicionar fallback temporário para IPs confiáveis |
+| `supabase/functions/api4com-webhook/index.test.ts` | Criar testes automatizados |
 
-O erro `Shared class "Dialer" has no method handling POST /{id}/hangup` confirma que o endpoint `/dialer/{id}/hangup` simplesmente não existe.
+---
 
-**Problema do JWT:**
-Edge functions chamando outras edge functions precisam passar a key como `apikey` header, não apenas como Bearer token. A combinação de ambos garante compatibilidade.
+### Seção Técnica
 
-**Chamadas Órfãs:**
-Existem 20+ chamadas em status "dialing" desde janeiro sem atualização. Isso ocorre porque:
-1. O webhook da API4Com pode não estar chegando (config no lado deles?)
-2. Quando chega, pode não estar encontrando o call_log correspondente
-3. O timeout do cliente (3 min) só funciona se a conversa estiver aberta
+**Por que o Realtime não está entregando eventos de call_logs?**
+
+Possíveis causas:
+1. **RLS com função** - A função `is_authenticated_user()` pode não estar sendo avaliada corretamente no contexto do Realtime
+2. **Replica Identity** - A tabela pode precisar de `REPLICA IDENTITY FULL` para o Realtime funcionar com filtros
+3. **Subscription não ativou** - O canal pode não ter sido subscrito corretamente
+
+**Investigação adicional necessária:**
+- Verificar `REPLICA IDENTITY` da tabela call_logs
+- Adicionar logging quando o canal é subscrito
+- Verificar se há erros na subscription
+
+**Webhook não autenticado:**
+A API4Com precisa ser configurada no painel deles para enviar o header `X-Api4com-Key` ou `X-Api-Key` com o valor do secret `API4COM_WEBHOOK_KEY`. Até que isso seja feito, os webhooks continuarão sendo rejeitados.
+
