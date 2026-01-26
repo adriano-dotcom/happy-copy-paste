@@ -64,9 +64,31 @@ serve(async (req) => {
       throw new Error('Token API4Com não configurado');
     }
 
-    // Call API4Com Hangup endpoint
-    console.log('[api4com-hangup] Chamando API4Com hangup...');
-    const api4comResponse = await fetch(`https://api.api4com.com/api/v1/dialer/${api4com_call_id}/hangup`, {
+    // Update call log FIRST (local fallback - ensures UI updates even if API4Com fails)
+    let finalStatus = 'cancelled';
+    if (call_log_id && currentCall) {
+      const wasAnswered = currentCall.status === 'answered' || currentCall.answered_at;
+      finalStatus = wasAnswered ? 'completed_manual' : 'cancelled';
+      
+      const { error: updateError } = await supabase
+        .from('call_logs')
+        .update({
+          status: finalStatus,
+          ended_at: new Date().toISOString(),
+          hangup_cause: wasAnswered ? 'user_hangup' : 'user_cancel',
+        })
+        .eq('id', call_log_id);
+
+      if (updateError) {
+        console.error('[api4com-hangup] Erro ao atualizar log local:', updateError);
+      } else {
+        console.log('[api4com-hangup] ✅ Local DB updated with status:', finalStatus);
+      }
+    }
+
+    // Call API4Com Hangup endpoint (correct endpoint: /calls/ not /dialer/)
+    console.log('[api4com-hangup] Chamando API4Com hangup para call_id:', api4com_call_id);
+    const api4comResponse = await fetch(`https://api.api4com.com/api/v1/calls/${api4com_call_id}/hangup`, {
       method: 'POST',
       headers: {
         'Authorization': apiToken,
@@ -81,27 +103,15 @@ serve(async (req) => {
       data: api4comData 
     });
 
-    // Update call log
-    if (call_log_id && currentCall) {
-      const wasAnswered = currentCall.status === 'answered' || currentCall.answered_at;
-      const finalStatus = wasAnswered ? 'completed_manual' : 'cancelled';
-      
-      const { error: updateError } = await supabase
-        .from('call_logs')
-        .update({
-          status: finalStatus,
-          ended_at: new Date().toISOString(),
-          hangup_cause: wasAnswered ? 'user_hangup' : 'user_cancel',
-        })
-        .eq('id', call_log_id);
+    // Handle 404 gracefully - means call already ended at provider
+    if (api4comResponse.status === 404) {
+      console.log('[api4com-hangup] Chamada já encerrada no provedor (404) - OK');
+    } else if (!api4comResponse.ok) {
+      console.error('[api4com-hangup] ⚠️ API4Com retornou erro:', api4comResponse.status, api4comData);
+    }
 
-      if (updateError) {
-        console.error('[api4com-hangup] Erro ao atualizar log:', updateError);
-      } else {
-        console.log('[api4com-hangup] ✅ Call ended with status:', finalStatus);
-      }
-
-      // Trigger sync in background to get final details from provider
+    // Trigger sync in background to get final details from provider
+    if (call_log_id) {
       // @ts-ignore - EdgeRuntime is available in Supabase Edge Functions
       if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
         // @ts-ignore
@@ -116,6 +126,7 @@ serve(async (req) => {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
+                'apikey': supabaseKey,
                 'Authorization': `Bearer ${supabaseKey}`,
               },
               body: JSON.stringify({ call_log_id }),
