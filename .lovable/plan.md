@@ -1,178 +1,146 @@
 
-## Plano: Regra Automática de Tag "Plano de Saúde" para Leads do Clara/Barbara
 
-### Objetivo
+## Plano: Corrigir Status de Chamadas Não Atendidas vs Canceladas
 
-Criar uma regra automática que adicione a tag "Plano de Saúde" em todos os contatos atendidos pelo agente Clara e/ou responsável Barbara Francisconi.
+### Problema Identificado
 
----
+O sistema está mostrando "Cancelada" para chamadas que deveriam mostrar "Não Atendeu". Isso acontece porque a API4Com envia `ORIGINATOR_CANCEL` para ambos os casos:
 
-### Dados Identificados
+1. **Cancelamento manual**: operador clicou em desligar antes de atender
+2. **Não atendeu**: lead não atendeu e a chamada expirou/foi encerrada
 
-| Entidade | ID | Observação |
-|----------|---|------------|
-| Agente Clara | `9d989c66-f978-409d-93fe-887ba1c0f1c5` | slug: `clara` |
-| Barbara Francisconi | `232d50ff-4a8b-416e-a71c-086f52f12c64` | Team member |
-| Tag "Plano de Saúde" | `d820c2f7-e551-44c6-9d3f-47e9c3c2ed58` | key: `plano_de_saude` |
-| Pipeline Saúde | `8b35779b-0ebc-4e4d-bf84-981e4f685991` | Vinculado ao Clara |
+### Dados de Análise
 
----
+| Tempo de Chamada | Quantidade | Cenário Provável |
+|------------------|------------|------------------|
+| 4-12 segundos | 5 | Cancelado pelo operador |
+| 20-45 segundos | 5 | Não atendeu (timeout normal) |
 
-### Arquitetura da Solução
+### Solução
 
-A tag será adicionada automaticamente em **dois pontos** do fluxo:
+Usar o **tempo de chamada** para diferenciar:
+- Se `call_time >= 25 segundos` → "Não Atendeu" (lead não atendeu)
+- Se `call_time < 25 segundos` → "Cancelada" (operador desistiu)
 
-#### Ponto 1: Quando conversa é roteada para Clara (linhas ~4918-4963)
-Quando `detectAgent()` detecta Clara como agente responsável e faz handoff para o pipeline de Saúde, adicionar a tag ao contato.
-
-#### Ponto 2: Quando deal é atribuído (linhas ~4945-4960)
-Quando o deal é movido para o pipeline de Saúde via `get_next_deal_owner`, garantir que a tag seja adicionada.
+O valor de 25 segundos é baseado no tempo típico de ring (5-6 toques = ~25-30s).
 
 ---
 
 ### Alterações no Arquivo
 
-**Arquivo:** `supabase/functions/nina-orchestrator/index.ts`
+**Arquivo:** `supabase/functions/api4com-webhook/index.ts`
 
-#### 1. Criar função auxiliar para adicionar tag (após linha ~2800)
+#### Alteração na linha ~446-449
 
+**De:**
 ```typescript
-// ===== AUTO-TAG FOR HEALTH PIPELINE =====
-async function addHealthPlanTagIfClara(
-  supabase: any,
-  contactId: string,
-  agentSlug: string | null,
-  currentTags: string[] | null
-): Promise<void> {
-  // Only add tag for Clara agent (health insurance specialist)
-  if (agentSlug !== 'clara') return;
-  
-  const healthTag = 'plano_de_saude';
-  const tags = currentTags || [];
-  
-  // Skip if already has tag
-  if (tags.includes(healthTag)) {
-    console.log(`[Nina] 🏥 Contact already has ${healthTag} tag`);
-    return;
-  }
-  
-  // Add tag
-  await supabase
-    .from('contacts')
-    .update({ tags: [...tags, healthTag] })
-    .eq('id', contactId);
-  
-  console.log(`[Nina] 🏥 Added ${healthTag} tag for Clara/Health pipeline contact`);
-}
-// ===== END AUTO-TAG FOR HEALTH PIPELINE =====
-```
-
-#### 2. Chamar a função quando agente é atribuído (linha ~4924)
-
-Após atualizar o `current_agent_id`:
-
-```typescript
-// Update conversation with current agent if changed
-if (agent && conversation.current_agent_id !== agent.id) {
-  await supabase
-    .from('conversations')
-    .update({ current_agent_id: agent.id })
-    .eq('id', conversation.id);
-  console.log(`[Nina] Updated conversation agent to: ${agent.name}`);
-
-  // NOVO: Adicionar tag "Plano de Saúde" se for agente Clara
-  await addHealthPlanTagIfClara(
-    supabase, 
-    conversation.contact_id, 
-    agent.slug, 
-    conversation.contact?.tags
-  );
-
-  // Move deal to agent's pipeline if this is a handoff
-  if (isHandoff) {
-    // ... código existente ...
-  }
+if (hangupCauseLower.includes('originator_cancel') || hangupCauseLower === 'originator_cancel') {
+  // Cancelled by the operator before answered
+  status = duration > 0 ? 'completed' : 'cancelled';
+  console.log('[api4com-webhook] 📱 Originator cancel detected, status:', status);
 }
 ```
 
-#### 3. Também adicionar tag no fluxo de handoff do pipeline Saúde (linhas ~4960)
+**Para:**
+```typescript
+if (hangupCauseLower.includes('originator_cancel') || hangupCauseLower === 'originator_cancel') {
+  // ORIGINATOR_CANCEL can mean two things:
+  // 1. Operator cancelled manually (quick cancel, < 25s)
+  // 2. Lead didn't answer and call timed out (ring time >= 25s)
+  
+  // Calculate ring time from callLog if available, or use webhook timestamps
+  const ringTimeThreshold = 25; // seconds - typical ring time before voicemail
+  
+  // We'll determine this later when we have the call log
+  // For now, mark as 'pending_classification' and resolve below
+  status = duration > 0 ? 'completed' : 'pending_originator_cancel';
+  console.log('[api4com-webhook] 📱 Originator cancel detected, will classify based on ring time');
+}
+```
 
-Após mover o deal para o pipeline de Saúde, garantir que a tag foi adicionada:
+#### Adicionar classificação baseada no tempo de ring (após linha ~477)
+
+Após encontrar o callLog, adicionar lógica para classificar corretamente:
 
 ```typescript
-// Get current contact tags for update
-const { data: currentContact } = await supabase
-  .from('contacts')
-  .select('tags')
-  .eq('id', conversation.contact_id)
-  .single();
+const callLog = await findCallLog();
 
-await addHealthPlanTagIfClara(
-  supabase, 
-  conversation.contact_id, 
-  agent.slug, 
-  currentContact?.tags
-);
+if (callLog) {
+  // Resolve pending_originator_cancel based on ring time
+  if (status === 'pending_originator_cancel') {
+    const startTime = new Date(callLog.started_at).getTime();
+    const endTime = Date.now();
+    const ringTimeSeconds = (endTime - startTime) / 1000;
+    
+    // If call rang for >= 25 seconds, it's likely the lead didn't answer
+    // If < 25 seconds, the operator probably cancelled manually
+    const ringTimeThreshold = 25;
+    
+    if (ringTimeSeconds >= ringTimeThreshold) {
+      status = 'no_answer';
+      console.log(`[api4com-webhook] 📱 ORIGINATOR_CANCEL classified as no_answer (ring time: ${ringTimeSeconds.toFixed(1)}s >= ${ringTimeThreshold}s)`);
+    } else {
+      status = 'cancelled';
+      console.log(`[api4com-webhook] 📱 ORIGINATOR_CANCEL classified as cancelled (ring time: ${ringTimeSeconds.toFixed(1)}s < ${ringTimeThreshold}s)`);
+    }
+  }
+  // ... resto do código existente
+}
 ```
 
 ---
 
-### Fluxo Resultante
+### Visual Após Correção
+
+| Antes | Depois |
+|-------|--------|
+| Cancelada (45s) | Não Atendeu ✓ |
+| Cancelada (40s) | Não Atendeu ✓ |
+| Cancelada (7s) | Cancelada ✓ |
+| Cancelada (4s) | Cancelada ✓ |
+
+---
+
+### Fluxo de Decisão
 
 ```text
-1. Lead entra em contato mencionando "plano de saúde"
+channel-hangup recebido
          ↓
-2. detectAgent() detecta keywords de Clara
+hangupCause = ORIGINATOR_CANCEL?
+         ↓ SIM
+Calcular tempo de ring (ended_at - started_at)
          ↓
-3. Conversation recebe current_agent_id = Clara
-         ↓
-4. addHealthPlanTagIfClara() adiciona tag "plano_de_saude"
-         ↓
-5. Deal movido para pipeline Saúde
-         ↓
-6. get_next_deal_owner() retorna Barbara (fixed owner)
-         ↓
-7. Deal atribuído à Barbara com tag visível
+Ring time >= 25s? ───────→ status = "no_answer" (Não Atendeu)
+         ↓ NÃO
+status = "cancelled" (Cancelada)
 ```
-
----
-
-### Verificação de Idempotência
-
-A função verifica se a tag já existe antes de adicionar:
-- `if (tags.includes(healthTag)) return;`
-
-Isso previne duplicatas e permite que a função seja chamada múltiplas vezes sem problemas.
 
 ---
 
 ### Resumo das Alterações
 
-| Linha Aproximada | Alteração |
-|------------------|-----------|
-| ~2800 | Nova função `addHealthPlanTagIfClara()` |
-| ~4924 | Chamada após atualização de agente |
-| ~4960 | Chamada após handoff para pipeline Saúde |
+| Linha | Alteração |
+|-------|-----------|
+| ~446-449 | Alterar classificação de ORIGINATOR_CANCEL para usar marcador temporário |
+| ~477-490 | Adicionar lógica de classificação baseada no tempo de ring |
 
 ---
 
 ### Seção Técnica
 
-**Por que adicionar em múltiplos pontos?**
+**Por que 25 segundos?**
 
-1. **Primeira atribuição**: Quando o lead menciona saúde pela primeira vez e Clara é detectado
-2. **Handoff de pipeline**: Quando lead vem de outro agente (ex: Íris) e é redirecionado para Clara
-3. **Reativação**: Quando conversa antiga é reativada e roteada para Clara
+O tempo típico de ring antes de cair na caixa postal ou encerrar é:
+- 5-6 toques × 5 segundos/toque = 25-30 segundos
+- Chamadas canceladas manualmente geralmente são encerradas em menos de 15 segundos
 
-**Verificação da tag existente:**
+**Parâmetro configurável:**
 
-A função sempre verifica `tags.includes(healthTag)` antes de adicionar, garantindo que:
-- Não haja duplicatas no array
-- O update só ocorra quando necessário (economia de queries)
+O threshold de 25 segundos pode ser ajustado se necessário. Valores alternativos:
+- 20s: mais agressivo em classificar como "não atendeu"
+- 30s: mais conservador, só classifica após ring completo
 
-**Persistência:**
+**Compatibilidade:**
 
-A tag é adicionada diretamente na tabela `contacts.tags`, sendo visível em:
-- Sidebar do chat
-- Dashboard de prospecção (TagDistributionCard)
-- Filtros de contatos
+Esta alteração não afeta outros hangup causes (NORMAL_CLEARING, NO_ANSWER, BUSY, etc.) que já funcionam corretamente.
+
