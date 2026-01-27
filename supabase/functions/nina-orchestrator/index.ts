@@ -135,6 +135,58 @@ function isFallbackMessage(content: string): boolean {
 }
 // ===== END FALLBACK MESSAGE DETECTION =====
 
+// ===== CLT EMPLOYEE DETECTION (job clarification needed) =====
+// When someone says they are a "CLT employee" / "professional driver" / etc.
+// they might be looking for a job, not insurance. Ask clarifying question.
+interface CltEmployeePattern {
+  needsClarification: boolean;
+  matchedTerms: string[];
+}
+
+const CLT_EMPLOYEE_INDICATORS = [
+  'clt', 'carteira assinada', 'registro em carteira',
+  'motorista profissional', 'sou motorista', 'trabalho como motorista',
+  'motorista de empresa', 'empregado', 'funcionário', 'funcionario',
+  'trabalho numa empresa', 'trabalho em uma empresa'
+];
+
+const CLT_EXCLUSION_TERMS = [
+  // Termos que indicam que é dono/gestor (não funcionário)
+  'minha frota', 'meus caminhões', 'meus caminhaos', 'minha transportadora',
+  'minha empresa', 'sou dono', 'sou proprietário', 'sou proprietario',
+  'emito ct-e', 'cnpj', 'antt', 'rntrc', 'minha carreta', 'meu caminhão'
+];
+
+function detectCltEmployeePattern(messageContent: string, allUserMessages: string[]): CltEmployeePattern {
+  const content = messageContent.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const allContent = allUserMessages.join(' ').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  
+  // Check exclusions first - if they mention ownership terms, not an employee
+  const hasExclusion = CLT_EXCLUSION_TERMS.some(term => 
+    allContent.includes(term.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+  );
+  
+  if (hasExclusion) {
+    return { needsClarification: false, matchedTerms: [] };
+  }
+  
+  // Check for CLT indicators
+  const matchedTerms: string[] = [];
+  for (const indicator of CLT_EMPLOYEE_INDICATORS) {
+    const normalizedIndicator = indicator.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (content.includes(normalizedIndicator)) {
+      matchedTerms.push(indicator);
+    }
+  }
+  
+  // Need clarification if found CLT indicators without ownership context
+  return {
+    needsClarification: matchedTerms.length > 0,
+    matchedTerms
+  };
+}
+// ===== END CLT EMPLOYEE DETECTION =====
+
 // ===== NAME EXTRACTION UTILITY =====
 function extractNameFromMessage(content: string): string | null {
   if (!content) return null;
@@ -641,7 +693,15 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       // Erros gerais de fala rápida/informal
       'vcs tao pegando', 'vcs contratam', 'vc contrata', 'vcs precisam',
       'tem trabio ai', 'tem trabaio ai', 'tem trabayo ai',
-      'to sem trabio', 'to sem trabaio', 'tô sem trabaio'
+      'to sem trabio', 'to sem trabaio', 'tô sem trabaio',
+      // ===== CONFIRMAÇÕES EXPLÍCITAS DE BUSCA DE EMPREGO (added 2026-01-27) =====
+      // Confirmações de emprego em respostas de clarificação
+      'oportunidade de trabalho', 'oportunidades de trabalho',
+      'oportunidade de emprego', 'oportunidades de emprego', 
+      'busco trabalho', 'busco emprego', 'busco oportunidade',
+      'trabalho de motorista', 'quero trabalhar como motorista', 'quero ser contratado',
+      'sou motorista e busco', 'sou motorista procurando',
+      'preciso de trabalho como motorista', 'preciso trabalhar como motorista'
     ],
     response: 'Olá! Agradecemos seu contato. Somos uma corretora especializada em seguros de transporte e carga. No momento, não temos vagas em aberto. Desejamos sucesso na sua busca! 🙏',
     pauseConversation: true,
@@ -4159,6 +4219,160 @@ Qual desses te interessa?`;
     return;
   }
   // ===== END CURRICULUM/RESUME DOCUMENT DETECTION =====
+
+  // ===== CLT EMPLOYEE DISAMBIGUATION =====
+  // Detect if user might be a CLT employee looking for job (not insurance)
+  if (message.content && agent?.slug !== 'sofia') {
+    // Fetch recent user messages for context
+    const { data: cltUserMsgs } = await supabase
+      .from('messages')
+      .select('content, from_type')
+      .eq('conversation_id', conversation.id)
+      .eq('from_type', 'user')
+      .order('sent_at', { ascending: false })
+      .limit(10);
+    
+    const userMessages = (cltUserMsgs || []).map((m: any) => m.content || '');
+    
+    const cltCheck = detectCltEmployeePattern(message.content, userMessages);
+    
+    // Check if we're already in disambiguation flow
+    const ninaContext = conversation.nina_context || {};
+    const awaitingJobClarification = ninaContext.awaiting_job_clarification === true;
+    
+    if (awaitingJobClarification) {
+      // User is responding to our clarification question
+      const userResponse = message.content.toLowerCase();
+      
+      const isJobSeeker = /oportunidade.*trabalho|oportunidade.*emprego|busco.*trabalho|busco.*emprego|preciso.*emprego|quero.*trabalhar|de motorista|como motorista|sim.*emprego|sim.*trabalho|procuro.*vaga/i.test(userResponse);
+      const isInsuranceInterest = /seguro|cotação|cotacao|cotar|proteção|protecao|carga|frota|caminhão|caminhao/i.test(userResponse);
+      
+      if (isJobSeeker && !isInsuranceInterest) {
+        console.log('[Nina] 💼 CLT employee confirmed job seeking');
+        
+        // Apply job_seeker disqualification
+        const jobSeekerCategory = DISQUALIFICATION_CATEGORIES.find(c => c.key === 'job_seeker')!;
+        
+        // Add tag
+        const currentTags = conversation.contact?.tags || [];
+        if (!currentTags.includes(jobSeekerCategory.tag)) {
+          await supabase
+            .from('contacts')
+            .update({ 
+              tags: [...currentTags, jobSeekerCategory.tag],
+              client_memory: {
+                ...(conversation.contact?.client_memory || {}),
+                lead_profile: {
+                  ...(conversation.contact?.client_memory?.lead_profile || {}),
+                  lead_stage: 'cold',
+                  qualification_score: 0,
+                  disqualification_reason: 'CLT employee seeking job'
+                }
+              }
+            })
+            .eq('id', conversation.contact_id);
+        }
+        
+        // Send response and pause
+        const delayMin = settings?.response_delay_min || 1000;
+        const delayMax = settings?.response_delay_max || 3000;
+        const delay = Math.random() * (delayMax - delayMin) + delayMin;
+        const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+        
+        await queueTextResponse(supabase, conversation, message, jobSeekerCategory.response!, settings, aiSettings, delay, agent);
+        
+        // Mark as processed
+        await supabase
+          .from('messages')
+          .update({ processed_by_nina: true })
+          .eq('id', message.id);
+        
+        // Pause conversation
+        await supabase
+          .from('conversations')
+          .update({
+            status: 'paused',
+            nina_context: {
+              ...ninaContext,
+              awaiting_job_clarification: false,
+              disqualified_category: 'job_seeker_clt',
+              followup_stopped: true,
+              paused_reason: 'job_seeker_clt',
+              paused_at: new Date().toISOString()
+            }
+          })
+          .eq('id', conversation.id);
+        
+        // Trigger sender
+        fetch(`${supabaseUrl}/functions/v1/whatsapp-sender`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`
+          },
+          body: JSON.stringify({ triggered_by: 'nina-orchestrator-job-seeker-clt' })
+        }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+        
+        console.log('[Nina] ✅ CLT job seeker handled - conversation paused');
+        return;
+      } else {
+        // Not job seeking, continue with normal flow
+        console.log('[Nina] ✅ CLT employee wants insurance - continuing qualification');
+        await supabase
+          .from('conversations')
+          .update({
+            nina_context: { ...ninaContext, awaiting_job_clarification: false }
+          })
+          .eq('id', conversation.id);
+        // Continue to normal AI processing
+      }
+    } else if (cltCheck.needsClarification && !ninaContext.job_clarification_asked) {
+      // First time detecting CLT pattern - ask clarification question
+      console.log(`[Nina] 🤔 CLT employee pattern detected: ${cltCheck.matchedTerms.join(', ')}`);
+      
+      const clarificationMessage = 'Só pra eu entender melhor: você está buscando oportunidade de trabalho ou precisa de seguro para sua operação de transporte?';
+      
+      const delayMin = settings?.response_delay_min || 1000;
+      const delayMax = settings?.response_delay_max || 3000;
+      const delay = Math.random() * (delayMax - delayMin) + delayMin;
+      const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+      
+      await queueTextResponse(supabase, conversation, message, clarificationMessage, settings, aiSettings, delay, agent);
+      
+      // Mark as processed
+      await supabase
+        .from('messages')
+        .update({ processed_by_nina: true })
+        .eq('id', message.id);
+      
+      // Set flag to await clarification
+      await supabase
+        .from('conversations')
+        .update({
+          nina_context: {
+            ...ninaContext,
+            awaiting_job_clarification: true,
+            job_clarification_asked: true,
+            clt_terms_detected: cltCheck.matchedTerms
+          }
+        })
+        .eq('id', conversation.id);
+      
+      // Trigger sender
+      fetch(`${supabaseUrl}/functions/v1/whatsapp-sender`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({ triggered_by: 'nina-orchestrator-clt-clarification' })
+      }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+      
+      console.log('[Nina] ❓ CLT clarification question sent');
+      return;
+    }
+  }
+  // ===== END CLT EMPLOYEE DISAMBIGUATION =====
 
   // ===== AUTOMATIC DISQUALIFICATION DETECTION =====
   if (message.content) {
