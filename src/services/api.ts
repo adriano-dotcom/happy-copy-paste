@@ -1725,12 +1725,14 @@ export const api = {
     // and passed from the client side (derived from their email)
 
     // OTIMIZAÇÃO: Buscar todas as mensagens em uma única query (resolve N+1)
+    // Limite de 100 mensagens por conversa * 200 conversas = até 20.000 mensagens
     const conversationIds = allConversations.map(c => c.id);
     const { data: allMessages, error: msgError } = await supabase
       .from('messages')
       .select('id, conversation_id, content, from_type, type, status, sent_at, media_url, metadata, whatsapp_message_id, delivered_at, read_at, media_type, reply_to_id')
       .in('conversation_id', conversationIds)
-      .order('sent_at', { ascending: true });
+      .order('sent_at', { ascending: false }) // Mais recentes primeiro para garantir últimas mensagens
+      .limit(20000); // Aumentar limite padrão do Supabase (1000)
 
     if (msgError) {
       console.error('[API] Error fetching messages:', msgError);
@@ -1750,8 +1752,12 @@ export const api = {
 
     // Processar conversas com mensagens já carregadas
     const conversationsWithMessages: UIConversation[] = allConversations.map((conv) => {
-      // Pegar mensagens do mapa (últimas 100)
-      const messages = (messagesByConversation.get(conv.id) || []).slice(-100);
+      // Pegar mensagens do mapa, ordenar cronologicamente e limitar a 100
+      const convMessages = messagesByConversation.get(conv.id) || [];
+      // Como buscamos DESC, precisamos reverter para ordem cronológica e pegar últimas 100
+      const messages = convMessages
+        .sort((a, b) => new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime())
+        .slice(-100);
 
       // Enrich conversation with pipeline and owner data
       const pipeline = pipelineByContact.get(conv.contact_id);
