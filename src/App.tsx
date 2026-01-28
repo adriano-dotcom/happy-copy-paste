@@ -1,18 +1,30 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import Sidebar from './components/Sidebar';
-import Dashboard from './components/Dashboard';
-import ProspectingDashboard from './components/ProspectingDashboard';
-import CampaignsDashboard from './components/CampaignsDashboard';
-import ChatInterface from './components/ChatInterface';
-import Contacts from './components/Contacts';
-import Settings from './components/Settings';
-import Team from './components/Team';
-import Scheduling from './components/Scheduling';
-import Kanban from './components/Kanban';
-import MeetingRoom from './components/MeetingRoom';
-import Functions from './components/Functions';
 import Auth from './pages/Auth';
+
+// Core routes - sempre carregados (chat é a rota principal)
+import ChatInterface from './components/ChatInterface';
+import Kanban from './components/Kanban';
+import Contacts from './components/Contacts';
+import Scheduling from './components/Scheduling';
+
+// Lazy loading para rotas menos frequentes
+const Dashboard = React.lazy(() => import('./components/Dashboard'));
+const ProspectingDashboard = React.lazy(() => import('./components/ProspectingDashboard'));
+const CampaignsDashboard = React.lazy(() => import('./components/CampaignsDashboard'));
+const Settings = React.lazy(() => import('./components/Settings'));
+const Team = React.lazy(() => import('./components/Team'));
+const Functions = React.lazy(() => import('./components/Functions'));
+const MeetingRoom = React.lazy(() => import('./components/MeetingRoom'));
+
+// Loading fallback para lazy routes
+const RouteLoader: React.FC = () => (
+  <div className="h-full flex items-center justify-center bg-slate-950">
+    <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+  </div>
+);
 import { CompanySettingsProvider } from './hooks/useCompanySettings';
 import { AuthProvider } from './hooks/useAuth';
 import { UnreadMessagesProvider } from './contexts/UnreadMessagesContext';
@@ -57,7 +69,11 @@ const App: React.FC = () => {
             <Route path="/auth" element={<Auth />} />
             
             {/* Rota Externa: Sala de Reunião (Sem Sidebar) */}
-            <Route path="/meeting/:id" element={<MeetingRoom />} />
+            <Route path="/meeting/:id" element={
+              <Suspense fallback={<RouteLoader />}>
+                <MeetingRoom />
+              </Suspense>
+            } />
 
             {/* Rotas Internas (Com Sidebar) - Protected */}
             <Route element={
@@ -68,16 +84,50 @@ const App: React.FC = () => {
               </ProtectedRoute>
             }>
               <Route path="/" element={<DefaultRedirect />} />
-              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/dashboard" element={
+                <Suspense fallback={<RouteLoader />}>
+                  <Dashboard />
+                </Suspense>
+              } />
               <Route path="/kanban" element={<Kanban />} />
               <Route path="/chat" element={<ChatInterface />} />
               <Route path="/contacts" element={<Contacts />} />
               <Route path="/scheduling" element={<Scheduling />} />
-              <Route path="/team" element={<AdminRoute><Team /></AdminRoute>} />
-              <Route path="/functions" element={<AdminRoute><Functions /></AdminRoute>} />
-              <Route path="/prospecting" element={<AdminRoute><ProspectingDashboard /></AdminRoute>} />
-              <Route path="/campaigns" element={<AdminRoute><CampaignsDashboard /></AdminRoute>} />
-              <Route path="/settings" element={<AdminRoute><Settings /></AdminRoute>} />
+              <Route path="/team" element={
+                <AdminRoute>
+                  <Suspense fallback={<RouteLoader />}>
+                    <Team />
+                  </Suspense>
+                </AdminRoute>
+              } />
+              <Route path="/functions" element={
+                <AdminRoute>
+                  <Suspense fallback={<RouteLoader />}>
+                    <Functions />
+                  </Suspense>
+                </AdminRoute>
+              } />
+              <Route path="/prospecting" element={
+                <AdminRoute>
+                  <Suspense fallback={<RouteLoader />}>
+                    <ProspectingDashboard />
+                  </Suspense>
+                </AdminRoute>
+              } />
+              <Route path="/campaigns" element={
+                <AdminRoute>
+                  <Suspense fallback={<RouteLoader />}>
+                    <CampaignsDashboard />
+                  </Suspense>
+                </AdminRoute>
+              } />
+              <Route path="/settings" element={
+                <AdminRoute>
+                  <Suspense fallback={<RouteLoader />}>
+                    <Settings />
+                  </Suspense>
+                </AdminRoute>
+              } />
             </Route>
           </Routes>
         </BrowserRouter>

@@ -1724,43 +1724,59 @@ export const api = {
     // Note: assigned_user_name is populated when the operator takes over
     // and passed from the client side (derived from their email)
 
-    // Fetch messages for each conversation
-    const conversationsWithMessages: UIConversation[] = await Promise.all(
-      allConversations.map(async (conv) => {
-        const { data: messages, error: msgError } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('conversation_id', conv.id)
-          .order('sent_at', { ascending: true })
-          .limit(100);
+    // OTIMIZAÇÃO: Buscar todas as mensagens em uma única query (resolve N+1)
+    const conversationIds = allConversations.map(c => c.id);
+    const { data: allMessages, error: msgError } = await supabase
+      .from('messages')
+      .select('id, conversation_id, content, from_type, type, status, sent_at, media_url, metadata, whatsapp_message_id, delivered_at, read_at, media_type, reply_to_id')
+      .in('conversation_id', conversationIds)
+      .order('sent_at', { ascending: true });
 
-        if (msgError) {
-          console.error(`[API] Error fetching messages for ${conv.id}:`, msgError);
+    if (msgError) {
+      console.error('[API] Error fetching messages:', msgError);
+    }
+
+    // Agrupar mensagens por conversation_id em memória (muito mais rápido que N queries)
+    const messagesByConversation = new Map<string, typeof allMessages>();
+    if (allMessages) {
+      for (const msg of allMessages) {
+        const convId = msg.conversation_id;
+        if (!messagesByConversation.has(convId)) {
+          messagesByConversation.set(convId, []);
         }
+        messagesByConversation.get(convId)!.push(msg);
+      }
+    }
 
-        // Enrich conversation with pipeline and owner data
-        const pipeline = pipelineByContact.get(conv.contact_id);
-        const owner = ownerByContact.get(conv.contact_id);
+    // Processar conversas com mensagens já carregadas
+    const conversationsWithMessages: UIConversation[] = allConversations.map((conv) => {
+      // Pegar mensagens do mapa (últimas 100)
+      const messages = (messagesByConversation.get(conv.id) || []).slice(-100);
 
-        const enrichedConv = {
-          ...conv,
-          pipelineId: pipeline?.id || null,
-          pipelineName: pipeline?.name || null,
-          pipelineIcon: pipeline?.icon || null,
-          pipelineColor: pipeline?.color || null,
-          // Read assigned_user_name from database
-          assignedUserName: (conv as any).assigned_user_name || null,
-          // Deal owner
-          dealOwnerId: owner?.id || null,
-          dealOwnerName: owner?.name || null
-        };
+      // Enrich conversation with pipeline and owner data
+      const pipeline = pipelineByContact.get(conv.contact_id);
+      const owner = ownerByContact.get(conv.contact_id);
 
-        return transformDBToUIConversation(
-          enrichedConv as unknown as DBConversation,
-          (messages || []) as unknown as DBMessage[]
-        );
-      })
-    );
+      const enrichedConv = {
+        ...conv,
+        pipelineId: pipeline?.id || null,
+        pipelineName: pipeline?.name || null,
+        pipelineIcon: pipeline?.icon || null,
+        pipelineColor: pipeline?.color || null,
+        // Read assigned_user_name from database
+        assignedUserName: (conv as any).assigned_user_name || null,
+        // Deal owner
+        dealOwnerId: owner?.id || null,
+        dealOwnerName: owner?.name || null
+      };
+
+      return transformDBToUIConversation(
+        enrichedConv as unknown as DBConversation,
+        messages as unknown as DBMessage[]
+      );
+    });
+
+    console.log(`[API] Loaded ${allMessages?.length || 0} messages for ${conversationIds.length} conversations in single query`);
 
     return conversationsWithMessages;
   },
