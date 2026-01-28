@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { 
   Plus, Search, MoreHorizontal, DollarSign, Loader2, CalendarClock, Tag, X, 
   Building, User, Calendar, ArrowRight, CheckCircle2, Circle, 
-  FileText, Phone, Mail, Paperclip, Send, CheckSquare, Clock, Trash2, Settings, Brain, MessageSquare, Users
+  FileText, Phone, Mail, Paperclip, Send, CheckSquare, Clock, Trash2, Settings, Brain, MessageSquare, Users, Briefcase
 } from 'lucide-react';
 import { ConversationSummaryNotes } from './chat/ConversationSummaryNotes';
 import { Button } from './Button';
@@ -17,6 +17,8 @@ import { EmailComposeModal } from './EmailComposeModal';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { toast } from 'sonner';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
+import { TypeToConfirmDialog } from './ui/type-to-confirm-dialog';
+import { EmptyState } from './ui/empty-state';
 
 const Kanban: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -41,6 +43,10 @@ const Kanban: React.FC = () => {
   const [newActivityDescription, setNewActivityDescription] = useState('');
   const [conversationMessages, setConversationMessages] = useState<any[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  
+  // Delete confirmation state
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [dealToDelete, setDealToDelete] = useState<string | null>(null);
   
   const dragItem = useRef<string | null>(null);
   
@@ -235,19 +241,23 @@ const Kanban: React.FC = () => {
     }
   };
 
-  const handleDeleteDeal = async (dealId: string) => {
-    const confirmed = window.confirm("Tem certeza que deseja excluir este negócio? Esta ação não pode ser desfeita.");
-    if (!confirmed) return;
-    
+  const handleDeleteDeal = (dealId: string) => {
+    setDealToDelete(dealId);
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDeleteDeal = async () => {
+    if (!dealToDelete) return;
     try {
-      await api.deleteDeal(dealId);
-      setDeals(deals.filter(d => d.id !== dealId));
+      await api.deleteDeal(dealToDelete);
+      setDeals(deals.filter(d => d.id !== dealToDelete));
       setSelectedDeal(null);
       toast.success("Negócio excluído com sucesso");
     } catch (error) {
       console.error('Erro ao excluir deal:', error);
       toast.error("Erro ao excluir negócio");
     }
+    setDealToDelete(null);
   };
 
   const handleOwnerChange = async (ownerId: string) => {
@@ -572,82 +582,95 @@ const Kanban: React.FC = () => {
 
       {/* Board Scroll Container */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
-        <div className="flex h-full gap-4 min-w-max">
-          {stages.map((column) => {
-            const columnDeals = filteredDeals.filter(d => d.stageId === column.id);
-            const totalValue = columnDeals.reduce((acc, curr) => acc + curr.value, 0);
+        {filteredDeals.length === 0 && !loading ? (
+          <EmptyState
+            icon={<Briefcase className="w-10 h-10 text-slate-600" />}
+            title="Pipeline vazio"
+            description="Adicione seu primeiro negócio para começar a acompanhar o funil de vendas."
+            action={{
+              label: "Criar Negócio",
+              onClick: () => setIsCreateModalOpen(true)
+            }}
+            className="h-full"
+          />
+        ) : (
+          <div className="flex h-full gap-4 min-w-max">
+            {stages.map((column) => {
+              const columnDeals = filteredDeals.filter(d => d.stageId === column.id);
+              const totalValue = columnDeals.reduce((acc, curr) => acc + curr.value, 0);
 
-            return (
-              <div 
-                key={column.id}
-                className="w-72 flex flex-col h-full bg-slate-900/30 rounded-xl border border-slate-800/50 backdrop-blur-sm"
-                onDragOver={onDragOver}
-                onDrop={(e) => onDrop(e, column.id)}
-              >
-                {/* Column Header */}
-                <div className={`p-3 border-b border-slate-800/50 flex flex-col gap-1 border-t-2 ${column.color}`}>
-                  <div className="flex justify-between items-center">
-                    <h3 className="font-bold text-slate-200 text-xs uppercase tracking-wide">{column.title}</h3>
-                    <span className="bg-slate-800 text-slate-400 text-[10px] px-2 py-0.5 rounded-full font-mono">{columnDeals.length}</span>
-                  </div>
-                  <div className="text-[10px] text-slate-500 font-medium">
-                     Total: <span className="text-slate-300">{formatCurrency(totalValue)}</span>
-                  </div>
-                </div>
-
-                {/* Column Body */}
-                <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
-                  {columnDeals.map((deal) => (
-                    <div
-                      key={deal.id}
-                      draggable
-                      onDragStart={(e) => onDragStart(e, deal.id)}
-                      onDragEnd={onDragEnd}
-                      onClick={() => setSelectedDeal(deal)}
-                      className="bg-slate-900 border border-slate-800 rounded-lg p-3 shadow-sm cursor-grab active:cursor-grabbing hover:border-cyan-500/50 hover:shadow-cyan-500/10 transition-all group relative"
-                    >
-                      <div className="flex justify-between items-start mb-1.5">
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded border font-medium ${getPriorityColor(deal.priority)}`}>
-                           {deal.priority === 'high' ? 'Alta' : deal.priority === 'medium' ? 'Média' : 'Baixa'}
-                        </span>
-                        <button className="text-slate-600 hover:text-white transition-colors opacity-0 group-hover:opacity-100">
-                           <MoreHorizontal className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      <h4 className="font-semibold text-white text-sm mb-0.5 leading-tight">{deal.title}</h4>
-                      <p className="text-[10px] text-slate-400 mb-2">{deal.company}</p>
-
-                      <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-                         {deal.tags.map(tag => (
-                             <span key={tag} className="text-[9px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded flex items-center gap-1">
-                                <Tag className="w-2.5 h-2.5" /> {tag}
-                             </span>
-                         ))}
-                      </div>
-
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-                         <div className="flex items-center gap-1.5 text-slate-300 text-xs font-bold">
-                            <DollarSign className="w-3 h-3 text-emerald-500" />
-                            {formatCurrency(deal.value)}
-                         </div>
-                         <div className="flex items-center gap-2">
-                            {deal.dueDate && (
-                                <div className="text-[9px] text-slate-500 flex items-center gap-1" title="Data de previsão">
-                                    <CalendarClock className="w-3 h-3" />
-                                    {new Date(deal.dueDate).toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'})}
-                                </div>
-                            )}
-                            <img src={deal.ownerAvatar} alt="Owner" className="w-5 h-5 rounded-full border border-slate-700" />
-                         </div>
-                      </div>
+              return (
+                <div 
+                  key={column.id}
+                  className="w-72 flex flex-col h-full bg-slate-900/30 rounded-xl border border-slate-800/50 backdrop-blur-sm"
+                  onDragOver={onDragOver}
+                  onDrop={(e) => onDrop(e, column.id)}
+                >
+                  {/* Column Header */}
+                  <div className={`p-3 border-b border-slate-800/50 flex flex-col gap-1 border-t-2 ${column.color}`}>
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-bold text-slate-200 text-xs uppercase tracking-wide">{column.title}</h3>
+                      <span className="bg-slate-800 text-slate-400 text-[10px] px-2 py-0.5 rounded-full font-mono">{columnDeals.length}</span>
                     </div>
-                  ))}
+                    <div className="text-[10px] text-slate-500 font-medium">
+                       Total: <span className="text-slate-300">{formatCurrency(totalValue)}</span>
+                    </div>
+                  </div>
+
+                  {/* Column Body */}
+                  <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
+                    {columnDeals.map((deal) => (
+                      <div
+                        key={deal.id}
+                        draggable
+                        onDragStart={(e) => onDragStart(e, deal.id)}
+                        onDragEnd={onDragEnd}
+                        onClick={() => setSelectedDeal(deal)}
+                        className="bg-slate-900 border border-slate-800 rounded-lg p-3 shadow-sm cursor-grab active:cursor-grabbing hover:border-cyan-500/50 hover:shadow-cyan-500/10 transition-all group relative"
+                      >
+                        <div className="flex justify-between items-start mb-1.5">
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded border font-medium ${getPriorityColor(deal.priority)}`}>
+                             {deal.priority === 'high' ? 'Alta' : deal.priority === 'medium' ? 'Média' : 'Baixa'}
+                          </span>
+                          <button className="text-slate-600 hover:text-white transition-colors opacity-0 group-hover:opacity-100">
+                             <MoreHorizontal className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <h4 className="font-semibold text-white text-sm mb-0.5 leading-tight">{deal.title}</h4>
+                        <p className="text-[10px] text-slate-400 mb-2">{deal.company}</p>
+
+                        <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                           {deal.tags.map(tag => (
+                               <span key={tag} className="text-[9px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                  <Tag className="w-2.5 h-2.5" /> {tag}
+                               </span>
+                           ))}
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                           <div className="flex items-center gap-1.5 text-slate-300 text-xs font-bold">
+                              <DollarSign className="w-3 h-3 text-emerald-500" />
+                              {formatCurrency(deal.value)}
+                           </div>
+                           <div className="flex items-center gap-2">
+                              {deal.dueDate && (
+                                  <div className="text-[9px] text-slate-500 flex items-center gap-1" title="Data de previsão">
+                                      <CalendarClock className="w-3 h-3" />
+                                      {new Date(deal.dueDate).toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'})}
+                                  </div>
+                              )}
+                              <img src={deal.ownerAvatar} alt="Owner" className="w-5 h-5 rounded-full border border-slate-700" />
+                           </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Pipedrive-style Side Drawer */}
@@ -1125,6 +1148,16 @@ const Kanban: React.FC = () => {
           onEmailSent={loadActivities}
         />
       )}
+
+      {/* Modal de confirmação de exclusão */}
+      <TypeToConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Excluir Negócio"
+        description="Esta ação irá remover permanentemente este negócio e todas as atividades relacionadas. Esta ação não pode ser desfeita."
+        confirmText="EXCLUIR"
+        onConfirm={confirmDeleteDeal}
+      />
     </div>
   );
 };
