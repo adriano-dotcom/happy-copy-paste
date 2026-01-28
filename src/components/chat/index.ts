@@ -9,3 +9,4 @@ export { ConversationSummaryNotes } from './ConversationSummaryNotes';
 export { PDFPreviewModal } from './PDFPreviewModal';
 export { VideoThumbnailPreview } from './VideoThumbnailPreview';
 export { FailedProcessingBanner } from './FailedProcessingBanner';
+export { MessageBubble } from './MessageBubble';

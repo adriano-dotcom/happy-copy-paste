@@ -48,6 +48,7 @@ import { AudioPlayer } from './AudioPlayer';
 import { QuickQuestionsDropdown } from './QuickQuestionsDropdown';
 import { formatRegionFromPhone } from '@/utils/dddRegionMapper';
 import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, MessageToneAssistant, ConversationSummaryNotes, PDFPreviewModal, VideoThumbnailPreview, FailedProcessingBanner } from './chat';
+import { MessageBubble } from './chat/MessageBubble';
 import { EmailComposeModal } from './EmailComposeModal';
 import { SendToPipedriveModal } from './chat/SendToPipedriveModal';
 
@@ -59,7 +60,7 @@ interface AgentQuestion {
 const ChatInterface: React.FC = () => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const { conversations, loading, sendMessage, updateStatus, markAsRead, markAsViewed, assignConversation, archiveConversation, unarchiveConversation, fetchArchivedConversations, bulkArchiveConversations, refetch } = useConversations();
+  const { conversations, loading, sendMessage, updateStatus, markAsRead, markAsViewed, assignConversation, archiveConversation, unarchiveConversation, fetchArchivedConversations, bulkArchiveConversations, refetch, loadMoreMessages, hasMoreMessages, loadingMoreMessages } = useConversations();
   const { user } = useAuth();
   const { sdrName, companyName } = useCompanySettings();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
@@ -365,13 +366,22 @@ const ChatInterface: React.FC = () => {
   // Active call state
   const { activeCall, callHistory, loading: callHistoryLoading, dismissActiveCall } = useActiveCall(selectedChatId);
 
-  // Handle scroll in messages area for new messages badge
-  const handleMessagesScroll = (e: React.UIEvent<HTMLDivElement>) => {
+  // Handle scroll in messages area for new messages badge (debounced for performance)
+  const scrollDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const handleMessagesScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
-    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 100;
-    setIsScrolledUp(!isNearBottom);
-    if (isNearBottom) setNewMessagesCount(0);
-  };
+    
+    // Debounce scroll handling for performance
+    if (scrollDebounceRef.current) {
+      clearTimeout(scrollDebounceRef.current);
+    }
+    
+    scrollDebounceRef.current = setTimeout(() => {
+      const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 100;
+      setIsScrolledUp(!isNearBottom);
+      if (isNearBottom) setNewMessagesCount(0);
+    }, 100);
+  }, []);
 
   // Reset scroll state when changing conversations
   useEffect(() => {
@@ -392,6 +402,51 @@ const ChatInterface: React.FC = () => {
     
     prevMessagesLengthRef.current = currentLength;
   }, [activeChat?.messages?.length, isScrolledUp]);
+
+  // OPTIMIZATION: Memoized timeline items (prevents O(n log n) on every render)
+  const timelineItems = useMemo(() => {
+    if (!activeChat) return [];
+    
+    type TimelineItem = 
+      | { type: 'message'; data: typeof activeChat.messages[0]; date: Date }
+      | { type: 'call'; data: typeof callHistory[0]; date: Date };
+    
+    const items: TimelineItem[] = [
+      ...activeChat.messages.map(msg => ({
+        type: 'message' as const,
+        data: msg,
+        date: msg.sentAt ? new Date(msg.sentAt) : new Date()
+      })),
+      ...callHistory.map(call => ({
+        type: 'call' as const,
+        data: call,
+        date: new Date(call.started_at)
+      }))
+    ];
+    
+    return items.sort((a, b) => a.date.getTime() - b.date.getTime());
+  }, [activeChat?.messages, callHistory]);
+
+  // Date label helper (memoized)
+  const getDateLabel = useCallback((date: Date): string => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    if (date.toDateString() === today.toDateString()) return 'Hoje';
+    if (date.toDateString() === yesterday.toDateString()) return 'Ontem';
+    
+    return date.toLocaleDateString('pt-BR', { 
+      day: 'numeric', 
+      month: 'long' 
+    });
+  }, []);
+
+  // Handle load more messages
+  const handleLoadMoreMessages = useCallback(async () => {
+    if (!activeChat || loadingMoreMessages) return;
+    await loadMoreMessages(activeChat.id);
+  }, [activeChat, loadingMoreMessages, loadMoreMessages]);
 
 
   // Load tag definitions, team members, and pipelines
@@ -2333,171 +2388,83 @@ const ChatInterface: React.FC = () => {
               onScroll={handleMessagesScroll}
               className={`flex-1 overflow-y-auto ${isMobile ? 'p-3 space-y-4' : 'p-6 space-y-6'} custom-scrollbar relative z-0`}
             >
-              {(() => {
-                // Create unified timeline with messages and calls
-                type TimelineItem = 
-                  | { type: 'message'; data: UIMessage; date: Date }
-                  | { type: 'call'; data: typeof callHistory[0]; date: Date };
+              {/* Load More Button - appears at top when more messages exist */}
+              {activeChat && (hasMoreMessages[activeChat.id] !== false) && activeChat.messages.length >= 20 && (
+                <div className="flex justify-center py-2">
+                  <ShadcnButton
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleLoadMoreMessages}
+                    disabled={loadingMoreMessages === activeChat.id}
+                    className="text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                  >
+                    {loadingMoreMessages === activeChat.id ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Carregando...
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="w-4 h-4 mr-2" />
+                        Carregar mensagens anteriores
+                      </>
+                    )}
+                  </ShadcnButton>
+                </div>
+              )}
 
-                const timelineItems: TimelineItem[] = [
-                  ...activeChat.messages.map(msg => ({
-                    type: 'message' as const,
-                    data: msg,
-                    date: msg.sentAt ? new Date(msg.sentAt) : new Date()
-                  })),
-                  ...callHistory.map(call => ({
-                    type: 'call' as const,
-                    data: call,
-                    date: new Date(call.started_at)
-                  }))
-                ].sort((a, b) => a.date.getTime() - b.date.getTime());
+              {/* Empty state */}
+              {timelineItems.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full text-slate-500">
+                  <MessageSquare className="w-16 h-16 mb-4 opacity-30" />
+                  <p className="text-sm">Nenhuma mensagem ainda</p>
+                  <p className="text-xs mt-1 opacity-70">Envie uma mensagem para iniciar a conversa</p>
+                </div>
+              )}
 
-                if (timelineItems.length === 0) {
+              {/* Timeline items - uses memoized timelineItems and MessageBubble */}
+              {timelineItems.map((item, index) => {
+                const prevItem = index > 0 ? timelineItems[index - 1] : null;
+                const showDateSeparator = item.date && (
+                  index === 0 || 
+                  !prevItem?.date || 
+                  item.date.toDateString() !== prevItem.date.toDateString()
+                );
+
+                if (item.type === 'call') {
                   return (
-                    <div className="flex flex-col items-center justify-center h-full text-slate-500">
-                      <MessageSquare className="w-16 h-16 mb-4 opacity-30" />
-                      <p className="text-sm">Nenhuma mensagem ainda</p>
-                      <p className="text-xs mt-1 opacity-70">Envie uma mensagem para iniciar a conversa</p>
-                    </div>
+                    <React.Fragment key={`call-${item.data.id}`}>
+                      {showDateSeparator && (
+                        <div className="flex justify-center my-6">
+                          <span className="px-4 py-1.5 bg-slate-800/80 border border-slate-700 text-slate-400 text-xs font-medium rounded-full shadow-sm backdrop-blur-sm">
+                            {getDateLabel(item.date)}
+                          </span>
+                        </div>
+                      )}
+                      <CallTimelineCard call={item.data} />
+                    </React.Fragment>
                   );
                 }
 
-                // Get date label helper
-                const getDateLabel = (date: Date): string => {
-                  const today = new Date();
-                  const yesterday = new Date(today);
-                  yesterday.setDate(yesterday.getDate() - 1);
-                  
-                  if (date.toDateString() === today.toDateString()) return 'Hoje';
-                  if (date.toDateString() === yesterday.toDateString()) return 'Ontem';
-                  
-                  return date.toLocaleDateString('pt-BR', { 
-                    day: 'numeric', 
-                    month: 'long' 
-                  });
-                };
+                const msg = item.data;
 
                 return (
-                  <>
-                    {timelineItems.map((item, index) => {
-                      const prevItem = index > 0 ? timelineItems[index - 1] : null;
-                      const showDateSeparator = item.date && (
-                        index === 0 || 
-                        !prevItem?.date || 
-                        item.date.toDateString() !== prevItem.date.toDateString()
-                      );
-
-                      if (item.type === 'call') {
-                        return (
-                          <React.Fragment key={`call-${item.data.id}`}>
-                            {showDateSeparator && (
-                              <div className="flex justify-center my-6">
-                                <span className="px-4 py-1.5 bg-slate-800/80 border border-slate-700 text-slate-400 text-xs font-medium rounded-full shadow-sm backdrop-blur-sm">
-                                  {getDateLabel(item.date)}
-                                </span>
-                              </div>
-                            )}
-                            <CallTimelineCard call={item.data} />
-                          </React.Fragment>
-                        );
-                      }
-
-                      const msg = item.data;
-                      const isOutgoing = msg.direction === MessageDirection.OUTGOING;
-
-                      return (
-                        <React.Fragment key={msg.id}>
-                          {showDateSeparator && (
-                            <div className="flex justify-center my-6">
-                              <span className="px-4 py-1.5 bg-slate-800/80 border border-slate-700 text-slate-400 text-xs font-medium rounded-full shadow-sm backdrop-blur-sm">
-                                {getDateLabel(item.date)}
-                              </span>
-                            </div>
-                          )}
-                          <div className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} group animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-                            <div className={`flex flex-col ${isMobile ? 'max-w-[85%]' : 'max-w-[75%]'} ${isOutgoing ? 'items-end' : 'items-start'}`}>
-                              <div 
-                                className={`${isMobile ? 'px-3 py-2' : 'px-5 py-3'} rounded-2xl shadow-md relative ${isMobile ? 'text-[15px]' : 'text-sm'} leading-relaxed ${
-                                  isOutgoing 
-                                    ? msg.fromType === 'nina'
-                                      ? 'bg-gradient-to-br from-violet-600 to-purple-700 text-white rounded-tr-sm shadow-violet-900/20'
-                                      : 'bg-gradient-to-br from-cyan-600 to-teal-700 text-white rounded-tr-sm shadow-cyan-900/20'
-                                    : 'bg-slate-800 text-slate-200 rounded-tl-sm border border-slate-700/50'
-                                }`}
-                              >
-                                {/* Show operator name above message for human messages */}
-                                {msg.fromType === 'human' && msg.senderName && (
-                                  <div className="text-xs font-bold text-cyan-200/80 mb-1.5 uppercase tracking-wide">
-                                    {msg.senderName}:
-                                  </div>
-                                )}
-                                {renderMessageContent(msg)}
-                              </div>
-                              
-                              <div className="flex items-center mt-1.5 gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity px-1">
-                                {isOutgoing && msg.fromType === 'nina' && (
-                                  <Bot className="w-3 h-3 text-violet-400" />
-                                )}
-                                {isOutgoing && msg.fromType === 'human' && (
-                                  <User className="w-3 h-3 text-cyan-400" />
-                                )}
-                                <span className="text-[10px] text-slate-500 font-medium">{msg.timestamp}</span>
-                                {isOutgoing && (
-                                  msg.status === 'failed' ? (
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <div className="flex items-center cursor-help">
-                                            <AlertCircle className="w-3.5 h-3.5 text-red-500" />
-                                          </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="max-w-xs">
-                                          <div className="text-xs">
-                                            <p className="font-semibold text-red-400">Mensagem não entregue</p>
-                                            {msg.metadata?.whatsapp_error ? (
-                                              <>
-                                                <p className="text-slate-300 mt-1">
-                                                  Código: {msg.metadata.whatsapp_error.code}
-                                                </p>
-                                                <p className="text-slate-400 mt-0.5 break-words">
-                                                  {msg.metadata.whatsapp_error.title || msg.metadata.whatsapp_error.message}
-                                                </p>
-                                              </>
-                                            ) : (
-                                              <p className="text-slate-400 mt-1">Erro desconhecido</p>
-                                            )}
-                                          </div>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                  ) :
-                                  msg.status === 'processing' ? (
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <div className="flex items-center cursor-help">
-                                            <Clock className="w-3.5 h-3.5 text-yellow-500 animate-pulse" />
-                                          </div>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top">
-                                          <span className="text-xs">Processando...</span>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                  ) :
-                                  msg.status === 'read' ? <CheckCheck className="w-3.5 h-3.5 text-cyan-500" /> : 
-                                  msg.status === 'delivered' ? <CheckCheck className="w-3.5 h-3.5 text-slate-500" /> :
-                                  <Check className="w-3.5 h-3.5 text-slate-500" />
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </React.Fragment>
-                      );
-                    })}
-                  </>
+                  <React.Fragment key={msg.id}>
+                    {showDateSeparator && (
+                      <div className="flex justify-center my-6">
+                        <span className="px-4 py-1.5 bg-slate-800/80 border border-slate-700 text-slate-400 text-xs font-medium rounded-full shadow-sm backdrop-blur-sm">
+                          {getDateLabel(item.date)}
+                        </span>
+                      </div>
+                    )}
+                    <MessageBubble
+                      msg={msg}
+                      isMobile={isMobile}
+                      renderMessageContent={renderMessageContent}
+                    />
+                  </React.Fragment>
                 );
-              })()}
+              })}
               
               {/* Failed Processing Banner */}
               {hasFailed && activeChat && (
