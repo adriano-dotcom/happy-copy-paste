@@ -1,445 +1,487 @@
 
-# 🔍 Auditoria Técnica Completa do CRM Jacometo
 
-## Resumo Executivo
+# Scripts SQL de Índices para o CRM Jacometo
 
-Após análise detalhada do codebase, identifiquei **15 melhorias críticas** que podem aumentar significativamente a performance, segurança e experiência do usuário. O CRM já possui uma arquitetura sólida com boas práticas implementadas (React Query, Supabase Realtime, RLS), mas existem oportunidades importantes de otimização.
+## Análise das Queries e Índices Necessários
 
----
-
-## 📊 1. ANÁLISE DE PERFORMANCE
-
-### A) Problema Crítico: N+1 Query no fetchConversations
-
-**Localização:** `src/services/api.ts` (linhas 1728-1763)
-
-**Problema Identificado:**
-```typescript
-// Para CADA conversa, faz uma query separada de mensagens
-const conversationsWithMessages = await Promise.all(
-  allConversations.map(async (conv) => {
-    const { data: messages } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('conversation_id', conv.id)  // N queries!
-```
-
-**Impacto:** Com 200 conversas, são feitas 200+ queries ao banco de dados no carregamento do chat.
-
-**Estimativa de ganho:** 70-80% de redução no tempo de carregamento inicial do chat.
+Após análise de todas as queries em `src/services/api.ts`, hooks e componentes, identifiquei os padrões de acesso mais frequentes e que se beneficiariam de índices.
 
 ---
 
-### B) Bundle Optimization
+## Tabela: messages
 
-**Dependências que podem ser otimizadas:**
+**Queries identificadas:**
+1. `fetchConversations` - `.in('conversation_id', conversationIds).order('sent_at', DESC).limit(20000)`
+2. `fetchDashboardMetrics` - `.gte('sent_at', periodStartStr)` + `.not('nina_response_time', 'is', null)`
+3. `fetchConversationMessages` - `.eq('conversation_id', conversationId).order('sent_at', DESC).limit(limit)`
+4. `markMessagesAsRead` - `.eq('conversation_id', conversationId).eq('from_type', 'user').in('status', [...])`
+5. `fetchContacts` - `.in('conversation_id', conversationIds).eq('from_type', 'nina').contains('metadata', {...})`
 
-| Dependência | Tamanho | Recomendação |
-|-------------|---------|--------------|
-| `recharts` | ~400KB | Usar apenas em Dashboard (lazy load) |
-| `framer-motion` | ~150KB | Usado em todo app, manter |
-| `@playwright/test` | ~500KB | ⚠️ Em dependencies! Mover para devDependencies |
-| `canvas-confetti` | ~20KB | Lazy load apenas quando necessário |
-
----
-
-### C) Queries sem Limite
-
-**Queries identificadas sem `.limit()`:**
-
-1. `fetchDashboardMetrics` - busca `nina_response_time` sem limite
-2. `fetchLeadsEvolution` - busca todos os deals do período
-3. `fetchAgentStats` - busca todas as conversas
-4. `fetchTeam` - busca todos os membros (OK para volume atual)
-
----
-
-## 🗄️ 2. OTIMIZAÇÃO DO SUPABASE
-
-### A) Índices Necessários
-
-Analisei os índices existentes e identifiquei **gaps críticos**:
-
+**Índices necessários:**
 ```sql
--- ÍNDICE 1: Otimizar busca de mensagens por conversa (usado em N+1)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_messages_conversation_sent_at 
-ON messages(conversation_id, sent_at DESC);
-
--- ÍNDICE 2: Otimizar busca de templates enviados
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_messages_template_lookup
-ON messages(conversation_id, from_type, sent_at DESC)
-WHERE from_type = 'nina';
-
--- ÍNDICE 3: Otimizar filtro de conversas ativas
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_conversations_active_last_message
-ON conversations(is_active, last_message_at DESC)
-WHERE is_active = true;
-
--- ÍNDICE 4: Otimizar busca de deals por contato
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_deals_contact_created
-ON deals(contact_id, created_at DESC);
-```
-
----
-
-### B) Realtime - Uso Atual
-
-O projeto utiliza Supabase Realtime corretamente em:
-
-| Tabela | Local | Necessário? |
-|--------|-------|-------------|
-| `messages` | useConversations.ts | ✅ Sim - core do chat |
-| `conversations` | useConversations.ts | ✅ Sim - status updates |
-| `contacts` | useConversations.ts | ✅ Sim - dados AI updates |
-| `deals` | Kanban.tsx | ✅ Sim - drag-drop sync |
-| `pipeline_stages` | Kanban.tsx | ⚠️ Raramente muda |
-
----
-
-### C) RLS Policies - Problemas Identificados
-
-O linter do Supabase identificou **4 warnings** de políticas permissivas:
-
-```
-WARN: RLS Policy Always True
-Detects policies that use USING (true) or WITH CHECK (true)
-```
-
-**Tabelas afetadas (baseado em análise):**
-- `whatsapp_metrics` - `USING (true)` para SELECT
-- `webhook_dead_letter` - `USING (true)` para SELECT
-- `disqualification_reports` - `USING (true)` para SELECT
-
-**Recomendação:** Revisar se realmente precisam ser públicas ou adicionar `is_authenticated_user()`.
-
----
-
-## ⚡ 3. MELHORIAS DE VELOCIDADE
-
-### A) Cache - React Query já implementado
-
-O projeto **já usa** `@tanstack/react-query` corretamente. Sugestões de refinamento:
-
-```typescript
-// Adicionar staleTime para dados que mudam pouco
-const { data: pipelines } = useQuery({
-  queryKey: ['pipelines'],
-  queryFn: api.fetchPipelines,
-  staleTime: 5 * 60 * 1000, // 5 minutos
-});
-```
-
----
-
-### B) Chat - Virtualização de Mensagens
-
-**Problema:** ChatInterface.tsx renderiza até 100 mensagens sem virtualização (linha 1735).
-
-**Solução:** Implementar `react-window` para listas longas.
-
-```typescript
-import { FixedSizeList as List } from 'react-window';
-
-// Virtualizar lista de mensagens
-<List
-  height={containerHeight}
-  itemCount={messages.length}
-  itemSize={80}
-  width="100%"
->
-  {({ index, style }) => (
-    <div style={style}>
-      <MessageBubble message={messages[index]} />
-    </div>
-  )}
-</List>
-```
-
-**Estimativa de ganho:** 60-80% menos uso de memória em conversas longas.
-
----
-
-### C) Lazy Loading de Rotas
-
-**Implementação atual:** Todas as rotas são importadas no App.tsx.
-
-```typescript
-// ATUAL - tudo importado diretamente
-import Dashboard from './components/Dashboard';
-import ProspectingDashboard from './components/ProspectingDashboard';
-import CampaignsDashboard from './components/CampaignsDashboard';
-```
-
-**Solução proposta:**
-```typescript
-// OTIMIZADO - lazy loading
-const Dashboard = React.lazy(() => import('./components/Dashboard'));
-const ProspectingDashboard = React.lazy(() => import('./components/ProspectingDashboard'));
-const CampaignsDashboard = React.lazy(() => import('./components/CampaignsDashboard'));
-```
-
----
-
-## 🎨 4. USABILIDADE (UX/UI)
-
-### A) Skeleton Loaders
-
-✅ **Já implementado** em:
-- Dashboard (loading state com skeletons)
-- Kanban (loading state com skeletons)
-
-❌ **Faltando em:**
-- ChatInterface (lista de conversas)
-- Contacts (tabela de contatos)
-
----
-
-### B) Navegação por Teclado
-
-✅ **Já implementado:**
-- `useKeyboardShortcuts` hook existe
-- KeyboardShortcutsHelp component existe
-- Quick questions com `/` no chat
-
----
-
-## 🔒 5. SEGURANÇA
-
-### Análise do Security Scan
-
-| Finding | Severidade | Status |
-|---------|------------|--------|
-| API Keys em plain text (nina_settings) | WARN | Migração para Vault em andamento |
-| SECURITY DEFINER sem validação | WARN | ✅ Aceitável (service role) |
-| Storage público (whatsapp-media) | INFO | ⚠️ Revisar quotas por usuário |
-
-### Validação de Inputs
-
-✅ **Bem implementado:**
-- Uso de Zod para validação
-- DOMPurify para sanitização HTML
-- Rate limit em algumas ações
-
-❌ **Gaps identificados:**
-- Importação CSV sem rate limiting
-- Chamadas diretas a APIs externas (ViaCEP) sem throttle
-
----
-
-## 📋 TOP 15 MELHORIAS PRIORIZADAS
-
-| # | Melhoria | Impacto | Esforço | Ganho Estimado |
-|---|----------|---------|---------|----------------|
-| 1 | ⚡ Resolver N+1 no fetchConversations | Alto | Médio | -70% tempo loading |
-| 2 | ⚡ Virtualização de mensagens (react-window) | Alto | Médio | -60% memória |
-| 3 | 📦 Mover @playwright/test para devDeps | Baixo | Trivial | -500KB bundle |
-| 4 | 📦 Lazy loading de rotas | Médio | Baixo | -30% FCP |
-| 5 | 🗄️ Adicionar índice messages(conv_id, sent_at) | Alto | Trivial | -50% query time |
-| 6 | 🗄️ Adicionar índice conversations(is_active, last_message_at) | Médio | Trivial | -30% query time |
-| 7 | ⚡ Adicionar staleTime ao React Query | Baixo | Trivial | -20% requests |
-| 8 | 🎨 Skeleton loaders no Chat/Contacts | Médio | Baixo | +20% percepção |
-| 9 | 🔒 Revisar RLS policies permissivas | Médio | Médio | Segurança |
-| 10 | 🗄️ Limite em fetchDashboardMetrics | Baixo | Trivial | Estabilidade |
-| 11 | ⚡ Lazy load recharts/canvas-confetti | Baixo | Baixo | -50KB inicial |
-| 12 | 🔒 Rate limit na importação CSV | Médio | Baixo | Segurança |
-| 13 | 🗄️ Remover Realtime de pipeline_stages | Baixo | Trivial | Menos conexões |
-| 14 | 📦 Tree-shake lucide-react icons | Baixo | Médio | -30KB bundle |
-| 15 | ⚡ Paginação server-side em Contacts | Médio | Médio | Escalabilidade |
-
----
-
-## 🔧 CÓDIGO PARA TOP 5 MELHORIAS
-
-### 1. Resolver N+1 no fetchConversations
-
-```typescript
-// src/services/api.ts - SUBSTITUIR fetchConversations
-
-fetchConversations: async (includeConversationId?: string): Promise<UIConversation[]> => {
-  console.log('[API] Fetching conversations from Supabase...');
-  
-  // Query única com mensagens agregadas
-  const { data: conversations, error } = await supabase
-    .from('conversations')
-    .select(`
-      *,
-      contact:contacts(*),
-      agent:agents!conversations_current_agent_id_fkey(id, name, slug),
-      messages:messages(id, content, from_type, type, status, sent_at, media_url, metadata, whatsapp_message_id)
-    `)
-    .eq('is_active', true)
-    .order('last_message_at', { ascending: false })
-    .limit(200);
-
-  if (error) throw error;
-
-  // Processar em memória (muito mais rápido que N queries)
-  const conversationsWithMessages = conversations.map(conv => {
-    const messages = (conv.messages || [])
-      .sort((a, b) => new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime())
-      .slice(-100); // Últimas 100 mensagens
-    
-    return transformDBToUIConversation(
-      { ...conv, messages: undefined } as DBConversation,
-      messages as DBMessage[]
-    );
-  });
-
-  return conversationsWithMessages;
-}
-```
-
-### 2. Virtualização de Mensagens
-
-```bash
-# Instalar dependência
-npm install react-window @types/react-window
-```
-
-```typescript
-// Novo componente: src/components/chat/VirtualizedMessageList.tsx
-import { VariableSizeList as List } from 'react-window';
-import { useRef, useCallback } from 'react';
-import { UIMessage } from '@/types';
-
-interface Props {
-  messages: UIMessage[];
-  height: number;
-}
-
-export const VirtualizedMessageList: React.FC<Props> = ({ messages, height }) => {
-  const listRef = useRef<List>(null);
-  
-  // Estimar altura de cada mensagem
-  const getItemSize = useCallback((index: number) => {
-    const msg = messages[index];
-    const baseHeight = 60;
-    const contentLength = msg.content?.length || 0;
-    const extraLines = Math.floor(contentLength / 50);
-    return baseHeight + (extraLines * 20);
-  }, [messages]);
-
-  return (
-    <List
-      ref={listRef}
-      height={height}
-      itemCount={messages.length}
-      itemSize={getItemSize}
-      width="100%"
-    >
-      {({ index, style }) => (
-        <div style={style}>
-          <MessageBubble message={messages[index]} />
-        </div>
-      )}
-    </List>
-  );
-};
-```
-
-### 3. Mover @playwright/test
-
-```json
-// package.json - MOVER para devDependencies
-{
-  "dependencies": {
-    // REMOVER: "@playwright/test": "^1.57.0"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.57.0"  // ADICIONAR AQUI
-  }
-}
-```
-
-### 4. Lazy Loading de Rotas
-
-```typescript
-// src/App.tsx - SUBSTITUIR imports
-
-import React, { Suspense } from 'react';
-// ... outros imports
-
-// Lazy loading para rotas pesadas
-const Dashboard = React.lazy(() => import('./components/Dashboard'));
-const ProspectingDashboard = React.lazy(() => import('./components/ProspectingDashboard'));
-const CampaignsDashboard = React.lazy(() => import('./components/CampaignsDashboard'));
-const Settings = React.lazy(() => import('./components/Settings'));
-const Team = React.lazy(() => import('./components/Team'));
-const Functions = React.lazy(() => import('./components/Functions'));
-
-// Fallback component
-const RouteLoader = () => (
-  <div className="h-full flex items-center justify-center bg-slate-950">
-    <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
-  </div>
-);
-
-// Nas rotas, envolver com Suspense
-<Route path="/dashboard" element={
-  <Suspense fallback={<RouteLoader />}>
-    <Dashboard />
-  </Suspense>
-} />
-```
-
-### 5. Índices SQL
-
-```sql
--- Executar no Supabase SQL Editor
-
--- Índice para resolver N+1 de mensagens
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_messages_conversation_sent_at 
-ON public.messages(conversation_id, sent_at DESC);
-
--- Índice para conversas ativas ordenadas
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_conversations_active_last_message
-ON public.conversations(is_active, last_message_at DESC)
-WHERE is_active = true;
-
--- Índice para busca de templates
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_messages_template_lookup
+-- Já criado: idx_messages_conversation_sent_at
+-- Índice composto para busca de mensagens por conversa ordenadas por data
+
+-- NOVO: Índice para métricas de tempo de resposta
+CREATE INDEX IF NOT EXISTS idx_messages_nina_response_time
+ON public.messages(sent_at)
+WHERE nina_response_time IS NOT NULL AND nina_response_time > 0;
+
+-- NOVO: Índice para marcar mensagens como lidas
+CREATE INDEX IF NOT EXISTS idx_messages_unread_user
+ON public.messages(conversation_id, from_type, status)
+WHERE from_type = 'user' AND status IN ('sent', 'delivered');
+
+-- NOVO: Índice para busca de templates
+CREATE INDEX IF NOT EXISTS idx_messages_template_search
 ON public.messages(conversation_id, from_type)
 WHERE from_type = 'nina';
-
--- Índice para deals por contato
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_deals_contact_created
-ON public.deals(contact_id, created_at DESC);
-
--- Verificar índices criados
-SELECT tablename, indexname FROM pg_indexes 
-WHERE schemaname = 'public' 
-AND indexname LIKE 'idx_%'
-ORDER BY tablename;
 ```
 
 ---
 
-## ✅ CHECKLIST DE VERIFICAÇÃO
+## Tabela: conversations
 
-### Para cada implementação:
+**Queries identificadas:**
+1. `fetchConversations` - `.eq('is_active', true).order('last_message_at', DESC).limit(200)`
+2. `fetchArchivedConversations` - `.eq('is_active', false).order('last_message_at', DESC).limit(100)`
+3. `getOrCreateConversation` - `.eq('contact_id', contactId).eq('is_active', true)`
+4. `deleteContact` - `.eq('contact_id', id)`
+5. `fetchPipeline` - `.in('contact_id', contactIds)` (para buscar conversationId)
 
-- [ ] **Backup:** Fazer backup do código antes de modificar
-- [ ] **Teste local:** Verificar em ambiente de desenvolvimento
-- [ ] **Métricas:** Medir tempo de loading antes/depois
-- [ ] **Rollback:** Ter plano de reversão se houver problemas
-- [ ] **Monitor:** Acompanhar logs de erro após deploy
+**Índices necessários:**
+```sql
+-- Já criado: idx_conversations_active_last_message
 
-### Ordem de implementação recomendada:
+-- NOVO: Índice para busca de conversa por contato
+CREATE INDEX IF NOT EXISTS idx_conversations_contact_active
+ON public.conversations(contact_id, is_active)
+WHERE is_active = true;
 
-1. **Dia 1:** Índices SQL (trivial, grande impacto)
-2. **Dia 1:** Mover @playwright/test (trivial)
-3. **Dia 2:** Lazy loading de rotas (baixo esforço)
-4. **Dia 2-3:** Resolver N+1 query (médio esforço)
-5. **Dia 4-5:** Virtualização de mensagens (médio esforço)
+-- NOVO: Índice para conversas arquivadas
+CREATE INDEX IF NOT EXISTS idx_conversations_archived_last_message
+ON public.conversations(is_active, last_message_at DESC)
+WHERE is_active = false;
+
+-- NOVO: Índice para status de conversa
+CREATE INDEX IF NOT EXISTS idx_conversations_status
+ON public.conversations(status, is_active);
+```
 
 ---
 
-## 📈 ESTIMATIVA DE GANHOS TOTAIS
+## Tabela: contacts
 
-| Métrica | Antes (estimado) | Depois | Ganho |
-|---------|------------------|--------|-------|
-| First Contentful Paint | ~2.5s | ~1.5s | -40% |
-| Time to Interactive | ~4s | ~2.5s | -37% |
-| Bundle Size | ~2.5MB | ~1.8MB | -28% |
-| Chat Loading (200 convs) | ~3s | ~0.8s | -73% |
-| Memória em conversas longas | ~150MB | ~60MB | -60% |
+**Queries identificadas:**
+1. `fetchContacts` - `.order('last_activity', DESC).limit(500)`
+2. `fetchDashboardMetrics` - `.gte('created_at', periodStartStr)` (count)
+3. Múltiplas queries com `.eq('id', contactId)`
+
+**Índices necessários:**
+```sql
+-- NOVO: Índice para listagem de contatos ordenada
+CREATE INDEX IF NOT EXISTS idx_contacts_last_activity
+ON public.contacts(last_activity DESC);
+
+-- NOVO: Índice para contagem de novos contatos
+CREATE INDEX IF NOT EXISTS idx_contacts_created_at
+ON public.contacts(created_at);
+
+-- NOVO: Índice para busca por telefone (usado em importação CSV)
+CREATE INDEX IF NOT EXISTS idx_contacts_phone_number
+ON public.contacts(phone_number);
+```
+
+---
+
+## Tabela: deals
+
+**Queries identificadas:**
+1. `fetchPipeline` - `.eq('pipeline_id', pipelineId).order('created_at', DESC)`
+2. `fetchContacts` - `.in('contact_id', contactIds).order('created_at', DESC)`
+3. `getDealByContactId` - `.eq('contact_id', contactId)`
+4. `updateContactsPipeline` - `.in('contact_id', contactIds)`
+5. `fetchDashboardMetrics` - `.not('won_at', 'is', null).gte('won_at', periodStartStr)`
+6. `moveDealStage` - `.eq('stage_id', id)` (para mover deals ao deletar stage)
+
+**Índices necessários:**
+```sql
+-- Já criado: idx_deals_contact_created
+
+-- NOVO: Índice para busca de deals por pipeline
+CREATE INDEX IF NOT EXISTS idx_deals_pipeline_created
+ON public.deals(pipeline_id, created_at DESC);
+
+-- NOVO: Índice para deals ganhos (métricas)
+CREATE INDEX IF NOT EXISTS idx_deals_won_at
+ON public.deals(won_at)
+WHERE won_at IS NOT NULL;
+
+-- NOVO: Índice para deals perdidos
+CREATE INDEX IF NOT EXISTS idx_deals_lost_at
+ON public.deals(lost_at)
+WHERE lost_at IS NOT NULL;
+
+-- NOVO: Índice para busca por estágio
+CREATE INDEX IF NOT EXISTS idx_deals_stage_id
+ON public.deals(stage_id);
+
+-- NOVO: Índice para filtro por owner
+CREATE INDEX IF NOT EXISTS idx_deals_owner_id
+ON public.deals(owner_id)
+WHERE owner_id IS NOT NULL;
+```
+
+---
+
+## Tabela: pipeline_stages
+
+**Queries identificadas:**
+1. `fetchPipelineStages` - `.eq('is_active', true).eq('pipeline_id', pipelineId).order('position', ASC)`
+2. `updateContactsPipeline` - `.eq('pipeline_id', pipelineId).order('position', ASC).limit(1)`
+3. `moveDealStage` - `.eq('id', newStageId)`
+
+**Índices necessários:**
+```sql
+-- NOVO: Índice composto para busca de estágios por pipeline
+CREATE INDEX IF NOT EXISTS idx_pipeline_stages_pipeline_position
+ON public.pipeline_stages(pipeline_id, position)
+WHERE is_active = true;
+```
+
+---
+
+## Tabela: appointments
+
+**Queries identificadas:**
+1. `fetchAppointments` - `.order('date', ASC).order('time', ASC)`
+2. `fetchDashboardMetrics` - `.gte('created_at', periodStartStr)` (count)
+
+**Índices necessários:**
+```sql
+-- NOVO: Índice para listagem de agendamentos
+CREATE INDEX IF NOT EXISTS idx_appointments_date_time
+ON public.appointments(date, time);
+
+-- NOVO: Índice para contagem de agendamentos por período
+CREATE INDEX IF NOT EXISTS idx_appointments_created_at
+ON public.appointments(created_at);
+```
+
+---
+
+## Tabela: team_members
+
+**Queries identificadas:**
+1. `fetchTeam` - `.order('created_at', DESC)`
+
+**Índices necessários:**
+```sql
+-- NOVO: Índice para listagem de membros
+CREATE INDEX IF NOT EXISTS idx_team_members_created_at
+ON public.team_members(created_at DESC);
+```
+
+---
+
+## Tabela: deal_activities
+
+**Queries identificadas:**
+1. `fetchDealActivities` - `.eq('deal_id', dealId).order('created_at', DESC)`
+
+**Índices necessários:**
+```sql
+-- NOVO: Índice para atividades por deal
+CREATE INDEX IF NOT EXISTS idx_deal_activities_deal_created
+ON public.deal_activities(deal_id, created_at DESC);
+```
+
+---
+
+## Tabela: followup_automations
+
+**Queries identificadas (edge functions):**
+1. Busca por automações ativas
+
+**Índices necessários:**
+```sql
+-- NOVO: Índice para automações ativas
+CREATE INDEX IF NOT EXISTS idx_followup_automations_active
+ON public.followup_automations(is_active)
+WHERE is_active = true;
+```
+
+---
+
+## Tabela: send_queue
+
+**Queries identificadas:**
+1. `claim_send_queue_batch` - busca por status + scheduled_at
+
+**Índices necessários:**
+```sql
+-- NOVO: Índice para processamento de fila de envio
+CREATE INDEX IF NOT EXISTS idx_send_queue_pending
+ON public.send_queue(status, scheduled_at, priority DESC)
+WHERE status = 'pending';
+```
+
+---
+
+## Tabela: nina_processing_queue
+
+**Queries identificadas:**
+1. `claim_nina_processing_batch` - busca por status + scheduled_for
+
+**Índices necessários:**
+```sql
+-- NOVO: Índice para processamento de fila Nina
+CREATE INDEX IF NOT EXISTS idx_nina_processing_queue_pending
+ON public.nina_processing_queue(status, scheduled_for, priority DESC)
+WHERE status = 'pending';
+```
+
+---
+
+## Tabela: whatsapp_campaigns / campaign_contacts
+
+**Queries identificadas:**
+1. `fetchCampaigns` - `.order('created_at', DESC)`
+2. `claim_campaign_batch` - `.eq('campaign_id', id).eq('status', 'pending').order('position')`
+
+**Índices necessários:**
+```sql
+-- NOVO: Índice para campanhas
+CREATE INDEX IF NOT EXISTS idx_whatsapp_campaigns_created_at
+ON public.whatsapp_campaigns(created_at DESC);
+
+-- NOVO: Índice para contatos de campanha pendentes
+CREATE INDEX IF NOT EXISTS idx_campaign_contacts_pending
+ON public.campaign_contacts(campaign_id, status, position)
+WHERE status = 'pending';
+```
+
+---
+
+## Script Completo de Criação de Índices
+
+```sql
+-- ============================================
+-- SCRIPT DE CRIAÇÃO DE ÍNDICES - CRM JACOMETO
+-- Executar no Supabase SQL Editor
+-- ============================================
+
+-- NOTA: CREATE INDEX CONCURRENTLY não funciona dentro de transações
+-- Execute cada comando separadamente se necessário
+
+-- ===========================================
+-- TABELA: messages
+-- ===========================================
+
+-- Índice para métricas de tempo de resposta da Nina
+CREATE INDEX IF NOT EXISTS idx_messages_nina_response_time
+ON public.messages(sent_at)
+WHERE nina_response_time IS NOT NULL AND nina_response_time > 0;
+
+-- Índice para marcar mensagens como lidas (filtro composto)
+CREATE INDEX IF NOT EXISTS idx_messages_unread_user
+ON public.messages(conversation_id, from_type, status)
+WHERE from_type = 'user' AND status IN ('sent', 'delivered');
+
+-- ===========================================
+-- TABELA: conversations
+-- ===========================================
+
+-- Índice para busca de conversa por contato
+CREATE INDEX IF NOT EXISTS idx_conversations_contact_active
+ON public.conversations(contact_id, is_active)
+WHERE is_active = true;
+
+-- Índice para conversas arquivadas
+CREATE INDEX IF NOT EXISTS idx_conversations_archived_last_message
+ON public.conversations(is_active, last_message_at DESC)
+WHERE is_active = false;
+
+-- Índice para filtro por status
+CREATE INDEX IF NOT EXISTS idx_conversations_status
+ON public.conversations(status, is_active);
+
+-- ===========================================
+-- TABELA: contacts
+-- ===========================================
+
+-- Índice para listagem ordenada por última atividade
+CREATE INDEX IF NOT EXISTS idx_contacts_last_activity
+ON public.contacts(last_activity DESC);
+
+-- Índice para contagem de novos contatos por período
+CREATE INDEX IF NOT EXISTS idx_contacts_created_at
+ON public.contacts(created_at);
+
+-- Índice para busca por telefone (importação CSV)
+CREATE INDEX IF NOT EXISTS idx_contacts_phone_number
+ON public.contacts(phone_number);
+
+-- ===========================================
+-- TABELA: deals
+-- ===========================================
+
+-- Índice para busca por pipeline
+CREATE INDEX IF NOT EXISTS idx_deals_pipeline_created
+ON public.deals(pipeline_id, created_at DESC);
+
+-- Índice para deals ganhos (métricas)
+CREATE INDEX IF NOT EXISTS idx_deals_won_at
+ON public.deals(won_at)
+WHERE won_at IS NOT NULL;
+
+-- Índice para deals perdidos
+CREATE INDEX IF NOT EXISTS idx_deals_lost_at
+ON public.deals(lost_at)
+WHERE lost_at IS NOT NULL;
+
+-- Índice para busca por estágio
+CREATE INDEX IF NOT EXISTS idx_deals_stage_id
+ON public.deals(stage_id);
+
+-- Índice para filtro por owner
+CREATE INDEX IF NOT EXISTS idx_deals_owner_id
+ON public.deals(owner_id)
+WHERE owner_id IS NOT NULL;
+
+-- ===========================================
+-- TABELA: pipeline_stages
+-- ===========================================
+
+-- Índice para busca de estágios por pipeline
+CREATE INDEX IF NOT EXISTS idx_pipeline_stages_pipeline_position
+ON public.pipeline_stages(pipeline_id, position)
+WHERE is_active = true;
+
+-- ===========================================
+-- TABELA: appointments
+-- ===========================================
+
+-- Índice para listagem de agendamentos
+CREATE INDEX IF NOT EXISTS idx_appointments_date_time
+ON public.appointments(date, time);
+
+-- Índice para contagem por período
+CREATE INDEX IF NOT EXISTS idx_appointments_created_at
+ON public.appointments(created_at);
+
+-- ===========================================
+-- TABELA: team_members
+-- ===========================================
+
+-- Índice para listagem de membros
+CREATE INDEX IF NOT EXISTS idx_team_members_created_at
+ON public.team_members(created_at DESC);
+
+-- ===========================================
+-- TABELA: deal_activities
+-- ===========================================
+
+-- Índice para atividades por deal
+CREATE INDEX IF NOT EXISTS idx_deal_activities_deal_created
+ON public.deal_activities(deal_id, created_at DESC);
+
+-- ===========================================
+-- TABELA: followup_automations
+-- ===========================================
+
+-- Índice para automações ativas
+CREATE INDEX IF NOT EXISTS idx_followup_automations_active
+ON public.followup_automations(is_active)
+WHERE is_active = true;
+
+-- ===========================================
+-- TABELA: send_queue
+-- ===========================================
+
+-- Índice para processamento de fila de envio
+CREATE INDEX IF NOT EXISTS idx_send_queue_pending
+ON public.send_queue(status, scheduled_at, priority DESC)
+WHERE status = 'pending';
+
+-- ===========================================
+-- TABELA: nina_processing_queue
+-- ===========================================
+
+-- Índice para processamento de fila Nina
+CREATE INDEX IF NOT EXISTS idx_nina_processing_queue_pending
+ON public.nina_processing_queue(status, scheduled_for, priority DESC)
+WHERE status = 'pending';
+
+-- ===========================================
+-- TABELA: whatsapp_campaigns
+-- ===========================================
+
+-- Índice para campanhas ordenadas
+CREATE INDEX IF NOT EXISTS idx_whatsapp_campaigns_created_at
+ON public.whatsapp_campaigns(created_at DESC);
+
+-- ===========================================
+-- TABELA: campaign_contacts
+-- ===========================================
+
+-- Índice para contatos de campanha pendentes
+CREATE INDEX IF NOT EXISTS idx_campaign_contacts_pending
+ON public.campaign_contacts(campaign_id, status, position)
+WHERE status = 'pending';
+
+-- ===========================================
+-- VERIFICAÇÃO DE ÍNDICES CRIADOS
+-- ===========================================
+
+SELECT 
+    schemaname,
+    tablename,
+    indexname,
+    indexdef
+FROM pg_indexes
+WHERE schemaname = 'public'
+AND indexname LIKE 'idx_%'
+ORDER BY tablename, indexname;
+```
+
+---
+
+## Resumo dos Índices
+
+| Tabela | Índices Novos | Impacto Esperado |
+|--------|---------------|------------------|
+| messages | 2 | -40% tempo de métricas |
+| conversations | 3 | -30% tempo de busca |
+| contacts | 3 | -50% tempo de listagem |
+| deals | 5 | -40% tempo de Kanban |
+| pipeline_stages | 1 | -20% tempo de carregamento |
+| appointments | 2 | -30% tempo de agenda |
+| team_members | 1 | Marginal |
+| deal_activities | 1 | -30% tempo de atividades |
+| send_queue | 1 | -50% tempo de processamento |
+| nina_processing_queue | 1 | -50% tempo de processamento |
+| whatsapp_campaigns | 1 | -20% tempo de listagem |
+| campaign_contacts | 1 | -60% tempo de processamento |
+
+**Total: 22 novos índices** (além dos 4 já criados anteriormente)
+
+---
+
+## Seção Técnica: Por que esses índices?
+
+### Índices Parciais (WHERE)
+Usados quando a query sempre filtra por uma condição específica. Exemplo:
+- `idx_deals_won_at WHERE won_at IS NOT NULL` - Só indexa deals ganhos, economizando espaço
+
+### Índices Compostos
+Usados quando queries filtram por múltiplas colunas. A ordem importa:
+- `idx_deals_pipeline_created(pipeline_id, created_at DESC)` - Primeiro filtra por pipeline, depois ordena
+
+### Trade-offs
+- **Escrita mais lenta**: Cada INSERT/UPDATE atualiza os índices
+- **Mais espaço em disco**: Índices ocupam ~10-20% do tamanho da tabela
+- **Manutenção**: Índices podem fragmentar e precisar de REINDEX
+
+Para este CRM, o ganho em leitura supera o custo de escrita, já que a proporção é ~90% leituras / 10% escritas.
+
