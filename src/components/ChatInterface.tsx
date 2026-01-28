@@ -6,7 +6,8 @@ import {
   Smile, Loader2, Mic, MessageSquare, Info, X, Mail, MapPin, 
   Tag, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
   Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle,
-  ArrowLeft, Keyboard, XCircle, PlayCircle, Pin, Sparkles, UserCheck, PauseCircle, Bot, AlertCircle, Download, Eye, Truck
+  ArrowLeft, Keyboard, XCircle, PlayCircle, Pin, Sparkles, UserCheck, PauseCircle, Bot, AlertCircle, Download, Eye, Truck,
+  ChevronDown as ChevronDownIcon
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -140,6 +141,12 @@ const ChatInterface: React.FC = () => {
   
   // PDF preview state
   const [pdfPreview, setPdfPreview] = useState<{ url: string; filename: string } | null>(null);
+  
+  // New messages badge state (scroll tracking)
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
+  const [newMessagesCount, setNewMessagesCount] = useState(0);
+  const prevMessagesLengthRef = useRef<number>(0);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   
   // Audio recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -357,6 +364,34 @@ const ChatInterface: React.FC = () => {
   
   // Active call state
   const { activeCall, callHistory, loading: callHistoryLoading, dismissActiveCall } = useActiveCall(selectedChatId);
+
+  // Handle scroll in messages area for new messages badge
+  const handleMessagesScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 100;
+    setIsScrolledUp(!isNearBottom);
+    if (isNearBottom) setNewMessagesCount(0);
+  };
+
+  // Reset scroll state when changing conversations
+  useEffect(() => {
+    setIsScrolledUp(false);
+    setNewMessagesCount(0);
+    prevMessagesLengthRef.current = activeChat?.messages?.length || 0;
+  }, [selectedChatId]);
+
+  // Track new messages when scrolled up
+  useEffect(() => {
+    const currentLength = activeChat?.messages?.length || 0;
+    const prevLength = prevMessagesLengthRef.current;
+    
+    if (isScrolledUp && currentLength > prevLength) {
+      const newCount = currentLength - prevLength;
+      setNewMessagesCount(prev => prev + newCount);
+    }
+    
+    prevMessagesLengthRef.current = currentLength;
+  }, [activeChat?.messages?.length, isScrolledUp]);
 
 
   // Load tag definitions, team members, and pipelines
@@ -2293,7 +2328,11 @@ const ChatInterface: React.FC = () => {
             </div>
 
             {/* Messages Area */}
-            <div className={`flex-1 overflow-y-auto ${isMobile ? 'p-3 space-y-4' : 'p-6 space-y-6'} custom-scrollbar relative z-0`}>
+            <div 
+              ref={messagesContainerRef}
+              onScroll={handleMessagesScroll}
+              className={`flex-1 overflow-y-auto ${isMobile ? 'p-3 space-y-4' : 'p-6 space-y-6'} custom-scrollbar relative z-0`}
+            >
               {(() => {
                 // Create unified timeline with messages and calls
                 type TimelineItem = 
@@ -2478,6 +2517,29 @@ const ChatInterface: React.FC = () => {
                   isAggregating={isAggregating}
                 />
               )}
+              
+              {/* New Messages Badge - Floating button when scrolled up */}
+              <AnimatePresence>
+                {isScrolledUp && newMessagesCount > 0 && (
+                  <motion.button
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 20 }}
+                    onClick={() => {
+                      scrollToBottom();
+                      setNewMessagesCount(0);
+                    }}
+                    className="sticky bottom-4 left-1/2 -translate-x-1/2 z-20 
+                               px-4 py-2 bg-cyan-600 hover:bg-cyan-700 
+                               text-white text-sm font-medium rounded-full 
+                               shadow-lg shadow-cyan-900/40 flex items-center gap-2
+                               transition-colors"
+                  >
+                    <ChevronDownIcon className="w-4 h-4" />
+                    {newMessagesCount} nova{newMessagesCount > 1 ? 's' : ''} mensagem{newMessagesCount > 1 ? 'ns' : ''}
+                  </motion.button>
+                )}
+              </AnimatePresence>
               
               <div ref={messagesEndRef} />
             </div>
