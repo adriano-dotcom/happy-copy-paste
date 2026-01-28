@@ -233,6 +233,23 @@ function extractNameFromMessage(content: string): string | null {
 }
 // ===== END NAME EXTRACTION UTILITY =====
 
+// ===== CONTACT NAME NORMALIZATION (Title Case + First Name Only) =====
+function normalizeContactName(name: string | null): string {
+  if (!name || !name.trim()) return 'Cliente';
+  
+  // Pegar apenas o primeiro nome
+  const firstName = name.trim().split(/\s+/)[0];
+  
+  // Se está todo em maiúsculas, converter para Title Case
+  if (firstName === firstName.toUpperCase() && firstName.length > 2) {
+    return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+  }
+  
+  // Garantir primeira letra maiúscula
+  return firstName.charAt(0).toUpperCase() + firstName.slice(1);
+}
+// ===== END CONTACT NAME NORMALIZATION =====
+
 // ===== TIMEZONE UTILITY =====
 const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
 function toBRT(date: Date | string): string {
@@ -7323,8 +7340,8 @@ function buildEnhancedPrompt(
 
   if (contact) {
     contextInfo += `\n\nCONTEXTO DO CLIENTE:`;
-    if (contact.name) contextInfo += `\n- Nome: ${contact.name}`;
-    if (contact.call_name) contextInfo += ` (trate por: ${contact.call_name})`;
+    if (contact.name) contextInfo += `\n- Nome: ${normalizeContactName(contact.name)}`;
+    if (contact.call_name) contextInfo += ` (trate por: ${normalizeContactName(contact.call_name)})`;
     if (contact.tags?.length) contextInfo += `\n- Tags: ${contact.tags.join(', ')}`;
     
     // Cidade/Estado do lead (extraído do DDD do telefone)
