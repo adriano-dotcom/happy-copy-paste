@@ -40,7 +40,8 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const [intervalMinutes, setIntervalMinutes] = useState(1);
+  const [intervalMinSeconds, setIntervalMinSeconds] = useState(30);
+  const [intervalMaxSeconds, setIntervalMaxSeconds] = useState(90);
   const [isProspecting, setIsProspecting] = useState(true);
   const [progress, setProgress] = useState({ current: 0, total: 0, failed: 0, success: 0, skipped: 0 });
   
@@ -299,7 +300,11 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
 
       // Wait interval before next send (except for last contact)
       if (i < contacts.length - 1) {
-        const waitSeconds = intervalMinutes * 60;
+        // Calcular intervalo aleatório entre min e max
+        const waitSeconds = Math.floor(
+          Math.random() * (intervalMaxSeconds - intervalMinSeconds + 1)
+        ) + intervalMinSeconds;
+        console.log(`[BulkSend] Random interval: ${waitSeconds}s`);
         startCountdown(waitSeconds);
         
         // Interruptible sleep that respects pause and skip
@@ -407,28 +412,58 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
             </Select>
           </div>
 
-          {/* Interval slider */}
+          {/* Random Interval sliders */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label className="text-slate-300 flex items-center gap-2">
                 <Clock className="w-4 h-4 text-amber-400" />
-                Intervalo entre envios
+                Intervalo entre envios (aleatório)
               </Label>
               <span className="text-sm font-medium text-white bg-slate-800 px-2 py-1 rounded">
-                {intervalMinutes}m
+                {intervalMinSeconds}s - {intervalMaxSeconds}s
               </span>
             </div>
-            <Slider
-              value={[intervalMinutes]}
-              onValueChange={(v) => setIntervalMinutes(v[0])}
-              min={1}
-              max={20}
-              step={1}
-              disabled={sending}
-              className="py-2"
-            />
+            
+            {/* Slider mínimo */}
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-500">Mínimo</Label>
+              <Slider
+                value={[intervalMinSeconds]}
+                onValueChange={(v) => {
+                  const newMin = v[0];
+                  setIntervalMinSeconds(newMin);
+                  if (newMin > intervalMaxSeconds) {
+                    setIntervalMaxSeconds(newMin);
+                  }
+                }}
+                min={10}
+                max={180}
+                step={5}
+                disabled={sending}
+              />
+            </div>
+            
+            {/* Slider máximo */}
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-500">Máximo</Label>
+              <Slider
+                value={[intervalMaxSeconds]}
+                onValueChange={(v) => {
+                  const newMax = v[0];
+                  setIntervalMaxSeconds(newMax);
+                  if (newMax < intervalMinSeconds) {
+                    setIntervalMinSeconds(newMax);
+                  }
+                }}
+                min={10}
+                max={180}
+                step={5}
+                disabled={sending}
+              />
+            </div>
+            
             <p className="text-xs text-slate-500">
-              Tempo estimado: ~{contacts.length * intervalMinutes} min
+              Tempo estimado: ~{Math.round(contacts.length * ((intervalMinSeconds + intervalMaxSeconds) / 2) / 60)} min
             </p>
           </div>
 
