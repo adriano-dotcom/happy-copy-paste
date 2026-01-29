@@ -6564,7 +6564,7 @@ Qual desses te interessa?`;
       await queueInteractiveButtons(
         supabase,
         conversation,
-        'Só pra eu entender melhor:',
+        '',
         [
           { id: 'btn_transportador', title: 'Sou transportador' },
           { id: 'btn_outros_seguros', title: 'Outros seguros' },
