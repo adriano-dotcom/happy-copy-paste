@@ -6564,7 +6564,7 @@ Qual desses te interessa?`;
       await queueInteractiveButtons(
         supabase,
         conversation,
-        '',
+        'Escolha uma opção:', // WhatsApp API requires non-empty body.text
         [
           { id: 'btn_transportador', title: 'Sou transportador' },
           { id: 'btn_outros_seguros', title: 'Outros seguros' },
