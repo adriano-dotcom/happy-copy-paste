@@ -1,298 +1,189 @@
 
-# Plano: Otimizacao de Performance da Tela de Chat
+# Plano: Corrigir Resposta do Atlas para Leads que Demonstram Desinteresse
 
-## Diagnostico Atual
+## Problema Identificado
 
-Apos analise detalhada do codigo, identifiquei os seguintes gargalos de performance:
+Quando um lead de prospecção responde "não tenho interesse", o agente Atlas está enviando incorretamente:
 
-### 1. Carregamento de Mensagens
-- **Problema**: `fetchConversations` carrega ate 20.000 mensagens de uma vez para 200 conversas
-- **Impacto**: Carregamento inicial lento, memoria alta no browser
-- **Local**: `src/services/api.ts` linhas 1730-1760
+> "Claro! Vou passar seus dados para um corretor. Em breve ele te chama."
 
-### 2. Realtime Ineficiente
-- **Problema**: 3 canais Realtime separados (messages, conversations, contacts)
-- **Impacto**: Overhead de conexao WebSocket, processamento duplicado
-- **Local**: `src/hooks/useConversations.ts` linhas 40-240
+Isso é **contraditório** e **inapropriado** - o lead disse que NAO quer, e o agente promete contato do corretor.
 
-### 3. Re-renders Excessivos
-- **Problema**: `ChatInterface.tsx` tem 3400+ linhas, sem memoizacao adequada
-- **Impacto**: Re-renders completos a cada nova mensagem
-- **Local**: `src/components/ChatInterface.tsx`
+### Causa Raiz
 
-### 4. Timeline Recalculada a Cada Render
-- **Problema**: Merge de mensagens + chamadas em cada render
-- **Impacto**: O(n log n) a cada render
-- **Local**: `ChatInterface.tsx` linhas 2336-2354
+No `nina-orchestrator/index.ts` (linha 3421), quando detecta rejeição de prospecção, o sistema usa o campo `handoff_message` do agente:
+
+```typescript
+const rejectionResponse = agent?.handoff_message || 'Obrigado pelo retorno! Desculpe o contato.';
+```
+
+O `handoff_message` do Atlas é destinado a leads **qualificados** que serão transferidos para atendimento humano, não para leads que **rejeitam** a prospecção.
 
 ---
 
-## Otimizacoes Propostas
+## Solucao Proposta
 
-### 1. Lazy Loading de Mensagens (Alto Impacto)
+### Opcao 1: Adicionar Campo `rejection_message` (Recomendado)
 
-**Estrategia**: Carregar apenas ultimas 20 mensagens inicialmente, buscar mais sob demanda
+Adicionar um novo campo na tabela `agents` para armazenar a mensagem de encerramento quando o lead rejeita:
 
-```text
-+----------------------------------+
-|  Conversa Selecionada            |
-|----------------------------------|
-|  [Carregar mais...]  <- Trigger  |
-|  Mensagem 1                      |
-|  Mensagem 2                      |
-|  ...                             |
-|  Mensagem 20                     |
-+----------------------------------+
+**Alteracao no Banco de Dados:**
+```sql
+ALTER TABLE agents ADD COLUMN rejection_message TEXT;
+
+UPDATE agents 
+SET rejection_message = 'Entendo perfeitamente. Agradeço muito pelo seu tempo e atenção. Qualquer dúvida sobre seguros de carga ou frota, estamos à disposição. Tenha um ótimo dia!'
+WHERE slug = 'atlas';
 ```
 
-**Arquivos Modificados**:
-- `src/services/api.ts`: Nova funcao `fetchMoreMessages(conversationId, beforeDate)`
-- `src/hooks/useConversations.ts`: Estado para paginacao
-- `src/components/ChatInterface.tsx`: Botao "Carregar mais"
+**Alteracao no Codigo (`nina-orchestrator/index.ts`):**
 
-**Mudancas Tecnicas**:
-
-1. Reduzir carga inicial para 20 mensagens por conversa:
+Linha 3421 - Mudar de:
 ```typescript
-// api.ts - fetchConversations
-.limit(4000) // 20 msgs * 200 convs = 4000 (muito menor que 20000)
+const rejectionResponse = agent?.handoff_message || 'Obrigado pelo retorno! Desculpe o contato.';
 ```
 
-2. Nova funcao de paginacao:
+Para:
 ```typescript
-fetchMoreMessages: async (conversationId: string, beforeDate: string, limit = 50) => {
-  const { data } = await supabase
-    .from('messages')
-    .select('*')
-    .eq('conversation_id', conversationId)
-    .lt('sent_at', beforeDate)
-    .order('sent_at', { ascending: false })
-    .limit(limit);
-  return data?.reverse() || [];
+const rejectionResponse = agent?.rejection_message || 'Obrigado pelo retorno! Desculpe o contato.';
+```
+
+### Opcao 2: Mensagem Estatica para Prospeccao Atlas
+
+Se preferir nao alterar o banco, podemos adicionar uma mensagem estatica especifica para o agente Atlas:
+
+```typescript
+// Linha 3417-3421
+if (conversationMetadata.origin === 'prospeccao' && message.content && isProspectingRejection(message.content)) {
+  console.log(`[Nina] 🚫 Prospecting rejection detected: "${message.content}"`);
+  
+  // Mensagem de encerramento cordial para rejeicao (NAO usar handoff_message)
+  const PROSPECTING_REJECTION_RESPONSE = 'Sem problemas! Agradeço pela conversa e pelo seu tempo. Fico à disposição caso precise de informações sobre seguros no futuro. Qualquer coisa, é só entrar em contato. Tenha um excelente dia!';
+  
+  const rejectionResponse = PROSPECTING_REJECTION_RESPONSE;
+```
+
+---
+
+## Implementacao Detalhada (Opcao 1 - Recomendada)
+
+### Passo 1: Migracao do Banco de Dados
+
+Adicionar coluna `rejection_message` na tabela `agents`:
+
+```sql
+-- Adicionar coluna para mensagem de rejeicao
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS rejection_message TEXT;
+
+-- Configurar mensagem para Atlas (agente de prospeccao)
+UPDATE agents 
+SET rejection_message = 'Sem problemas! Agradeço pela conversa e pelo seu tempo. Fico à disposição caso precise de informações sobre seguros no futuro. Qualquer coisa, é só entrar em contato. Tenha um excelente dia!'
+WHERE slug = 'atlas';
+
+-- Configurar mensagem padrao para outros agentes (opcional)
+UPDATE agents 
+SET rejection_message = 'Entendi! Agradeço pelo seu tempo. Qualquer dúvida sobre seguros, estamos à disposição. Tenha um ótimo dia!'
+WHERE slug != 'atlas' AND rejection_message IS NULL;
+```
+
+### Passo 2: Atualizar Interface Agent
+
+Arquivo: `supabase/functions/nina-orchestrator/index.ts` (linhas 12-33)
+
+```typescript
+interface Agent {
+  id: string;
+  name: string;
+  slug: string;
+  specialty: string | null;
+  system_prompt: string;
+  is_default: boolean;
+  is_active: boolean;
+  detection_keywords: string[];
+  greeting_message: string | null;
+  handoff_message: string | null;
+  rejection_message: string | null; // NOVO
+  cargo_focused_greeting: string | null;
+  qualification_questions: Array<{ order: number; question: string }>;
+  // ... demais campos
 }
 ```
 
-3. Hook com estado de paginacao:
+### Passo 3: Atualizar Logica de Prospecting Rejection
+
+Arquivo: `supabase/functions/nina-orchestrator/index.ts` (linhas 3415-3432)
+
+**Antes:**
 ```typescript
-const [hasMoreMessages, setHasMoreMessages] = useState<Record<string, boolean>>({});
-const loadMoreMessages = useCallback(async (conversationId: string) => {
-  const oldestMessage = activeChat?.messages[0];
-  if (!oldestMessage) return;
-  const moreMessages = await api.fetchMoreMessages(conversationId, oldestMessage.sentAt);
-  // Prepend messages to conversation
-}, [activeChat]);
-```
-
----
-
-### 2. Canal Realtime Unificado (Medio Impacto)
-
-**Estrategia**: Consolidar 3 canais em 1 com filtros
-
-**Antes**:
-```typescript
-const messagesChannel = supabase.channel('messages-realtime');
-const conversationsChannel = supabase.channel('conversations-realtime');
-const contactsChannel = supabase.channel('contacts-realtime');
-```
-
-**Depois**:
-```typescript
-const unifiedChannel = supabase
-  .channel('chat-realtime')
-  .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, handleMessage)
-  .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, handleConversation)
-  .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'contacts' }, handleContact)
-  .subscribe();
-```
-
-**Beneficio**: 1 conexao WebSocket em vez de 3, menos overhead de rede
-
----
-
-### 3. Memoizacao de Componentes (Alto Impacto)
-
-**Estrategia**: Extrair componentes memoizados do ChatInterface
-
-**Componentes a Extrair**:
-
-| Componente | Linhas Atuais | Memoizacao |
-|------------|---------------|------------|
-| `MessageBubble` | 2417-2495 | `React.memo` + `useMemo` |
-| `ConversationListItem` | 1700-1900 | `React.memo` |
-| `MessageTimeline` | 2336-2500 | `useMemo` para merge |
-| `ChatHeader` | 2020-2330 | `React.memo` |
-
-**Implementacao**:
-
-```typescript
-// src/components/chat/MessageBubble.tsx (novo arquivo)
-const MessageBubble = React.memo(({ msg, isOutgoing, isMobile, onPdfPreview }) => {
-  // Renderizacao do bubble
-}, (prev, next) => prev.msg.id === next.msg.id && prev.msg.status === next.msg.status);
-```
-
-```typescript
-// ChatInterface.tsx - Timeline memoizada
-const timelineItems = useMemo(() => {
-  if (!activeChat) return [];
-  return [
-    ...activeChat.messages.map(msg => ({
-      type: 'message' as const,
-      data: msg,
-      date: msg.sentAt ? new Date(msg.sentAt) : new Date()
-    })),
-    ...callHistory.map(call => ({
-      type: 'call' as const,
-      data: call,
-      date: new Date(call.started_at)
-    }))
-  ].sort((a, b) => a.date.getTime() - b.date.getTime());
-}, [activeChat?.messages, callHistory]);
-```
-
----
-
-### 4. Virtualizacao da Lista de Mensagens (Alto Impacto para Muitas Mensagens)
-
-**Estrategia**: Usar virtualizacao para renderizar apenas mensagens visiveis
-
-**Problema**: Conversas com 500+ mensagens renderizam todos os DOM nodes
-
-**Solucao**: Implementar virtualizacao simples sem dependencia externa
-
-```typescript
-// Hook customizado para virtualizacao
-const useVirtualizedMessages = (messages: UIMessage[], containerRef: RefObject<HTMLDivElement>) => {
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
+if (conversationMetadata.origin === 'prospeccao' && message.content && isProspectingRejection(message.content)) {
+  console.log(`[Nina] 🚫 Prospecting rejection detected: "${message.content}"`);
   
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    
-    const handleScroll = () => {
-      const scrollTop = container.scrollTop;
-      const viewportHeight = container.clientHeight;
-      const avgItemHeight = 80; // Estimativa
-      
-      const start = Math.max(0, Math.floor(scrollTop / avgItemHeight) - 10);
-      const end = Math.min(messages.length, Math.ceil((scrollTop + viewportHeight) / avgItemHeight) + 10);
-      
-      setVisibleRange({ start, end });
-    };
-    
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
-    
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [messages.length]);
+  // Use agent's handoff_message (graceful exit message)
+  const rejectionResponse = agent?.handoff_message || 'Obrigado pelo retorno! Desculpe o contato.';
+```
+
+**Depois:**
+```typescript
+if (conversationMetadata.origin === 'prospeccao' && message.content && isProspectingRejection(message.content)) {
+  console.log(`[Nina] 🚫 Prospecting rejection detected: "${message.content}"`);
   
-  return {
-    visibleMessages: messages.slice(visibleRange.start, visibleRange.end),
-    paddingTop: visibleRange.start * 80,
-    paddingBottom: (messages.length - visibleRange.end) * 80
-  };
-};
+  // Use agent's rejection_message for graceful closure (NOT handoff_message which is for qualified leads)
+  const rejectionResponse = agent?.rejection_message 
+    || 'Sem problemas! Agradeço pelo seu tempo. Qualquer dúvida sobre seguros, estamos à disposição. Tenha um ótimo dia!';
 ```
 
 ---
 
-### 5. Debounce do Scroll Handler (Baixo Impacto)
+## Mensagens de Encerramento Sugeridas
 
-**Problema**: `handleMessagesScroll` dispara em cada pixel de scroll
+Para o agente **Atlas** (prospeccao), configurar `rejection_message`:
 
-**Solucao**: Debounce de 100ms
+**Opcao Curta:**
+> "Entendo perfeitamente. Agradeço muito pelo seu tempo e atenção. Qualquer dúvida sobre seguros de carga ou frota, estamos à disposição. Tenha um ótimo dia!"
 
-```typescript
-const handleMessagesScroll = useMemo(() => {
-  let timeoutId: NodeJS.Timeout;
-  return (e: React.UIEvent<HTMLDivElement>) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => {
-      const target = e.currentTarget;
-      const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 100;
-      setIsScrolledUp(!isNearBottom);
-      if (isNearBottom) setNewMessagesCount(0);
-    }, 100);
-  };
-}, []);
-```
-
----
-
-### 6. Cache de Conversas Selecionadas (Medio Impacto)
-
-**Estrategia**: Manter cache das ultimas 5 conversas abertas
-
-```typescript
-const conversationCache = useRef(new Map<string, UIConversation>());
-
-useEffect(() => {
-  if (activeChat) {
-    conversationCache.current.set(activeChat.id, activeChat);
-    // Limitar cache a 5 conversas
-    if (conversationCache.current.size > 5) {
-      const firstKey = conversationCache.current.keys().next().value;
-      conversationCache.current.delete(firstKey);
-    }
-  }
-}, [activeChat]);
-```
+**Opcao Completa:**
+> "Sem problemas! Agradeço pela conversa e pelo seu tempo. Fico à disposição caso precise de informações sobre seguros no futuro. Qualquer coisa, é só entrar em contato. Tenha um excelente dia!"
 
 ---
 
 ## Resumo de Arquivos
 
-| Arquivo | Acao | Prioridade |
-|---------|------|------------|
-| `src/services/api.ts` | Editar (paginacao + limite) | Alta |
-| `src/hooks/useConversations.ts` | Editar (canal unificado + paginacao) | Alta |
-| `src/components/ChatInterface.tsx` | Editar (memoizacao + virtualizacao) | Alta |
-| `src/components/chat/MessageBubble.tsx` | Criar | Media |
-| `src/components/chat/MessageTimeline.tsx` | Criar | Media |
-| `src/hooks/useVirtualizedMessages.ts` | Criar | Media |
+| Arquivo | Acao | Descricao |
+|---------|------|-----------|
+| Banco de dados | Migracao | Adicionar coluna `rejection_message` |
+| `nina-orchestrator/index.ts` | Editar | Atualizar interface Agent e logica de rejeicao |
 
 ---
 
-## Ordem de Implementacao
+## Comportamento Esperado Apos Implementacao
 
-1. **Lazy Loading** - Maior impacto no carregamento inicial
-2. **Memoizacao da Timeline** - Reducao imediata de re-renders
-3. **Canal Realtime Unificado** - Menos conexoes WebSocket
-4. **Extracao de Componentes** - Melhora manutenibilidade
-5. **Virtualizacao** - Para conversas com muitas mensagens
+**Cenario:** Lead responde "E não tenho interesse"
 
----
+**Antes (comportamento incorreto):**
+> "Claro! Vou passar seus dados para um corretor. Em breve ele te chama."
 
-## Metricas de Sucesso Esperadas
+**Depois (comportamento correto):**
+> "Sem problemas! Agradeço pela conversa e pelo seu tempo. Fico à disposição caso precise de informações sobre seguros no futuro. Qualquer coisa, é só entrar em contato. Tenha um excelente dia!"
 
-| Metrica | Antes | Depois |
-|---------|-------|--------|
-| Tempo de carregamento inicial | ~3-5s | ~1s |
-| Memoria JS (200 conversas) | ~150MB | ~40MB |
-| Re-renders por nova mensagem | Componente inteiro | Apenas MessageBubble |
-| Conexoes WebSocket | 3 | 1 |
+O sistema tambem:
+- Move o deal para estagio "Perdido"
+- Pausa a conversa (status = 'paused')
+- Nao envia mais follow-ups
 
 ---
 
 ## Secao Tecnica
 
-### Consideracoes de Compatibilidade
+### Principio de Design
+O `handoff_message` deve ser usado **apenas** quando o lead e qualificado e sera transferido para atendimento humano. Para rejeicoes, uma mensagem separada (`rejection_message`) garante encerramento cordial sem prometer contato futuro.
 
-1. **Scroll Position**: Ao carregar mensagens antigas, manter posicao do scroll
-2. **Realtime**: Garantir que mensagens otimistas ainda funcionem
-3. **Deep Links**: Suporte a `includeConversationId` mantido
+### Impacto em Outros Agentes
+A alteracao e compativel com os demais agentes (Iris, Clara, Sofia, Adri) pois:
+1. O campo e opcional (`TEXT` nullable)
+2. O fallback mantem uma mensagem generica adequada
+3. Outros agentes podem ter `rejection_message` configurado posteriormente
 
-### Riscos e Mitigacoes
-
-| Risco | Mitigacao |
-|-------|-----------|
-| Scroll jump ao carregar mais | Calcular delta de altura e ajustar scrollTop |
-| Mensagens perdidas no realtime | Manter logica de deduplicacao existente |
-| Componentes desincronizados | Usar keys estáveis (message.id) |
-
-### Trade-offs
-
-- **Virtualizacao**: Aumenta complexidade, mas essencial para 500+ mensagens
-- **Memoizacao**: Mais memoria para cache, mas muito menos CPU
-- **Lazy loading**: UX de "carregar mais", mas carregamento 5x mais rapido
+### Testes Recomendados
+1. Simular "não tenho interesse" em conversa de prospeccao
+2. Verificar que a mensagem de encerramento e cordial (nao menciona corretor)
+3. Confirmar que deal vai para "Perdido" e conversa e pausada
