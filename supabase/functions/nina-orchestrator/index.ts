@@ -20,6 +20,7 @@ interface Agent {
   detection_keywords: string[];
   greeting_message: string | null;
   handoff_message: string | null;
+  rejection_message: string | null;
   cargo_focused_greeting: string | null;
   qualification_questions: Array<{ order: number; question: string }>;
   audio_response_enabled?: boolean;
@@ -3417,8 +3418,9 @@ async function processQueueItem(
   if (conversationMetadata.origin === 'prospeccao' && message.content && isProspectingRejection(message.content)) {
     console.log(`[Nina] 🚫 Prospecting rejection detected: "${message.content}"`);
     
-    // Use agent's handoff_message (graceful exit message)
-    const rejectionResponse = agent?.handoff_message || 'Obrigado pelo retorno! Desculpe o contato.';
+    // Use agent's rejection_message for graceful closure (NOT handoff_message which is for qualified leads)
+    const rejectionResponse = agent?.rejection_message 
+      || 'Sem problemas! Agradeço pelo seu tempo. Qualquer dúvida sobre seguros, estamos à disposição. Tenha um ótimo dia!';
     
     // Calculate delay
     const delayMin = settings?.response_delay_min || 1000;

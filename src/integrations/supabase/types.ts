@@ -84,6 +84,7 @@ export type Database = {
           owner_distribution_type: string | null
           owner_rotation_ids: string[] | null
           qualification_questions: Json | null
+          rejection_message: string | null
           slug: string
           specialty: string | null
           system_prompt: string
@@ -113,6 +114,7 @@ export type Database = {
           owner_distribution_type?: string | null
           owner_rotation_ids?: string[] | null
           qualification_questions?: Json | null
+          rejection_message?: string | null
           slug: string
           specialty?: string | null
           system_prompt: string
@@ -142,6 +144,7 @@ export type Database = {
           owner_distribution_type?: string | null
           owner_rotation_ids?: string[] | null
           qualification_questions?: Json | null
+          rejection_message?: string | null
           slug?: string
           specialty?: string | null
           system_prompt?: string
