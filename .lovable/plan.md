@@ -1,99 +1,130 @@
 
+# Plano: Melhorar Usabilidade do Menu de Filtros dos Chats
 
-# Plano: Atualizar Mensagem e Botões da Íris
+## Problema Identificado
 
-## Alterações Solicitadas
+O menu de filtros do chat tem 3 linhas de pills horizontais que são difíceis de navegar:
 
-### 1. Nova Mensagem Inicial
-**De:**
-> "Oi! Sou a Íris, da Jacometo Seguros, especialista em seguros para transportadores. Que tipo de mercadoria você geralmente transporta?"
+1. **Pipeline Filter Pills** - Todos, Transporte, Saúde, etc.
+2. **Status Filter Pills** - Status, Sofia, Humano, Pausado, etc.
+3. **Owner Filter Pills** - Operadores (Sofia, Bárbara, Garcia, etc.)
 
-**Para:**
-> "Olá! Sou a Íris, da Jacometo Seguros, especialista em seguros para transportadoras. Antes de começarmos me responda;"
+### Problemas Atuais:
+- **Scrollbar invisível** (`scrollbar-none`) - usuário não sabe que pode rolar
+- **Roda do mouse não funciona** - scroll vertical não é convertido para horizontal
+- **Sem indicadores visuais** - não há feedback de que existe mais conteúdo
+- **Arrastar é pouco intuitivo** - em desktop, espera-se usar roda do mouse
 
-### 2. Botões Interativos - Remover Texto
-**De:**
-> "Só pra eu entender melhor:"
-> [Sou transportador] [Outros seguros] [Foi engano]
+## Solução Proposta
 
-**Para:**
-> [Sou transportador] [Outros seguros] [Foi engano]
-> *(apenas os botões, sem texto acompanhando)*
+### 1. Criar Componente Reutilizável: `HorizontalScrollPills`
 
----
+Um componente dedicado para scroll horizontal de pills com:
+- Handler `onWheel` que converte scroll vertical em horizontal
+- Gradientes de fade nas bordas indicando mais conteúdo
+- Setas de navegação opcionais (aparecem ao hover)
+- Scrollbar sutil visível
+- Suporte a arrastar (drag scroll) para touch
+
+### 2. Recursos do Componente
+
+| Recurso | Descrição |
+|---------|-----------|
+| Wheel scroll | Roda do mouse rola horizontalmente |
+| Fade indicators | Gradientes nas bordas quando há mais conteúdo |
+| Setas de navegação | Botões `<` `>` aparecem no hover |
+| Scrollbar sutil | Barra de scroll fina visível |
+| Drag scroll | Arrastar com mouse funciona |
+
+### 3. Aplicação nas 3 Áreas de Filtros
+
+Substituir os divs atuais pelo novo componente:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Chats Ativos                                                │
+├─────────────────────────────────────────────────────────────┤
+│ ◀ [Todos] [Transporte] [Saúde] [Prospecção] [Arqui...] ▶   │ ← Fade + setas
+│ ◀ [Status] [Sofia] [Humano] [Pausado] [Atlas] [...]    ▶   │ ← Fade + setas
+│ ◀ [Todos] [Sofia] [Bárbara] [Garcia] [Alessandro...]   ▶   │ ← Fade + setas
+└─────────────────────────────────────────────────────────────┘
+```
 
 ## Implementação
 
-### Passo 1: Atualização no Banco de Dados
+### Arquivo 1: Novo Componente
 
-```sql
-UPDATE agents 
-SET cargo_focused_greeting = 'Olá! Sou a Íris, da Jacometo Seguros, especialista em seguros para transportadoras. Antes de começarmos me responda;'
-WHERE slug = 'iris';
-```
+**`src/components/ui/horizontal-scroll-pills.tsx`**
 
-### Passo 2: Alterar Código do Orchestrator
+Componente que encapsula:
+- Container com `ref` para controle de scroll
+- Handler `onWheel` que faz `scrollLeft += deltaY`
+- Estados para detectar se pode rolar esquerda/direita
+- Gradientes CSS posicionados absolutamente nas bordas
+- Botões de seta opcionais com click handlers
 
-Arquivo: `supabase/functions/nina-orchestrator/index.ts` (linha 6567)
+### Arquivo 2: Atualização do ChatInterface
 
-**Antes:**
-```typescript
-await queueInteractiveButtons(
-  supabase,
-  conversation,
-  'Só pra eu entender melhor:',
-  [
-    { id: 'btn_transportador', title: 'Sou transportador' },
-    ...
-```
+**`src/components/ChatInterface.tsx`**
 
-**Depois:**
-```typescript
-await queueInteractiveButtons(
-  supabase,
-  conversation,
-  '', // Sem texto - apenas botões
-  [
-    { id: 'btn_transportador', title: 'Sou transportador' },
-    ...
-```
+- Importar o novo componente
+- Substituir os 3 divs de filtros (`overflow-x-auto scrollbar-none`) pelo `HorizontalScrollPills`
+- Manter a mesma estrutura interna de botões
 
----
+## Resumo de Alterações
 
-## Resumo de Arquivos
+| Arquivo | Ação |
+|---------|------|
+| `src/components/ui/horizontal-scroll-pills.tsx` | **Criar** - Novo componente |
+| `src/components/ChatInterface.tsx` | **Editar** - Usar novo componente nos 3 filtros |
+| `src/index.css` | **Editar** (opcional) - Estilos de fade/gradiente |
 
-| Item | Ação | Descrição |
-|------|------|-----------|
-| Banco de dados (`agents`) | UPDATE | Alterar `cargo_focused_greeting` da Íris |
-| `nina-orchestrator/index.ts` | Editar linha 6567 | Remover texto dos botões interativos |
+## Comportamento Esperado
 
----
-
-## Fluxo Após Implementação
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ Lead: "Olá! Quero mais informações sobre seguro de cargas..."   │
-└─────────────────────────────────────────────────────────────────┘
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ Íris (mensagem 1 - texto):                                      │
-│ "Olá! Sou a Íris, da Jacometo Seguros, especialista em seguros  │
-│  para transportadoras. Antes de começarmos me responda;"        │
-└─────────────────────────────────────────────────────────────────┘
-                              ▼ (2.5s depois)
-┌─────────────────────────────────────────────────────────────────┐
-│ Íris (mensagem 2 - apenas botões):                              │
-│   [🔘 Sou transportador]                                        │
-│   [🔘 Outros seguros]                                           │
-│   [🔘 Foi engano]                                               │
-└─────────────────────────────────────────────────────────────────┘
-```
+1. **Scroll com roda do mouse**: Funciona naturalmente
+2. **Indicadores visuais**: Gradientes mostram que há mais conteúdo
+3. **Setas de navegação**: Clique para scroll suave esquerda/direita
+4. **Touch/arrastar**: Continua funcionando como antes
+5. **Scrollbar visível**: Barra fina aparece ao interagir
 
 ---
 
 ## Seção Técnica
 
-### Nota sobre Botões sem Texto
-A API do WhatsApp permite enviar mensagens interativas com `body.text` vazio ou com texto mínimo. Será usado string vazia para não exibir texto antes dos botões.
+### Implementação do Wheel Handler
 
+```typescript
+const handleWheel = (e: React.WheelEvent) => {
+  if (containerRef.current) {
+    e.preventDefault();
+    containerRef.current.scrollLeft += e.deltaY;
+    updateScrollState();
+  }
+};
+```
+
+### Gradientes de Fade
+
+```css
+/* Esquerda */
+.fade-left::before {
+  background: linear-gradient(to right, rgb(15 23 42), transparent);
+}
+
+/* Direita */  
+.fade-right::after {
+  background: linear-gradient(to left, rgb(15 23 42), transparent);
+}
+```
+
+### Detecção de Scroll Disponível
+
+```typescript
+const updateScrollState = () => {
+  const el = containerRef.current;
+  if (el) {
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
+  }
+};
+```
