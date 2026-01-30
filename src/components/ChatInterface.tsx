@@ -51,6 +51,7 @@ import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, 
 import { MessageBubble } from './chat/MessageBubble';
 import { EmailComposeModal } from './EmailComposeModal';
 import { SendToPipedriveModal } from './chat/SendToPipedriveModal';
+import { HorizontalScrollPills } from './ui/horizontal-scroll-pills';
 
 interface AgentQuestion {
   order: number;
@@ -1683,7 +1684,7 @@ const ChatInterface: React.FC = () => {
           </h2>
           
           {/* Pipeline Filter Pills - iOS 26 Style */}
-          <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
+          <HorizontalScrollPills className="mb-3">
             {!viewingArchived && (
               <>
                 <button
@@ -1779,11 +1780,11 @@ const ChatInterface: React.FC = () => {
                 <span className={`text-[10px] ${selectedPipelineFilter === 'no-pipeline' ? 'text-white/80' : 'opacity-60'}`}>({conversationCounts['no-pipeline']})</span>
               </button>
             )}
-          </div>
+          </HorizontalScrollPills>
           
           {/* Status Filter Pills - iOS 26 Style */}
           {!viewingArchived && (
-            <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
+            <HorizontalScrollPills className="mb-3">
               {/* Todos os Status */}
               <button
                 onClick={() => setSelectedStatusFilter(null)}
@@ -1876,12 +1877,12 @@ const ChatInterface: React.FC = () => {
                   <span className="text-[10px] opacity-80">({atlasNoResponseConversations.length})</span>
                 </button>
               )}
-            </div>
+            </HorizontalScrollPills>
           )}
           
           {/* Owner Filter Pills - iOS 26 Style */}
           {!viewingArchived && availableOwners.length > 0 && (
-            <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
+            <HorizontalScrollPills className="mb-3">
               <button
                 onClick={() => setSelectedOwnerFilter(null)}
                 className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shrink-0 transition-all duration-300 ${
@@ -1920,7 +1921,7 @@ const ChatInterface: React.FC = () => {
                   </button>
                 );
               })}
-            </div>
+            </HorizontalScrollPills>
           )}
           
           {/* Search and closed filter */}
