@@ -2480,6 +2480,7 @@ export type Database = {
           created_at: string | null
           delivery_rate: number | null
           error_131026_count: number | null
+          error_131042_count: number | null
           error_131049_count: number | null
           error_other_count: number | null
           id: string
@@ -2500,6 +2501,7 @@ export type Database = {
           created_at?: string | null
           delivery_rate?: number | null
           error_131026_count?: number | null
+          error_131042_count?: number | null
           error_131049_count?: number | null
           error_other_count?: number | null
           id?: string
@@ -2520,6 +2522,7 @@ export type Database = {
           created_at?: string | null
           delivery_rate?: number | null
           error_131026_count?: number | null
+          error_131042_count?: number | null
           error_131049_count?: number | null
           error_other_count?: number | null
           id?: string
