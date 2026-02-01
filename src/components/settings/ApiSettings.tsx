@@ -7,6 +7,7 @@ import * as Collapsible from '@radix-ui/react-collapsible';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { VaultMigrationPanel } from './VaultMigrationPanel';
 import Api4ComDiagnostics from './Api4ComDiagnostics';
+import { WhatsAppDiagnosticsCard } from './WhatsAppDiagnosticsCard';
 
 interface NinaSettings {
   id?: string;
@@ -568,6 +569,9 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
     <div className="space-y-6">
       {/* Vault Migration Panel */}
       <VaultMigrationPanel />
+
+      {/* WhatsApp Diagnostics Card */}
+      <WhatsAppDiagnosticsCard />
 
       {/* WhatsApp Cloud API + Webhook */}
       <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">

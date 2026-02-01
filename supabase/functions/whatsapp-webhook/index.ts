@@ -436,6 +436,21 @@ async function processStatusUpdates(supabase: any, statuses: any[]) {
           if (newStatus === 'failed' && status.errors && status.errors.length > 0) {
             console.log('[Webhook] Message failed with errors:', JSON.stringify(status.errors));
             
+            const errorCode = status.errors[0]?.code;
+            const errorTitle = status.errors[0]?.title;
+            const errorMessage = status.errors[0]?.message;
+            const errorDetails = status.errors[0]?.error_data?.details;
+            
+            // Handle critical error 131042 (Payment Issue)
+            if (errorCode === 131042) {
+              await handleCriticalPaymentError(supabase, {
+                code: errorCode,
+                title: errorTitle,
+                message: errorMessage,
+                details: errorDetails
+              });
+            }
+            
             const { data: existingMsg } = await supabase
               .from('messages')
               .select('metadata')
@@ -445,10 +460,10 @@ async function processStatusUpdates(supabase: any, statuses: any[]) {
             updateData.metadata = {
               ...(existingMsg?.metadata || {}),
               whatsapp_error: {
-                code: status.errors[0]?.code,
-                title: status.errors[0]?.title,
-                message: status.errors[0]?.message,
-                details: status.errors[0]?.error_data?.details
+                code: errorCode,
+                title: errorTitle,
+                message: errorMessage,
+                details: errorDetails
               }
             };
           }
@@ -471,6 +486,69 @@ async function processStatusUpdates(supabase: any, statuses: any[]) {
     } catch (error) {
       console.error('[Webhook] Error processing status:', error);
     }
+  }
+}
+
+// ===== Handle critical payment error 131042 =====
+async function handleCriticalPaymentError(supabase: any, error: { code: number; title: string; message: string; details?: string }) {
+  console.log('[Webhook] 🚨 Critical payment error detected:', error.code);
+  
+  try {
+    // Check if we already have an unresolved alert for this error
+    const { data: existingAlert } = await supabase
+      .from('whatsapp_alerts')
+      .select('id')
+      .eq('error_code', error.code)
+      .eq('is_resolved', false)
+      .maybeSingle();
+    
+    if (!existingAlert) {
+      // Create new alert
+      await supabase
+        .from('whatsapp_alerts')
+        .insert({
+          alert_type: 'payment_issue',
+          error_code: error.code,
+          title: 'Problema de Pagamento WhatsApp',
+          description: 'Há um problema com o método de pagamento da conta WhatsApp Business. Templates não serão entregues até regularizar.',
+          details: error.details || error.message
+        });
+      
+      console.log('[Webhook] Created new payment alert');
+    }
+    
+    // Pause all running campaigns
+    const { data: runningCampaigns, error: fetchError } = await supabase
+      .from('whatsapp_campaigns')
+      .select('id, name')
+      .eq('status', 'running');
+    
+    if (!fetchError && runningCampaigns && runningCampaigns.length > 0) {
+      console.log(`[Webhook] Pausing ${runningCampaigns.length} campaigns due to payment issue`);
+      
+      await supabase
+        .from('whatsapp_campaigns')
+        .update({ 
+          status: 'paused', 
+          paused_at: new Date().toISOString(),
+          paused_reason: 'payment_issue_131042',
+          error_message: 'Campanha pausada automaticamente: problema de pagamento na conta WhatsApp Business'
+        })
+        .eq('status', 'running');
+    }
+    
+    // Update rate limit to pause sending
+    await supabase
+      .from('whatsapp_rate_limits')
+      .update({ 
+        quality_score: 'RED',
+        paused_until: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // Pause for 24h
+      });
+    
+    console.log('[Webhook] Paused WhatsApp sending due to payment issue');
+    
+  } catch (err) {
+    console.error('[Webhook] Error handling payment error:', err);
   }
 }
 
