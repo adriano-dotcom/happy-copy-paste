@@ -2294,6 +2294,51 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_alerts: {
+        Row: {
+          alert_type: string
+          created_at: string | null
+          description: string | null
+          details: string | null
+          error_code: number | null
+          id: string
+          is_resolved: boolean | null
+          phone_number_id: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          alert_type: string
+          created_at?: string | null
+          description?: string | null
+          details?: string | null
+          error_code?: number | null
+          id?: string
+          is_resolved?: boolean | null
+          phone_number_id?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          alert_type?: string
+          created_at?: string | null
+          description?: string | null
+          details?: string | null
+          error_code?: number | null
+          id?: string
+          is_resolved?: boolean | null
+          phone_number_id?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       whatsapp_campaigns: {
         Row: {
           completed_at: string | null
@@ -2314,6 +2359,7 @@ export type Database = {
           name: string
           owner_id: string | null
           paused_at: string | null
+          paused_reason: string | null
           read_count: number | null
           replied_count: number | null
           scheduled_at: string | null
@@ -2347,6 +2393,7 @@ export type Database = {
           name: string
           owner_id?: string | null
           paused_at?: string | null
+          paused_reason?: string | null
           read_count?: number | null
           replied_count?: number | null
           scheduled_at?: string | null
@@ -2380,6 +2427,7 @@ export type Database = {
           name?: string
           owner_id?: string | null
           paused_at?: string | null
+          paused_reason?: string | null
           read_count?: number | null
           replied_count?: number | null
           scheduled_at?: string | null

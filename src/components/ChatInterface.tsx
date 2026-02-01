@@ -52,6 +52,7 @@ import { MessageBubble } from './chat/MessageBubble';
 import { EmailComposeModal } from './EmailComposeModal';
 import { SendToPipedriveModal } from './chat/SendToPipedriveModal';
 import { HorizontalScrollPills } from './ui/horizontal-scroll-pills';
+import { WhatsAppPaymentAlertBanner } from './WhatsAppPaymentAlertBanner';
 
 interface AgentQuestion {
   order: number;
@@ -1679,6 +1680,9 @@ const ChatInterface: React.FC = () => {
       <div className={`${isMobile ? (mobileView === 'list' ? 'w-full' : 'hidden') : 'w-80 lg:w-96'} border-r border-slate-800 flex flex-col bg-slate-900/50 backdrop-blur-md z-20 flex-shrink-0`}>
         {/* Search Header */}
         <div className="p-4 border-b border-slate-800/50">
+          {/* WhatsApp Payment Alert Banner */}
+          <WhatsAppPaymentAlertBanner />
+          
           <h2 className="text-lg font-bold text-white mb-3 px-1">
             {viewingArchived ? '📦 Arquivados' : 'Chats Ativos'}
           </h2>
