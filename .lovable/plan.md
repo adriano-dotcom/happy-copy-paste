@@ -1,108 +1,121 @@
 
-# Plano: Correcao do Relatorio de Motivos de Fechamento
+# Plano: Normalizar Nome do Lead para Atlas (Primeiro Nome + Title Case)
 
-## Problemas Identificados
+## Problema Identificado
 
-### 1. Contraste ruim na secao de Insights
-O card "Insights do Periodo" esta usando cores claras de texto (amber-100, amber-200) sobre um fundo claro (amber-500/10), tornando o texto praticamente invisivel.
+Conforme mostrado na screenshot, o Atlas está usando o nome completo em CAPS LOCK:
+- **Atual:** "Oi, KAUAN FELIPE DE SALES PAIVA!"
+- **Esperado:** "Oi, Kauan!"
 
-### 2. Relatorios duplicados no banco de dados
-A Edge Function gera novos registros a cada execucao sem verificar se ja existe um relatorio para aquele agente+data. Isso causa:
-- Multiplas linhas identicas na tabela
-- Insights repetidos
-- Dados inflados nos cards de resumo
-
-### 3. Insights redundantes
-Mensagens como "zerou encerramentos hoje" aparecem repetidamente para todos os agentes sem fechamentos, poluindo a visualizacao.
+A funcao `normalizeContactName` ja existe no codigo e funciona corretamente (extrai primeiro nome e converte CAPS para Title Case), porem ela nao esta sendo aplicada em todos os lugares onde o nome do contato e usado.
 
 ---
 
-## Solucao Proposta
+## Funcao Existente
 
-### Correcao 1: Melhorar contraste do card de Insights
-
-**Arquivo:** `src/components/settings/ClosureReasonsDashboard.tsx`
-
-**Mudancas:**
-- Mudar fundo do card para tema dark consistente (`bg-slate-900/60`)
-- Usar cores de texto com bom contraste (`text-amber-400`, `text-slate-300`)
-- Manter icones e destaques em amber para identificacao visual
-
-**Antes:**
-```jsx
-<Card className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 ...">
-  <CardDescription className="text-amber-200/60">
-  <li className="text-sm text-amber-100/80">
-```
-
-**Depois:**
-```jsx
-<Card className="bg-slate-900/60 border-amber-500/30 ...">
-  <CardDescription className="text-slate-400">
-  <li className="text-sm text-slate-300">
-```
-
----
-
-### Correcao 2: Evitar duplicacao de relatorios (Upsert)
-
-**Arquivo:** `supabase/functions/generate-closure-report/index.ts`
-
-**Mudancas:**
-- Verificar se ja existe relatorio para agente+data antes de inserir
-- Usar upsert ou deletar anterior antes de inserir
-- Adicionar constraint UNIQUE no banco (agent_id + report_date)
-
-**Logica:**
 ```typescript
-// Antes de inserir, deletar relatorio existente para mesmo agente+data
-await supabase
-  .from('closure_reason_reports')
-  .delete()
-  .eq('agent_id', agent.id)
-  .eq('report_date', reportDate);
-
-// Depois inserir novo relatorio
-await supabase
-  .from('closure_reason_reports')
-  .insert(report);
+// Linha 238-251 do nina-orchestrator
+function normalizeContactName(name: string | null): string {
+  if (!name || !name.trim()) return 'Cliente';
+  
+  // Pegar apenas o primeiro nome
+  const firstName = name.trim().split(/\s+/)[0];
+  
+  // Se esta todo em maiusculas, converter para Title Case
+  if (firstName === firstName.toUpperCase() && firstName.length > 2) {
+    return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+  }
+  
+  // Garantir primeira letra maiuscula
+  return firstName.charAt(0).toUpperCase() + firstName.slice(1);
+}
 ```
 
 ---
 
-### Correcao 3: Filtrar insights redundantes no dashboard
+## Locais que Precisam de Correcao
 
-**Arquivo:** `src/components/settings/ClosureReasonsDashboard.tsx`
+### 1. nina-orchestrator/index.ts (8 ocorrencias)
 
-**Mudancas:**
-- Remover insights duplicados
-- Filtrar mensagens de "zerou encerramentos" quando ha varios
-- Priorizar insights com alertas reais (alta taxa de motivo especifico)
+| Linha | Contexto | Uso Atual | Correcao |
+|-------|----------|-----------|----------|
+| 3353 | generate-summary body | `conversation.contact?.name` | `normalizeContactName(...)` |
+| 5021 | Callback confirmation | `conversation.contact?.call_name \|\| ...name` | `normalizeContactName(...)` |
+| 5131-5133 | Prospecting intro message | `conversation.contact?.call_name \|\| ...name` | `normalizeContactName(...)` |
+| 6192 | Email extraction context | `conversation.contact?.call_name \|\| ...name` | `normalizeContactName(...)` |
+| 6375 | Email HTML content | `contactName \|\| conversation.contact?.name` | Usar variavel ja normalizada |
+| 6409 | Email subject | `contactName \|\| conversation.contact?.name` | Usar variavel ja normalizada |
+| 6462 | Qualificacao completa | `conversation.contact?.call_name \|\| ...name` | `normalizeContactName(...)` |
+| 6903-6912 | Fallback prospecting | `conversation.contact?.call_name \|\| ...name` | `normalizeContactName(...)` |
 
-**Logica:**
+### 2. process-campaign/index.ts (2 ocorrencias)
+
+| Linha | Contexto | Uso Atual | Correcao |
+|-------|----------|-----------|----------|
+| 238 | Header variables | `contact.name \|\| 'Cliente'` | `normalizeContactName(contact.name)` |
+| 251 | Body variables | `contact.name \|\| 'Cliente'` | `normalizeContactName(contact.name)` |
+
+**Nota:** Precisa adicionar a funcao `normalizeContactName` neste arquivo, pois ela nao existe la.
+
+---
+
+## Implementacao
+
+### Passo 1: Atualizar process-campaign/index.ts
+
+Adicionar a funcao `normalizeContactName` ao inicio do arquivo (apos imports) e usa-la nas linhas 238 e 251:
+
 ```typescript
-const allInsights = [...new Set(reports.flatMap(r => r.insights))]
-  .filter(i => !i.includes('zerou encerramentos') || totalClosures === 0)
-  .slice(0, 6);
+// Adicionar funcao
+function normalizeContactName(name: string | null): string {
+  if (!name || !name.trim()) return 'Cliente';
+  const firstName = name.trim().split(/\s+/)[0];
+  if (firstName === firstName.toUpperCase() && firstName.length > 2) {
+    return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+  }
+  return firstName.charAt(0).toUpperCase() + firstName.slice(1);
+}
+
+// Atualizar uso
+const varValue = templateVars[`header_${i + 1}`] || normalizeContactName(contact.name);
+const varValue = templateVars[`body_${i + 1}`] || normalizeContactName(contact.name);
+```
+
+### Passo 2: Atualizar nina-orchestrator/index.ts
+
+Substituir todas as ocorrencias listadas acima para usar `normalizeContactName()`.
+
+**Exemplo de correcao na linha 5131:**
+
+Antes:
+```typescript
+const contactName = conversation.contact?.call_name || conversation.contact?.name || '';
+const prospectingIntroMessage = contactName 
+  ? `Oi, ${contactName}! Somos da Jacometo Seguros...`
+```
+
+Depois:
+```typescript
+const contactName = normalizeContactName(conversation.contact?.call_name || conversation.contact?.name);
+const prospectingIntroMessage = contactName !== 'Cliente'
+  ? `Oi, ${contactName}! Somos da Jacometo Seguros...`
 ```
 
 ---
 
-### Correcao 4: Limpar dados duplicados existentes
+## Resultado Esperado
 
-**Migracao SQL:**
-```sql
--- Adicionar constraint unique para evitar duplicatas futuras
-ALTER TABLE closure_reason_reports 
-ADD CONSTRAINT unique_agent_report_date UNIQUE (agent_id, report_date);
+Apos as correcoes:
 
--- Limpar duplicatas existentes (manter apenas o mais recente)
-DELETE FROM closure_reason_reports a
-USING closure_reason_reports b
-WHERE a.id < b.id 
-  AND a.agent_id = b.agent_id 
-  AND a.report_date = b.report_date;
-```
+| Situacao | Antes | Depois |
+|----------|-------|--------|
+| Nome em CAPS | "KAUAN FELIPE DE SALES PAIVA" | "Kauan" |
+| Nome normal | "João Silva Santos" | "João" |
+| Nome vazio | "" | "Cliente" |
+| Nome curto | "Lu" | "Lu" (preservado) |
+
+A mensagem do Atlas ficara:
+> "Oi, Kauan! Somos da Jacometo Seguros, uma corretora especializada em seguros para transportadoras."
 
 ---
 
@@ -110,34 +123,20 @@ WHERE a.id < b.id
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `src/components/settings/ClosureReasonsDashboard.tsx` | Corrigir cores do card de insights e filtrar duplicados |
-| `supabase/functions/generate-closure-report/index.ts` | Adicionar verificacao/delete antes de insert |
-| Nova migracao SQL | Adicionar constraint UNIQUE e limpar duplicatas |
-
----
-
-## Resultado Visual Esperado
-
-1. **Card de Insights**: Fundo escuro (slate-900) com texto claro (slate-300), icones em amber para destaque
-2. **Tabela de Historico**: Sem linhas duplicadas, apenas um relatorio por agente por dia
-3. **Insights**: Lista limpa sem repeticoes, focando em alertas importantes
+| `supabase/functions/process-campaign/index.ts` | Adicionar funcao + atualizar 2 linhas |
+| `supabase/functions/nina-orchestrator/index.ts` | Atualizar 8 ocorrencias para usar normalizeContactName |
 
 ---
 
 ## Secao Tecnica
 
-### Constraint UNIQUE
-```sql
-UNIQUE (agent_id, report_date)
-```
-Impede que a Edge Function insira multiplos relatorios para o mesmo agente no mesmo dia.
+### Regex de normalizacao
 
-### Estrategia de Upsert
-Em vez de INSERT simples, usar DELETE + INSERT para garantir que apenas o relatorio mais recente seja mantido. Isso e mais simples que configurar ON CONFLICT com JSONB.
+A funcao utiliza:
+- `name.trim().split(/\s+/)[0]` - Extrai primeiro nome (split por espacos)
+- `firstName.toUpperCase()` - Verifica se esta em CAPS
+- `charAt(0).toUpperCase() + slice(1).toLowerCase()` - Converte para Title Case
 
-### Cores corrigidas
-- Fundo: `bg-slate-900/60 border-amber-500/30`
-- Titulo: `text-amber-400`
-- Descricao: `text-slate-400`
-- Itens: `text-slate-300`
-- Icones: `text-amber-400` (mantido)
+### Preservacao de nomes curtos
+
+Nomes com 2 caracteres ou menos (ex: "Lu", "Jo") sao preservados como estao para evitar problemas com iniciais ou apelidos.
