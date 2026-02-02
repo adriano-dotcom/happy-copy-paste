@@ -3350,7 +3350,7 @@ async function processQueueItem(
           const summaryResponse = await supabase.functions.invoke('generate-summary', {
             body: {
               messages: allMessages,
-              contactName: conversation.contact?.name || conversation.contact?.call_name,
+              contactName: normalizeContactName(conversation.contact?.name || conversation.contact?.call_name),
               agentName: agent?.name || 'Nina'
             }
           });
@@ -5018,8 +5018,9 @@ Qual desses te interessa?`;
             periodText = 'no fim do dia';
           }
           
-          const contactName = conversation.contact?.call_name || conversation.contact?.name || 'você';
-          let responseText = `Perfeito, ${contactName}! `;
+          const contactName = normalizeContactName(conversation.contact?.call_name || conversation.contact?.name);
+          const displayName = contactName !== 'Cliente' ? contactName : 'você';
+          let responseText = `Perfeito, ${displayName}! `;
           
           if (assignee) {
             responseText += `${assignee.name} vai entrar em contato ${formattedDate}, ${periodText}.`;
@@ -5128,8 +5129,8 @@ Qual desses te interessa?`;
         console.log(`[Nina] 🎯 User asking "what is this about?" - forcing full presentation`);
         
         // Force a complete introduction response
-        const contactName = conversation.contact?.call_name || conversation.contact?.name || '';
-        const prospectingIntroMessage = contactName 
+        const contactName = normalizeContactName(conversation.contact?.call_name || conversation.contact?.name);
+        const prospectingIntroMessage = contactName !== 'Cliente'
           ? `Oi, ${contactName}! Somos da Jacometo Seguros, uma corretora especializada em seguros para transportadoras.\n\nEntramos em contato pois trabalhamos com proteção de cargas e frotas para empresas de transporte. Você é o responsável por essa área na empresa?`
           : `Oi! Somos da Jacometo Seguros, uma corretora especializada em seguros para transportadoras.\n\nEntramos em contato pois trabalhamos com proteção de cargas e frotas para empresas de transporte. Você é o responsável por essa área na empresa?`;
         
@@ -6189,7 +6190,7 @@ Qual desses te interessa?`;
     
     // Try to extract email from message
     const emailMatch = message.content.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi);
-    const contactName = conversation.contact?.call_name || conversation.contact?.name || '';
+    const contactName = normalizeContactName(conversation.contact?.call_name || conversation.contact?.name);
     
     // Check for confirmation words (sim, pode, ok, isso, correto, esse mesmo, etc.)
     const confirmationWords = ['sim', 'pode', 'ok', 'isso', 'correto', 'esse', 'essa', 'certo', 'confirmo', 'confirma', 'confirmado', 'exato', 'perfeito', 'isso mesmo', 'esse mesmo'];
@@ -6372,7 +6373,7 @@ Qual desses te interessa?`;
               <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin: 16px 0;">
                 <h3 style="color: #334155; margin-top: 0;">📋 Informações do Contato</h3>
                 <ul style="list-style: none; padding: 0;">
-                  <li><strong>Nome:</strong> ${contactName || conversation.contact?.name || 'Lead'}</li>
+                  <li><strong>Nome:</strong> ${contactName !== 'Cliente' ? contactName : 'Lead'}</li>
                   <li><strong>Telefone:</strong> ${contactPhone}</li>
                   <li><strong>Email:</strong> ${finalEmail}</li>
                   <li><strong>CNPJ:</strong> ${contactCnpj}</li>
@@ -6406,7 +6407,7 @@ Qual desses te interessa?`;
           const emailPayload = {
             to: ownerEmail,
             bcc: [adminEmail],
-            subject: `🎯 Novo Lead Qualificado: ${contactName || conversation.contact?.name || 'Lead'}`,
+            subject: `🎯 Novo Lead Qualificado: ${contactName !== 'Cliente' ? contactName : 'Lead'}`,
             html: emailHtml
           };
           
@@ -6459,19 +6460,19 @@ Qual desses te interessa?`;
   if (qualificationComplete && ninaContext.awaiting_qualification_email !== true) {
     console.log(`[Nina] ✅ Qualificação completa! Dados coletados:`, mergedQA);
     
-    const contactName = conversation.contact?.call_name || conversation.contact?.name || '';
+    const contactName = normalizeContactName(conversation.contact?.call_name || conversation.contact?.name);
     const existingEmail = conversation.contact?.email;
     
     let askEmailMessage: string;
     
     if (existingEmail) {
       // Already has email - confirm it
-      askEmailMessage = contactName 
+      askEmailMessage = contactName !== 'Cliente'
         ? `Perfeito, ${contactName}! 🎯 Tenho todas as informações para a cotação. Posso enviar para ${existingEmail}? Se preferir outro email, me passa!`
         : `Perfeito! 🎯 Tenho todas as informações para a cotação. Posso enviar para ${existingEmail}? Se preferir outro email, me passa!`;
     } else {
       // No email - ask for it
-      askEmailMessage = contactName 
+      askEmailMessage = contactName !== 'Cliente'
         ? `Ótimo, ${contactName}! 🎯 Tenho todas as informações para montar sua cotação. Qual seu melhor email para eu enviar?`
         : `Ótimo! 🎯 Tenho todas as informações para montar sua cotação. Qual seu melhor email para eu enviar?`;
     }
@@ -6900,15 +6901,15 @@ MÍNIMO 2 PARÁGRAFOS. PROIBIDO resposta menor que 50 caracteres.`;
             aiContent = retryContent;
           } else {
             console.warn('[Nina] ⚠️ Retry also returned short response, using hardcoded fallback');
-            const contactName = conversation.contact?.call_name || conversation.contact?.name || '';
-            aiContent = contactName 
+            const contactName = normalizeContactName(conversation.contact?.call_name || conversation.contact?.name);
+            aiContent = contactName !== 'Cliente'
               ? `Oi, ${contactName}! Somos da Jacometo Seguros, corretora especializada em seguros para transportadoras.\n\nEntramos em contato pois trabalhamos com proteção de cargas e frotas para empresas de transporte. Você é o responsável por essa área na empresa?`
               : `Oi! Somos da Jacometo Seguros, corretora especializada em seguros para transportadoras.\n\nEntramos em contato pois trabalhamos com proteção de cargas e frotas para empresas de transporte. Você é o responsável por essa área na empresa?`;
           }
         } else {
           console.error('[Nina] ❌ Retry failed, using hardcoded fallback');
-          const contactName = conversation.contact?.call_name || conversation.contact?.name || '';
-          aiContent = contactName 
+          const contactName = normalizeContactName(conversation.contact?.call_name || conversation.contact?.name);
+          aiContent = contactName !== 'Cliente'
             ? `Oi, ${contactName}! Somos da Jacometo Seguros, corretora especializada em seguros para transportadoras.\n\nEntramos em contato pois trabalhamos com proteção de cargas e frotas para empresas de transporte. Você é o responsável por essa área na empresa?`
             : `Oi! Somos da Jacometo Seguros, corretora especializada em seguros para transportadoras.\n\nEntramos em contato pois trabalhamos com proteção de cargas e frotas para empresas de transporte. Você é o responsável por essa área na empresa?`;
         }
