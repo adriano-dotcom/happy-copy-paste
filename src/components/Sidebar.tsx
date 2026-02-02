@@ -26,7 +26,7 @@ const Logo = () => {
     <Link to="/dashboard" className="flex items-center space-x-3 py-1 group">
       <div className="relative w-11 h-11 flex items-center justify-center flex-shrink-0">
         {/* Glow effect */}
-        <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/30 to-teal-500/30 blur-xl rounded-full animate-pulse" />
+        <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/30 to-teal-500/30 blur-xl rounded-full" />
         {/* Ring */}
         <div className="absolute inset-0 rounded-xl ring-1 ring-white/10 group-hover:ring-cyan-500/30 transition-all" />
         <img src={jacometoLogo} alt="Jacometo" className="relative w-10 h-10 object-contain rounded-xl" />
@@ -53,7 +53,7 @@ const LogoIcon = () => {
     <Link to="/dashboard" className="flex items-center py-1 group">
       <div className="relative w-11 h-11 flex items-center justify-center flex-shrink-0">
         {/* Glow effect */}
-        <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/30 to-teal-500/30 blur-xl rounded-full animate-pulse" />
+        <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/30 to-teal-500/30 blur-xl rounded-full" />
         {/* Ring */}
         <div className="absolute inset-0 rounded-xl ring-1 ring-white/10 group-hover:ring-cyan-500/30 transition-all" />
         <img src={jacometoLogo} alt="Jacometo" className="relative w-10 h-10 object-contain rounded-xl" />
