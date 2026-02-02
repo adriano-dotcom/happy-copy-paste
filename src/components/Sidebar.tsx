@@ -84,7 +84,7 @@ const UnreadPreviewPanel = () => {
       {pendingLeads.length > 0 && (
         <>
           <h4 className="text-xs text-slate-400 uppercase tracking-wider mb-3 px-2 font-medium flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-400 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-400" />
             Leads aguardando
             <span className="ml-auto min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-full px-1">
               {pendingLeads.length}
@@ -121,7 +121,7 @@ const UnreadPreviewPanel = () => {
       {unreadMessages.length > 0 && (
         <>
           <h4 className="text-xs text-slate-400 uppercase tracking-wider mb-3 px-2 font-medium flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-rose-400 to-pink-400 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-rose-400 to-pink-400" />
             Mensagens não lidas
           </h4>
           <div className="space-y-1.5">
