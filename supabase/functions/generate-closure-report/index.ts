@@ -381,6 +381,13 @@ serve(async (req) => {
         insights
       };
 
+      // Delete existing report for same agent+date before inserting (upsert strategy)
+      await supabase
+        .from('closure_reason_reports')
+        .delete()
+        .eq('agent_id', agent.id)
+        .eq('report_date', reportDate);
+
       // Save to database
       const { error: insertError } = await supabase
         .from('closure_reason_reports')

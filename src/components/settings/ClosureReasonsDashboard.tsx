@@ -173,8 +173,10 @@ export default function ClosureReasonsDashboard() {
     return { agent, latestReport, totalAgentClosures, reportsCount: agentReports.length };
   }).filter(item => item.totalAgentClosures > 0);
 
-  // Collect all insights
-  const allInsights = reports.flatMap(r => r.insights).slice(0, 6);
+  // Collect all insights - deduplicate and filter redundant "zero closures" messages
+  const allInsights = [...new Set(reports.flatMap(r => r.insights))]
+    .filter(i => !i.includes('zerou encerramentos') || totalClosures === 0)
+    .slice(0, 6);
 
   const getTrendIcon = (change: number) => {
     if (change > 10) return <TrendingUp className="h-4 w-4 text-red-400" />;
@@ -392,13 +394,13 @@ export default function ClosureReasonsDashboard() {
 
           {/* Insights */}
           {allInsights.length > 0 && (
-            <Card className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 backdrop-blur-xl border-amber-500/30">
+            <Card className="bg-slate-900/60 backdrop-blur-xl border-amber-500/30">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-amber-400">
                   <Lightbulb className="h-5 w-5" />
                   Insights do Período
                 </CardTitle>
-                <CardDescription className="text-amber-200/60">
+                <CardDescription className="text-slate-400">
                   Observações automáticas baseadas nos padrões de fechamento
                 </CardDescription>
               </CardHeader>
@@ -407,7 +409,7 @@ export default function ClosureReasonsDashboard() {
                   {allInsights.map((insight, idx) => (
                     <li 
                       key={idx}
-                      className="flex items-start gap-2 text-sm text-amber-100/80"
+                      className="flex items-start gap-2 text-sm text-slate-300"
                     >
                       <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 flex-shrink-0" />
                       {insight}
