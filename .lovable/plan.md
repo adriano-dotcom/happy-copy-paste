@@ -1,121 +1,97 @@
 
-# Plano: Normalizar Nome do Lead para Atlas (Primeiro Nome + Title Case)
+# Plano: Corrigir Tremor de Tela Durante Publicacao
 
 ## Problema Identificado
 
-Conforme mostrado na screenshot, o Atlas está usando o nome completo em CAPS LOCK:
-- **Atual:** "Oi, KAUAN FELIPE DE SALES PAIVA!"
-- **Esperado:** "Oi, Kauan!"
+O efeito de "tremor" ocorre quando o usuario clica em "Publish" no Lovable. O session replay mostra mudancas rapidas de visibilidade e transformacoes CSS que causam o efeito visual.
 
-A funcao `normalizeContactName` ja existe no codigo e funciona corretamente (extrai primeiro nome e converte CAPS para Title Case), porem ela nao esta sendo aplicada em todos os lugares onde o nome do contato e usado.
+### Causa Raiz
+1. **Animacoes infinitas `animate-pulse`** em elementos decorativos (blur orbs, glow effects)
+2. **Transicoes framer-motion** no Sidebar que re-executam durante o hot-reload
+3. **`transition-all` em elementos do App.tsx** que reagem ao rebuild do bundle
 
 ---
 
-## Funcao Existente
+## Solucao Proposta
 
-```typescript
-// Linha 238-251 do nina-orchestrator
-function normalizeContactName(name: string | null): string {
-  if (!name || !name.trim()) return 'Cliente';
-  
-  // Pegar apenas o primeiro nome
-  const firstName = name.trim().split(/\s+/)[0];
-  
-  // Se esta todo em maiusculas, converter para Title Case
-  if (firstName === firstName.toUpperCase() && firstName.length > 2) {
-    return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
-  }
-  
-  // Garantir primeira letra maiuscula
-  return firstName.charAt(0).toUpperCase() + firstName.slice(1);
-}
+### Correcao 1: Remover animacoes dos blur orbs de background
+
+**Arquivo:** `src/App.tsx` (linhas 45-46)
+
+O background tem dois blur orbs com efeitos que podem interferir durante o reload:
+
+```jsx
+// Antes
+<div className="fixed top-0 left-0 w-[500px] h-[500px] bg-cyan-900/20 rounded-full blur-[128px] pointer-events-none -translate-x-1/2 -translate-y-1/2 z-0"></div>
+<div className="fixed bottom-0 right-0 w-[500px] h-[500px] bg-violet-900/10 rounded-full blur-[128px] pointer-events-none translate-x-1/2 translate-y-1/2 z-0"></div>
+```
+
+Esses elementos estao ok, mas precisamos verificar se outros componentes estao causando o problema.
+
+---
+
+### Correcao 2: Reduzir animacoes `animate-pulse` no Sidebar
+
+**Arquivo:** `src/components/Sidebar.tsx`
+
+Remover `animate-pulse` dos elementos de glow decorativo (linhas 29, 56) e substituir por efeitos estaticos:
+
+```jsx
+// Antes (linhas 29 e 56)
+<div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/30 to-teal-500/30 blur-xl rounded-full animate-pulse" />
+
+// Depois
+<div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/30 to-teal-500/30 blur-xl rounded-full" />
 ```
 
 ---
 
-## Locais que Precisam de Correcao
+### Correcao 3: Suavizar transicoes no DesktopSidebar
 
-### 1. nina-orchestrator/index.ts (8 ocorrencias)
+**Arquivo:** `src/components/ui/sidebar.tsx` (linhas 146-152)
 
-| Linha | Contexto | Uso Atual | Correcao |
-|-------|----------|-----------|----------|
-| 3353 | generate-summary body | `conversation.contact?.name` | `normalizeContactName(...)` |
-| 5021 | Callback confirmation | `conversation.contact?.call_name \|\| ...name` | `normalizeContactName(...)` |
-| 5131-5133 | Prospecting intro message | `conversation.contact?.call_name \|\| ...name` | `normalizeContactName(...)` |
-| 6192 | Email extraction context | `conversation.contact?.call_name \|\| ...name` | `normalizeContactName(...)` |
-| 6375 | Email HTML content | `contactName \|\| conversation.contact?.name` | Usar variavel ja normalizada |
-| 6409 | Email subject | `contactName \|\| conversation.contact?.name` | Usar variavel ja normalizada |
-| 6462 | Qualificacao completa | `conversation.contact?.call_name \|\| ...name` | `normalizeContactName(...)` |
-| 6903-6912 | Fallback prospecting | `conversation.contact?.call_name \|\| ...name` | `normalizeContactName(...)` |
+Aumentar a duracao da transicao e usar `will-change` para otimizar:
 
-### 2. process-campaign/index.ts (2 ocorrencias)
+```jsx
+// Antes
+animate={{
+  width: animate ? (open ? "260px" : "76px") : "260px",
+}}
+transition={{
+  duration: 0.3,
+  ease: "easeInOut",
+}}
 
-| Linha | Contexto | Uso Atual | Correcao |
-|-------|----------|-----------|----------|
-| 238 | Header variables | `contact.name \|\| 'Cliente'` | `normalizeContactName(contact.name)` |
-| 251 | Body variables | `contact.name \|\| 'Cliente'` | `normalizeContactName(contact.name)` |
-
-**Nota:** Precisa adicionar a funcao `normalizeContactName` neste arquivo, pois ela nao existe la.
-
----
-
-## Implementacao
-
-### Passo 1: Atualizar process-campaign/index.ts
-
-Adicionar a funcao `normalizeContactName` ao inicio do arquivo (apos imports) e usa-la nas linhas 238 e 251:
-
-```typescript
-// Adicionar funcao
-function normalizeContactName(name: string | null): string {
-  if (!name || !name.trim()) return 'Cliente';
-  const firstName = name.trim().split(/\s+/)[0];
-  if (firstName === firstName.toUpperCase() && firstName.length > 2) {
-    return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
-  }
-  return firstName.charAt(0).toUpperCase() + firstName.slice(1);
-}
-
-// Atualizar uso
-const varValue = templateVars[`header_${i + 1}`] || normalizeContactName(contact.name);
-const varValue = templateVars[`body_${i + 1}`] || normalizeContactName(contact.name);
-```
-
-### Passo 2: Atualizar nina-orchestrator/index.ts
-
-Substituir todas as ocorrencias listadas acima para usar `normalizeContactName()`.
-
-**Exemplo de correcao na linha 5131:**
-
-Antes:
-```typescript
-const contactName = conversation.contact?.call_name || conversation.contact?.name || '';
-const prospectingIntroMessage = contactName 
-  ? `Oi, ${contactName}! Somos da Jacometo Seguros...`
-```
-
-Depois:
-```typescript
-const contactName = normalizeContactName(conversation.contact?.call_name || conversation.contact?.name);
-const prospectingIntroMessage = contactName !== 'Cliente'
-  ? `Oi, ${contactName}! Somos da Jacometo Seguros...`
+// Depois  
+animate={{
+  width: animate ? (open ? "260px" : "76px") : "260px",
+}}
+transition={{
+  duration: 0.25,
+  ease: [0.4, 0, 0.2, 1],
+}}
+style={{
+  willChange: 'width',
+}}
 ```
 
 ---
 
-## Resultado Esperado
+### Correcao 4: Remover animate-pulse da pagina de Auth
 
-Apos as correcoes:
+**Arquivo:** `src/pages/Auth.tsx` (linhas 135-136)
 
-| Situacao | Antes | Depois |
-|----------|-------|--------|
-| Nome em CAPS | "KAUAN FELIPE DE SALES PAIVA" | "Kauan" |
-| Nome normal | "João Silva Santos" | "João" |
-| Nome vazio | "" | "Cliente" |
-| Nome curto | "Lu" | "Lu" (preservado) |
+Os blur orbs na pagina de login tem `animate-pulse` que pode causar problemas:
 
-A mensagem do Atlas ficara:
-> "Oi, Kauan! Somos da Jacometo Seguros, uma corretora especializada em seguros para transportadoras."
+```jsx
+// Antes
+<div className="absolute top-1/4 -left-20 w-48 sm:w-72 h-48 sm:h-72 bg-cyan-500/20 rounded-full blur-3xl animate-pulse" />
+<div className="absolute bottom-1/4 -right-20 w-64 sm:w-96 h-64 sm:h-96 bg-blue-500/15 rounded-full blur-3xl animate-pulse" />
+
+// Depois (remover animate-pulse)
+<div className="absolute top-1/4 -left-20 w-48 sm:w-72 h-48 sm:h-72 bg-cyan-500/20 rounded-full blur-3xl" />
+<div className="absolute bottom-1/4 -right-20 w-64 sm:w-96 h-64 sm:h-96 bg-blue-500/15 rounded-full blur-3xl" />
+```
 
 ---
 
@@ -123,20 +99,32 @@ A mensagem do Atlas ficara:
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `supabase/functions/process-campaign/index.ts` | Adicionar funcao + atualizar 2 linhas |
-| `supabase/functions/nina-orchestrator/index.ts` | Atualizar 8 ocorrencias para usar normalizeContactName |
+| `src/components/Sidebar.tsx` | Remover `animate-pulse` dos glow effects (2 ocorrencias) |
+| `src/components/ui/sidebar.tsx` | Otimizar transicao com `will-change` e easing suave |
+| `src/pages/Auth.tsx` | Remover `animate-pulse` dos blur orbs (2 ocorrencias) |
+
+---
+
+## Resultado Esperado
+
+1. **Sem tremor durante publish** - As animacoes nao vao interferir no hot-reload
+2. **Visual mantido** - Os efeitos de glow continuam visiveis, apenas sem a pulsacao
+3. **Performance melhorada** - Menos animacoes infinitas rodando em background
 
 ---
 
 ## Secao Tecnica
 
-### Regex de normalizacao
+### Por que isso acontece?
 
-A funcao utiliza:
-- `name.trim().split(/\s+/)[0]` - Extrai primeiro nome (split por espacos)
-- `firstName.toUpperCase()` - Verifica se esta em CAPS
-- `charAt(0).toUpperCase() + slice(1).toLowerCase()` - Converte para Title Case
+Durante o hot-reload/publish:
+1. O Lovable injeta o novo bundle JavaScript
+2. React re-monta os componentes
+3. Animacoes CSS como `animate-pulse` reiniciam do zero
+4. Framer-motion re-executa animacoes de entrada
+5. Multiplos elementos mudando simultaneamente cria o efeito de "tremor"
 
-### Preservacao de nomes curtos
+### Solucao tecnica
 
-Nomes com 2 caracteres ou menos (ex: "Lu", "Jo") sao preservados como estao para evitar problemas com iniciais ou apelidos.
+Usar `will-change: width` no sidebar para otimizar compositing e remover animacoes infinitas desnecessarias que nao agregam valor visual significativo mas causam problemas durante reloads.
+
