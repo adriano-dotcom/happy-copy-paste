@@ -507,7 +507,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                         ) : campaigns.length === 0 ? (
                           <div className="px-4 py-2 text-slate-400 text-sm">Nenhuma campanha encontrada</div>
                         ) : (
-                          campaigns.map(campaign => (
+                          campaigns.filter(campaign => campaign.id && campaign.id.trim() !== '').map(campaign => (
                             <SelectItem key={campaign.id} value={campaign.id} className="text-slate-200">
                               <div className="flex items-center gap-2">
                                 <div 
@@ -693,7 +693,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                         </SelectTrigger>
                         <SelectContent className="bg-slate-900 border-slate-800">
                           <SelectItem value="__none__" className="text-slate-400">Não mapear</SelectItem>
-                          {headers.map(header => (
+                          {headers.filter(header => header && header.trim() !== '').map(header => (
                             <SelectItem key={header} value={header} className="text-slate-200">
                               {header}
                             </SelectItem>
