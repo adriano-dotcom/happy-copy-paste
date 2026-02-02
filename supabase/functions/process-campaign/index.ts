@@ -15,6 +15,16 @@ function toBRT(date: Date | string): string {
   return d.toLocaleString('pt-BR', { timeZone: BRAZIL_TIMEZONE });
 }
 
+// ===== NAME NORMALIZATION =====
+function normalizeContactName(name: string | null): string {
+  if (!name || !name.trim()) return 'Cliente';
+  const firstName = name.trim().split(/\s+/)[0];
+  if (firstName === firstName.toUpperCase() && firstName.length > 2) {
+    return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+  }
+  return firstName.charAt(0).toUpperCase() + firstName.slice(1);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -234,8 +244,8 @@ serve(async (req) => {
           if (headerComponent?.text) {
             const headerMatches = [...headerComponent.text.matchAll(/\{\{(\d+)\}\}/g)];
             if (headerMatches.length > 0) {
-              const headerParams = headerMatches.map((_, i) => {
-                const varValue = templateVars[`header_${i + 1}`] || contact.name || 'Cliente';
+            const headerParams = headerMatches.map((_, i) => {
+                const varValue = templateVars[`header_${i + 1}`] || normalizeContactName(contact.name);
                 return { type: 'text', text: varValue };
               });
               components.push({ type: 'header', parameters: headerParams });
@@ -247,8 +257,8 @@ serve(async (req) => {
           if (bodyComponent?.text) {
             const bodyMatches = [...bodyComponent.text.matchAll(/\{\{(\d+)\}\}/g)];
             if (bodyMatches.length > 0) {
-              const bodyParams = bodyMatches.map((_, i) => {
-                const varValue = templateVars[`body_${i + 1}`] || contact.name || 'Cliente';
+            const bodyParams = bodyMatches.map((_, i) => {
+                const varValue = templateVars[`body_${i + 1}`] || normalizeContactName(contact.name);
                 return { type: 'text', text: varValue };
               });
               components.push({ type: 'body', parameters: bodyParams });
