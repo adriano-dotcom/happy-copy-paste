@@ -1,219 +1,143 @@
 
-# Plano: Relatorio de Motivos de Fechamento por Agente
+# Plano: Correcao do Relatorio de Motivos de Fechamento
 
-## Objetivo
-Criar um sistema de relatorio que analisa os motivos de encerramento de conversas por agente IA, com execucao diaria via cron job para acompanhamento de leads.
+## Problemas Identificados
 
----
+### 1. Contraste ruim na secao de Insights
+O card "Insights do Periodo" esta usando cores claras de texto (amber-100, amber-200) sobre um fundo claro (amber-500/10), tornando o texto praticamente invisivel.
 
-## Visao Geral
+### 2. Relatorios duplicados no banco de dados
+A Edge Function gera novos registros a cada execucao sem verificar se ja existe um relatorio para aquele agente+data. Isso causa:
+- Multiplas linhas identicas na tabela
+- Insights repetidos
+- Dados inflados nos cards de resumo
 
-O sistema ira:
-- Coletar dados de fechamento (campo `lost_reason` em `deals`) agrupados por agente
-- Gerar relatorios diarios com metricas, tendencias e insights
-- Armazenar historico em nova tabela
-- Enviar email com resumo para administradores
-- Exibir dashboard visual na area de Configuracoes
-
----
-
-## 1. Nova Tabela: `closure_reason_reports`
-
-Armazena os relatorios diarios de motivos de fechamento.
-
-**Colunas:**
-| Campo | Tipo | Descricao |
-|-------|------|-----------|
-| id | uuid | Chave primaria |
-| agent_id | uuid | Referencia ao agente |
-| agent_name | text | Nome do agente (cache) |
-| report_date | date | Data do relatorio |
-| period_start | timestamptz | Inicio do periodo analisado |
-| period_end | timestamptz | Fim do periodo analisado |
-| total_closures | integer | Total de encerramentos |
-| by_reason | jsonb | Breakdown por motivo |
-| comparison_previous | jsonb | Comparacao com dia anterior |
-| top_reasons | jsonb | Top 3 motivos |
-| avg_time_to_close | integer | Tempo medio ate encerramento (minutos) |
-| insights | text[] | Insights gerados por IA |
-| sent_at | timestamptz | Quando email foi enviado |
-| created_at | timestamptz | Data de criacao |
-
-**RLS:** Apenas admins podem gerenciar, usuarios autenticados podem visualizar.
+### 3. Insights redundantes
+Mensagens como "zerou encerramentos hoje" aparecem repetidamente para todos os agentes sem fechamentos, poluindo a visualizacao.
 
 ---
 
-## 2. Edge Function: `generate-closure-report`
+## Solucao Proposta
 
-Nova funcao que roda diariamente para gerar o relatorio.
+### Correcao 1: Melhorar contraste do card de Insights
 
-**Fluxo:**
-1. Busca todos agentes ativos
-2. Para cada agente:
-   - Query deals fechados nas ultimas 24h vinculados ao agente
-   - Agrupa por `lost_reason`
-   - Calcula metricas (total, %, tempo medio)
-   - Compara com dia anterior
-   - Gera insights via IA (opcional)
-3. Salva relatorio na tabela
-4. Envia email resumo para admins
+**Arquivo:** `src/components/settings/ClosureReasonsDashboard.tsx`
 
-**Query de dados:**
-```sql
-SELECT 
-  a.id as agent_id,
-  a.name as agent_name,
-  d.lost_reason,
-  COUNT(*) as count,
-  AVG(EXTRACT(EPOCH FROM (d.lost_at - d.created_at))/60) as avg_minutes
-FROM deals d
-JOIN contacts ct ON d.contact_id = ct.id
-JOIN conversations c ON c.contact_id = ct.id
-JOIN agents a ON c.current_agent_id = a.id
-WHERE d.lost_at >= NOW() - INTERVAL '24 hours'
-  AND d.lost_reason IS NOT NULL
-GROUP BY a.id, a.name, d.lost_reason
+**Mudancas:**
+- Mudar fundo do card para tema dark consistente (`bg-slate-900/60`)
+- Usar cores de texto com bom contraste (`text-amber-400`, `text-slate-300`)
+- Manter icones e destaques em amber para identificacao visual
+
+**Antes:**
+```jsx
+<Card className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 ...">
+  <CardDescription className="text-amber-200/60">
+  <li className="text-sm text-amber-100/80">
 ```
 
-**Insights gerados:**
-- "Iris tem 45% de encerramentos por 'Sem resposta' - verificar follow-ups"
-- "Atlas zerou rejeicoes hoje - fluxo de prospeccao funcionando"
-- "Clara teve aumento de 200% em 'Fora do perfil' - revisar segmentacao"
-
----
-
-## 3. Cron Job Diario
-
-Agendar execucao as 7h da manha (horario de Sao Paulo).
-
-```sql
-SELECT cron.schedule(
-  'generate-closure-report-daily',
-  '0 10 * * *',  -- 10:00 UTC = 7:00 BRT
-  $$
-  SELECT net.http_post(
-    url := 'https://xaqepnvvoljtlsyofifu.supabase.co/functions/v1/generate-closure-report',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer <anon_key>"}'::jsonb,
-    body := '{"triggered_by": "cron"}'::jsonb
-  );
-  $$
-);
+**Depois:**
+```jsx
+<Card className="bg-slate-900/60 border-amber-500/30 ...">
+  <CardDescription className="text-slate-400">
+  <li className="text-sm text-slate-300">
 ```
 
 ---
 
-## 4. Componente UI: `ClosureReasonsDashboard`
+### Correcao 2: Evitar duplicacao de relatorios (Upsert)
 
-Novo componente em `src/components/settings/ClosureReasonsDashboard.tsx`
+**Arquivo:** `supabase/functions/generate-closure-report/index.ts`
 
-**Elementos:**
-- Header com icone e titulo "Motivos de Fechamento por Agente"
-- Filtro por agente e periodo
-- Cards por agente com:
-  - Total de encerramentos
-  - Grafico de pizza com distribuicao de motivos
-  - Comparacao com periodo anterior (setas up/down)
-  - Badge de alerta se algum motivo > 40%
-- Tabela detalhada com todos motivos
-- Botao para gerar relatorio manualmente
-- Secao de insights
+**Mudancas:**
+- Verificar se ja existe relatorio para agente+data antes de inserir
+- Usar upsert ou deletar anterior antes de inserir
+- Adicionar constraint UNIQUE no banco (agent_id + report_date)
 
-**Estilo:** Seguir o padrao glassmorphism do `SalesCoachingSettings.tsx`
+**Logica:**
+```typescript
+// Antes de inserir, deletar relatorio existente para mesmo agente+data
+await supabase
+  .from('closure_reason_reports')
+  .delete()
+  .eq('agent_id', agent.id)
+  .eq('report_date', reportDate);
 
----
-
-## 5. Integracao no Settings
-
-Adicionar nova aba ou secao em `src/components/Settings.tsx` para exibir o dashboard.
-
-**Navegacao:** Configuracoes > Coaching IA > Motivos de Fechamento
+// Depois inserir novo relatorio
+await supabase
+  .from('closure_reason_reports')
+  .insert(report);
+```
 
 ---
 
-## 6. Email de Resumo Diario
+### Correcao 3: Filtrar insights redundantes no dashboard
 
-Template HTML similar ao `generate-disqualified-report`:
-- Header com gradiente
-- Cards com totais por agente
-- Tabela de motivos mais frequentes
-- Tendencias (comparacao com dia anterior)
-- Alertas destacados (motivos que cresceram muito)
+**Arquivo:** `src/components/settings/ClosureReasonsDashboard.tsx`
+
+**Mudancas:**
+- Remover insights duplicados
+- Filtrar mensagens de "zerou encerramentos" quando ha varios
+- Priorizar insights com alertas reais (alta taxa de motivo especifico)
+
+**Logica:**
+```typescript
+const allInsights = [...new Set(reports.flatMap(r => r.insights))]
+  .filter(i => !i.includes('zerou encerramentos') || totalClosures === 0)
+  .slice(0, 6);
+```
 
 ---
 
-## Arquivos a Criar/Modificar
+### Correcao 4: Limpar dados duplicados existentes
 
-| Arquivo | Acao |
-|---------|------|
-| `supabase/migrations/xxx.sql` | Criar tabela closure_reason_reports |
-| `supabase/functions/generate-closure-report/index.ts` | Nova edge function |
-| `src/components/settings/ClosureReasonsDashboard.tsx` | Novo componente |
-| `src/components/Settings.tsx` | Adicionar nova secao |
-| `src/integrations/supabase/types.ts` | Atualizado automaticamente |
+**Migracao SQL:**
+```sql
+-- Adicionar constraint unique para evitar duplicatas futuras
+ALTER TABLE closure_reason_reports 
+ADD CONSTRAINT unique_agent_report_date UNIQUE (agent_id, report_date);
+
+-- Limpar duplicatas existentes (manter apenas o mais recente)
+DELETE FROM closure_reason_reports a
+USING closure_reason_reports b
+WHERE a.id < b.id 
+  AND a.agent_id = b.agent_id 
+  AND a.report_date = b.report_date;
+```
+
+---
+
+## Arquivos a Modificar
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/components/settings/ClosureReasonsDashboard.tsx` | Corrigir cores do card de insights e filtrar duplicados |
+| `supabase/functions/generate-closure-report/index.ts` | Adicionar verificacao/delete antes de insert |
+| Nova migracao SQL | Adicionar constraint UNIQUE e limpar duplicatas |
+
+---
+
+## Resultado Visual Esperado
+
+1. **Card de Insights**: Fundo escuro (slate-900) com texto claro (slate-300), icones em amber para destaque
+2. **Tabela de Historico**: Sem linhas duplicadas, apenas um relatorio por agente por dia
+3. **Insights**: Lista limpa sem repeticoes, focando em alertas importantes
 
 ---
 
 ## Secao Tecnica
 
-### Estrutura da Edge Function
-```typescript
-// Pseudocodigo simplificado
-serve(async (req) => {
-  const supabase = createClient(url, serviceKey);
-  const agents = await supabase.from('agents').select('*').eq('is_active', true);
-  
-  for (const agent of agents) {
-    const closures = await getClosuresForAgent(supabase, agent.id);
-    const previousDay = await getPreviousDayClosures(supabase, agent.id);
-    
-    const report = {
-      agent_id: agent.id,
-      agent_name: agent.name,
-      report_date: today,
-      total_closures: closures.length,
-      by_reason: groupByReason(closures),
-      comparison_previous: calculateTrends(closures, previousDay),
-      top_reasons: getTopReasons(closures),
-      insights: await generateInsights(closures, agent)
-    };
-    
-    await supabase.from('closure_reason_reports').insert(report);
-  }
-  
-  await sendEmailSummary(reports);
-});
-```
-
-### RLS Policy
+### Constraint UNIQUE
 ```sql
--- Admins full access
-CREATE POLICY "Admins can manage closure_reason_reports" 
-ON closure_reason_reports FOR ALL 
-USING (has_role(auth.uid(), 'admin'));
-
--- Authenticated users read access
-CREATE POLICY "Authenticated users can view closure_reason_reports"
-ON closure_reason_reports FOR SELECT
-USING (is_authenticated_user());
+UNIQUE (agent_id, report_date)
 ```
+Impede que a Edge Function insira multiplos relatorios para o mesmo agente no mesmo dia.
 
-### Formato do JSON `by_reason`
-```json
-{
-  "Sem resposta": { "count": 15, "percentage": 45 },
-  "Lead desqualificado": { "count": 10, "percentage": 30 },
-  "Fora do perfil": { "count": 5, "percentage": 15 },
-  "Outro": { "count": 3, "percentage": 10 }
-}
-```
+### Estrategia de Upsert
+Em vez de INSERT simples, usar DELETE + INSERT para garantir que apenas o relatorio mais recente seja mantido. Isso e mais simples que configurar ON CONFLICT com JSONB.
 
----
-
-## Resultado Esperado
-
-Apos implementacao:
-1. Todo dia as 7h, o sistema gera relatorio automatico
-2. Admins recebem email com resumo de encerramentos
-3. Dashboard visual mostra performance de cada agente
-4. Facilita identificar problemas (ex: muitos "Sem resposta" = melhorar follow-ups)
-5. Historico permite analise de tendencias ao longo do tempo
+### Cores corrigidas
+- Fundo: `bg-slate-900/60 border-amber-500/30`
+- Titulo: `text-amber-400`
+- Descricao: `text-slate-400`
+- Itens: `text-slate-300`
+- Icones: `text-amber-400` (mantido)
