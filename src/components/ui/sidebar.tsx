@@ -324,7 +324,7 @@ export const SidebarLink = ({
         {link.icon}
         {/* Badge when collapsed - iOS 26 style - shows total */}
         {hasBadge && !open && (
-          <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full px-1 shadow-lg shadow-rose-500/40 ring-2 ring-rose-400/30 animate-pulse">
+          <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full px-1 shadow-lg shadow-rose-500/40 ring-2 ring-rose-400/30">
             {totalBadge > 99 ? '99+' : totalBadge}
           </span>
         )}
