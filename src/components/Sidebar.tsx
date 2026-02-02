@@ -32,7 +32,7 @@ const Logo = () => {
         <img src={jacometoLogo} alt="Jacometo" className="relative w-10 h-10 object-contain rounded-xl" />
       </div>
       <motion.div
-        initial={{ opacity: 0 }}
+        initial={false}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.2 }}
         className="flex flex-col overflow-hidden"
@@ -73,7 +73,7 @@ const UnreadPreviewPanel = () => {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={false}
       animate={{ opacity: 1, y: 0 }}
       className="mt-4 pt-4"
     >
@@ -227,6 +227,7 @@ const SidebarContent = () => {
             {initials}
           </div>
           <motion.div
+            initial={false}
             animate={{
               display: open ? "block" : "none",
               opacity: open ? 1 : 0,
@@ -238,6 +239,7 @@ const SidebarContent = () => {
             <p className="text-xs text-slate-500 truncate">{displayEmail}</p>
           </motion.div>
           <motion.button
+            initial={false}
             animate={{
               display: open ? "flex" : "none",
               opacity: open ? 1 : 0,

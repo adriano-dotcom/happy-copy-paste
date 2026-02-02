@@ -143,6 +143,7 @@ export const DesktopSidebar = ({
         "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)]",
         className
       )}
+      initial={false}
       animate={{
         width: animate ? (open ? "260px" : "76px") : "260px",
       }}
@@ -160,6 +161,7 @@ export const DesktopSidebar = ({
       
       {/* Pin Button */}
       <motion.button
+        initial={false}
         animate={{
           opacity: open ? 1 : 0,
           scale: open ? 1 : 0.8,
@@ -176,6 +178,7 @@ export const DesktopSidebar = ({
         style={{ pointerEvents: open ? 'auto' : 'none' }}
       >
         <motion.div
+          initial={false}
           animate={{ rotate: pinned ? 0 : -45 }}
           transition={{ type: "spring", stiffness: 300, damping: 20 }}
         >
@@ -330,6 +333,7 @@ export const SidebarLink = ({
         )}
       </span>
       <motion.span
+        initial={false}
         animate={{
           display: animate ? (open ? "inline-block" : "none") : "inline-block",
           opacity: animate ? (open ? 1 : 0) : 1,
@@ -351,7 +355,7 @@ export const SidebarLink = ({
           {/* Secondary badge (orange - pending leads) */}
           {secondaryBadge && secondaryBadge > 0 && (
             <motion.span
-              initial={{ scale: 0 }}
+              initial={false}
               animate={{ scale: 1 }}
               className="min-w-[22px] h-[22px] flex items-center justify-center text-[11px] font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-full px-1.5 shadow-lg shadow-amber-500/40 ring-2 ring-amber-400/30"
               title="Leads aguardando atendimento"
@@ -362,7 +366,7 @@ export const SidebarLink = ({
           {/* Primary badge (pink - unread messages) */}
           {badge && badge > 0 && (
             <motion.span
-              initial={{ scale: 0 }}
+              initial={false}
               animate={{ scale: 1 }}
               className="min-w-[22px] h-[22px] flex items-center justify-center text-[11px] font-bold bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full px-1.5 shadow-lg shadow-rose-500/40 ring-2 ring-rose-400/30"
               title="Mensagens não lidas"
