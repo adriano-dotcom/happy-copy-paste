@@ -532,6 +532,65 @@ export type Database = {
         }
         Relationships: []
       }
+      closure_reason_reports: {
+        Row: {
+          agent_id: string | null
+          agent_name: string
+          avg_time_to_close: number | null
+          by_reason: Json
+          comparison_previous: Json | null
+          created_at: string
+          id: string
+          insights: string[] | null
+          period_end: string
+          period_start: string
+          report_date: string
+          sent_at: string | null
+          top_reasons: Json | null
+          total_closures: number
+        }
+        Insert: {
+          agent_id?: string | null
+          agent_name: string
+          avg_time_to_close?: number | null
+          by_reason?: Json
+          comparison_previous?: Json | null
+          created_at?: string
+          id?: string
+          insights?: string[] | null
+          period_end: string
+          period_start: string
+          report_date: string
+          sent_at?: string | null
+          top_reasons?: Json | null
+          total_closures?: number
+        }
+        Update: {
+          agent_id?: string | null
+          agent_name?: string
+          avg_time_to_close?: number | null
+          by_reason?: Json
+          comparison_previous?: Json | null
+          created_at?: string
+          id?: string
+          insights?: string[] | null
+          period_end?: string
+          period_start?: string
+          report_date?: string
+          sent_at?: string | null
+          top_reasons?: Json | null
+          total_closures?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "closure_reason_reports_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           blocked_at: string | null
