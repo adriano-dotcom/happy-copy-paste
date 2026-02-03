@@ -7,7 +7,7 @@ import {
   Tag, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
   Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle,
   ArrowLeft, Keyboard, XCircle, PlayCircle, Pin, Sparkles, UserCheck, PauseCircle, Bot, AlertCircle, Download, Eye, Truck,
-  ChevronDown as ChevronDownIcon
+  ChevronDown as ChevronDownIcon, MessageCircle
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -2775,6 +2775,17 @@ const ChatInterface: React.FC = () => {
                       <span className="text-xs text-slate-500">Telefone</span>
                       <span className="text-slate-200 font-medium">{activeChat.contactPhone}</span>
                     </div>
+                    {activeChat.contactPhone && (
+                      <a
+                        href={`https://wa.me/${activeChat.contactPhone.replace(/\D/g, '')}?text=${encodeURIComponent('Olá! Tudo bem?')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-8 h-8 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 hover:border-emerald-400/50 flex items-center justify-center transition-all"
+                        title="Abrir WhatsApp"
+                      >
+                        <MessageCircle className="w-4 h-4 text-emerald-400" />
+                      </a>
+                    )}
                   </div>
 
                   {/* Region (derived from DDD) */}
