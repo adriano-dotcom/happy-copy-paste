@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { User, Building2, MapPin, Phone, Mail, FileText, Calendar, Edit, MessageSquare, Target, Pencil, Check, X, Loader2 } from 'lucide-react';
+import { User, Building2, MapPin, Phone, Mail, FileText, Calendar, Edit, MessageSquare, Target, Pencil, Check, X, Loader2, MessageCircle } from 'lucide-react';
 import { displayPhoneInternational } from '@/utils/phoneFormatter';
 import { CallHistoryPanel } from './CallHistoryPanel';
 import { useContactCallHistory } from '@/hooks/useContactCallHistory';
@@ -41,6 +41,12 @@ interface ContactDetailsDrawerProps {
   onConverse?: () => void;
   onContactUpdate?: (updatedContact: ContactData) => void;
 }
+
+const getWhatsAppLink = (phone: string) => {
+  const cleanPhone = phone.replace(/\D/g, '');
+  const message = encodeURIComponent('Olá! Tudo bem?');
+  return `https://wa.me/${cleanPhone}?text=${message}`;
+};
 
 const formatCNPJ = (cnpj: string | undefined) => {
   if (!cnpj) return '-';
@@ -247,7 +253,26 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
           <section>
             <SectionHeader icon={User} title="Dados de Contato" />
             <div className="space-y-2">
-              <InfoRow icon={Phone} label="Telefone" value={displayPhoneInternational(contact.phone)} />
+              {/* Phone row with WhatsApp button */}
+              <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.03] hover:border-cyan-500/20 transition-all duration-300 group">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-white/5 group-hover:border-cyan-500/20 transition-all">
+                  <Phone className="w-4 h-4 text-slate-400 group-hover:text-cyan-400 transition-colors" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs text-slate-500 block">Telefone</span>
+                  <p className="font-medium text-slate-200">{displayPhoneInternational(contact.phone)}</p>
+                </div>
+                {contact.phone && (
+                  <a
+                    href={getWhatsAppLink(contact.phone)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/30 hover:from-emerald-500/30 hover:to-green-500/30 hover:border-emerald-400/50 transition-all group/whatsapp"
+                    title="Abrir WhatsApp"
+                  >
+                    <MessageCircle className="w-4 h-4 text-emerald-400 group-hover/whatsapp:text-emerald-300" />
+                  </a>
+                )}</div>
               {(contact.city || contact.state) && (
                 <InfoRow icon={MapPin} label="Região" value={[contact.city, contact.state].filter(Boolean).join(' - ')} />
               )}
