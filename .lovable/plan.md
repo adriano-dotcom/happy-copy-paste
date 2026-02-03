@@ -1,46 +1,33 @@
 
 
-# Plano: Adicionar Botão WhatsApp na Tela de Chat
+# Plano: Incluir Nome do Contato na Mensagem do WhatsApp
 
-## Problema Identificado
+## Objetivo
 
-O botão WhatsApp foi adicionado no `ContactDetailsDrawer.tsx`, que é usado na página `/contacts`. Porém, você está na página `/chat` que usa um painel de informações diferente, implementado diretamente no `ChatInterface.tsx`.
+Personalizar a mensagem pré-preenchida do WhatsApp incluindo o nome do contato, transformando "Olá! Tudo bem?" em "Olá **João**! Tudo bem?" (exemplo).
 
-## Localização do Código
+---
 
-O campo de telefone na tela de chat está em:
-- **Arquivo**: `src/components/ChatInterface.tsx`
-- **Linhas**: 2769-2778
+## Mudanças Necessárias
 
-Código atual:
+### 1. `src/components/ChatInterface.tsx` (linha 2780)
+
+**Antes:**
 ```tsx
-{/* Phone (always read-only) */}
-<div className="flex items-center gap-3 text-sm">
-  <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 text-slate-400">
-    <Phone className="w-4 h-4" />
-  </div>
-  <div className="flex flex-col flex-1">
-    <span className="text-xs text-slate-500">Telefone</span>
-    <span className="text-slate-200 font-medium">{activeChat.contactPhone}</span>
-  </div>
-</div>
+href={`https://wa.me/${activeChat.contactPhone.replace(/\D/g, '')}?text=${encodeURIComponent('Olá! Tudo bem?')}`}
+```
+
+**Depois:**
+```tsx
+href={`https://wa.me/${activeChat.contactPhone.replace(/\D/g, '')}?text=${encodeURIComponent(`Olá ${activeChat.contactName?.split(' ')[0] || ''}! Tudo bem?`.trim())}`}
 ```
 
 ---
 
-## Solução
+### 2. `src/components/ContactDetailsDrawer.tsx` (linhas 45-49)
 
-Adicionar o mesmo botão WhatsApp que foi implementado no drawer de contatos.
-
-### Mudanças Necessárias
-
-**1. Adicionar import do ícone MessageCircle** (linha ~7):
-```tsx
-import { ..., MessageCircle } from 'lucide-react';
-```
-
-**2. Adicionar função helper** (próximo às outras funções helper):
-```tsx
+**Antes:**
+```typescript
 const getWhatsAppLink = (phone: string) => {
   const cleanPhone = phone.replace(/\D/g, '');
   const message = encodeURIComponent('Olá! Tudo bem?');
@@ -48,44 +35,47 @@ const getWhatsAppLink = (phone: string) => {
 };
 ```
 
-**3. Modificar o campo de telefone** (linhas 2769-2778):
+**Depois:**
+```typescript
+const getWhatsAppLink = (phone: string, name?: string) => {
+  const cleanPhone = phone.replace(/\D/g, '');
+  const firstName = name?.split(' ')[0] || '';
+  const message = encodeURIComponent(`Olá ${firstName}! Tudo bem?`.trim());
+  return `https://wa.me/${cleanPhone}?text=${message}`;
+};
+```
+
+**Também atualizar a chamada** (linha ~260):
 ```tsx
-{/* Phone (always read-only) */}
-<div className="flex items-center gap-3 text-sm">
-  <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 text-slate-400">
-    <Phone className="w-4 h-4" />
-  </div>
-  <div className="flex flex-col flex-1">
-    <span className="text-xs text-slate-500">Telefone</span>
-    <span className="text-slate-200 font-medium">{activeChat.contactPhone}</span>
-  </div>
-  {activeChat.contactPhone && (
-    <a
-      href={getWhatsAppLink(activeChat.contactPhone)}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="w-8 h-8 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 hover:border-emerald-400/50 flex items-center justify-center transition-all"
-      title="Abrir WhatsApp"
-    >
-      <MessageCircle className="w-4 h-4 text-emerald-400" />
-    </a>
-  )}
-</div>
+href={getWhatsAppLink(contact.phone, contact.name)}
 ```
 
 ---
 
-## Arquivo a Modificar
+## Detalhes Técnicos
+
+| Lógica | Descrição |
+|--------|-----------|
+| `name?.split(' ')[0]` | Extrai apenas o primeiro nome (ex: "João Silva" → "João") |
+| `\|\| ''` | Fallback para string vazia se nome não existir |
+| `.trim()` | Remove espaços extras caso o nome não exista |
+
+---
+
+## Arquivos a Modificar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/ChatInterface.tsx` | Adicionar import, função helper e botão WhatsApp no campo telefone |
+| `src/components/ChatInterface.tsx` | Incluir `activeChat.contactName` na mensagem |
+| `src/components/ContactDetailsDrawer.tsx` | Adicionar parâmetro `name` na função e incluir na mensagem |
 
 ---
 
 ## Resultado Esperado
 
-1. Botão verde WhatsApp ao lado do telefone no painel de informações do chat
-2. Clique abre WhatsApp Web/App com mensagem pré-preenchida "Olá! Tudo bem?"
-3. Consistência visual com o botão já implementado no drawer de contatos
+**Mensagem antes:** "Olá! Tudo bem?"
+
+**Mensagem depois:** "Olá João! Tudo bem?" (usando primeiro nome do contato)
+
+Isso torna a mensagem mais pessoal e aumenta a taxa de resposta!
 
