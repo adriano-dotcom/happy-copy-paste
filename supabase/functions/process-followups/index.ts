@@ -942,13 +942,19 @@ serve(async (req) => {
       console.log(`[process-followups] Processing automation: ${automation.name} (type: ${automation.automation_type})`);
 
       // Check if current time is within active hours
+      // CRITICAL FIX: window_expiring automations BYPASS active hours restriction
+      // This ensures closing messages are sent even if the 24h window expires at night
       const startTime = automation.active_hours_start;
       const endTime = automation.active_hours_end;
       
-      if (currentTimeStr < startTime || currentTimeStr > endTime) {
-        console.log(`[process-followups] Outside active hours (${startTime}-${endTime}), skipping`);
-        results.push({ automation: automation.name, sent: 0, skipped: 0, failed: 0 });
-        continue;
+      if (automation.automation_type !== 'window_expiring') {
+        if (currentTimeStr < startTime || currentTimeStr > endTime) {
+          console.log(`[process-followups] Outside active hours (${startTime}-${endTime}), skipping`);
+          results.push({ automation: automation.name, sent: 0, skipped: 0, failed: 0 });
+          continue;
+        }
+      } else {
+        console.log(`[process-followups] window_expiring automation - BYPASSING active hours check (always runs 24h)`);
       }
 
       // Check if current day is active
