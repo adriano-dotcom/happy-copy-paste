@@ -42,9 +42,10 @@ interface ContactDetailsDrawerProps {
   onContactUpdate?: (updatedContact: ContactData) => void;
 }
 
-const getWhatsAppLink = (phone: string) => {
+const getWhatsAppLink = (phone: string, name?: string) => {
   const cleanPhone = phone.replace(/\D/g, '');
-  const message = encodeURIComponent('Olá! Tudo bem?');
+  const firstName = name?.split(' ')[0] || '';
+  const message = encodeURIComponent(`Olá ${firstName}! Tudo bem?`.trim());
   return `https://wa.me/${cleanPhone}?text=${message}`;
 };
 
@@ -264,7 +265,7 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
                 </div>
                 {contact.phone && (
                   <a
-                    href={getWhatsAppLink(contact.phone)}
+                    href={getWhatsAppLink(contact.phone, contact.name)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/30 hover:from-emerald-500/30 hover:to-green-500/30 hover:border-emerald-400/50 transition-all group/whatsapp"
