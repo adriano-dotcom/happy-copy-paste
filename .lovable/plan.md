@@ -1,197 +1,94 @@
 
-# Plano: Eliminar Tremor de Tela no Editor Lovable
+# Plano: Adicionar Botão "Ir para WhatsApp" no Drawer de Contato
 
-## Problema
+## Objetivo
 
-O tremor acontece no **Editor do Lovable** (não no preview da aplicação) imediatamente ao clicar em "Publish". Isso ocorre porque o framer-motion re-executa animações de entrada quando o React re-monta os componentes durante o hot-reload.
-
-## Causa Raiz
-
-Os componentes com `framer-motion` estão causando o efeito:
-
-1. **DesktopSidebar** - `motion.div` anima `width` de 260px para 76px (ou vice-versa)
-2. **Badges** - `motion.span` com `initial={{ scale: 0 }}` executam animação de "pop in" toda vez
-3. **Pin Button** - `motion.button` e `motion.div` animam opacidade e rotação
-4. **Logo** - `motion.div` anima opacidade
-5. **UnreadPreviewPanel** - `motion.div` anima opacidade e translateY
-
-Quando o Lovable faz o hot-reload, o React desmonta e remonta esses componentes, causando todas as animações de entrada executarem simultaneamente, criando o efeito de "tremor".
+Adicionar um botão ao lado do campo de telefone que abre o WhatsApp Web/App com uma mensagem pré-preenchida, permitindo disparo rápido direto do telefone do usuário.
 
 ---
 
-## Solução
+## Implementação
 
-Usar a propriedade `initial={false}` do framer-motion para impedir que animações de entrada sejam executadas em montagens subsequentes. Isso mantém a funcionalidade mas evita o tremor no reload.
+### Arquivo: `src/components/ContactDetailsDrawer.tsx`
 
----
+**Mudança 1**: Adicionar ícone do WhatsApp (usando Lucide `MessageCircle` estilizado ou SVG customizado)
 
-## Mudanças Propostas
+**Mudança 2**: Criar função para gerar link do WhatsApp com texto pré-preenchido:
 
-### 1. src/components/ui/sidebar.tsx
-
-**Linha 137 (DesktopSidebar):**
 ```typescript
-// Antes
-<motion.div
-  animate={{
-    width: animate ? (open ? "260px" : "76px") : "260px",
-  }}
-  transition={{...}}
-
-// Depois - adicionar initial={false}
-<motion.div
-  initial={false}
-  animate={{
-    width: animate ? (open ? "260px" : "76px") : "260px",
-  }}
-  transition={{...}}
+const getWhatsAppLink = (phone: string) => {
+  // Remove todos os caracteres não numéricos
+  const cleanPhone = phone.replace(/\D/g, '');
+  
+  // Texto pré-preenchido
+  const message = encodeURIComponent('Olá! Tudo bem?');
+  
+  return `https://wa.me/${cleanPhone}?text=${message}`;
+};
 ```
 
-**Linha 162-167 (Pin Button):**
-```typescript
+**Mudança 3**: Modificar o `InfoRow` do Telefone (linha 250) para incluir botão:
+
+```tsx
 // Antes
-<motion.button
-  animate={{
-    opacity: open ? 1 : 0,
-    scale: open ? 1 : 0.8,
-  }}
+<InfoRow icon={Phone} label="Telefone" value={displayPhoneInternational(contact.phone)} />
 
-// Depois
-<motion.button
-  initial={false}
-  animate={{
-    opacity: open ? 1 : 0,
-    scale: open ? 1 : 0.8,
-  }}
-```
-
-**Linha 178-180 (Pin Icon rotation):**
-```typescript
-// Antes
-<motion.div
-  animate={{ rotate: pinned ? 0 : -45 }}
-
-// Depois
-<motion.div
-  initial={false}
-  animate={{ rotate: pinned ? 0 : -45 }}
-```
-
-**Linha 332-340 (SidebarLink label):**
-```typescript
-// Antes
-<motion.span
-  animate={{
-    display: animate ? (open ? "inline-block" : "none") : "inline-block",
-    opacity: animate ? (open ? 1 : 0) : 1,
-  }}
-
-// Depois
-<motion.span
-  initial={false}
-  animate={{
-    display: animate ? (open ? "inline-block" : "none") : "inline-block",
-    opacity: animate ? (open ? 1 : 0) : 1,
-  }}
-```
-
-**Linhas 353-356 e 364-367 (Badge animations):**
-```typescript
-// Antes
-<motion.span
-  initial={{ scale: 0 }}
-  animate={{ scale: 1 }}
-
-// Depois - remover initial, usar initial={false}
-<motion.span
-  initial={false}
-  animate={{ scale: 1 }}
+// Depois - Criar um componente customizado inline com botão WhatsApp
+<div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.03] hover:border-cyan-500/20 transition-all duration-300 group">
+  <div className="p-2 rounded-lg bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-white/5">
+    <Phone className="w-4 h-4 text-slate-400 group-hover:text-cyan-400" />
+  </div>
+  <div className="flex-1 min-w-0">
+    <span className="text-xs text-slate-500 block">Telefone</span>
+    <p className="font-medium text-slate-200">{displayPhoneInternational(contact.phone)}</p>
+  </div>
+  {contact.phone && (
+    <a
+      href={getWhatsAppLink(contact.phone)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/30 hover:from-emerald-500/30 hover:to-green-500/30 hover:border-emerald-400/50 transition-all group/whatsapp"
+      title="Abrir WhatsApp"
+    >
+      <MessageCircle className="w-4 h-4 text-emerald-400 group-hover/whatsapp:text-emerald-300" />
+    </a>
+  )}
+</div>
 ```
 
 ---
 
-### 2. src/components/Sidebar.tsx
+## Visual
 
-**Linha 34-37 (Logo):**
-```typescript
-// Antes
-<motion.div
-  initial={{ opacity: 0 }}
-  animate={{ opacity: 1 }}
-
-// Depois
-<motion.div
-  initial={false}
-  animate={{ opacity: 1 }}
-```
-
-**Linha 75-78 (UnreadPreviewPanel):**
-```typescript
-// Antes
-<motion.div
-  initial={{ opacity: 0, y: 10 }}
-  animate={{ opacity: 1, y: 0 }}
-
-// Depois
-<motion.div
-  initial={false}
-  animate={{ opacity: 1, y: 0 }}
-```
-
-**Linha 229-234 e 240-245 (User footer):**
-```typescript
-// Antes
-<motion.div
-  animate={{
-    display: open ? "block" : "none",
-    opacity: open ? 1 : 0,
-  }}
-
-// Depois
-<motion.div
-  initial={false}
-  animate={{
-    display: open ? "block" : "none",
-    opacity: open ? 1 : 0,
-  }}
-```
+O botão terá:
+- Ícone verde (estilo WhatsApp)
+- Fundo com gradiente emerald/green
+- Borda verde sutil
+- Efeito hover com glow
+- Posicionado à direita do valor do telefone
 
 ---
 
-## Arquivos a Modificar
+## Texto Pré-preenchido
 
-| Arquivo | Alterações |
-|---------|------------|
-| `src/components/ui/sidebar.tsx` | Adicionar `initial={false}` em 6 elementos motion |
-| `src/components/Sidebar.tsx` | Adicionar `initial={false}` em 4 elementos motion |
+A mensagem inicial será:
+> "Olá! Tudo bem?"
+
+Isso pode ser customizado posteriormente conforme necessidade.
+
+---
+
+## Arquivo a Modificar
+
+| Arquivo | Mudança |
+|---------|---------|
+| `src/components/ContactDetailsDrawer.tsx` | Adicionar função `getWhatsAppLink` e botão no campo telefone |
 
 ---
 
 ## Resultado Esperado
 
-1. **Sem tremor ao publicar** - As animações não vão re-executar no hot-reload
-2. **Funcionalidade mantida** - Hover no sidebar ainda anima normalmente
-3. **Performance melhorada** - Menos processamento de animações desnecessárias
-
----
-
-## Seção Técnica
-
-### O que faz `initial={false}`?
-
-Normalmente, quando um componente monta, framer-motion:
-1. Define o estado `initial` (ex: `opacity: 0`)
-2. Anima até o estado `animate` (ex: `opacity: 1`)
-
-Com `initial={false}`:
-1. O componente começa diretamente no estado `animate`
-2. Só anima quando o valor de `animate` muda de fato
-3. Re-montagens não causam animações de entrada
-
-### Por que isso resolve?
-
-Durante hot-reload:
-1. React desmonta todos os componentes
-2. React remonta os componentes com novo código
-3. Com `initial={false}`, nenhuma animação de entrada é executada
-4. A tela permanece estável sem tremor
+1. Botão verde ao lado do telefone
+2. Clique abre WhatsApp Web/App automaticamente
+3. Mensagem já preenchida para o usuário apenas enviar
+4. Funciona tanto no desktop (WhatsApp Web) quanto mobile (App)
