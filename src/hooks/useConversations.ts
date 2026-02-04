@@ -27,12 +27,48 @@ export function useConversations() {
     try {
       setLoading(true);
       setError(null);
+      
+      // Check if user is still authenticated before fetching
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.warn('[useConversations] No active session - user may need to log in again');
+        setError('Sessão expirada. Por favor, faça login novamente.');
+        toast.error('Sessão expirada. Por favor, faça login novamente.', {
+          duration: 10000,
+          action: {
+            label: 'Fazer Login',
+            onClick: () => window.location.href = '/auth'
+          }
+        });
+        setLoading(false);
+        return;
+      }
+      
       const data = await api.fetchConversations(includeConversationId);
+      
+      // If data is empty but should have conversations, might be auth issue
+      if (data.length === 0) {
+        console.log('[useConversations] No conversations returned - checking if auth issue');
+      }
+      
       setConversations(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error('[useConversations] Error fetching:', err);
-      setError('Erro ao carregar conversas');
-      toast.error('Erro ao carregar conversas');
+      
+      // Check for auth-related errors
+      if (err?.message?.includes('JWT') || err?.code === 'PGRST301' || err?.message?.includes('auth')) {
+        setError('Sessão expirada. Por favor, faça login novamente.');
+        toast.error('Sessão expirada. Por favor, faça login novamente.', {
+          duration: 10000,
+          action: {
+            label: 'Fazer Login',
+            onClick: () => window.location.href = '/auth'
+          }
+        });
+      } else {
+        setError('Erro ao carregar conversas');
+        toast.error('Erro ao carregar conversas');
+      }
     } finally {
       setLoading(false);
     }
