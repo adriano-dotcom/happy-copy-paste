@@ -30,6 +30,27 @@ export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  // Handle force logout via URL parameter
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const forceLogout = params.get('logout');
+    
+    if (forceLogout === 'force') {
+      console.log('[Auth] Force logout requested');
+      // Clear all local storage and session storage
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      // Sign out from Supabase
+      supabase.auth.signOut().then(() => {
+        console.log('[Auth] Force logout complete');
+        toast.success('Sessão encerrada. Faça login novamente.');
+        // Remove the logout parameter from URL
+        window.history.replaceState({}, '', '/auth');
+      });
+    }
+  }, []);
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
