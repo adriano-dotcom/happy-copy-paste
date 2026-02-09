@@ -1,107 +1,83 @@
 
 
-# Corrigir Erros de Audio no Chat
+# Revisao do Prompt do Atlas - Foco em Seguros Atuais
 
-## Problema Identificado
+## Problema Atual
 
-A analise revelou **duas causas raiz** para os erros de audio mostrados nas capturas de tela:
+O fluxo atual do Atlas segue esta sequencia apos confirmar o responsavel:
 
-### Causa 1: "Erro ao carregar audio" (mensagens da Nina/IA)
-O bucket `nina-audio` e **privado** e as URLs de audio sao assinadas com validade de **24 horas**. Apos esse periodo, a URL expira e o player mostra "Erro ao carregar audio - Nao foi possivel reproduzir".
+1. Pergunta sobre tipo de operacao (transporte proprio vs frete)
+2. Depois pergunta se tem seguro de frota
+3. Depois pergunta se tem seguro de carga
+4. Coleta detalhes (seguradora, vencimento, satisfacao)
 
-### Causa 2: "Audio indisponivel" (mensagens do usuario)
-Quando o download do audio do WhatsApp falha (timeout, erro de rede), a mensagem e salva com `media_url = null`. A transcricao e preservada no campo `content`, mas o arquivo de audio fica inacessivel.
+Isso resulta em muitas perguntas antes de chegar ao ponto principal: os seguros. O lead pode perder interesse.
 
----
+## Nova Abordagem
 
-## Plano de Correcao
+Ser mais direto e **perguntar sobre os seguros atuais da empresa logo apos a confirmacao do responsavel**, antes de entrar em detalhes operacionais.
 
-### 1. Tornar o bucket `nina-audio` publico (corrige Causa 1)
-
-Assim como o bucket `whatsapp-media` ja e publico, tornar `nina-audio` publico elimina a necessidade de URLs assinadas que expiram.
-
-- Migracaco SQL: `UPDATE storage.buckets SET public = true WHERE id = 'nina-audio'`
-- Adicionar politica de leitura publica para o bucket
-
-### 2. Atualizar o nina-orchestrator para usar URLs publicas
-
-Modificar a funcao `uploadAudioToStorage` no `nina-orchestrator/index.ts` para gerar URLs publicas em vez de signed URLs:
+### Novo Fluxo de Conversa
 
 ```text
-Antes:  createSignedUrl(fileName, 3600 * 24)  // expira em 24h
-Depois: getPublicUrl(fileName)                  // permanente
+1. Confirma responsavel
+2. Apresenta Jacometo (breve)
+3. PERGUNTA DIRETA: "Voces tem seguro dos veiculos e da carga hoje? Com qual seguradora?"
+4. Baseado na resposta, aprofunda (vencimento, satisfacao, tipo)
+5. Coleta dados operacionais apenas se necessario para cotacao
+6. Handoff
 ```
 
-### 3. Corrigir URLs expiradas ja existentes no banco
-
-Criar uma migracao ou script para atualizar mensagens com URLs assinadas expiradas do bucket `nina-audio`, convertendo-as para o formato de URL publica:
+### Versus Fluxo Atual
 
 ```text
-Antes:  .../object/sign/nina-audio/...?token=xxx
-Depois: .../object/public/nina-audio/...
+1. Confirma responsavel
+2. Apresenta Jacometo (breve)
+3. Pergunta tipo de operacao (proprio/frete/ambos)
+4. Pergunta se tem seguro de frota
+5. Pergunta seguradora, tipo, satisfacao, vencimento
+6. Pergunta se tem seguro de carga
+7. Coleta dados de carga
+8. Handoff
 ```
 
-### 4. Melhorar o AudioPlayer para fallback inteligente (Causa 2)
+## Mudancas no System Prompt
 
-Quando `media_url` e null mas existe transcricao, o player ja mostra a transcricao. Porem, para mensagens da Nina com URL expirada, adicionar logica de **re-geracao automatica de URL** no frontend:
+### 1. Reestruturar o fluxo principal (secao ARVORE DE DECISAO)
 
-- Detectar erro de carregamento (`onError`)
-- Se a URL contem `/object/sign/nina-audio/`, tentar converter para URL publica automaticamente
-- Se falhar, mostrar a transcricao como fallback (ja implementado)
+Apos confirmar responsavel, ao inves de perguntar "tipo de operacao", ir direto para:
 
----
+> "Para entender melhor a situacao de voces: a empresa tem seguro dos veiculos (frota) e seguro de carga (RCTR-C) hoje?"
 
-## Detalhes Tecnicos
+Isso coleta informacao de ambos os seguros em uma unica pergunta.
 
-### Arquivos a modificar:
+### 2. Simplificar perguntas de follow-up
 
-| Arquivo | Alteracao |
-|---|---|
-| Migracao SQL | Tornar bucket `nina-audio` publico + politica RLS |
-| `supabase/functions/nina-orchestrator/index.ts` | Trocar `createSignedUrl` por `getPublicUrl` |
-| `src/components/AudioPlayer.tsx` | Adicionar fallback de URL signed -> public |
-| Migracao SQL (dados) | Atualizar URLs existentes no banco |
+Dependendo da resposta:
+- **Tem ambos**: Perguntar seguradora e vencimento de cada
+- **Tem so frota**: Perguntar seguradora/vencimento da frota + se embarcadores exigem RCTR-C
+- **Tem so carga**: Perguntar seguradora/vencimento + quantos veiculos tem sem seguro
+- **Nao tem nenhum**: Perguntar quantos veiculos tem e tipo de mercadoria para cotacao
 
-### Migracao SQL para o bucket:
-```sql
-UPDATE storage.buckets SET public = true WHERE id = 'nina-audio';
+### 3. Mover perguntas operacionais para depois
 
-CREATE POLICY "Public read access for nina-audio"
-ON storage.objects FOR SELECT
-USING (bucket_id = 'nina-audio');
-```
+Tipo de operacao, rotas, valor de carga passam a ser coletados apenas quando necessario para cotacao, nao como qualificacao inicial.
 
-### Migracao SQL para URLs existentes:
-```sql
-UPDATE messages
-SET media_url = regexp_replace(
-  split_part(media_url, '?', 1),
-  '/object/sign/',
-  '/object/public/'
-)
-WHERE media_url LIKE '%/object/sign/nina-audio/%'
-  AND type = 'audio';
-```
+### 4. Manter regras criticas intactas
 
-### Alteracao no nina-orchestrator (linhas ~2926-2937):
-```typescript
-// Trocar signed URL por public URL
-const { data: publicUrlData } = supabase.storage
-  .from('nina-audio')
-  .getPublicUrl(fileName);
+RC1 (tamanho minimo), RC2 (contato de terceiro), RC3 (proibicoes) permanecem inalterados.
 
-return publicUrlData?.publicUrl || null;
-```
+## Implementacao Tecnica
 
-### Fallback no AudioPlayer:
-Adicionar tentativa de conversao automatica quando o audio falha ao carregar, transformando URLs assinadas expiradas em URLs publicas antes de mostrar o erro.
+- **Arquivo afetado**: Tabela `agents` no banco de dados, campo `system_prompt` do registro com slug `atlas`
+- **Metodo**: SQL UPDATE para atualizar o prompt completo
+- **Tamanho**: O prompt sera reduzido significativamente (de ~37k caracteres para ~25k) ao eliminar ramificacoes desnecessarias e tornar o fluxo mais linear
 
----
-
-## Resultado Esperado
-
-- Audios da Nina/IA funcionarao permanentemente (sem expiracao)
-- Audios antigos com URLs expiradas serao corrigidos no banco
-- O player tera fallback inteligente para URLs problematicas
-- Audios do usuario sem `media_url` continuarao mostrando a transcricao (comportamento ja correto)
+### Secoes do prompt que serao reescritas:
+1. **OBJETIVO PRIMARIO** - adicionar foco em descobrir situacao atual de seguros
+2. **ARVORE DE DECISAO** - reorganizar para seguros primeiro, operacao depois
+3. **descoberta_seguro_frota() e descoberta_seguro_carga()** - unificar em descoberta_seguros_atuais()
+4. **coletar_dados_frota() e coletar_dados_carga()** - simplificar
+5. **CRITERIOS DE HANDOFF** - manter mas simplificar dados minimos
+6. **EXEMPLOS DE DIALOGO** - atualizar para refletir novo fluxo
 
