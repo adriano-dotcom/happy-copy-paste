@@ -76,6 +76,19 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   };
 
   const [loadError, setLoadError] = useState(false);
+  const [resolvedUrl, setResolvedUrl] = useState(mediaUrl);
+  const [hasTriedFallback, setHasTriedFallback] = useState(false);
+
+  // Try converting signed nina-audio URL to public URL on error
+  const handleAudioError = () => {
+    if (!hasTriedFallback && resolvedUrl && resolvedUrl.includes('/object/sign/nina-audio/')) {
+      const publicUrl = resolvedUrl.split('?')[0].replace('/object/sign/', '/object/public/');
+      setResolvedUrl(publicUrl);
+      setHasTriedFallback(true);
+    } else {
+      setLoadError(true);
+    }
+  };
 
   // If no media URL, show unavailable state
   if (!mediaUrl) {
@@ -162,7 +175,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
         {/* Hidden audio element */}
         <audio
           ref={audioRef}
-          src={mediaUrl}
+          src={resolvedUrl || undefined}
           onLoadedMetadata={(e) => {
             setDuration(e.currentTarget.duration);
           }}
@@ -170,7 +183,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
             setProgress(e.currentTarget.currentTime);
           }}
           onEnded={() => setIsPlaying(false)}
-          onError={() => setLoadError(true)}
+          onError={handleAudioError}
         />
         
         {/* Play/Pause button */}
