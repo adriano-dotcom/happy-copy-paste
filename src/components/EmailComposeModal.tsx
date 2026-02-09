@@ -12,7 +12,7 @@ interface EmailTemplate {
   name: string;
   subject: string;
   body_html: string;
-  category: string;
+  category: string | null;
 }
 
 interface EmailComposeModalProps {

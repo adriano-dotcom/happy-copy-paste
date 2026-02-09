@@ -50,11 +50,11 @@ interface ConsolidatedInsight {
   description: string;
   suggestion: string | null;
   category: string;
-  priority: number;
-  occurrence_count: number;
+  priority: number | null;
+  occurrence_count: number | null;
   consolidated_into: string | null;
-  status: string;
-  created_at: string;
+  status: string | null;
+  created_at: string | null;
 }
 
 interface ConsolidatedInsightsReviewProps {
@@ -127,7 +127,7 @@ const ConsolidatedInsightsReview = ({ agents, onRefresh }: ConsolidatedInsightsR
       const { data: agent, error: agentError } = await supabase
         .from('agents')
         .select('id, name, system_prompt')
-        .eq('id', insight.agent_id)
+        .eq('id', insight.agent_id!)
         .single();
 
       if (agentError) throw agentError;
@@ -142,7 +142,7 @@ const ConsolidatedInsightsReview = ({ agents, onRefresh }: ConsolidatedInsightsR
       const { error: updateError } = await supabase
         .from('agents')
         .update({ system_prompt: updatedPrompt, updated_at: new Date().toISOString() })
-        .eq('id', insight.agent_id);
+        .eq('id', insight.agent_id!);
 
       if (updateError) throw updateError;
 
@@ -325,7 +325,7 @@ const ConsolidatedInsightsReview = ({ agents, onRefresh }: ConsolidatedInsightsR
               {expandedAgents.has(agentId) && (
                 <div className="border-t border-slate-700/50 divide-y divide-slate-700/30">
                   {agentInsights.map((insight) => {
-                    const priorityConfig = getPriorityConfig(insight.priority);
+                    const priorityConfig = getPriorityConfig(insight.priority ?? 2);
                     const PriorityIcon = priorityConfig.icon;
                     
                     return (

@@ -147,7 +147,7 @@ export const api = {
       const conversionsPeriod = (wonDealsPeriodResult.count || 0) + (appointmentsPeriodResult.count || 0);
       const conversionsPrev = (wonDealsPrevResult.count || 0) + (appointmentsPrevResult.count || 0);
       
-      const responseTimes = avgResponseResult.data?.map(m => m.nina_response_time).filter(Boolean) || [];
+      const responseTimes = (avgResponseResult.data || []).map(m => m.nina_response_time).filter((v): v is number => v != null && v > 0);
       const avgResponseMs = responseTimes.length > 0 
         ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length 
         : 0;
@@ -329,8 +329,8 @@ export const api = {
     // Create a map of contact_id to deal info (most recent deal per contact)
     const dealsByContact = new Map<string, any>();
     (dealsData || []).forEach(deal => {
-      if (!dealsByContact.has(deal.contact_id)) {
-        dealsByContact.set(deal.contact_id, deal);
+      if (!dealsByContact.has(deal.contact_id!)) {
+        dealsByContact.set(deal.contact_id!, deal);
       }
     });
 
@@ -746,7 +746,7 @@ export const api = {
       lastActive: m.last_active || undefined,
       team_id: m.team_id,
       function_id: m.function_id,
-      weight: m.weight,
+      weight: m.weight ?? undefined,
       team: m.team as any,
       function: m.function as any
     }));
@@ -816,7 +816,7 @@ export const api = {
       avatar: data.avatar || `https://ui-avatars.com/api/?name=${data.name.replace(' ', '+')}&background=random`,
       team_id: data.team_id,
       function_id: data.function_id,
-      weight: data.weight
+      weight: data.weight ?? undefined
     };
   },
 
@@ -858,7 +858,11 @@ export const api = {
       throw error;
     }
 
-    return data || [];
+    return (data || []).map(t => ({
+      ...t,
+      color: t.color || '#3b82f6',
+      is_active: t.is_active ?? true,
+    }));
   },
 
   /**
@@ -928,7 +932,10 @@ export const api = {
       throw error;
     }
 
-    return data || [];
+    return (data || []).map(f => ({
+      ...f,
+      is_active: f.is_active ?? true,
+    }));
   },
 
   /**
@@ -1008,7 +1015,7 @@ export const api = {
       time: a.time,
       duration: a.duration,
       type: a.type as 'demo' | 'meeting' | 'support' | 'followup',
-      description: a.description,
+      description: a.description ?? undefined,
       attendees: a.attendees || []
     }));
   },
@@ -1056,7 +1063,7 @@ export const api = {
       time: data.time,
       duration: data.duration,
       type: data.type as 'demo' | 'meeting' | 'support' | 'followup',
-      description: data.description,
+      description: data.description ?? undefined,
       attendees: data.attendees || []
     };
   },
@@ -1132,7 +1139,7 @@ export const api = {
     const { data: conversations } = await supabase
       .from('conversations')
       .select('id, contact_id')
-      .in('contact_id', contactIds);
+      .in('contact_id', contactIds.filter((id): id is string => id != null));
 
     const convMap = new Map(conversations?.map(c => [c.contact_id, c.id]) || []);
 
@@ -1158,7 +1165,7 @@ export const api = {
       lostAt: d.lost_at,
       lostReason: d.lost_reason,
       clientMemory: d.contact?.client_memory || null,
-      conversationId: convMap.get(d.contact_id) || null,
+      conversationId: convMap.get(d.contact_id) ?? undefined,
     }));
   },
 
@@ -1326,16 +1333,16 @@ export const api = {
       title: data.title,
       company: data.company || 'Sem empresa',
       value: Number(data.value) || 0,
-      stage: data.stage,
+      stage: data.stage || 'new',
       stageId: data.stage_id,
-      pipelineId: data.pipeline_id,
-      owner: data.owner,
+      pipelineId: data.pipeline_id ?? undefined,
+      owner: data.owner ? { name: data.owner.name, avatar: data.owner.avatar ?? undefined } : null,
       ownerAvatar: data.owner?.avatar || 'https://ui-avatars.com/api/?name=NA&background=334155&color=fff',
-      pipeline: data.pipeline,
+      pipeline: data.pipeline ? { ...data.pipeline, color: data.pipeline.color ?? undefined, icon: data.pipeline.icon ?? undefined } : null,
       tags: data.tags || [],
-      dueDate: data.due_date,
+      dueDate: data.due_date ?? undefined,
       priority: data.priority as 'low' | 'medium' | 'high',
-      contactId: data.contact_id,
+      contactId: data.contact_id ?? undefined,
     };
   },
 
@@ -1377,11 +1384,11 @@ export const api = {
       title: data.title,
       company: data.company || 'Sem empresa',
       value: Number(data.value) || 0,
-      stage: data.stage,
+      stage: data.stage || 'new',
       stageId: data.stage_id,
       ownerAvatar: 'https://ui-avatars.com/api/?name=NA&background=334155&color=fff',
       tags: data.tags || [],
-      dueDate: data.due_date,
+      dueDate: data.due_date ?? undefined,
       priority: data.priority as 'low' | 'medium' | 'high',
     };
   },

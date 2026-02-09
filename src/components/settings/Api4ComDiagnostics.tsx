@@ -24,7 +24,7 @@ interface WebhookLog {
   event_type: string;
   processing_result: string | null;
   error_message: string | null;
-  created_at: string;
+  created_at: string | null;
   raw_payload: any;
   client_ip: string | null;
 }
@@ -403,7 +403,7 @@ const Api4ComDiagnostics: React.FC = () => {
                 <React.Fragment key={log.id}>
                   <tr className="border-b border-slate-800 hover:bg-slate-800/30">
                     <td className="py-2 pr-4 text-xs text-slate-400">
-                      {format(new Date(log.created_at), 'HH:mm:ss')}
+                      {format(new Date(log.created_at || new Date()), 'HH:mm:ss')}
                     </td>
                     <td className="py-2 pr-4 text-slate-300">{log.event_type}</td>
                     <td className="py-2 pr-4 font-mono text-xs text-slate-400">

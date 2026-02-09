@@ -17,7 +17,7 @@ import AutomationsDashboard from './AutomationsDashboard';
 interface Template {
   id: string;
   name: string;
-  status: string;
+  status: string | null;
 }
 
 interface MessageSequenceItem {
@@ -58,14 +58,14 @@ interface Automation {
   free_text_message: string | null;
   agent_messages: Record<string, string> | null;
   within_window_only: boolean;
-  conversation_statuses: string[];
-  max_attempts: number;
-  cooldown_hours: number;
-  active_hours_start: string;
-  active_hours_end: string;
-  active_days: number[];
-  is_active: boolean;
-  created_at: string;
+  conversation_statuses: string[] | null;
+  max_attempts: number | null;
+  cooldown_hours: number | null;
+  active_hours_start: string | null;
+  active_hours_end: string | null;
+  active_days: number[] | null;
+  is_active: boolean | null;
+  created_at: string | null;
   minutes_before_expiry: number;
   only_if_no_client_response: boolean;
   messages_sequence: MessageSequenceItem[] | null;
@@ -76,16 +76,16 @@ interface Agent {
   name: string;
   slug: string;
   specialty?: string;
-  is_active: boolean;
+  is_active: boolean | null;
 }
 
 interface FollowupLog {
   id: string;
-  automation_id: string;
+  automation_id: string | null;
   template_name: string | null;
-  status: string;
+  status: string | null;
   hours_waited: number | null;
-  created_at: string;
+  created_at: string | null;
 }
 
 const DAYS_OF_WEEK = [
@@ -323,12 +323,12 @@ export default function FollowupAutomationsSettings() {
       free_text_message: automation.free_text_message || 'Oi {nome}, ainda consegue continuar?',
       agent_messages: automation.agent_messages || {},
       within_window_only: automation.within_window_only ?? false,
-      conversation_statuses: automation.conversation_statuses,
-      max_attempts: automation.max_attempts,
-      cooldown_hours: automation.cooldown_hours,
-      active_hours_start: automation.active_hours_start,
-      active_hours_end: automation.active_hours_end,
-      active_days: automation.active_days,
+      conversation_statuses: automation.conversation_statuses ?? ['nina', 'human'],
+      max_attempts: automation.max_attempts ?? 1,
+      cooldown_hours: automation.cooldown_hours ?? 24,
+      active_hours_start: automation.active_hours_start ?? '09:00',
+      active_hours_end: automation.active_hours_end ?? '18:00',
+      active_days: automation.active_days ?? [1, 2, 3, 4, 5],
       minutes_before_expiry: automation.minutes_before_expiry ?? 10,
       only_if_no_client_response: automation.only_if_no_client_response ?? true,
       messages_sequence: (automation.messages_sequence as MessageSequenceItem[]) || [],
@@ -624,7 +624,7 @@ export default function FollowupAutomationsSettings() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Switch checked={automation.is_active} onCheckedChange={() => handleToggleActive(automation)} />
+                <Switch checked={automation.is_active ?? false} onCheckedChange={() => handleToggleActive(automation)} />
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1006,9 +1006,9 @@ export default function FollowupAutomationsSettings() {
                                 <Label className="text-xs">Tipo de pergunta</Label>
                                 <Select
                                   value={item.ai_prompt_type || 'qualification'}
-                                  onValueChange={(value: MessageSequenceItem['ai_prompt_type']) => {
+                                  onValueChange={(value: string) => {
                                     const updated = [...formData.messages_sequence];
-                                    updated[index] = { ...updated[index], ai_prompt_type: value };
+                                    updated[index] = { ...updated[index], ai_prompt_type: value as MessageSequenceItem['ai_prompt_type'] };
                                     setFormData(prev => ({ ...prev, messages_sequence: updated }));
                                   }}
                                 >
@@ -1402,7 +1402,7 @@ export default function FollowupAutomationsSettings() {
                       {log.status === 'sent' ? 'Enviado' : 'Falhou'}
                     </span>
                     <span className="text-muted-foreground text-xs">
-                      {format(new Date(log.created_at), "dd/MM HH:mm", { locale: ptBR })}
+                      {format(new Date(log.created_at || new Date()), "dd/MM HH:mm", { locale: ptBR })}
                     </span>
                   </div>
                 </div>

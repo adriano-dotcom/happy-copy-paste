@@ -15,8 +15,8 @@ interface EmailTemplate {
   name: string;
   subject: string;
   body_html: string;
-  category: string;
-  is_active: boolean;
+  category: string | null;
+  is_active: boolean | null;
 }
 
 interface EmailTemplateEditorModalProps {
