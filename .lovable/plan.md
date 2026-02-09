@@ -1,81 +1,107 @@
 
 
-# Corrigir Erros de Build (TypeScript)
+# Corrigir Erros de Audio no Chat
 
-## O que esta acontecendo
+## Problema Identificado
 
-Esses erros de build sao incompatibilidades de tipo no TypeScript. Quando o sistema busca dados do banco de dados, alguns campos podem vir como `null` (vazio), mas os tipos definidos no codigo esperam valores obrigatorios (`string`, `boolean`, `number`). Isso faz o TypeScript reclamar.
+A analise revelou **duas causas raiz** para os erros de audio mostrados nas capturas de tela:
 
-**Em resumo**: o codigo funciona na pratica, mas o compilador do TypeScript bloqueia o build porque os tipos nao batem.
+### Causa 1: "Erro ao carregar audio" (mensagens da Nina/IA)
+O bucket `nina-audio` e **privado** e as URLs de audio sao assinadas com validade de **24 horas**. Apos esse periodo, a URL expira e o player mostra "Erro ao carregar audio - Nao foi possivel reproduzir".
 
----
-
-## Arquivos que precisam ser corrigidos
-
-| Arquivo | Problema |
-|---------|----------|
-| `src/components/ChatInterface.tsx` | `pipeline_id` pode ser `null`, `contactCompany` e `name`/`email` sao `null` vs `string` |
-| `src/components/EmailComposeModal.tsx` | Interface `EmailTemplate` exige `category: string` mas banco retorna `string | null` |
-| `src/components/ImportContactsModal.tsx` | Interface `Campaign` exige `color: string` mas banco retorna `string | null` |
-| `src/components/Team.tsx` | Interfaces `Team` e `TeamFunction` nao aceitam `null` em `color` e `is_active` |
-| `src/components/TeamConfigModal.tsx` | Mesmo problema do Team.tsx |
-| `src/components/campaigns/CampaignManagement.tsx` | Interface `Campaign` com `color: string` vs `string | null` |
-| `src/components/campaigns/CreateCampaignModal.tsx` | Interface `PipelineStage` com `pipeline_id: string` vs `string | null` |
-| `src/components/chat/ScheduleCallbackModal.tsx` | Interface `TeamMember` com `weight: number` vs `number | null` |
-| `src/components/settings/AgentSettings.tsx` | `settings.id` pode ser `undefined` ao chamar `.eq('id', ...)` |
-| `src/components/OnboardingWizard.tsx` | Falta declaracao de tipo para `canvas-confetti` |
+### Causa 2: "Audio indisponivel" (mensagens do usuario)
+Quando o download do audio do WhatsApp falha (timeout, erro de rede), a mensagem e salva com `media_url = null`. A transcricao e preservada no campo `content`, mas o arquivo de audio fica inacessivel.
 
 ---
 
-## Estrategia de Correcao
+## Plano de Correcao
 
-A solucao mais segura e simples: ajustar as interfaces locais para aceitar `null`, adicionando valores padrao (fallback) onde necessario.
+### 1. Tornar o bucket `nina-audio` publico (corrige Causa 1)
+
+Assim como o bucket `whatsapp-media` ja e publico, tornar `nina-audio` publico elimina a necessidade de URLs assinadas que expiram.
+
+- Migracaco SQL: `UPDATE storage.buckets SET public = true WHERE id = 'nina-audio'`
+- Adicionar politica de leitura publica para o bucket
+
+### 2. Atualizar o nina-orchestrator para usar URLs publicas
+
+Modificar a funcao `uploadAudioToStorage` no `nina-orchestrator/index.ts` para gerar URLs publicas em vez de signed URLs:
+
+```text
+Antes:  createSignedUrl(fileName, 3600 * 24)  // expira em 24h
+Depois: getPublicUrl(fileName)                  // permanente
+```
+
+### 3. Corrigir URLs expiradas ja existentes no banco
+
+Criar uma migracao ou script para atualizar mensagens com URLs assinadas expiradas do bucket `nina-audio`, convertendo-as para o formato de URL publica:
+
+```text
+Antes:  .../object/sign/nina-audio/...?token=xxx
+Depois: .../object/public/nina-audio/...
+```
+
+### 4. Melhorar o AudioPlayer para fallback inteligente (Causa 2)
+
+Quando `media_url` e null mas existe transcricao, o player ja mostra a transcricao. Porem, para mensagens da Nina com URL expirada, adicionar logica de **re-geracao automatica de URL** no frontend:
+
+- Detectar erro de carregamento (`onError`)
+- Se a URL contem `/object/sign/nina-audio/`, tentar converter para URL publica automaticamente
+- Se falhar, mostrar a transcricao como fallback (ja implementado)
 
 ---
 
 ## Detalhes Tecnicos
 
-### 1. EmailComposeModal.tsx (linha 15)
-Mudar `category: string` para `category: string | null` na interface `EmailTemplate`.
+### Arquivos a modificar:
 
-### 2. ImportContactsModal.tsx (linhas 49-54)
-Mudar `color: string` para `color: string | null` na interface `Campaign`.
+| Arquivo | Alteracao |
+|---|---|
+| Migracao SQL | Tornar bucket `nina-audio` publico + politica RLS |
+| `supabase/functions/nina-orchestrator/index.ts` | Trocar `createSignedUrl` por `getPublicUrl` |
+| `src/components/AudioPlayer.tsx` | Adicionar fallback de URL signed -> public |
+| Migracao SQL (dados) | Atualizar URLs existentes no banco |
 
-### 3. Team.tsx e TeamConfigModal.tsx
-Os dados vem de `api.fetchTeams()` e `api.fetchTeamFunctions()` que retornam tipos do Supabase. O tipo `Team` em `src/types.ts` define `color: string` e `is_active: boolean` sem aceitar `null`. Corrigir na interface `Team` para `color: string` mantendo o padrao, mas aplicar `as Team[]` com mapeamento de defaults na API, ou ajustar as interfaces locais.
+### Migracao SQL para o bucket:
+```sql
+UPDATE storage.buckets SET public = true WHERE id = 'nina-audio';
 
-Solucao: Mapear os dados retornados do banco com valores padrao na `api.ts`:
-- `fetchTeams`: mapear `color: item.color || '#3b82f6'` e `is_active: item.is_active ?? true`
-- `fetchTeamFunctions`: mapear `is_active: item.is_active ?? true`
+CREATE POLICY "Public read access for nina-audio"
+ON storage.objects FOR SELECT
+USING (bucket_id = 'nina-audio');
+```
 
-### 4. CampaignManagement.tsx (linha 34)
-Mudar `color: string` para `color: string | null` na interface `Campaign`, ou adicionar fallback `color: c.color || '#6b7280'`.
+### Migracao SQL para URLs existentes:
+```sql
+UPDATE messages
+SET media_url = regexp_replace(
+  split_part(media_url, '?', 1),
+  '/object/sign/',
+  '/object/public/'
+)
+WHERE media_url LIKE '%/object/sign/nina-audio/%'
+  AND type = 'audio';
+```
 
-### 5. CreateCampaignModal.tsx (linha 47)
-Mudar `pipeline_id: string` para `pipeline_id: string | null` na interface `PipelineStage`.
+### Alteracao no nina-orchestrator (linhas ~2926-2937):
+```typescript
+// Trocar signed URL por public URL
+const { data: publicUrlData } = supabase.storage
+  .from('nina-audio')
+  .getPublicUrl(fileName);
 
-### 6. ScheduleCallbackModal.tsx (linha 37)
-Mudar `weight: number` para `weight: number | null` na interface `TeamMember`.
+return publicUrlData?.publicUrl || null;
+```
 
-### 7. ChatInterface.tsx
-- Linha 764: Adicionar fallback `deal.pipeline_id!` ou verificacao `if (deal.pipeline_id)` antes do `.eq()`
-- Linha 1242: Mudar `name: editName.trim() || null` -- o `updateContact` ja aceita `string | null`, entao o problema e na tipagem do parametro. Ajustar para `undefined` ao inves de `null`.
-- Linha 3228: `contactCompany` e `string | null` mas prop espera `string | undefined`. Adicionar `contactCompany={activeChat.contactCompany ?? undefined}`.
-
-### 8. AgentSettings.tsx (linha 158)
-`settings.id` e `string | undefined`. Adicionar guard: `if (!settings.id) return;` antes do `.eq()`.
-
-### 9. OnboardingWizard.tsx
-Criar arquivo `src/types/canvas-confetti.d.ts` com `declare module 'canvas-confetti';`.
+### Fallback no AudioPlayer:
+Adicionar tentativa de conversao automatica quando o audio falha ao carregar, transformando URLs assinadas expiradas em URLs publicas antes de mostrar o erro.
 
 ---
 
-## Sequencia de Implementacao
+## Resultado Esperado
 
-1. Criar declaracao de tipo para `canvas-confetti`
-2. Corrigir interfaces locais nos componentes (aceitar `null`)
-3. Adicionar guards e fallbacks no ChatInterface e AgentSettings
-4. Adicionar mapeamento de defaults no `api.ts` para fetchTeams/fetchTeamFunctions
-
-Todas as correcoes sao pequenas e pontuais -- nenhuma muda comportamento funcional, apenas alinha os tipos com o que o banco de dados realmente retorna.
+- Audios da Nina/IA funcionarao permanentemente (sem expiracao)
+- Audios antigos com URLs expiradas serao corrigidos no banco
+- O player tera fallback inteligente para URLs problematicas
+- Audios do usuario sem `media_url` continuarao mostrando a transcricao (comportamento ja correto)
 
