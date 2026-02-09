@@ -1,83 +1,58 @@
 
 
-# Revisao do Prompt do Atlas - Foco em Seguros Atuais
+# Reforco do Prompt Atlas - Anti-Alucinacao e Anti-Emoji
 
-## Problema Atual
+## Problemas Identificados na Screenshot
 
-O fluxo atual do Atlas segue esta sequencia apos confirmar o responsavel:
+1. **Alucinacao**: Atlas disse "Vi que seu CNPJ esta ativo" - ele NAO tem acesso a dados de CNPJ, inventou isso
+2. **Emoji**: Usou 🤔 no final da mensagem, violando RC3
+3. **Fluxo antigo**: A conversa ainda seguia o fluxo anterior (perguntando sobre operacao antes de seguros) - provavelmente porque foi iniciada antes da atualizacao do prompt v3.0
 
-1. Pergunta sobre tipo de operacao (transporte proprio vs frete)
-2. Depois pergunta se tem seguro de frota
-3. Depois pergunta se tem seguro de carga
-4. Coleta detalhes (seguradora, vencimento, satisfacao)
+## Correcoes no System Prompt
 
-Isso resulta em muitas perguntas antes de chegar ao ponto principal: os seguros. O lead pode perder interesse.
+### 1. Nova Regra Critica: RC4 - PROIBICAO DE INVENTAR INFORMACOES
 
-## Nova Abordagem
+Adicionar uma nova regra critica no mesmo nivel de RC1, RC2 e RC3:
 
-Ser mais direto e **perguntar sobre os seguros atuais da empresa logo apos a confirmacao do responsavel**, antes de entrar em detalhes operacionais.
+```
+RC4: NUNCA INVENTAR INFORMACOES
 
-### Novo Fluxo de Conversa
+REGRA: Voce NAO tem acesso a nenhum sistema externo.
+Voce NAO pode verificar CNPJ, ANTT, cadastros ou qualquer dado externo.
+NUNCA diga "vi que", "verifiquei que", "consultei" ou qualquer afirmacao que implique acesso a informacoes que voce nao tem.
 
-```text
-1. Confirma responsavel
-2. Apresenta Jacometo (breve)
-3. PERGUNTA DIRETA: "Voces tem seguro dos veiculos e da carga hoje? Com qual seguradora?"
-4. Baseado na resposta, aprofunda (vencimento, satisfacao, tipo)
-5. Coleta dados operacionais apenas se necessario para cotacao
-6. Handoff
+PROIBIDO:
+- "Vi que seu CNPJ esta ativo"
+- "Consultei e vi que a empresa..."
+- "Verifiquei no sistema que..."
+- Qualquer afirmacao de fato sobre a empresa que nao tenha sido informada pelo proprio lead
+
+PERMITIDO:
+- Perguntar diretamente ao lead
+- Usar apenas informacoes que o lead forneceu na conversa
 ```
 
-### Versus Fluxo Atual
+### 2. Reforco na RC3 - Emojis
 
-```text
-1. Confirma responsavel
-2. Apresenta Jacometo (breve)
-3. Pergunta tipo de operacao (proprio/frete/ambos)
-4. Pergunta se tem seguro de frota
-5. Pergunta seguradora, tipo, satisfacao, vencimento
-6. Pergunta se tem seguro de carga
-7. Coleta dados de carga
-8. Handoff
+Adicionar exemplos explicitos na RC3 para deixar mais claro:
+
+```
+NUNCA usar emojis ou emoticons de nenhum tipo.
+Exemplos proibidos: 🤔 😊 👍 ✅ 🚗 ou qualquer outro emoji/emoticon.
+Respostas devem ser 100% texto puro, sem caracteres especiais decorativos.
 ```
 
-## Mudancas no System Prompt
+### 3. Reforco nas Validacoes Pre-Envio
 
-### 1. Reestruturar o fluxo principal (secao ARVORE DE DECISAO)
+Adicionar checagem anti-alucinacao na funcao `validar_mensagem`:
 
-Apos confirmar responsavel, ao inves de perguntar "tipo de operacao", ir direto para:
+```python
+if afirma_ter_verificado_dados_externos(mensagem): return False  # RC4
+```
 
-> "Para entender melhor a situacao de voces: a empresa tem seguro dos veiculos (frota) e seguro de carga (RCTR-C) hoje?"
+## Implementacao
 
-Isso coleta informacao de ambos os seguros em uma unica pergunta.
-
-### 2. Simplificar perguntas de follow-up
-
-Dependendo da resposta:
-- **Tem ambos**: Perguntar seguradora e vencimento de cada
-- **Tem so frota**: Perguntar seguradora/vencimento da frota + se embarcadores exigem RCTR-C
-- **Tem so carga**: Perguntar seguradora/vencimento + quantos veiculos tem sem seguro
-- **Nao tem nenhum**: Perguntar quantos veiculos tem e tipo de mercadoria para cotacao
-
-### 3. Mover perguntas operacionais para depois
-
-Tipo de operacao, rotas, valor de carga passam a ser coletados apenas quando necessario para cotacao, nao como qualificacao inicial.
-
-### 4. Manter regras criticas intactas
-
-RC1 (tamanho minimo), RC2 (contato de terceiro), RC3 (proibicoes) permanecem inalterados.
-
-## Implementacao Tecnica
-
-- **Arquivo afetado**: Tabela `agents` no banco de dados, campo `system_prompt` do registro com slug `atlas`
-- **Metodo**: SQL UPDATE para atualizar o prompt completo
-- **Tamanho**: O prompt sera reduzido significativamente (de ~37k caracteres para ~25k) ao eliminar ramificacoes desnecessarias e tornar o fluxo mais linear
-
-### Secoes do prompt que serao reescritas:
-1. **OBJETIVO PRIMARIO** - adicionar foco em descobrir situacao atual de seguros
-2. **ARVORE DE DECISAO** - reorganizar para seguros primeiro, operacao depois
-3. **descoberta_seguro_frota() e descoberta_seguro_carga()** - unificar em descoberta_seguros_atuais()
-4. **coletar_dados_frota() e coletar_dados_carga()** - simplificar
-5. **CRITERIOS DE HANDOFF** - manter mas simplificar dados minimos
-6. **EXEMPLOS DE DIALOGO** - atualizar para refletir novo fluxo
+- **Metodo**: SQL UPDATE no campo `system_prompt` da tabela `agents` onde slug = 'atlas'
+- **Escopo**: Adicionar RC4 na secao de regras criticas, reforcar RC3, atualizar validacoes pre-envio
+- **Impacto**: Conversas NOVAS usarao o prompt atualizado. Conversas em andamento podem continuar com o prompt antigo ate serem reiniciadas.
 
