@@ -106,7 +106,7 @@ export const useNinaProcessingStatus = (conversationId: string | null): Processi
         isAggregating,
         isProcessing,
         agentName: agentNameRef.current,
-        hasFailed,
+        hasFailed: hasFailed ?? false,
         failedCount: failedIds.length,
         failedError: firstError,
         failedItemIds: failedIds,

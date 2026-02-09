@@ -31,9 +31,9 @@ interface Campaign {
   id: string;
   name: string;
   description: string | null;
-  color: string;
-  is_active: boolean;
-  created_at: string;
+  color: string | null;
+  is_active: boolean | null;
+  created_at: string | null;
   lead_count?: number;
 }
 
@@ -125,8 +125,8 @@ const CampaignManagement: React.FC = () => {
     setSelectedCampaign(campaign);
     setFormName(campaign.name);
     setFormDescription(campaign.description || '');
-    setFormColor(campaign.color);
-    setFormIsActive(campaign.is_active);
+    setFormColor(campaign.color || '#3b82f6');
+    setFormIsActive(campaign.is_active ?? true);
     setEditModalOpen(true);
   };
 
@@ -309,7 +309,7 @@ const CampaignManagement: React.FC = () => {
               {/* Color bar */}
               <div 
                 className="absolute top-0 left-0 right-0 h-1"
-                style={{ backgroundColor: campaign.color }}
+                style={{ backgroundColor: campaign.color || '#3b82f6' }}
               />
               
               <CardContent className="pt-6">
@@ -317,7 +317,7 @@ const CampaignManagement: React.FC = () => {
                   <div className="flex items-center gap-2 min-w-0">
                     <div 
                       className="w-3 h-3 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: campaign.color }}
+                      style={{ backgroundColor: campaign.color || '#3b82f6' }}
                     />
                     <h3 className="font-semibold text-foreground truncate">
                       {campaign.name}
@@ -343,7 +343,7 @@ const CampaignManagement: React.FC = () => {
                   </div>
                   <span>•</span>
                   <span>
-                    {new Date(campaign.created_at).toLocaleDateString('pt-BR')}
+                    {new Date(campaign.created_at || '').toLocaleDateString('pt-BR')}
                   </span>
                 </div>
                 

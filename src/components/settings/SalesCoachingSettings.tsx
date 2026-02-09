@@ -82,11 +82,11 @@ interface CoachingReport {
   pipeline_id: string | null;
   pipeline_name: string | null;
   report_type: string;
-  analysis_period_start: string;
-  analysis_period_end: string;
-  conversations_analyzed: number;
-  calls_analyzed: number;
-  human_interactions_analyzed: number;
+  analysis_period_start: string | null;
+  analysis_period_end: string | null;
+  conversations_analyzed: number | null;
+  calls_analyzed: number | null;
+  human_interactions_analyzed: number | null;
   strengths: StrengthItem[];
   improvement_areas: ImprovementItem[];
   recommended_actions: ActionItem[];
@@ -97,9 +97,9 @@ interface CoachingReport {
   qualification_effectiveness: number | null;
   objection_handling_score: number | null;
   closing_skills_score: number | null;
-  is_applied: boolean;
-  alert_sent: boolean;
-  created_at: string;
+  is_applied: boolean | null;
+  alert_sent: boolean | null;
+  created_at: string | null;
   prospecting_metrics: ProspectingMetrics | null;
 }
 
@@ -471,7 +471,7 @@ export default function SalesCoachingSettings() {
                   <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-700/30 text-xs text-slate-500">
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      {format(new Date(latestReport.created_at), "dd/MM HH:mm", { locale: ptBR })}
+                      {format(new Date(latestReport.created_at || new Date()), "dd/MM HH:mm", { locale: ptBR })}
                     </span>
                     {latestReport.alert_sent && (
                       <span className="flex items-center gap-1 text-red-400 bg-red-500/20 px-2 py-0.5 rounded-full">
@@ -651,7 +651,7 @@ export default function SalesCoachingSettings() {
                         </span>
                         <span className="text-xs font-normal text-slate-500 flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          {format(new Date(report.created_at), "dd/MM HH:mm", { locale: ptBR })}
+                          {format(new Date(report.created_at || new Date()), "dd/MM HH:mm", { locale: ptBR })}
                         </span>
                         {report.alert_sent && (
                           <span className="text-xs font-normal text-red-400 flex items-center gap-1 bg-red-500/20 px-2 py-0.5 rounded-full">
@@ -721,9 +721,9 @@ export default function SalesCoachingSettings() {
                                 <div 
                                   className={cn("h-full rounded-full transition-all", step.color)}
                                   style={{ 
-                                    width: `${report.prospecting_metrics.templates_sent > 0 
+                                     width: `${report.prospecting_metrics && report.prospecting_metrics.templates_sent > 0 
                                       ? (step.value / report.prospecting_metrics.templates_sent) * 100 
-                                      : 0}%` 
+                                      : 0}%`
                                   }}
                                 />
                               </div>

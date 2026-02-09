@@ -761,7 +761,7 @@ const ChatInterface: React.FC = () => {
         const { data: lostStage } = await supabase
           .from('pipeline_stages')
           .select('id')
-          .eq('pipeline_id', deal.pipeline_id)
+          .eq('pipeline_id', deal.pipeline_id!)
           .eq('title', 'Perdido')
           .maybeSingle();
         
@@ -1239,7 +1239,7 @@ const ChatInterface: React.FC = () => {
     setIsSavingContact(true);
     try {
       await api.updateContact(activeChat.contactId, {
-        name: editName.trim() || null,
+        name: editName.trim() || undefined,
         email: editEmail.trim() || null,
         cnpj: editCnpj.replace(/\D/g, '') || null,
         company: editCompany.trim() || null
@@ -3225,7 +3225,7 @@ const ChatInterface: React.FC = () => {
           contactId={activeChat.contactId}
           conversationId={activeChat.id}
           contactName={activeChat.contactName}
-          contactCompany={activeChat.contactCompany}
+          contactCompany={activeChat.contactCompany ?? undefined}
           onSent={() => setShowTemplateModal(false)}
         />
       )}

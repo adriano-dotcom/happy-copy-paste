@@ -44,7 +44,7 @@ interface Pipeline {
 interface PipelineStage {
   id: string;
   title: string;
-  pipeline_id: string;
+  pipeline_id: string | null;
 }
 
 interface CreateCampaignModalProps {

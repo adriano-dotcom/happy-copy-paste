@@ -22,10 +22,10 @@ interface EmailTemplate {
   name: string;
   subject: string;
   body_html: string;
-  category: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  category: string | null;
+  is_active: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
@@ -147,13 +147,13 @@ const EmailTemplatesSettings: React.FC = () => {
         if (error) throw error;
         toast.success('Template atualizado com sucesso');
       } else {
-        const { error } = await supabase.from('email_templates').insert({
-          name: template.name,
-          subject: template.subject,
-          body_html: template.body_html,
+        const { error } = await supabase.from('email_templates').insert([{
+          name: template.name!,
+          subject: template.subject!,
+          body_html: template.body_html!,
           category: template.category || 'general',
           is_active: true,
-        });
+        }]);
 
         if (error) throw error;
         toast.success('Template criado com sucesso');
@@ -251,7 +251,7 @@ const EmailTemplatesSettings: React.FC = () => {
       ) : (
         <div className="grid gap-4">
           {filteredTemplates.map((template) => {
-            const categoryConfig = getCategoryConfig(template.category);
+            const categoryConfig = getCategoryConfig(template.category || 'general');
             return (
               <div
                 key={template.id}

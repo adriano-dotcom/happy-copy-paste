@@ -49,8 +49,8 @@ interface ValidationResult {
 interface Campaign {
   id: string;
   name: string;
-  color: string;
-  description?: string;
+  color: string | null;
+  description?: string | null;
 }
 
 const MAX_IMPORT_ROWS = 5000;
@@ -512,7 +512,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                               <div className="flex items-center gap-2">
                                 <div 
                                   className="w-3 h-3 rounded-full" 
-                                  style={{ backgroundColor: campaign.color }}
+                                  style={{ backgroundColor: campaign.color || '#3b82f6' }}
                                 />
                                 {campaign.name}
                               </div>
@@ -614,8 +614,8 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                   <span 
                     className="text-sm font-medium px-2 py-0.5 rounded-full"
                     style={{ 
-                      backgroundColor: `${campaigns.find(c => c.id === selectedCampaignId)?.color}20`,
-                      color: campaigns.find(c => c.id === selectedCampaignId)?.color
+                       backgroundColor: `${campaigns.find(c => c.id === selectedCampaignId)?.color || '#3b82f6'}20`,
+                       color: campaigns.find(c => c.id === selectedCampaignId)?.color || '#3b82f6'
                     }}
                   >
                     {campaigns.find(c => c.id === selectedCampaignId)?.name}

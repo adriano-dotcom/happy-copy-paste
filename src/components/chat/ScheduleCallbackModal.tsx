@@ -33,7 +33,7 @@ interface TeamMember {
   id: string;
   name: string;
   role: string;
-  weight: number;
+  weight: number | null;
 }
 
 export function ScheduleCallbackModal({

@@ -258,7 +258,7 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
           openai_api_key: settings.openai_api_key,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', settings.id);
+        .eq('id', settings.id!);
 
       if (error) throw error;
 
@@ -729,7 +729,7 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
                   const { error } = await supabase
                     .from('nina_settings')
                     .update({ elevenlabs_voice_id: newVoiceId })
-                    .eq('id', settings.id);
+                    .eq('id', settings.id!);
                   
                   if (error) {
                     toast.error('Erro ao salvar voz');
