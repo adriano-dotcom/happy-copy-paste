@@ -1,88 +1,59 @@
 
 
-# Fluxo de "Nao e o responsavel" na Prospeccao
+# Correcao: "lastAgentMessage is not defined"
 
 ## Problema
 
-Quando o Atlas pergunta "Voce seria o responsavel por essa area na EMPRESA X?" e o contato responde simplesmente "nao", o sistema nao detecta isso como rejeicao. O Atlas continua insistindo ao inves de encerrar educadamente.
+O Atlas nao seguiu com a prospeccao porque o nina-orchestrator esta crashando com o erro:
 
-## Solucao
+```
+ReferenceError: lastAgentMessage is not defined
+```
 
-Criar uma deteccao contextual no nina-orchestrator: quando a ultima mensagem do agente pergunta sobre ser o responsavel e o lead responde "nao", o sistema deve:
+Este erro esta acontecendo em TODAS as mensagens processadas, nao apenas no caso de "nao e o responsavel". Isso significa que nenhuma conversa de prospeccao esta funcionando.
 
-1. Agradecer o contato pelo tempo
-2. Informar que vai atualizar o cadastro
-3. Aplicar a tag "Prospeccao numero errado" (id: `40043cab-449d-42d9-9654-08439fc16589`)
-4. Pausar a conversa e mover deal para "Perdido"
+## Causa Raiz
 
-## Detalhes Tecnicos
+A variavel `lastAgentMessage` e declarada dentro do bloco `if (message.content) { ... }` na linha 3351 (dentro da secao "AUTOMATIC CONVERSATION CLOSURE DETECTION"). Esse bloco fecha na linha 3446.
+
+O bloco "NOT RESPONSIBLE DETECTION" na linha 3449 esta FORA desse escopo, e tenta usar `lastAgentMessage` que nao existe mais.
+
+## Correcao
+
+Mover a busca de `lastAgentMessage` para ANTES do bloco de closure detection, no escopo externo da funcao, para que fique acessivel tanto pelo closure detection quanto pelo not-responsible detection.
 
 ### Arquivo: `supabase/functions/nina-orchestrator/index.ts`
 
-### 1. Nova funcao de deteccao contextual
+### Mudancas:
 
-Criar uma funcao `detectNotResponsible()` que verifica:
-- Se a ultima mensagem do agente contém padroes como "responsavel", "responsável", "confirmar se", "seria o responsavel"
-- Se a resposta do lead e negativa: "nao", "não", "nao sou", "não sou", "nao e comigo", etc.
+1. **Linha ~3339**: Mover a query de `lastAgentMessage` para fora do `if (message.content)` do closure detection, declarando-a no escopo da funcao:
 
-```text
-Padroes da pergunta do agente:
-- /responsável|responsavel/i
-- /confirmar se.*whatsapp/i
-- /seria o responsável/i
+```typescript
+const conversationMetadata = conversation.metadata || {};
 
-Padroes de resposta negativa:
-- /^n[aã]o\.?$/i  (simplesmente "nao")
-- /n[aã]o\s*(sou|é|e)\b/i
-- /n[aã]o\s*,?\s*(n[aã]o\s*)?(sou|é|e)/i
+// Fetch last agent message (used by closure detection AND not-responsible detection)
+let lastAgentMessage: string | null = null;
+if (message.content) {
+    const { data: lastAgentMessages } = await supabase
+      .from('messages')
+      .select('content')
+      .eq('conversation_id', conversation.id)
+      .in('from_type', ['nina', 'human'])
+      .lt('sent_at', message.sent_at)
+      .order('sent_at', { ascending: false })
+      .limit(1);
+    
+    lastAgentMessage = lastAgentMessages?.[0]?.content || null;
+}
 ```
 
-### 2. Novo bloco de tratamento antes do prospecting rejection existente
+2. **Dentro do bloco closure detection**: Remover a declaracao duplicada de `lastAgentMessage` e usar a variavel do escopo externo.
 
-Inserir ANTES do bloco `PROSPECTING REJECTION DETECTION` (linha ~3416) um novo bloco que:
+3. **Bloco not-responsible detection**: Continuara funcionando normalmente pois `lastAgentMessage` agora esta acessivel.
 
-1. Chama `detectNotResponsible()` com a ultima mensagem do agente e a mensagem atual do lead
-2. Se detectado:
-   - Envia mensagem: "Entendi! Obrigado por nos avisar. Vamos atualizar o contato no nosso cadastro. Desculpe o incomodo e tenha um otimo dia!"
-   - Aplica a tag `prospeccao_numero_errado` no contato
-   - Marca o deal como "Perdido" com razao "Nao e o responsavel"
-   - Pausa a conversa com `followup_stopped: true`
-   - Marca mensagem como processada
+## Impacto
 
-### 3. Mensagem de resposta
+- Corrige o crash que esta impedindo TODAS as conversas de serem processadas pelo nina-orchestrator
+- A deteccao de "nao e o responsavel" passara a funcionar corretamente
+- A deteccao de closure continuara funcionando como antes
 
-A mensagem sera fixa (sem passar pela IA) para garantir consistencia:
-
-```
-Entendi! Obrigado por nos avisar. Vamos atualizar o contato no nosso cadastro. Desculpe o incomodo e tenha um otimo dia!
-```
-
-### 4. Aplicacao da tag
-
-Usando o mesmo padrao do codigo existente (ex: tag "emprego"):
-- Busca a tag `prospeccao_numero_errado` na tabela `tag_definitions`
-- Adiciona ao array `tags` do contato se ainda nao existir
-
-### 5. Fluxo completo
-
-```text
-Lead: "nao"
-  |
-  v
-detectNotResponsible() = true?
-  |
-  v
-1. Queue mensagem de agradecimento
-2. Marcar mensagem como processada  
-3. Aplicar tag "Prospeccao numero errado" no contato
-4. Mover deal para "Perdido" (razao: "Nao e o responsavel")
-5. Pausar conversa (status: paused, followup_stopped: true)
-6. Trigger whatsapp-sender
-7. Return (nao processa mais nada)
-```
-
-### Impacto
-
-- Conversas futuras onde o lead nega ser o responsavel serao encerradas automaticamente
-- A tag permite filtrar e visualizar esses contatos no dashboard
-- O deal e movido para "Perdido" para manter o pipeline limpo
