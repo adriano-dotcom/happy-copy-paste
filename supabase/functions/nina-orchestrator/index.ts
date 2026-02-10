@@ -1539,6 +1539,39 @@ function detectAgent(
   return { agent: defaultAgent || null, isHandoff: false };
 }
 
+// ===== NOT RESPONSIBLE DETECTION =====
+// Detects when the agent asked if the contact is the responsible person and they said "no"
+function detectNotResponsible(lastAgentMessage: string | null, leadMessage: string): boolean {
+  if (!lastAgentMessage || !leadMessage) return false;
+  
+  const normalizedAgent = lastAgentMessage.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const normalizedLead = leadMessage.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  
+  // Check if agent asked about being the responsible person
+  const agentAskedAboutResponsible = /responsavel|responsável/i.test(lastAgentMessage) ||
+    /confirmar se/i.test(lastAgentMessage) ||
+    /seria o responsavel|seria o responsável/i.test(lastAgentMessage) ||
+    /voce.*responsavel|você.*responsável/i.test(lastAgentMessage) ||
+    /e o responsavel|é o responsável/i.test(lastAgentMessage);
+  
+  if (!agentAskedAboutResponsible) return false;
+  
+  // Check if lead response is negative
+  const negativePatterns = [
+    /^n[aã]o\.?$/i,                          // just "nao" or "não"
+    /^n[aã]o\s*,?\s*n[aã]o/i,               // "nao nao" or "não, não"
+    /^n[aã]o\s+(sou|e|é)\b/i,               // "nao sou", "nao e"
+    /^n[aã]o\s*,?\s*(sou|e|é)\b/i,          // "nao, sou", "nao, e"
+    /n[aã]o\s+(sou|é|e)\s*(o\s+)?respons/i, // "nao sou o responsavel"
+    /n[aã]o\s+e\s+comigo/i,                  // "nao e comigo"
+    /n[aã]o\s+tenho\s+nada\s+a\s+ver/i,     // "nao tenho nada a ver"
+    /^nn$/i,                                  // "nn" (shorthand)
+    /^nop$/i,                                 // "nop"
+  ];
+  
+  return negativePatterns.some(pattern => pattern.test(normalizedLead));
+}
+
 // Check if message is a prospecting rejection (hard rejection - wrong number, no interest, etc.)
 function isProspectingRejection(messageContent: string): boolean {
   const content = messageContent.toLowerCase().trim();
@@ -3412,6 +3445,112 @@ async function processQueueItem(
     }
   }
   // ===== END AUTOMATIC CONVERSATION CLOSURE DETECTION =====
+
+  // ===== NOT RESPONSIBLE DETECTION (Prospecting) =====
+  // When Atlas asks "Você seria o responsável?" and lead says "não"
+  if (conversationMetadata.origin === 'prospeccao' && message.content) {
+    // Reuse the lastAgentMessage already fetched above (line ~3318)
+    const notResponsibleDetected = detectNotResponsible(lastAgentMessage, message.content);
+    
+    if (notResponsibleDetected) {
+      console.log(`[Nina] 🚫 NOT RESPONSIBLE detected: agent asked about responsible, lead said "${message.content}"`);
+      
+      // Fixed message (no AI) for consistency
+      const thankYouMessage = 'Entendi! Obrigado por nos avisar. Vamos atualizar o contato no nosso cadastro. Desculpe o incomodo e tenha um otimo dia!';
+      
+      // Calculate delay
+      const delayMin = settings?.response_delay_min || 1000;
+      const delayMax = settings?.response_delay_max || 3000;
+      const delay = Math.random() * (delayMax - delayMin) + delayMin;
+      const aiSettings = getModelSettings(settings, [], message, conversation.contact, {});
+      
+      // Queue the thank you response
+      await queueTextResponse(supabase, conversation, message, thankYouMessage, settings, aiSettings, delay, agent);
+      
+      // Mark message as processed
+      const responseTime = Date.now() - new Date(message.sent_at).getTime();
+      await supabase
+        .from('messages')
+        .update({ 
+          processed_by_nina: true,
+          nina_response_time: responseTime
+        })
+        .eq('id', message.id);
+      
+      // Apply tag "Prospecção numero errado"
+      const tagId = '40043cab-449d-42d9-9654-08439fc16589';
+      const existingTags = conversation.contact?.tags || [];
+      if (!existingTags.includes(tagId)) {
+        await supabase
+          .from('contacts')
+          .update({ tags: [...existingTags, tagId] })
+          .eq('id', conversation.contact_id);
+        console.log('[Nina] 🏷️ Tag "Prospecção numero errado" applied');
+      }
+      
+      // Move deal to "Perdido" stage
+      const { data: prospectingPipeline } = await supabase
+        .from('pipelines')
+        .select('id')
+        .eq('slug', 'prospeccao')
+        .single();
+      
+      if (prospectingPipeline) {
+        const { data: lostStage } = await supabase
+          .from('pipeline_stages')
+          .select('id')
+          .eq('pipeline_id', prospectingPipeline.id)
+          .eq('title', 'Perdido')
+          .single();
+        
+        if (lostStage) {
+          await supabase
+            .from('deals')
+            .update({ 
+              stage_id: lostStage.id,
+              lost_at: new Date().toISOString(),
+              lost_reason: 'Não é o responsável'
+            })
+            .eq('contact_id', conversation.contact_id);
+          console.log('[Nina] 📉 Deal moved to Perdido (Não é o responsável)');
+        }
+      }
+      
+      // Pause conversation with followup_stopped
+      await supabase
+        .from('conversations')
+        .update({ 
+          status: 'paused',
+          nina_context: {
+            ...(conversation.nina_context || {}),
+            followup_stopped: true,
+            followup_stopped_reason: 'not_responsible',
+            paused_reason: 'not_responsible',
+            paused_at: new Date().toISOString()
+          }
+        })
+        .eq('id', conversation.id);
+      
+      // Trigger whatsapp-sender
+      try {
+        const senderUrl = `${supabaseUrl}/functions/v1/whatsapp-sender`;
+        fetch(senderUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`
+          },
+          body: JSON.stringify({ triggered_by: 'nina-orchestrator-not-responsible' })
+        }).catch(err => console.error('[Nina] Error triggering whatsapp-sender:', err));
+      } catch (e) {
+        console.error('[Nina] Failed to trigger whatsapp-sender:', e);
+      }
+      
+      console.log('[Nina] ✅ Not responsible handled: message sent, tag applied, deal lost, conversation paused');
+      return;
+    }
+  }
+  // ===== END NOT RESPONSIBLE DETECTION =====
 
   // ===== PROSPECTING REJECTION DETECTION =====
   // Check if this is a prospecting conversation and message is a rejection
