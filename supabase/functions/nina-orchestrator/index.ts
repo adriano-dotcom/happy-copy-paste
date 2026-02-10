@@ -3337,8 +3337,10 @@ async function processQueueItem(
   // ===== AUTOMATIC CONVERSATION CLOSURE DETECTION =====
   // Check if agent sent a farewell message and client confirmed
   const conversationMetadata = conversation.metadata || {};
+
+  // Fetch last agent message (used by closure detection AND not-responsible detection)
+  let lastAgentMessage: string | null = null;
   if (message.content) {
-    // Get last agent message before this client message
     const { data: lastAgentMessages } = await supabase
       .from('messages')
       .select('content')
@@ -3348,7 +3350,10 @@ async function processQueueItem(
       .order('sent_at', { ascending: false })
       .limit(1);
     
-    const lastAgentMessage = lastAgentMessages?.[0]?.content || null;
+    lastAgentMessage = lastAgentMessages?.[0]?.content || null;
+  }
+
+  if (message.content) {
     const closureDetected = detectConversationClosure(lastAgentMessage, message.content);
     
     if (closureDetected.isClosed) {
