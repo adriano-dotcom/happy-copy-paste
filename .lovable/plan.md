@@ -1,53 +1,91 @@
 
-# Corrigir mensagens nao sendo processadas pelo Atlas (early_drop)
 
-## Problema identificado
-As mensagens dos leads estao sendo recebidas e salvas no banco de dados, mas **nunca chegam na fila de processamento da IA** (`nina_processing_queue`). Isso faz com que o agente Atlas pare de responder.
+# Corrigir acesso ao microfone para envio de audio
 
-### Causa raiz
-O webhook do WhatsApp usa `EdgeRuntime.waitUntil()` para processar mensagens em background. O fluxo e:
-1. Salva na `message_grouping_queue` (deduplicacao)
-2. Retorna HTTP 200 para o WhatsApp imediatamente
-3. Em background: cria o contato, cria a conversa, cria a mensagem no DB
-4. **Em background: insere na `nina_processing_queue`** (passo critico)
+## Problema
+Ao clicar no botao de microfone no chat, aparece o erro "Erro ao acessar microfone. Verifique as permissoes." O audio nao funciona.
 
-O problema: Os logs mostram que a funcao esta sendo encerrada com **`early_drop`** antes que o passo 4 seja executado. A mensagem e criada no banco (passo 3), mas nunca e adicionada na fila de processamento da IA (passo 4).
+## Diagnostico
+O codigo atual (linha 971-1005 do `ChatInterface.tsx`) chama `navigator.mediaDevices.getUserMedia` corretamente no handler de click, mas:
 
-Evidencia: A mensagem "Sim" da Vera Lucia foi criada no banco (`messages`) mas nao existe entrada correspondente em `nina_processing_queue`. Multiplas outras mensagens tambem estao com `processed: false` na `message_grouping_queue`.
+1. **Nao verifica se `navigator.mediaDevices` existe** - em contextos HTTP (sem HTTPS), esse objeto e `undefined`, causando um erro generico
+2. **A mensagem de erro e generica demais** - nao diferencia entre "sem HTTPS", "permissao negada", "sem microfone" ou "formato nao suportado"
+3. **Nao tem fallback** caso o formato preferido nao seja suportado pelo MediaRecorder
 
-## Solucao proposta
-Mover a insercao na `nina_processing_queue` para **imediatamente apos** a criacao da mensagem no banco, **antes** do processamento de midia (que e a parte mais demorada e causa o `early_drop`).
+## Solucao
 
-### Alteracoes no `whatsapp-webhook/index.ts`
+### Alteracoes no `src/components/ChatInterface.tsx`
 
-**Reordenar o fluxo de background** (funcao `processIncomingMessageWithBackground`):
+**1. Adicionar verificacao de seguranca antes de chamar getUserMedia:**
+- Verificar se `navigator.mediaDevices` e `navigator.mediaDevices.getUserMedia` existem
+- Se nao existirem, mostrar mensagem especifica informando que o site precisa ser acessado via HTTPS
 
-Ordem atual:
-1. Criar/buscar contato
-2. Criar/buscar conversa
-3. Parse do conteudo da mensagem
-4. Criar mensagem no DB
-5. Atualizar `last_message_at`
-6. **Processar midia** (download, storage, OCR, transcricao) -- DEMORADO
-7. **Inserir na `nina_processing_queue`** -- NUNCA EXECUTADO por causa do early_drop
+**2. Melhorar o tratamento de erros com mensagens especificas:**
+- `NotAllowedError` -> "Permissao do microfone negada. Clique no icone de cadeado na barra de endereco para permitir."
+- `NotFoundError` -> "Nenhum microfone encontrado neste dispositivo."
+- `NotReadableError` -> "Microfone em uso por outro aplicativo."
+- Erro generico -> manter mensagem atual
 
-Nova ordem:
-1. Criar/buscar contato
-2. Criar/buscar conversa
-3. Parse do conteudo da mensagem
-4. Criar mensagem no DB
-5. Atualizar `last_message_at`
-6. **Inserir na `nina_processing_queue`** -- MOVIDO PARA ANTES da midia
-7. **Processar midia** (download, storage, OCR, transcricao)
+**3. Adicionar tratamento robusto para formato de audio:**
+- Se o MediaRecorder falhar com o formato preferido, tentar sem especificar mimeType (usar padrao do navegador)
 
-Essa mudanca simples garante que a mensagem seja enfileirada para processamento da IA **antes** das operacoes demoradas de midia que causam o timeout.
+### Codigo proposto para `startRecording`:
 
-### Detalhes tecnicos
+```typescript
+const startRecording = async () => {
+  try {
+    // Verificar se API de midia esta disponivel (requer HTTPS)
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast.error('Microfone nao disponivel. Verifique se o site esta sendo acessado via HTTPS.');
+      return;
+    }
 
-No arquivo `supabase/functions/whatsapp-webhook/index.ts`, na funcao `processIncomingMessageWithBackground`:
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+      }
+    });
 
-- Mover o bloco das linhas 1076-1103 (insercao na nina_processing_queue) para **antes** do bloco das linhas 1064-1074 (processamento de midia)
-- Manter a mesma logica condicional (`if (conversation.status === 'nina')`)
-- O processamento de midia continuara funcionando normalmente, apenas executado depois
+    // Detectar melhor formato
+    const preferredFormat = getPreferredAudioMimeType();
+    audioFormatRef.current = preferredFormat;
 
-Essa e uma mudanca minima e segura que resolve o problema sem alterar a logica de negocio.
+    let mediaRecorder: MediaRecorder;
+    try {
+      mediaRecorder = new MediaRecorder(stream, { mimeType: preferredFormat.mimeType });
+    } catch (formatError) {
+      console.warn('[Audio] Format not supported, using default:', formatError);
+      mediaRecorder = new MediaRecorder(stream);
+      audioFormatRef.current = { mimeType: mediaRecorder.mimeType, extension: 'webm' };
+    }
+
+    // ... resto do codigo igual ...
+
+  } catch (error) {
+    console.error('Error accessing microphone:', error);
+    if (error instanceof DOMException) {
+      switch (error.name) {
+        case 'NotAllowedError':
+          toast.error('Permissao do microfone negada. Clique no cadeado na barra de endereco para permitir.');
+          break;
+        case 'NotFoundError':
+          toast.error('Nenhum microfone encontrado neste dispositivo.');
+          break;
+        case 'NotReadableError':
+          toast.error('Microfone em uso por outro aplicativo.');
+          break;
+        default:
+          toast.error('Erro ao acessar microfone. Verifique as permissoes.');
+      }
+    } else {
+      toast.error('Erro ao acessar microfone. Verifique as permissoes.');
+    }
+  }
+};
+```
+
+## Arquivo a editar
+- `src/components/ChatInterface.tsx` - funcao `startRecording` (linhas 971-1006)
+
+Essa mudanca melhora significativamente o diagnostico do problema, adicionando verificacoes previas e mensagens de erro especificas que ajudam o usuario a resolver o problema de permissao.
