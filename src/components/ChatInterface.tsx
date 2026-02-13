@@ -173,18 +173,26 @@ const ChatInterface: React.FC = () => {
       { mimeType: 'audio/mp4', extension: 'm4a' },                // Último recurso (Safari antigo)
     ];
     
+    // Log diagnóstico: quais formatos o browser suporta
+    console.log('[Audio] Format support check:', 
+      formats.map(f => `${f.mimeType}: ${MediaRecorder.isTypeSupported(f.mimeType)}`).join(', ')
+    );
+    
     for (const format of formats) {
       if (MediaRecorder.isTypeSupported(format.mimeType)) {
-        console.log(`[Audio] Using format: ${format.mimeType}`);
+        console.log(`[Audio] ✅ Selected format: ${format.mimeType}`);
         // Avisar se caiu no audio/mp4 genérico (problemático no WhatsApp)
         if (format.mimeType === 'audio/mp4') {
-          console.warn('[Audio] Using generic audio/mp4 - may fail on WhatsApp. Consider using Chrome/Firefox.');
+          console.warn('[Audio] ⚠️ Using generic audio/mp4 - may fail on WhatsApp. Consider using Chrome/Firefox.');
+        }
+        if (format.mimeType.startsWith('audio/webm')) {
+          console.warn('[Audio] ⚠️ Using audio/webm - WhatsApp may reject this format. OGG was not available.');
         }
         return format;
       }
     }
     
-    console.warn('[Audio] No compatible format found, falling back to audio/webm');
+    console.warn('[Audio] ❌ No compatible format found, falling back to audio/webm');
     return { mimeType: 'audio/webm', extension: 'webm' };
   };
   
