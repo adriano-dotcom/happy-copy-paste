@@ -352,6 +352,59 @@ serve(async (req) => {
           
           console.log('[Webhook] Message queued:', message.id);
           
+          // ===== HOT PATH: Pre-queue for Nina AI BEFORE returning HTTP 200 =====
+          // This ensures the message gets queued even if EdgeRuntime.waitUntil is killed by early_drop
+          let hotPathQueued = false;
+          try {
+            const senderPhone = message.from;
+            const hotPathContact = await findContactByPhone(supabase, senderPhone);
+            
+            if (hotPathContact) {
+              const { data: hotPathConv } = await supabase
+                .from('conversations')
+                .select('id, status')
+                .eq('contact_id', hotPathContact.id)
+                .eq('is_active', true)
+                .order('last_message_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              
+              if (hotPathConv && hotPathConv.status === 'nina') {
+                const DEBOUNCE_DELAY_MS = 15000;
+                const scheduledFor = new Date(Date.now() + DEBOUNCE_DELAY_MS).toISOString();
+                
+                const { error: hotQueueError } = await supabase
+                  .from('nina_processing_queue')
+                  .insert({
+                    message_id: '00000000-0000-0000-0000-000000000000',
+                    conversation_id: hotPathConv.id,
+                    contact_id: hotPathContact.id,
+                    priority: 1,
+                    scheduled_for: scheduledFor,
+                    context_data: {
+                      phone_number_id: phoneNumberId,
+                      contact_name: hotPathContact.name || hotPathContact.call_name,
+                      message_type: message.type === 'interactive' ? 'text' : message.type,
+                      original_type: message.type,
+                      debounce_scheduled_at: new Date().toISOString(),
+                      hot_path: true,
+                      whatsapp_message_id: message.id
+                    }
+                  });
+                
+                if (!hotQueueError) {
+                  hotPathQueued = true;
+                  console.log('[Webhook] ✓ Hot path: Nina queue pre-inserted for', message.id);
+                } else {
+                  console.warn('[Webhook] Hot path queue failed (background will retry):', hotQueueError.message);
+                }
+              }
+            }
+          } catch (hotPathErr) {
+            console.warn('[Webhook] Hot path error (non-fatal, background will handle):', hotPathErr);
+          }
+          // ===== END HOT PATH =====
+          
           // ===== BACKGROUND PROCESSING: Heavy operations run after response =====
           // Queue message record first (fast), then process media in background
           EdgeRuntime.waitUntil(
@@ -361,7 +414,8 @@ serve(async (req) => {
               contactInfo, 
               phoneNumberId, 
               settings, 
-              lovableApiKey
+              lovableApiKey,
+              hotPathQueued
             )
           );
         }
@@ -844,7 +898,8 @@ async function processIncomingMessageWithBackground(
   contactInfo: any, 
   phoneNumberId: string,
   settings: any,
-  lovableApiKey: string
+  lovableApiKey: string,
+  hotPathQueued: boolean = false
 ) {
   try {
     const rawPhoneNumber = message.from;
@@ -1063,30 +1118,48 @@ async function processIncomingMessageWithBackground(
 
     // 6. Queue for Nina AI processing FIRST (before media - prevents early_drop from blocking AI)
     if (conversation.status === 'nina') {
-      const DEBOUNCE_DELAY_MS = 15000;
-      const scheduledFor = new Date(Date.now() + DEBOUNCE_DELAY_MS).toISOString();
-      
-      const { error: ninaQueueError } = await supabase
-        .from('nina_processing_queue')
-        .insert({
-          message_id: dbMessage.id,
-          conversation_id: conversation.id,
-          contact_id: contact.id,
-          priority: 1,
-          scheduled_for: scheduledFor,
-          context_data: {
-            phone_number_id: phoneNumberId,
-            contact_name: contact.name || contact.call_name,
-            message_type: messageType,
-            original_type: message.type,
-            debounce_scheduled_at: new Date().toISOString()
-          }
-        });
-
-      if (ninaQueueError) {
-        console.error('[Webhook BG] Error queuing for Nina:', ninaQueueError);
+      if (hotPathQueued) {
+        // Hot path already inserted a placeholder - update it with the real message_id
+        const { error: updateError } = await supabase
+          .from('nina_processing_queue')
+          .update({ message_id: dbMessage.id })
+          .eq('message_id', '00000000-0000-0000-0000-000000000000')
+          .eq('conversation_id', conversation.id)
+          .eq('contact_id', contact.id)
+          .eq('status', 'pending');
+        
+        if (updateError) {
+          console.error('[Webhook BG] Error updating hot path queue entry:', updateError);
+        } else {
+          console.log('[Webhook BG] ✓ Updated hot path queue entry with real message_id:', dbMessage.id);
+        }
       } else {
-        console.log('[Webhook BG] Message queued for Nina (scheduled:', scheduledFor, ')');
+        // Hot path didn't run or failed - insert normally
+        const DEBOUNCE_DELAY_MS = 15000;
+        const scheduledFor = new Date(Date.now() + DEBOUNCE_DELAY_MS).toISOString();
+        
+        const { error: ninaQueueError } = await supabase
+          .from('nina_processing_queue')
+          .insert({
+            message_id: dbMessage.id,
+            conversation_id: conversation.id,
+            contact_id: contact.id,
+            priority: 1,
+            scheduled_for: scheduledFor,
+            context_data: {
+              phone_number_id: phoneNumberId,
+              contact_name: contact.name || contact.call_name,
+              message_type: messageType,
+              original_type: message.type,
+              debounce_scheduled_at: new Date().toISOString()
+            }
+          });
+
+        if (ninaQueueError) {
+          console.error('[Webhook BG] Error queuing for Nina:', ninaQueueError);
+        } else {
+          console.log('[Webhook BG] Message queued for Nina (scheduled:', scheduledFor, ')');
+        }
       }
     }
 

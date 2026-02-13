@@ -552,6 +552,88 @@ Deno.serve(async (req) => {
     // ============================================
     await checkButtonEnganoRate(supabase);
 
+    // ============================================
+    // SAFETY NET: Recover orphaned messages
+    // Messages saved in DB but never queued for Nina processing
+    // ============================================
+    console.log('[CleanupQueues] Checking for orphaned messages...');
+    
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    
+    // Find user messages from last 30 min that have no nina_processing_queue entry
+    // and whose conversation is in 'nina' status
+    const { data: orphanedMessages, error: orphanError2 } = await supabase
+      .from('messages')
+      .select(`
+        id,
+        conversation_id,
+        content,
+        type,
+        sent_at,
+        metadata,
+        conversations!inner (
+          id,
+          status,
+          contact_id
+        )
+      `)
+      .eq('from_type', 'user')
+      .eq('conversations.status', 'nina')
+      .gt('sent_at', thirtyMinAgo)
+      .lt('sent_at', fiveMinAgo)
+      .limit(20);
+    
+    if (orphanError2) {
+      console.error('[CleanupQueues] Error checking orphaned messages:', orphanError2);
+    } else if (orphanedMessages && orphanedMessages.length > 0) {
+      let recoveredCount = 0;
+      
+      for (const msg of orphanedMessages) {
+        // Check if there's already a nina_processing_queue entry for this message
+        const { data: existingQueue } = await supabase
+          .from('nina_processing_queue')
+          .select('id')
+          .eq('message_id', msg.id)
+          .limit(1);
+        
+        if (existingQueue && existingQueue.length > 0) continue;
+        
+        // Also check by conversation_id in recent entries (hot path placeholder may exist)
+        const conv = msg.conversations as any;
+        
+        const { error: recoveryError } = await supabase
+          .from('nina_processing_queue')
+          .insert({
+            message_id: msg.id,
+            conversation_id: msg.conversation_id,
+            contact_id: conv.contact_id,
+            priority: 1,
+            status: 'pending',
+            context_data: {
+              message_type: msg.type,
+              original_type: msg.type,
+              recovery: true,
+              recovered_by: 'cleanup-queues',
+              recovered_at: new Date().toISOString()
+            }
+          });
+        
+        if (!recoveryError) {
+          recoveredCount++;
+          console.warn(`[CleanupQueues] 🔄 Recovered orphaned message ${msg.id} for conversation ${msg.conversation_id}`);
+        }
+      }
+      
+      if (recoveredCount > 0) {
+        console.warn(`[CleanupQueues] 🔄 Total orphaned messages recovered: ${recoveredCount}`);
+      } else {
+        console.log('[CleanupQueues] ✓ No orphaned messages found');
+      }
+    } else {
+      console.log('[CleanupQueues] ✓ No orphaned messages found');
+    }
+
     const { data: ninaStats } = await supabase
       .from('nina_processing_queue')
       .select('status', { count: 'exact' });
