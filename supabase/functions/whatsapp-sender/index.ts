@@ -297,10 +297,11 @@ async function uploadMediaToWhatsApp(
     const mediaBuffer = await downloadResp.arrayBuffer();
     console.log(`[Sender] Downloaded ${mediaBuffer.byteLength} bytes, uploading to WhatsApp with mime: ${mimeType}`);
     
-    // Sanitize mimeType: browser audio/mp4 containers are usually AAC-encoded
-    // WhatsApp rejects audio/mp4 from MediaRecorder but accepts audio/aac
+    // Sanitize mimeType for WhatsApp compatibility
+    // Safari's audio/mp4 container is rejected by WhatsApp (error 131053)
+    // Map to audio/aac which WhatsApp accepts natively
     let effectiveMimeType = mimeType;
-    if (mimeType === 'audio/mp4') {
+    if (mimeType === 'audio/mp4' || mimeType === 'audio/mp4; codecs=mp4a.40.2') {
       effectiveMimeType = 'audio/aac';
       console.log('[Sender] Mapped audio/mp4 -> audio/aac for WhatsApp compatibility');
     }
@@ -310,9 +311,11 @@ async function uploadMediaToWhatsApp(
       'audio/ogg': 'ogg',
       'audio/ogg; codecs=opus': 'ogg',
       'audio/mp4': 'aac',
+      'audio/mp4; codecs=mp4a.40.2': 'aac',
       'audio/mpeg': 'mp3',
       'audio/aac': 'aac',
       'audio/webm': 'webm',
+      'audio/webm; codecs=opus': 'webm',
     };
     const ext = extMap[effectiveMimeType] || extMap[mimeType] || 'ogg';
     
