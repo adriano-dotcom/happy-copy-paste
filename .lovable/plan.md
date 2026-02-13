@@ -1,56 +1,53 @@
 
+# Corrigir mensagens nao sendo processadas pelo Atlas (early_drop)
 
-# Corrigir envio de arquivos no chat
+## Problema identificado
+As mensagens dos leads estao sendo recebidas e salvas no banco de dados, mas **nunca chegam na fila de processamento da IA** (`nina_processing_queue`). Isso faz com que o agente Atlas pare de responder.
 
-## Problema
-O upload de arquivos falha com erro **"Invalid key"** do Storage porque o nome do arquivo contém caracteres especiais que o Supabase Storage nao aceita (colchetes `[]`, espacos multiplos, etc).
+### Causa raiz
+O webhook do WhatsApp usa `EdgeRuntime.waitUntil()` para processar mensagens em background. O fluxo e:
+1. Salva na `message_grouping_queue` (deduplicacao)
+2. Retorna HTTP 200 para o WhatsApp imediatamente
+3. Em background: cria o contato, cria a conversa, cria a mensagem no DB
+4. **Em background: insere na `nina_processing_queue`** (passo critico)
 
-**Exemplo do erro real:**
-```
-Invalid key: b666ac88-.../1770989305394_[ RCTR-C RCF-DC ] TRANSPORTADORA ESTELAI LTDA -  RCTRC _ RCFDC.pdf
-```
+O problema: Os logs mostram que a funcao esta sendo encerrada com **`early_drop`** antes que o passo 4 seja executado. A mensagem e criada no banco (passo 3), mas nunca e adicionada na fila de processamento da IA (passo 4).
 
-## Causa raiz
-Na linha 1135 do `ChatInterface.tsx`, o nome original do arquivo e usado diretamente no path do Storage:
-```typescript
-const fileName = `${activeChat.contactId}/${Date.now()}_${file.name}`;
-```
+Evidencia: A mensagem "Sim" da Vera Lucia foi criada no banco (`messages`) mas nao existe entrada correspondente em `nina_processing_queue`. Multiplas outras mensagens tambem estao com `processed: false` na `message_grouping_queue`.
 
-O Supabase Storage nao aceita caracteres como `[`, `]`, espacos duplos e outros caracteres especiais nas chaves de objetos.
+## Solucao proposta
+Mover a insercao na `nina_processing_queue` para **imediatamente apos** a criacao da mensagem no banco, **antes** do processamento de midia (que e a parte mais demorada e causa o `early_drop`).
 
-## Solucao
-Sanitizar o nome do arquivo antes de fazer o upload, removendo/substituindo caracteres invalidos:
+### Alteracoes no `whatsapp-webhook/index.ts`
 
-1. Remover acentos e caracteres especiais
-2. Substituir espacos e caracteres nao-alfanumericos por underscores
-3. Remover underscores duplicados
-4. Preservar a extensao do arquivo
+**Reordenar o fluxo de background** (funcao `processIncomingMessageWithBackground`):
 
-## Detalhes tecnicos
+Ordem atual:
+1. Criar/buscar contato
+2. Criar/buscar conversa
+3. Parse do conteudo da mensagem
+4. Criar mensagem no DB
+5. Atualizar `last_message_at`
+6. **Processar midia** (download, storage, OCR, transcricao) -- DEMORADO
+7. **Inserir na `nina_processing_queue`** -- NUNCA EXECUTADO por causa do early_drop
 
-**Arquivo:** `src/components/ChatInterface.tsx`
+Nova ordem:
+1. Criar/buscar contato
+2. Criar/buscar conversa
+3. Parse do conteudo da mensagem
+4. Criar mensagem no DB
+5. Atualizar `last_message_at`
+6. **Inserir na `nina_processing_queue`** -- MOVIDO PARA ANTES da midia
+7. **Processar midia** (download, storage, OCR, transcricao)
 
-Adicionar funcao `sanitizeFileName` antes do uso na linha 1135:
+Essa mudanca simples garante que a mensagem seja enfileirada para processamento da IA **antes** das operacoes demoradas de midia que causam o timeout.
 
-```typescript
-const sanitizeFileName = (name: string): string => {
-  const ext = name.lastIndexOf('.') > 0 ? name.substring(name.lastIndexOf('.')) : '';
-  const base = name.substring(0, name.length - ext.length);
-  const sanitized = base
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // remove acentos
-    .replace(/[^a-zA-Z0-9._-]/g, '_')                  // troca especiais por _
-    .replace(/_+/g, '_')                                // remove _ duplicados
-    .replace(/^_|_$/g, '');                             // remove _ no inicio/fim
-  return (sanitized || 'file') + ext.toLowerCase();
-};
-```
+### Detalhes tecnicos
 
-Aplicar na construcao do `fileName`:
-```typescript
-const fileName = `${activeChat.contactId}/${Date.now()}_${sanitizeFileName(file.name)}`;
-```
+No arquivo `supabase/functions/whatsapp-webhook/index.ts`, na funcao `processIncomingMessageWithBackground`:
 
-O nome original do arquivo ja e preservado no campo `metadata.original_filename` (linha 1163), entao o usuario continua vendo o nome correto na interface.
+- Mover o bloco das linhas 1076-1103 (insercao na nina_processing_queue) para **antes** do bloco das linhas 1064-1074 (processamento de midia)
+- Manter a mesma logica condicional (`if (conversation.status === 'nina')`)
+- O processamento de midia continuara funcionando normalmente, apenas executado depois
 
-**Tambem aplicar a mesma correcao** na funcao de upload de audio (linha ~1065) que usa logica similar.
-
+Essa e uma mudanca minima e segura que resolve o problema sem alterar a logica de negocio.
