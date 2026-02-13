@@ -2915,6 +2915,7 @@ export type Database = {
         Args: { p_conversation_id: string }
         Returns: boolean
       }
+      process_pending_transcriptions: { Args: never; Returns: undefined }
       set_vault_secret: {
         Args: { secret_name: string; secret_value: string }
         Returns: string
