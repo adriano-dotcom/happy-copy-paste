@@ -16,6 +16,206 @@ function toBRT(date: Date | string): string {
 
 const WHATSAPP_API_URL = "https://graph.facebook.com/v18.0";
 
+// ===== WebM-to-OGG REMUXER (for Chrome Opus audio) =====
+// Chrome records audio/webm;codecs=opus but WhatsApp only accepts audio/ogg.
+// Both use the same Opus codec - we just need to change the container format.
+
+function readEbmlVint(data: Uint8Array, offset: number): { value: number; length: number } {
+  if (offset >= data.length) return { value: 0, length: 1 };
+  const first = data[offset];
+  let len = 1;
+  let mask = 0x80;
+  while (len <= 8 && !(first & mask)) { len++; mask >>= 1; }
+  let value = first & (mask - 1);
+  for (let i = 1; i < len; i++) {
+    if (offset + i >= data.length) break;
+    value = (value * 256) + data[offset + i];
+  }
+  return { value, length: len };
+}
+
+function readEbmlElementId(data: Uint8Array, offset: number): { id: number; length: number } {
+  if (offset >= data.length) return { id: 0, length: 1 };
+  const first = data[offset];
+  let len = 1;
+  if (first & 0x80) len = 1;
+  else if (first & 0x40) len = 2;
+  else if (first & 0x20) len = 3;
+  else if (first & 0x10) len = 4;
+  else len = 1;
+  let id = 0;
+  for (let i = 0; i < len && (offset + i) < data.length; i++) {
+    id = (id * 256) + data[offset + i];
+  }
+  return { id, length: len };
+}
+
+// EBML Element IDs we care about
+const EID = {
+  Segment: 0x18538067, Tracks: 0x1654AE6B, TrackEntry: 0xAE,
+  CodecPrivate: 0x63A2, Cluster: 0x1F43B675, SimpleBlock: 0xA3,
+  Timecode: 0xE7, BlockGroup: 0xA0, Block: 0xA1,
+};
+
+const CONTAINER_IDS = new Set([EID.Segment, EID.Tracks, EID.TrackEntry, EID.Cluster, EID.BlockGroup]);
+
+interface ExtractedAudio {
+  codecPrivate: Uint8Array;
+  frames: Uint8Array[];
+}
+
+function extractOpusFromWebM(webm: Uint8Array): ExtractedAudio {
+  let codecPrivate: Uint8Array | null = null;
+  const frames: Uint8Array[] = [];
+
+  function parse(start: number, end: number) {
+    let pos = start;
+    while (pos < end - 1) {
+      const idR = readEbmlElementId(webm, pos);
+      pos += idR.length;
+      if (pos >= end) break;
+      const sizeR = readEbmlVint(webm, pos);
+      pos += sizeR.length;
+      if (pos >= end) break;
+
+      // Unknown size sentinel (0x1FFFFFFFFFFFFFF) - use remaining data
+      const elemEnd = (sizeR.value >= 0xFFFFFFFFFFFE) ? end : Math.min(pos + sizeR.value, end);
+      const id = idR.id;
+
+      if (CONTAINER_IDS.has(id)) {
+        parse(pos, elemEnd);
+      } else if (id === EID.CodecPrivate) {
+        codecPrivate = webm.slice(pos, elemEnd);
+      } else if (id === EID.SimpleBlock || id === EID.Block) {
+        // Track number (vint), 2-byte timecode, 1-byte flags, then frame data
+        const trackVint = readEbmlVint(webm, pos);
+        const dataStart = pos + trackVint.length + 3; // +2 timecode +1 flags
+        if (dataStart < elemEnd) {
+          frames.push(webm.slice(dataStart, elemEnd));
+        }
+      }
+      pos = elemEnd;
+    }
+  }
+
+  parse(0, webm.length);
+  if (!codecPrivate) {
+    // Build default OpusHead if not found
+    codecPrivate = new Uint8Array([
+      0x4F, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64, // "OpusHead"
+      0x01, // version
+      0x01, // 1 channel
+      0x38, 0x01, // pre-skip: 312
+      0x80, 0xBB, 0x00, 0x00, // sample rate: 48000
+      0x00, 0x00, // output gain: 0
+      0x00, // channel mapping: 0
+    ]);
+  }
+  return { codecPrivate, frames };
+}
+
+// OGG CRC32 (polynomial 0x04C11DB7)
+const OGG_CRC = new Uint32Array(256);
+for (let i = 0; i < 256; i++) {
+  let r = i << 24;
+  for (let j = 0; j < 8; j++) r = (r & 0x80000000) ? ((r << 1) ^ 0x04C11DB7) : (r << 1);
+  OGG_CRC[i] = r >>> 0;
+}
+function oggCrc32(d: Uint8Array): number {
+  let c = 0;
+  for (let i = 0; i < d.length; i++) c = ((c << 8) ^ OGG_CRC[((c >>> 24) ^ d[i]) & 0xFF]) >>> 0;
+  return c;
+}
+
+function makeOggPage(serial: number, seq: number, granule: bigint, headerType: number, packets: Uint8Array[]): Uint8Array {
+  const segs: number[] = [];
+  for (const p of packets) {
+    let rem = p.length;
+    while (rem >= 255) { segs.push(255); rem -= 255; }
+    segs.push(rem);
+  }
+  const hdrSize = 27 + segs.length;
+  const dataSize = packets.reduce((s, p) => s + p.length, 0);
+  const page = new Uint8Array(hdrSize + dataSize);
+  const dv = new DataView(page.buffer);
+
+  page.set([0x4F, 0x67, 0x67, 0x53], 0); // "OggS"
+  page[4] = 0; // version
+  page[5] = headerType;
+  dv.setUint32(6, Number(granule & 0xFFFFFFFFn), true);
+  dv.setUint32(10, Number((granule >> 32n) & 0xFFFFFFFFn), true);
+  dv.setUint32(14, serial, true);
+  dv.setUint32(18, seq, true);
+  dv.setUint32(22, 0, true); // CRC placeholder
+  page[26] = segs.length;
+  for (let i = 0; i < segs.length; i++) page[27 + i] = segs[i];
+
+  let off = hdrSize;
+  for (const p of packets) { page.set(p, off); off += p.length; }
+
+  dv.setUint32(22, oggCrc32(page), true);
+  return page;
+}
+
+function remuxWebmToOgg(webmData: Uint8Array): Uint8Array {
+  const { codecPrivate, frames } = extractOpusFromWebM(webmData);
+  console.log(`[Remuxer] Extracted ${frames.length} Opus frames from WebM (codecPrivate: ${codecPrivate.length} bytes)`);
+
+  if (frames.length === 0) {
+    throw new Error('No Opus frames found in WebM data');
+  }
+
+  const serial = Math.floor(Math.random() * 0xFFFFFFFF);
+  const pages: Uint8Array[] = [];
+  let seq = 0;
+
+  // Page 0: OpusHead (BOS)
+  // Ensure codecPrivate starts with "OpusHead"
+  let opusHead = codecPrivate;
+  const opusHeadMagic = [0x4F, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64];
+  if (codecPrivate.length < 8 || String.fromCharCode(...codecPrivate.slice(0, 8)) !== 'OpusHead') {
+    // Prepend OpusHead magic if missing (some WebM files store raw config)
+    const fullHead = new Uint8Array(8 + codecPrivate.length);
+    fullHead.set(opusHeadMagic, 0);
+    fullHead.set(codecPrivate, 8);
+    opusHead = fullHead;
+  }
+  pages.push(makeOggPage(serial, seq++, 0n, 0x02, [opusHead])); // BOS
+
+  // Page 1: OpusTags
+  const vendor = new TextEncoder().encode('Lovable');
+  const tags = new Uint8Array(8 + 4 + vendor.length + 4);
+  const tv = new DataView(tags.buffer);
+  tags.set(new TextEncoder().encode('OpusTags'), 0);
+  tv.setUint32(8, vendor.length, true);
+  tags.set(vendor, 12);
+  tv.setUint32(12 + vendor.length, 0, true);
+  pages.push(makeOggPage(serial, seq++, 0n, 0x00, [tags]));
+
+  // Audio pages - group ~50 frames per page
+  let preSkip = 0;
+  if (opusHead.length >= 12) preSkip = opusHead[10] | (opusHead[11] << 8);
+  let granule = BigInt(preSkip);
+  const FPP = 50; // frames per page
+  const SPF = 960; // samples per frame (20ms at 48kHz)
+
+  for (let i = 0; i < frames.length; i += FPP) {
+    const batch = frames.slice(i, Math.min(i + FPP, frames.length));
+    granule += BigInt(batch.length * SPF);
+    const isLast = (i + FPP >= frames.length);
+    pages.push(makeOggPage(serial, seq++, granule, isLast ? 0x04 : 0x00, batch));
+  }
+
+  const totalSize = pages.reduce((s, p) => s + p.length, 0);
+  const result = new Uint8Array(totalSize);
+  let off = 0;
+  for (const p of pages) { result.set(p, off); off += p.length; }
+
+  console.log(`[Remuxer] Created OGG file: ${result.length} bytes, ${frames.length} frames, ${pages.length} pages`);
+  return result;
+}
+// ===== END REMUXER =====
+
 // ===== RETRY UTILITY =====
 async function fetchSettingsWithRetry(
   supabase: any,
@@ -298,37 +498,40 @@ async function uploadMediaToWhatsApp(
     console.log(`[Sender] Downloaded ${mediaBuffer.byteLength} bytes, uploading to WhatsApp with mime: ${mimeType}`);
     
     // Sanitize mimeType for WhatsApp compatibility
-    // Safari's audio/mp4 container is rejected by WhatsApp (error 131053)
-    // Map to audio/aac which WhatsApp accepts natively
     let effectiveMimeType = mimeType;
+    let uint8Array = new Uint8Array(mediaBuffer);
+    
     if (mimeType === 'audio/mp4' || mimeType === 'audio/mp4; codecs=mp4a.40.2') {
       effectiveMimeType = 'audio/aac';
       console.log('[Sender] Mapped audio/mp4 -> audio/aac for WhatsApp compatibility');
     }
-    // WebM com Opus e essencialmente o mesmo que OGG/Opus - apenas container diferente
-    // WhatsApp aceita audio/ogg nativamente mas rejeita audio/webm
+    
+    // WebM -> OGG: Real remuxing (not just relabeling)
+    // Chrome records audio/webm;codecs=opus but WhatsApp requires audio/ogg
+    // Both use the same Opus codec, we just change the container format
     if (mimeType === 'audio/webm' || mimeType === 'audio/webm; codecs=opus') {
-      effectiveMimeType = 'audio/ogg';
-      console.log('[Sender] Mapped audio/webm -> audio/ogg for WhatsApp compatibility');
+      try {
+        console.log(`[Sender] Remuxing WebM->OGG (${uint8Array.length} bytes)...`);
+        uint8Array = remuxWebmToOgg(uint8Array);
+        effectiveMimeType = 'audio/ogg';
+        console.log(`[Sender] Remuxed successfully: ${uint8Array.length} bytes OGG`);
+      } catch (remuxError) {
+        console.error('[Sender] Remux failed, falling back to relabel:', remuxError);
+        effectiveMimeType = 'audio/ogg';
+      }
     }
     
-    // Determine file extension from mime type
+    // Determine file extension from effective mime type
     const extMap: Record<string, string> = {
       'audio/ogg': 'ogg',
-      'audio/ogg; codecs=opus': 'ogg',
-      'audio/mp4': 'aac',
-      'audio/mp4; codecs=mp4a.40.2': 'aac',
-      'audio/mpeg': 'mp3',
       'audio/aac': 'aac',
-      'audio/webm': 'webm',
-      'audio/webm; codecs=opus': 'webm',
+      'audio/mpeg': 'mp3',
     };
-    const ext = extMap[effectiveMimeType] || extMap[mimeType] || 'ogg';
+    const ext = extMap[effectiveMimeType] || 'ogg';
     
     // Build multipart form data manually
     const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
-    const uint8Array = new Uint8Array(mediaBuffer);
-    
+
     const header = [
       `--${boundary}`,
       `Content-Disposition: form-data; name="messaging_product"`,
