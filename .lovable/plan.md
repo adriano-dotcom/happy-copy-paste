@@ -1,91 +1,86 @@
 
 
-# Corrigir acesso ao microfone para envio de audio
+# Corrigir envio de audio do operador para WhatsApp (erro 131053)
 
 ## Problema
-Ao clicar no botao de microfone no chat, aparece o erro "Erro ao acessar microfone. Verifique as permissoes." O audio nao funciona.
+Audios gravados pelo operador no chat falham com erro **131053** do WhatsApp:
+```
+Audio file uploaded with mimetype as audio/mp4, however on processing 
+it is of type application/octet-stream
+```
 
-## Diagnostico
-O codigo atual (linha 971-1005 do `ChatInterface.tsx`) chama `navigator.mediaDevices.getUserMedia` corretamente no handler de click, mas:
+Isso acontece em **todos os audios de operador** (from_type = 'human') - nenhum foi entregue com sucesso.
 
-1. **Nao verifica se `navigator.mediaDevices` existe** - em contextos HTTP (sem HTTPS), esse objeto e `undefined`, causando um erro generico
-2. **A mensagem de erro e generica demais** - nao diferencia entre "sem HTTPS", "permissao negada", "sem microfone" ou "formato nao suportado"
-3. **Nao tem fallback** caso o formato preferido nao seja suportado pelo MediaRecorder
+## Causa raiz
+Dois problemas encadeados:
+
+1. **O navegador (Safari/Chrome no Mac) grava como `audio/mp4`**, mas o container gerado pelo MediaRecorder nao e um MP4 valido que o WhatsApp reconhece. O WhatsApp espera codificacao AAC dentro do container MP4, mas o MediaRecorder pode gerar um formato ligeiramente diferente.
+
+2. **O Supabase Storage serve arquivos publicos como `application/octet-stream`**, independente do content-type usado no upload. Quando o `whatsapp-sender` baixa o arquivo e faz upload na WhatsApp Media API, o WhatsApp valida o conteudo real e rejeita.
+
+Evidencia: O media upload para o WhatsApp retorna sucesso (ID 952267164644964), mas ao enviar a mensagem, o WhatsApp rejeita o conteudo com 131053. Isso indica que o formato do arquivo nao e realmente `audio/mp4` valido.
 
 ## Solucao
 
-### Alteracoes no `src/components/ChatInterface.tsx`
+### 1. Frontend: Fazer upload direto do Blob (sem roundtrip base64)
 
-**1. Adicionar verificacao de seguranca antes de chamar getUserMedia:**
-- Verificar se `navigator.mediaDevices` e `navigator.mediaDevices.getUserMedia` existem
-- Se nao existirem, mostrar mensagem especifica informando que o site precisa ser acessado via HTTPS
+O fluxo atual converte Blob -> base64 -> Blob desnecessariamente, o que pode corromper headers do container. Simplificar para enviar o Blob diretamente ao Storage.
 
-**2. Melhorar o tratamento de erros com mensagens especificas:**
-- `NotAllowedError` -> "Permissao do microfone negada. Clique no icone de cadeado na barra de endereco para permitir."
-- `NotFoundError` -> "Nenhum microfone encontrado neste dispositivo."
-- `NotReadableError` -> "Microfone em uso por outro aplicativo."
-- Erro generico -> manter mensagem atual
+**Arquivo:** `src/components/ChatInterface.tsx`
 
-**3. Adicionar tratamento robusto para formato de audio:**
-- Se o MediaRecorder falhar com o formato preferido, tentar sem especificar mimeType (usar padrao do navegador)
+- Na funcao `stopRecording`: ao inves de ler como base64 e passar para `sendAudioMessage`, enviar o `audioBlob` diretamente
+- Na funcao `sendAudioMessage`: aceitar um `Blob` ao inves de `string` base64, eliminando a reconversao
 
-### Codigo proposto para `startRecording`:
+### 2. Frontend: Forcar upload com content-type correto via upsert
 
+Garantir que o upload ao Storage use `upsert: true` e o `contentType` correto para evitar conflitos.
+
+### 3. Backend: Melhorar `uploadMediaToWhatsApp` para sanitizar o mimeType
+
+**Arquivo:** `supabase/functions/whatsapp-sender/index.ts`
+
+- Se o mimeType for `audio/mp4` e o upload ao WhatsApp falhar, tentar novamente com `audio/aac` (WhatsApp aceita AAC e o container MP4 do browser geralmente contem AAC)
+- Adicionar log do content-type recebido no download para diagnostico
+
+### Detalhes tecnicos
+
+**ChatInterface.tsx - stopRecording (simplificar):**
 ```typescript
-const startRecording = async () => {
-  try {
-    // Verificar se API de midia esta disponivel (requer HTTPS)
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      toast.error('Microfone nao disponivel. Verifique se o site esta sendo acessado via HTTPS.');
-      return;
-    }
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-      }
-    });
-
-    // Detectar melhor formato
-    const preferredFormat = getPreferredAudioMimeType();
-    audioFormatRef.current = preferredFormat;
-
-    let mediaRecorder: MediaRecorder;
-    try {
-      mediaRecorder = new MediaRecorder(stream, { mimeType: preferredFormat.mimeType });
-    } catch (formatError) {
-      console.warn('[Audio] Format not supported, using default:', formatError);
-      mediaRecorder = new MediaRecorder(stream);
-      audioFormatRef.current = { mimeType: mediaRecorder.mimeType, extension: 'webm' };
-    }
-
-    // ... resto do codigo igual ...
-
-  } catch (error) {
-    console.error('Error accessing microphone:', error);
-    if (error instanceof DOMException) {
-      switch (error.name) {
-        case 'NotAllowedError':
-          toast.error('Permissao do microfone negada. Clique no cadeado na barra de endereco para permitir.');
-          break;
-        case 'NotFoundError':
-          toast.error('Nenhum microfone encontrado neste dispositivo.');
-          break;
-        case 'NotReadableError':
-          toast.error('Microfone em uso por outro aplicativo.');
-          break;
-        default:
-          toast.error('Erro ao acessar microfone. Verifique as permissoes.');
-      }
-    } else {
-      toast.error('Erro ao acessar microfone. Verifique as permissoes.');
-    }
-  }
+mediaRecorderRef.current!.onstop = async () => {
+  const audioBlob = new Blob(audioChunksRef.current, { type: format.mimeType });
+  await sendAudioMessage(audioBlob, format.mimeType, format.extension);
+  resolve();
 };
 ```
 
-## Arquivo a editar
-- `src/components/ChatInterface.tsx` - funcao `startRecording` (linhas 971-1006)
+**ChatInterface.tsx - sendAudioMessage (aceitar Blob diretamente):**
+```typescript
+const sendAudioMessage = async (audioBlob: Blob, mimeType: string, extension: string) => {
+  // Upload direto do Blob, sem conversao base64
+  const { error: uploadError } = await supabase.storage
+    .from('whatsapp-media')
+    .upload(fileName, audioBlob, {
+      contentType: mimeType,
+      cacheControl: '3600',
+      upsert: false
+    });
+  // ... resto igual
+};
+```
 
-Essa mudanca melhora significativamente o diagnostico do problema, adicionando verificacoes previas e mensagens de erro especificas que ajudam o usuario a resolver o problema de permissao.
+**whatsapp-sender/index.ts - uploadMediaToWhatsApp (retry com mimeType alternativo):**
+```typescript
+// Apos download do media, sanitizar o mimeType
+// Se audio/mp4 falhar, tentar como audio/aac
+let effectiveMimeType = mimeType;
+// Alguns navegadores gravam "audio/mp4" mas o conteudo e AAC puro
+// WhatsApp aceita audio/aac nativamente
+if (mimeType === 'audio/mp4') {
+  effectiveMimeType = 'audio/aac';
+}
+```
+
+### Arquivos a editar
+1. `src/components/ChatInterface.tsx` - Simplificar fluxo de audio (eliminar roundtrip base64)
+2. `supabase/functions/whatsapp-sender/index.ts` - Mapear audio/mp4 para audio/aac no upload ao WhatsApp
+
