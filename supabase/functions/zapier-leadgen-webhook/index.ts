@@ -59,20 +59,24 @@ serve(async (req) => {
   }
 
   try {
-    // Validar API Key
-    const zapierKey = req.headers.get('x-zapier-key');
-    const expectedKey = Deno.env.get('ZAPIER_LEADGEN_KEY');
+    // Validar API Key with constant-time comparison
+    const zapierKey = req.headers.get('x-zapier-key') || '';
+    const expectedKey = Deno.env.get('ZAPIER_LEADGEN_KEY') || '';
     
-    if (!expectedKey) {
-      console.error('[zapier-leadgen-webhook] CRITICAL: ZAPIER_LEADGEN_KEY not configured');
+    if (!expectedKey || !zapierKey) {
+      console.error('[zapier-leadgen-webhook] Authentication failed');
       return new Response(
-        JSON.stringify({ error: 'Webhook authentication not configured' }),
-        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     
-    if (zapierKey !== expectedKey) {
-      console.error('[zapier-leadgen-webhook] Invalid API key');
+    // Constant-time comparison to prevent timing attacks
+    const encoder = new TextEncoder();
+    const a = encoder.encode(zapierKey);
+    const b = encoder.encode(expectedKey);
+    if (a.byteLength !== b.byteLength || !crypto.subtle.timingSafeEqual(a, b)) {
+      console.error('[zapier-leadgen-webhook] Authentication failed');
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

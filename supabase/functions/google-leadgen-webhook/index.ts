@@ -59,20 +59,24 @@ serve(async (req) => {
   }
 
   try {
-    // Validar API Key (diferente do Facebook)
-    const googleKey = req.headers.get('x-google-key');
-    const expectedKey = Deno.env.get('GOOGLE_LEADGEN_KEY');
+    // Validar API Key with constant-time comparison
+    const googleKey = req.headers.get('x-google-key') || '';
+    const expectedKey = Deno.env.get('GOOGLE_LEADGEN_KEY') || '';
     
-    if (!expectedKey) {
-      console.error('[google-leadgen-webhook] CRITICAL: GOOGLE_LEADGEN_KEY not configured');
+    if (!expectedKey || !googleKey) {
+      console.error('[google-leadgen-webhook] Authentication failed');
       return new Response(
-        JSON.stringify({ error: 'Webhook authentication not configured' }),
-        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     
-    if (googleKey !== expectedKey) {
-      console.error('[google-leadgen-webhook] Invalid API key');
+    // Constant-time comparison to prevent timing attacks
+    const encoder = new TextEncoder();
+    const a = encoder.encode(googleKey);
+    const b = encoder.encode(expectedKey);
+    if (a.byteLength !== b.byteLength || !crypto.subtle.timingSafeEqual(a, b)) {
+      console.error('[google-leadgen-webhook] Authentication failed');
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
