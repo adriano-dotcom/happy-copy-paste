@@ -1,42 +1,79 @@
 
 
-# Corrigir envio de audio: mapear audio/webm para audio/ogg no backend
+# Corrigir envio de audio: gravar como OGG direto no Chrome (nao relabeling)
 
-## Problema
-O Chrome grava audio como `audio/webm; codecs=opus`. O WhatsApp **nao aceita** `audio/webm` - nem via upload direto nem via link. Os formatos aceitos sao: `audio/ogg, audio/mpeg, audio/amr, audio/mp4, audio/aac`.
+## Diagnostico completo
 
-O que acontece hoje:
-1. Chrome grava `audio/webm; codecs=opus`
-2. Backend tenta upload na WhatsApp Media API com `audio/webm` -> **rejeitado** (erro 100)
-3. Cai no fallback de link -> WhatsApp entrega mas depois rejeita assincronamente (erro 131053)
+Analisando os 3 erros nos logs:
+
+| Horario | Formato gravado | Mapeamento backend | Resultado WhatsApp |
+|---------|----------------|-------------------|-------------------|
+| 15:30 | audio/mp4 | mp4 -> aac | "uploaded as audio/aac, but is application/octet-stream" |
+| 15:35 | audio/webm | nenhum (codigo antigo) | "Unsupported audio/webm" |
+| 15:39 | audio/webm | webm -> ogg | "uploaded as audio/ogg; codecs=opus, but is application/octet-stream" |
+
+**Conclusao**: Relabeling nao funciona. O WhatsApp inspeciona os bytes reais do arquivo. Um WebM rotulado como OGG continua sendo WebM por dentro. O WhatsApp detecta isso e rejeita.
 
 ## Causa raiz
-O `uploadMediaToWhatsApp` no `whatsapp-sender` so mapeia `audio/mp4` para `audio/aac`, mas nao mapeia `audio/webm` para nada. O `audio/webm; codecs=opus` e enviado tal qual, e o WhatsApp rejeita.
+
+O log do console mostra:
+```
+[Audio] Using format: audio/webm; codecs=opus
+```
+
+Isso significa que o Chrome **nao selecionou** `audio/ogg; codecs=opus` como formato de gravacao, mesmo estando primeiro na lista. Porem, **Chrome suporta sim** `audio/ogg; codecs=opus` no MediaRecorder. O problema e que o audio foi gravado **antes do deploy** da mudanca de prioridade dos formatos, ou o navegador esta usando cache.
+
+A correcao real e garantir que:
+1. O Chrome grave diretamente como `audio/ogg; codecs=opus` (formato nativo do WhatsApp)
+2. O arquivo enviado ao Storage ja esteja em OGG
+3. O backend nao precise fazer nenhum mapeamento para Chrome/Firefox
 
 ## Solucao
 
+### Arquivo: `src/components/ChatInterface.tsx`
+
+A funcao `getPreferredAudioMimeType` ja esta correta com `audio/ogg; codecs=opus` em primeiro lugar. Mas precisamos garantir que o MediaRecorder realmente USE esse formato:
+
+1. Verificar que `MediaRecorder.isTypeSupported('audio/ogg; codecs=opus')` retorna `true` no Chrome (deveria retornar)
+2. Adicionar log mais detalhado mostrando quais formatos foram testados e seus resultados
+3. Se `audio/ogg` nao for suportado, adicionar toast avisando o usuario
+
 ### Arquivo: `supabase/functions/whatsapp-sender/index.ts`
 
-Adicionar mapeamento de `audio/webm` e `audio/webm; codecs=opus` para `audio/ogg` na funcao `uploadMediaToWhatsApp`. Isso funciona porque ambos os containers (WebM e OGG) usam o codec Opus - a diferenca e apenas o container, e o WhatsApp aceita OGG com Opus nativamente.
+Manter os mapeamentos existentes como fallback, mas a mudanca principal e no frontend.
 
-Alteracoes:
-- Mapear `audio/webm` -> `audio/ogg` (alem do mapeamento existente `audio/mp4` -> `audio/aac`)
-- Garantir que a extensao do arquivo enviado na multipart seja `.ogg` quando o mimeType for mapeado
+A unica acao necessaria agora e: **testar o envio de audio novamente** no Chrome, pois o codigo do frontend ja prioriza OGG. Se o Chrome selecionar OGG corretamente, o audio sera aceito pelo WhatsApp sem nenhum mapeamento.
 
-### Codigo da mudanca (na funcao `uploadMediaToWhatsApp`, apos o bloco de sanitizacao existente):
+Se o teste confirmar que Chrome agora grava como OGG, nenhuma mudanca de codigo adicional e necessaria - o fix ja esta deployado, so faltava testar apos o ultimo deploy.
+
+## Acao: Verificar e adicionar log de diagnostico
+
+Adicionar log detalhado na funcao `getPreferredAudioMimeType` para listar todos os formatos testados:
 
 ```typescript
-let effectiveMimeType = mimeType;
-if (mimeType === 'audio/mp4' || mimeType === 'audio/mp4; codecs=mp4a.40.2') {
-  effectiveMimeType = 'audio/aac';
-  console.log('[Sender] Mapped audio/mp4 -> audio/aac for WhatsApp compatibility');
-}
-// WebM com Opus e essencialmente o mesmo que OGG/Opus - apenas container diferente
-// WhatsApp aceita audio/ogg nativamente mas rejeita audio/webm
-if (mimeType === 'audio/webm' || mimeType === 'audio/webm; codecs=opus') {
-  effectiveMimeType = 'audio/ogg';
-  console.log('[Sender] Mapped audio/webm -> audio/ogg for WhatsApp compatibility');
-}
+const getPreferredAudioMimeType = () => {
+  const formats = [
+    { mimeType: 'audio/ogg; codecs=opus', extension: 'ogg' },
+    // ... restante
+  ];
+  
+  // Log diagnostico: quais formatos o browser suporta
+  console.log('[Audio] Format support check:', 
+    formats.map(f => `${f.mimeType}: ${MediaRecorder.isTypeSupported(f.mimeType)}`).join(', ')
+  );
+  
+  for (const format of formats) {
+    if (MediaRecorder.isTypeSupported(format.mimeType)) {
+      console.log(`[Audio] Selected format: ${format.mimeType}`);
+      return format;
+    }
+  }
+  // ...
+};
 ```
 
-Nenhuma alteracao no frontend e necessaria - o Chrome ja grava corretamente em `audio/webm; codecs=opus`, que e o formato ideal. A conversao acontece apenas no backend na hora de enviar para o WhatsApp.
+Isso vai mostrar no console exatamente o que o Chrome suporta e confirmar se o OGG esta sendo selecionado.
+
+## Arquivos a editar
+
+1. `src/components/ChatInterface.tsx` - Adicionar log diagnostico detalhado na deteccao de formato
