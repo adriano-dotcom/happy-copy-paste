@@ -279,8 +279,94 @@ serve(async (req) => {
   }
 });
 
+// ===== UPLOAD MEDIA DIRECTLY TO WHATSAPP =====
+async function uploadMediaToWhatsApp(
+  phoneNumberId: string,
+  accessToken: string,
+  mediaUrl: string,
+  mimeType: string
+): Promise<string | null> {
+  try {
+    console.log(`[Sender] Downloading media from: ${mediaUrl}`);
+    const downloadResp = await fetch(mediaUrl);
+    if (!downloadResp.ok) {
+      console.error(`[Sender] Failed to download media: ${downloadResp.status}`);
+      return null;
+    }
+    
+    const mediaBuffer = await downloadResp.arrayBuffer();
+    console.log(`[Sender] Downloaded ${mediaBuffer.byteLength} bytes, uploading to WhatsApp with mime: ${mimeType}`);
+    
+    // Determine file extension from mime type
+    const extMap: Record<string, string> = {
+      'audio/ogg': 'ogg',
+      'audio/ogg; codecs=opus': 'ogg',
+      'audio/mp4': 'm4a',
+      'audio/mpeg': 'mp3',
+      'audio/aac': 'aac',
+      'audio/webm': 'webm',
+    };
+    const ext = extMap[mimeType] || 'ogg';
+    
+    // Build multipart form data manually
+    const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
+    const uint8Array = new Uint8Array(mediaBuffer);
+    
+    const header = [
+      `--${boundary}`,
+      `Content-Disposition: form-data; name="messaging_product"`,
+      '',
+      'whatsapp',
+      `--${boundary}`,
+      `Content-Disposition: form-data; name="type"`,
+      '',
+      mimeType,
+      `--${boundary}`,
+      `Content-Disposition: form-data; name="file"; filename="audio.${ext}"`,
+      `Content-Type: ${mimeType}`,
+      '',
+      ''
+    ].join('\r\n');
+    
+    const footer = `\r\n--${boundary}--\r\n`;
+    
+    const headerBytes = new TextEncoder().encode(header);
+    const footerBytes = new TextEncoder().encode(footer);
+    
+    const body = new Uint8Array(headerBytes.length + uint8Array.length + footerBytes.length);
+    body.set(headerBytes, 0);
+    body.set(uint8Array, headerBytes.length);
+    body.set(footerBytes, headerBytes.length + uint8Array.length);
+    
+    const uploadResp = await fetch(
+      `${WHATSAPP_API_URL}/${phoneNumberId}/media`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        },
+        body: body,
+      }
+    );
+    
+    const uploadData = await uploadResp.json();
+    
+    if (!uploadResp.ok) {
+      console.error('[Sender] WhatsApp media upload error:', uploadData);
+      return null;
+    }
+    
+    console.log('[Sender] Media uploaded successfully, ID:', uploadData.id);
+    return uploadData.id;
+  } catch (error) {
+    console.error('[Sender] Error uploading media to WhatsApp:', error);
+    return null;
+  }
+}
+// ===== END UPLOAD MEDIA =====
+
 async function sendMessage(supabase: any, settings: any, queueItem: any) {
-  console.log(`[Sender] Sending message: ${queueItem.id}`);
 
   // Get contact phone number
   const { data: contact } = await supabase
@@ -401,10 +487,25 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
       };
       break;
     
-    case 'audio':
+    case 'audio': {
+      // Upload audio directly to WhatsApp Media API to avoid content-type issues
+      // Supabase Storage serves files as application/octet-stream which WhatsApp rejects
+      const audioMediaId = await uploadMediaToWhatsApp(
+        settings.whatsapp_phone_number_id,
+        settings.whatsapp_access_token,
+        queueItem.media_url,
+        queueItem.metadata?.mime_type || 'audio/ogg'
+      );
       payload.type = 'audio';
-      payload.audio = { link: queueItem.media_url };
+      if (audioMediaId) {
+        payload.audio = { id: audioMediaId };
+      } else {
+        // Fallback to link if upload fails
+        console.warn('[Sender] Media upload failed, falling back to link');
+        payload.audio = { link: queueItem.media_url };
+      }
       break;
+    }
     
     case 'document':
       payload.type = 'document';
