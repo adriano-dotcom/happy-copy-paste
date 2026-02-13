@@ -1053,15 +1053,8 @@ const ChatInterface: React.FC = () => {
     return new Promise<void>((resolve) => {
       mediaRecorderRef.current!.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: format.mimeType });
-        const reader = new FileReader();
-        
-        reader.onloadend = async () => {
-          const base64 = (reader.result as string).split(',')[1];
-          await sendAudioMessage(base64, format.mimeType, format.extension);
-          resolve();
-        };
-        
-        reader.readAsDataURL(audioBlob);
+        await sendAudioMessage(audioBlob, format.mimeType, format.extension);
+        resolve();
       };
       
       mediaRecorderRef.current!.stop();
@@ -1082,22 +1075,13 @@ const ChatInterface: React.FC = () => {
     setRecordingTime(0);
   };
 
-  const sendAudioMessage = async (audioBase64: string, mimeType: string, extension: string) => {
+  const sendAudioMessage = async (audioBlob: Blob, mimeType: string, extension: string) => {
     if (!activeChat) return;
     
     try {
       toast.loading('Enviando áudio...', { id: 'audio-send' });
       
-      // 1. Convert base64 to Blob
-      const byteCharacters = atob(audioBase64);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const audioBlob = new Blob([byteArray], { type: mimeType });
-      
-      // 2. Upload to Supabase Storage (whatsapp-media bucket)
+      // Upload direto do Blob ao Storage (sem roundtrip base64)
       const fileName = `${activeChat.contactId}/${Date.now()}_audio.${extension}`;
       
       const { error: uploadError } = await supabase.storage
