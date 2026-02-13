@@ -1061,19 +1061,7 @@ async function processIncomingMessageWithBackground(
       .update({ last_message_at: new Date().toISOString() })
       .eq('id', conversation.id);
 
-    // 6. Process media in background (download, store, OCR/transcribe)
-    if (pendingMediaProcessing) {
-      await processMediaAndUpdateMessage(
-        supabase, 
-        dbMessage.id, 
-        message, 
-        normalizedPhone, 
-        settings, 
-        lovableApiKey
-      );
-    }
-
-    // 7. Queue for Nina AI processing (with debounce)
+    // 6. Queue for Nina AI processing FIRST (before media - prevents early_drop from blocking AI)
     if (conversation.status === 'nina') {
       const DEBOUNCE_DELAY_MS = 15000;
       const scheduledFor = new Date(Date.now() + DEBOUNCE_DELAY_MS).toISOString();
@@ -1100,6 +1088,18 @@ async function processIncomingMessageWithBackground(
       } else {
         console.log('[Webhook BG] Message queued for Nina (scheduled:', scheduledFor, ')');
       }
+    }
+
+    // 7. Process media in background (download, store, OCR/transcribe)
+    if (pendingMediaProcessing) {
+      await processMediaAndUpdateMessage(
+        supabase, 
+        dbMessage.id, 
+        message, 
+        normalizedPhone, 
+        settings, 
+        lovableApiKey
+      );
     }
 
     console.log('[Webhook BG] Background processing complete for message:', dbMessage.id);
