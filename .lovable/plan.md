@@ -1,79 +1,76 @@
 
+# Fix: Atlas nao respondeu ao "Sim" - mensagem nao foi enfileirada
 
-# Corrigir envio de audio: gravar como OGG direto no Chrome (nao relabeling)
+## Diagnostico
 
-## Diagnostico completo
+A mensagem "Sim" do contato Vera Lucia (5544999060048) foi salva no banco de dados (`messages` tabela, ID `ee404837`), mas **nunca foi inserida na `nina_processing_queue`**. Por isso, o nina-orchestrator nunca processou essa mensagem e o Atlas nunca respondeu.
 
-Analisando os 3 erros nos logs:
+### Por que isso aconteceu?
 
-| Horario | Formato gravado | Mapeamento backend | Resultado WhatsApp |
-|---------|----------------|-------------------|-------------------|
-| 15:30 | audio/mp4 | mp4 -> aac | "uploaded as audio/aac, but is application/octet-stream" |
-| 15:35 | audio/webm | nenhum (codigo antigo) | "Unsupported audio/webm" |
-| 15:39 | audio/webm | webm -> ogg | "uploaded as audio/ogg; codecs=opus, but is application/octet-stream" |
+O webhook usa `EdgeRuntime.waitUntil()` para processar mensagens em background apos retornar HTTP 200. A sequencia e:
 
-**Conclusao**: Relabeling nao funciona. O WhatsApp inspeciona os bytes reais do arquivo. Um WebM rotulado como OGG continua sendo WebM por dentro. O WhatsApp detecta isso e rejeita.
-
-## Causa raiz
-
-O log do console mostra:
-```
-[Audio] Using format: audio/webm; codecs=opus
+```text
+1. Webhook recebe "Sim" do WhatsApp
+2. Insere na message_grouping_queue (deduplicacao)
+3. Retorna HTTP 200 imediatamente
+4. Background: cria contato, conversa, salva mensagem no DB  <-- completou
+5. Background: insere na nina_processing_queue              <-- NAO completou (early_drop)
+6. Background: processa media (se houver)
 ```
 
-Isso significa que o Chrome **nao selecionou** `audio/ogg; codecs=opus` como formato de gravacao, mesmo estando primeiro na lista. Porem, **Chrome suporta sim** `audio/ogg; codecs=opus` no MediaRecorder. O problema e que o audio foi gravado **antes do deploy** da mudanca de prioridade dos formatos, ou o navegador esta usando cache.
+Os logs mostram multiplos `early_drop` shutdowns no periodo. A funcao foi encerrada entre os passos 4 e 5, salvando a mensagem mas sem enfileira-la para a IA.
 
-A correcao real e garantir que:
-1. O Chrome grave diretamente como `audio/ogg; codecs=opus` (formato nativo do WhatsApp)
-2. O arquivo enviado ao Storage ja esteja em OGG
-3. O backend nao precise fazer nenhum mapeamento para Chrome/Firefox
+### Problema estrutural
 
-## Solucao
+A insercao na `nina_processing_queue` (linha 1069 do webhook) esta dentro do bloco de background (`EdgeRuntime.waitUntil`). Isso significa que o insert nao e garantido - se o runtime encerrar por `early_drop`, a mensagem fica orfao.
 
-### Arquivo: `src/components/ChatInterface.tsx`
+## Solucao em duas partes
 
-A funcao `getPreferredAudioMimeType` ja esta correta com `audio/ogg; codecs=opus` em primeiro lugar. Mas precisamos garantir que o MediaRecorder realmente USE esse formato:
+### Parte 1: Acao imediata - Reprocessar a mensagem "Sim"
 
-1. Verificar que `MediaRecorder.isTypeSupported('audio/ogg; codecs=opus')` retorna `true` no Chrome (deveria retornar)
-2. Adicionar log mais detalhado mostrando quais formatos foram testados e seus resultados
-3. Se `audio/ogg` nao for suportado, adicionar toast avisando o usuario
+Inserir manualmente a mensagem "Sim" na `nina_processing_queue` para que o Atlas responda agora:
 
-### Arquivo: `supabase/functions/whatsapp-sender/index.ts`
-
-Manter os mapeamentos existentes como fallback, mas a mudanca principal e no frontend.
-
-A unica acao necessaria agora e: **testar o envio de audio novamente** no Chrome, pois o codigo do frontend ja prioriza OGG. Se o Chrome selecionar OGG corretamente, o audio sera aceito pelo WhatsApp sem nenhum mapeamento.
-
-Se o teste confirmar que Chrome agora grava como OGG, nenhuma mudanca de codigo adicional e necessaria - o fix ja esta deployado, so faltava testar apos o ultimo deploy.
-
-## Acao: Verificar e adicionar log de diagnostico
-
-Adicionar log detalhado na funcao `getPreferredAudioMimeType` para listar todos os formatos testados:
-
-```typescript
-const getPreferredAudioMimeType = () => {
-  const formats = [
-    { mimeType: 'audio/ogg; codecs=opus', extension: 'ogg' },
-    // ... restante
-  ];
-  
-  // Log diagnostico: quais formatos o browser suporta
-  console.log('[Audio] Format support check:', 
-    formats.map(f => `${f.mimeType}: ${MediaRecorder.isTypeSupported(f.mimeType)}`).join(', ')
-  );
-  
-  for (const format of formats) {
-    if (MediaRecorder.isTypeSupported(format.mimeType)) {
-      console.log(`[Audio] Selected format: ${format.mimeType}`);
-      return format;
-    }
-  }
-  // ...
-};
+```sql
+INSERT INTO nina_processing_queue (message_id, conversation_id, contact_id, priority, status, context_data)
+VALUES (
+  'ee404837-b2e1-4e1b-ab8f-58497a086dc7',
+  '6975d61f-cc25-40e2-81e3-4aceec23667c',
+  'c9efeb61-df22-440f-aade-3f5a4c5c29a1',
+  1,
+  'pending',
+  '{"message_type": "text", "original_type": "text", "recovery": true}'
+);
 ```
 
-Isso vai mostrar no console exatamente o que o Chrome suporta e confirmar se o OGG esta sendo selecionado.
+Depois, disparar o `nina-orchestrator` para processar.
+
+### Parte 2: Prevencao - Mover queue insert para ANTES do response
+
+Alterar o `whatsapp-webhook/index.ts` para fazer o insert na `nina_processing_queue` **sincronamente**, antes de retornar HTTP 200. A leitura da conversa e do contato precisam acontecer no hot path, mas como sao operacoes rapidas (SELECT simples), o impacto no tempo de resposta e minimo.
+
+**Abordagem**: Apos inserir na `message_grouping_queue`, fazer uma busca rapida pelo contato e conversa e inserir na `nina_processing_queue` diretamente no handler principal. O processamento pesado (media, OCR) continua no background.
+
+### Parte 3: Safety net - Sweep de mensagens orfaos
+
+Adicionar ao `cleanup-queues/index.ts` uma verificacao que detecta mensagens de usuario (`from_type = 'user'`) nos ultimos 30 minutos que nao tem entrada correspondente na `nina_processing_queue`, e cujas conversas estao com `status = 'nina'`. Essas mensagens orfaos serao automaticamente enfileiradas.
 
 ## Arquivos a editar
 
-1. `src/components/ChatInterface.tsx` - Adicionar log diagnostico detalhado na deteccao de formato
+1. **SQL**: Insert manual para reprocessar o "Sim" agora
+2. **`supabase/functions/whatsapp-webhook/index.ts`**: Mover o insert na `nina_processing_queue` para o hot path (antes do return HTTP 200)
+3. **`supabase/functions/cleanup-queues/index.ts`**: Adicionar funcao `recoverOrphanedMessages` como safety net
+
+## Detalhe tecnico da mudanca no webhook
+
+No handler principal (linhas 326-373), apos inserir na `message_grouping_queue`, adicionar:
+
+```text
+Para cada mensagem:
+  1. Buscar contato pelo telefone (SELECT rapido)
+  2. Buscar conversa ativa (SELECT rapido)
+  3. Se conversa.status === 'nina':
+     - INSERT na nina_processing_queue com scheduled_for = now + 15s
+  4. Continuar com EdgeRuntime.waitUntil para o resto
+```
+
+Isso garante que mesmo com `early_drop`, a mensagem ja esta na fila para a IA processar.
