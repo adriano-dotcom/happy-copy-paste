@@ -710,11 +710,30 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
     case 'audio': {
       // Upload audio directly to WhatsApp Media API to avoid content-type issues
       // Supabase Storage serves files as application/octet-stream which WhatsApp rejects
+      
+      // Detect MIME type: use metadata if available, otherwise infer from URL extension
+      let audioMimeType = queueItem.metadata?.mime_type || '';
+      if (!audioMimeType) {
+        const mediaUrlLower = (queueItem.media_url || '').toLowerCase();
+        if (mediaUrlLower.includes('.mp3')) {
+          audioMimeType = 'audio/mpeg';
+        } else if (mediaUrlLower.includes('.ogg')) {
+          audioMimeType = 'audio/ogg';
+        } else if (mediaUrlLower.includes('.webm')) {
+          audioMimeType = 'audio/webm';
+        } else if (mediaUrlLower.includes('.m4a') || mediaUrlLower.includes('.aac')) {
+          audioMimeType = 'audio/aac';
+        } else {
+          audioMimeType = 'audio/ogg'; // Final fallback
+        }
+        console.log(`[Sender] Inferred audio MIME from URL: ${audioMimeType} (url: ${queueItem.media_url})`);
+      }
+      
       const audioMediaId = await uploadMediaToWhatsApp(
         settings.whatsapp_phone_number_id,
         settings.whatsapp_access_token,
         queueItem.media_url,
-        queueItem.metadata?.mime_type || 'audio/ogg'
+        audioMimeType
       );
       payload.type = 'audio';
       if (audioMediaId) {
