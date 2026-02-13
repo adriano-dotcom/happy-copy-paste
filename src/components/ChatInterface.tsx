@@ -970,13 +970,32 @@ const ChatInterface: React.FC = () => {
   // Audio recording functions
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Verificar se API de mídia está disponível (requer HTTPS)
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        toast.error('Microfone não disponível. Verifique se o site está sendo acessado via HTTPS.');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        }
+      });
       
       // Detectar melhor formato compatível com WhatsApp
       const preferredFormat = getPreferredAudioMimeType();
       audioFormatRef.current = preferredFormat;
       
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: preferredFormat.mimeType });
+      let mediaRecorder: MediaRecorder;
+      try {
+        mediaRecorder = new MediaRecorder(stream, { mimeType: preferredFormat.mimeType });
+      } catch (formatError) {
+        console.warn('[Audio] Format not supported, using default:', formatError);
+        mediaRecorder = new MediaRecorder(stream);
+        audioFormatRef.current = { mimeType: mediaRecorder.mimeType, extension: 'webm' };
+      }
+
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
       
@@ -1001,7 +1020,23 @@ const ChatInterface: React.FC = () => {
       
     } catch (error) {
       console.error('Error accessing microphone:', error);
-      toast.error('Erro ao acessar microfone. Verifique as permissões.');
+      if (error instanceof DOMException) {
+        switch (error.name) {
+          case 'NotAllowedError':
+            toast.error('Permissão do microfone negada. Clique no cadeado na barra de endereço para permitir.');
+            break;
+          case 'NotFoundError':
+            toast.error('Nenhum microfone encontrado neste dispositivo.');
+            break;
+          case 'NotReadableError':
+            toast.error('Microfone em uso por outro aplicativo.');
+            break;
+          default:
+            toast.error('Erro ao acessar microfone. Verifique as permissões.');
+        }
+      } else {
+        toast.error('Erro ao acessar microfone. Verifique as permissões.');
+      }
     }
   };
 
