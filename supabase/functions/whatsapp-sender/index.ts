@@ -297,16 +297,24 @@ async function uploadMediaToWhatsApp(
     const mediaBuffer = await downloadResp.arrayBuffer();
     console.log(`[Sender] Downloaded ${mediaBuffer.byteLength} bytes, uploading to WhatsApp with mime: ${mimeType}`);
     
+    // Sanitize mimeType: browser audio/mp4 containers are usually AAC-encoded
+    // WhatsApp rejects audio/mp4 from MediaRecorder but accepts audio/aac
+    let effectiveMimeType = mimeType;
+    if (mimeType === 'audio/mp4') {
+      effectiveMimeType = 'audio/aac';
+      console.log('[Sender] Mapped audio/mp4 -> audio/aac for WhatsApp compatibility');
+    }
+    
     // Determine file extension from mime type
     const extMap: Record<string, string> = {
       'audio/ogg': 'ogg',
       'audio/ogg; codecs=opus': 'ogg',
-      'audio/mp4': 'm4a',
+      'audio/mp4': 'aac',
       'audio/mpeg': 'mp3',
       'audio/aac': 'aac',
       'audio/webm': 'webm',
     };
-    const ext = extMap[mimeType] || 'ogg';
+    const ext = extMap[effectiveMimeType] || extMap[mimeType] || 'ogg';
     
     // Build multipart form data manually
     const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
@@ -320,10 +328,10 @@ async function uploadMediaToWhatsApp(
       `--${boundary}`,
       `Content-Disposition: form-data; name="type"`,
       '',
-      mimeType,
+      effectiveMimeType,
       `--${boundary}`,
       `Content-Disposition: form-data; name="file"; filename="audio.${ext}"`,
-      `Content-Type: ${mimeType}`,
+      `Content-Type: ${effectiveMimeType}`,
       '',
       ''
     ].join('\r\n');
