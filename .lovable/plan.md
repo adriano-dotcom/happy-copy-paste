@@ -1,59 +1,56 @@
 
 
-# Correcao: "lastAgentMessage is not defined"
+# Corrigir envio de arquivos no chat
 
 ## Problema
+O upload de arquivos falha com erro **"Invalid key"** do Storage porque o nome do arquivo contém caracteres especiais que o Supabase Storage nao aceita (colchetes `[]`, espacos multiplos, etc).
 
-O Atlas nao seguiu com a prospeccao porque o nina-orchestrator esta crashando com o erro:
-
+**Exemplo do erro real:**
 ```
-ReferenceError: lastAgentMessage is not defined
+Invalid key: b666ac88-.../1770989305394_[ RCTR-C RCF-DC ] TRANSPORTADORA ESTELAI LTDA -  RCTRC _ RCFDC.pdf
 ```
 
-Este erro esta acontecendo em TODAS as mensagens processadas, nao apenas no caso de "nao e o responsavel". Isso significa que nenhuma conversa de prospeccao esta funcionando.
+## Causa raiz
+Na linha 1135 do `ChatInterface.tsx`, o nome original do arquivo e usado diretamente no path do Storage:
+```typescript
+const fileName = `${activeChat.contactId}/${Date.now()}_${file.name}`;
+```
 
-## Causa Raiz
+O Supabase Storage nao aceita caracteres como `[`, `]`, espacos duplos e outros caracteres especiais nas chaves de objetos.
 
-A variavel `lastAgentMessage` e declarada dentro do bloco `if (message.content) { ... }` na linha 3351 (dentro da secao "AUTOMATIC CONVERSATION CLOSURE DETECTION"). Esse bloco fecha na linha 3446.
+## Solucao
+Sanitizar o nome do arquivo antes de fazer o upload, removendo/substituindo caracteres invalidos:
 
-O bloco "NOT RESPONSIBLE DETECTION" na linha 3449 esta FORA desse escopo, e tenta usar `lastAgentMessage` que nao existe mais.
+1. Remover acentos e caracteres especiais
+2. Substituir espacos e caracteres nao-alfanumericos por underscores
+3. Remover underscores duplicados
+4. Preservar a extensao do arquivo
 
-## Correcao
+## Detalhes tecnicos
 
-Mover a busca de `lastAgentMessage` para ANTES do bloco de closure detection, no escopo externo da funcao, para que fique acessivel tanto pelo closure detection quanto pelo not-responsible detection.
+**Arquivo:** `src/components/ChatInterface.tsx`
 
-### Arquivo: `supabase/functions/nina-orchestrator/index.ts`
-
-### Mudancas:
-
-1. **Linha ~3339**: Mover a query de `lastAgentMessage` para fora do `if (message.content)` do closure detection, declarando-a no escopo da funcao:
+Adicionar funcao `sanitizeFileName` antes do uso na linha 1135:
 
 ```typescript
-const conversationMetadata = conversation.metadata || {};
-
-// Fetch last agent message (used by closure detection AND not-responsible detection)
-let lastAgentMessage: string | null = null;
-if (message.content) {
-    const { data: lastAgentMessages } = await supabase
-      .from('messages')
-      .select('content')
-      .eq('conversation_id', conversation.id)
-      .in('from_type', ['nina', 'human'])
-      .lt('sent_at', message.sent_at)
-      .order('sent_at', { ascending: false })
-      .limit(1);
-    
-    lastAgentMessage = lastAgentMessages?.[0]?.content || null;
-}
+const sanitizeFileName = (name: string): string => {
+  const ext = name.lastIndexOf('.') > 0 ? name.substring(name.lastIndexOf('.')) : '';
+  const base = name.substring(0, name.length - ext.length);
+  const sanitized = base
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // remove acentos
+    .replace(/[^a-zA-Z0-9._-]/g, '_')                  // troca especiais por _
+    .replace(/_+/g, '_')                                // remove _ duplicados
+    .replace(/^_|_$/g, '');                             // remove _ no inicio/fim
+  return (sanitized || 'file') + ext.toLowerCase();
+};
 ```
 
-2. **Dentro do bloco closure detection**: Remover a declaracao duplicada de `lastAgentMessage` e usar a variavel do escopo externo.
+Aplicar na construcao do `fileName`:
+```typescript
+const fileName = `${activeChat.contactId}/${Date.now()}_${sanitizeFileName(file.name)}`;
+```
 
-3. **Bloco not-responsible detection**: Continuara funcionando normalmente pois `lastAgentMessage` agora esta acessivel.
+O nome original do arquivo ja e preservado no campo `metadata.original_filename` (linha 1163), entao o usuario continua vendo o nome correto na interface.
 
-## Impacto
-
-- Corrige o crash que esta impedindo TODAS as conversas de serem processadas pelo nina-orchestrator
-- A deteccao de "nao e o responsavel" passara a funcionar corretamente
-- A deteccao de closure continuara funcionando como antes
+**Tambem aplicar a mesma correcao** na funcao de upload de audio (linha ~1065) que usa logica similar.
 
