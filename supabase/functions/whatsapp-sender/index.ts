@@ -305,6 +305,12 @@ async function uploadMediaToWhatsApp(
       effectiveMimeType = 'audio/aac';
       console.log('[Sender] Mapped audio/mp4 -> audio/aac for WhatsApp compatibility');
     }
+    // WebM com Opus e essencialmente o mesmo que OGG/Opus - apenas container diferente
+    // WhatsApp aceita audio/ogg nativamente mas rejeita audio/webm
+    if (mimeType === 'audio/webm' || mimeType === 'audio/webm; codecs=opus') {
+      effectiveMimeType = 'audio/ogg';
+      console.log('[Sender] Mapped audio/webm -> audio/ogg for WhatsApp compatibility');
+    }
     
     // Determine file extension from mime type
     const extMap: Record<string, string> = {
