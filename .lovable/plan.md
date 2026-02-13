@@ -1,86 +1,64 @@
 
 
-# Corrigir envio de audio do operador para WhatsApp (erro 131053)
+# Corrigir envio de audio: WhatsApp rejeita audio/mp4 do Safari (erro 131053)
 
-## Problema
-Audios gravados pelo operador no chat falham com erro **131053** do WhatsApp:
-```
-Audio file uploaded with mimetype as audio/mp4, however on processing 
-it is of type application/octet-stream
-```
+## Problema persistente
 
-Isso acontece em **todos os audios de operador** (from_type = 'human') - nenhum foi entregue com sucesso.
+Mesmo apos mapear `audio/mp4` para `audio/aac` no header, o WhatsApp continua rejeitando os audios com erro 131053. Isso acontece porque:
 
-## Causa raiz
-Dois problemas encadeados:
+- O WhatsApp aceita o **upload** do arquivo (retorna um media ID)
+- Mas **rejeita o conteudo** durante a entrega assincrona
+- O problema nao e o label do MIME type, mas sim o **formato real do container MP4** gerado pelo MediaRecorder do Safari
 
-1. **O navegador (Safari/Chrome no Mac) grava como `audio/mp4`**, mas o container gerado pelo MediaRecorder nao e um MP4 valido que o WhatsApp reconhece. O WhatsApp espera codificacao AAC dentro do container MP4, mas o MediaRecorder pode gerar um formato ligeiramente diferente.
-
-2. **O Supabase Storage serve arquivos publicos como `application/octet-stream`**, independente do content-type usado no upload. Quando o `whatsapp-sender` baixa o arquivo e faz upload na WhatsApp Media API, o WhatsApp valida o conteudo real e rejeita.
-
-Evidencia: O media upload para o WhatsApp retorna sucesso (ID 952267164644964), mas ao enviar a mensagem, o WhatsApp rejeita o conteudo com 131053. Isso indica que o formato do arquivo nao e realmente `audio/mp4` valido.
+O Safari no macOS nao suporta `audio/ogg; codecs=opus` (formato nativo do WhatsApp), entao o sistema cai para `audio/mp4` — que o WhatsApp nao processa corretamente.
 
 ## Solucao
 
-### 1. Frontend: Fazer upload direto do Blob (sem roundtrip base64)
+### 1. Frontend: Reordenar prioridade de formatos
 
-O fluxo atual converte Blob -> base64 -> Blob desnecessariamente, o que pode corromper headers do container. Simplificar para enviar o Blob diretamente ao Storage.
+No `ChatInterface.tsx`, a funcao `getPreferredAudioMimeType` deve priorizar `audio/webm` (aceito pelo WhatsApp e suportado pelo Chrome/Firefox) e mover `audio/mp4` para ultima opcao:
 
-**Arquivo:** `src/components/ChatInterface.tsx`
-
-- Na funcao `stopRecording`: ao inves de ler como base64 e passar para `sendAudioMessage`, enviar o `audioBlob` diretamente
-- Na funcao `sendAudioMessage`: aceitar um `Blob` ao inves de `string` base64, eliminando a reconversao
-
-### 2. Frontend: Forcar upload com content-type correto via upsert
-
-Garantir que o upload ao Storage use `upsert: true` e o `contentType` correto para evitar conflitos.
-
-### 3. Backend: Melhorar `uploadMediaToWhatsApp` para sanitizar o mimeType
-
-**Arquivo:** `supabase/functions/whatsapp-sender/index.ts`
-
-- Se o mimeType for `audio/mp4` e o upload ao WhatsApp falhar, tentar novamente com `audio/aac` (WhatsApp aceita AAC e o container MP4 do browser geralmente contem AAC)
-- Adicionar log do content-type recebido no download para diagnostico
-
-### Detalhes tecnicos
-
-**ChatInterface.tsx - stopRecording (simplificar):**
-```typescript
-mediaRecorderRef.current!.onstop = async () => {
-  const audioBlob = new Blob(audioChunksRef.current, { type: format.mimeType });
-  await sendAudioMessage(audioBlob, format.mimeType, format.extension);
-  resolve();
-};
+```
+Ordem atual:    ogg > mp4 > mp3 > aac
+Nova ordem:     ogg > webm > aac > mp3 > mp4 (ultimo recurso)
 ```
 
-**ChatInterface.tsx - sendAudioMessage (aceitar Blob diretamente):**
-```typescript
-const sendAudioMessage = async (audioBlob: Blob, mimeType: string, extension: string) => {
-  // Upload direto do Blob, sem conversao base64
-  const { error: uploadError } = await supabase.storage
-    .from('whatsapp-media')
-    .upload(fileName, audioBlob, {
-      contentType: mimeType,
-      cacheControl: '3600',
-      upsert: false
-    });
-  // ... resto igual
-};
+O `audio/webm` e suportado por Chrome e Firefox e e aceito pelo WhatsApp. Para Safari (que so suporta `audio/mp4`), a conversao sera feita no backend.
+
+### 2. Backend: Converter audio/mp4 para OGG/Opus no whatsapp-sender
+
+No `whatsapp-sender/index.ts`, quando o mimeType for `audio/mp4`:
+- Usar a WhatsApp Media API com `audio/aac` (manter o mapeamento existente)
+- Adicionar um fallback: se o envio falhar com 131053, tentar fazer upload como `audio/ogg` usando o mesmo buffer (alguns containers MP4 do Safari sao aceitos quando rotulados como OGG)
+
+Porem, a solucao mais robusta e:
+- No `uploadMediaToWhatsApp`, apos baixar o arquivo, verificar se o envio com `audio/aac` funciona
+- Se nao funcionar (erro 131053 vem assincronamente), a alternativa real e **nao usar audio/mp4 de forma alguma**
+
+### 3. Frontend: Forcara audio/webm no Safari com polyfill ou alerta
+
+Para Safari, que nao suporta nem OGG nem WebM nativamente:
+- Adicionar `audio/mp4; codecs=mp4a.40.2` como formato especifico (AAC-LC em container MP4, que o WhatsApp aceita)
+- Se nenhum formato compativel for encontrado, mostrar um toast informando que o navegador nao suporta envio de audio e sugerir usar Chrome
+
+## Arquivos a editar
+
+### `src/components/ChatInterface.tsx`
+- Funcao `getPreferredAudioMimeType` (linhas 163-183): Reordenar formatos para priorizar `audio/webm` e adicionar `audio/mp4; codecs=mp4a.40.2`
+- Adicionar toast de aviso se o formato selecionado for `audio/mp4` sem codec especifico
+
+### `supabase/functions/whatsapp-sender/index.ts`
+- Funcao `uploadMediaToWhatsApp` (ja editada): Adicionar suporte para `audio/webm` no mapa de extensoes
+- Manter o mapeamento `audio/mp4 -> audio/aac`
+
+## Detalhe tecnico: formatos por navegador
+
+```text
+Chrome/Edge:  audio/ogg; codecs=opus  (OK para WhatsApp)
+Firefox:      audio/ogg; codecs=opus  (OK para WhatsApp)  
+Safari:       audio/mp4               (REJEITADO pelo WhatsApp)
+Safari 17.4+: audio/webm              (OK para WhatsApp, verificar suporte)
 ```
 
-**whatsapp-sender/index.ts - uploadMediaToWhatsApp (retry com mimeType alternativo):**
-```typescript
-// Apos download do media, sanitizar o mimeType
-// Se audio/mp4 falhar, tentar como audio/aac
-let effectiveMimeType = mimeType;
-// Alguns navegadores gravam "audio/mp4" mas o conteudo e AAC puro
-// WhatsApp aceita audio/aac nativamente
-if (mimeType === 'audio/mp4') {
-  effectiveMimeType = 'audio/aac';
-}
-```
-
-### Arquivos a editar
-1. `src/components/ChatInterface.tsx` - Simplificar fluxo de audio (eliminar roundtrip base64)
-2. `supabase/functions/whatsapp-sender/index.ts` - Mapear audio/mp4 para audio/aac no upload ao WhatsApp
+A mudanca principal e testar `audio/webm` antes de `audio/mp4` na lista de prioridade. Versoes recentes do Safari (17.4+) ja suportam WebM, o que resolve o problema para a maioria dos usuarios Mac atualizados.
 
