@@ -1132,7 +1132,17 @@ const ChatInterface: React.FC = () => {
       toast.loading(`Enviando ${isImage ? 'imagem' : 'documento'}...`, { id: 'file-upload' });
       
       // 1. Upload to Supabase Storage (whatsapp-media bucket)
-      const fileName = `${activeChat.contactId}/${Date.now()}_${file.name}`;
+      const sanitizeFileName = (name: string): string => {
+        const ext = name.lastIndexOf('.') > 0 ? name.substring(name.lastIndexOf('.')) : '';
+        const base = name.substring(0, name.length - ext.length);
+        const sanitized = base
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-zA-Z0-9._-]/g, '_')
+          .replace(/_+/g, '_')
+          .replace(/^_|_$/g, '');
+        return (sanitized || 'file') + ext.toLowerCase();
+      };
+      const fileName = `${activeChat.contactId}/${Date.now()}_${sanitizeFileName(file.name)}`;
       
       const { error: uploadError } = await supabase.storage
         .from('whatsapp-media')
