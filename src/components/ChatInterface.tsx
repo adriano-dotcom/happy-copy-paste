@@ -161,24 +161,30 @@ const ChatInterface: React.FC = () => {
   
   // Detecta o melhor formato de áudio suportado pelo navegador E pelo WhatsApp
   const getPreferredAudioMimeType = (): { mimeType: string; extension: string } => {
-    // Ordem de preferência (todos aceitos pelo WhatsApp Business API)
+    // Ordem de preferência: formatos nativos do WhatsApp primeiro, mp4 por último
     const formats = [
-      { mimeType: 'audio/ogg; codecs=opus', extension: 'ogg' },
+      { mimeType: 'audio/ogg; codecs=opus', extension: 'ogg' },   // Chrome, Firefox (nativo WhatsApp)
       { mimeType: 'audio/ogg', extension: 'ogg' },
-      { mimeType: 'audio/mp4', extension: 'm4a' },
-      { mimeType: 'audio/mpeg', extension: 'mp3' },
+      { mimeType: 'audio/webm; codecs=opus', extension: 'webm' }, // Chrome, Firefox, Safari 17.4+
+      { mimeType: 'audio/webm', extension: 'webm' },              // Safari 17.4+
       { mimeType: 'audio/aac', extension: 'aac' },
+      { mimeType: 'audio/mpeg', extension: 'mp3' },
+      { mimeType: 'audio/mp4; codecs=mp4a.40.2', extension: 'm4a' }, // AAC-LC específico
+      { mimeType: 'audio/mp4', extension: 'm4a' },                // Último recurso (Safari antigo)
     ];
     
     for (const format of formats) {
       if (MediaRecorder.isTypeSupported(format.mimeType)) {
-        console.log(`[Audio] Using WhatsApp-compatible format: ${format.mimeType}`);
+        console.log(`[Audio] Using format: ${format.mimeType}`);
+        // Avisar se caiu no audio/mp4 genérico (problemático no WhatsApp)
+        if (format.mimeType === 'audio/mp4') {
+          console.warn('[Audio] Using generic audio/mp4 - may fail on WhatsApp. Consider using Chrome/Firefox.');
+        }
         return format;
       }
     }
     
-    // Fallback para webm (pode não funcionar no WhatsApp)
-    console.warn('[Audio] No WhatsApp-compatible format found, using webm');
+    console.warn('[Audio] No compatible format found, falling back to audio/webm');
     return { mimeType: 'audio/webm', extension: 'webm' };
   };
   
