@@ -40,13 +40,13 @@ export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = (
   const [pendingLeads, setPendingLeads] = useState<UnreadConversation[]>([]);
   const [unreadMessages, setUnreadMessages] = useState<UnreadConversation[]>([]);
   
-  // Refs para rastrear IDs anteriores (para detectar novos itens)
   const previousLeadIdsRef = useRef<Set<string>>(new Set());
   const previousMessageIdsRef = useRef<Set<string>>(new Set());
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchUnreadConversations = useCallback(async () => {
     try {
-      // Buscar conversas ativas
+      // Single query: get active conversations with contact info
       const { data: conversations, error: convError } = await supabase
         .from('conversations')
         .select(`
@@ -54,132 +54,113 @@ export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = (
           last_message_at,
           status,
           contact:contacts!conversations_contact_id_fkey (
-            id,
-            name,
-            call_name,
-            phone_number
+            id, name, call_name, phone_number
           )
         `)
         .eq('is_active', true)
         .order('last_message_at', { ascending: false });
 
-      if (convError) {
-        console.error('Error fetching conversations:', convError);
-        return;
-      }
-
-      if (!conversations || conversations.length === 0) {
+      if (convError || !conversations?.length) {
         setUnreadConversations([]);
         setTotalUnread(0);
+        setPendingLeadsCount(0);
+        setUnreadMessagesCount(0);
+        setPendingLeads([]);
+        setUnreadMessages([]);
         return;
       }
 
-      const unreadData: UnreadConversation[] = [];
       const conversationIds = conversations.map(c => c.id);
 
-      // Buscar todas as conversas que já tiveram interação humana
-      const { data: humanInteractions } = await supabase
-        .from('messages')
-        .select('conversation_id')
-        .in('conversation_id', conversationIds)
-        .eq('from_type', 'human');
+      // Batch query: get unread counts + last unread message per conversation in 2 queries (not N)
+      const [unreadResult, humanResult, lastMsgResult] = await Promise.all([
+        // 1. Count unread messages per conversation
+        supabase
+          .from('messages')
+          .select('conversation_id, id, content, sent_at')
+          .in('conversation_id', conversationIds)
+          .eq('from_type', 'user')
+          .is('read_at', null)
+          .order('sent_at', { ascending: false }),
+        // 2. Check which conversations had human interaction
+        supabase
+          .from('messages')
+          .select('conversation_id')
+          .in('conversation_id', conversationIds)
+          .eq('from_type', 'human'),
+        // 3. Get last message for each conversation (for preview)
+        supabase
+          .from('messages')
+          .select('conversation_id, content, type')
+          .in('conversation_id', conversationIds)
+          .order('sent_at', { ascending: false }),
+      ]);
 
-      const conversationsWithHuman = new Set(humanInteractions?.map(m => m.conversation_id) || []);
+      // Build lookup maps
+      const unreadByConv = new Map<string, { count: number; lastContent: string }>();
+      for (const msg of unreadResult.data || []) {
+        const existing = unreadByConv.get(msg.conversation_id);
+        if (!existing) {
+          unreadByConv.set(msg.conversation_id, { count: 1, lastContent: msg.content || '' });
+        } else {
+          existing.count++;
+        }
+      }
+
+      const conversationsWithHuman = new Set((humanResult.data || []).map(m => m.conversation_id));
+
+      const lastMsgByConv = new Map<string, string>();
+      for (const msg of lastMsgResult.data || []) {
+        if (!lastMsgByConv.has(msg.conversation_id)) {
+          lastMsgByConv.set(msg.conversation_id, msg.content || (msg.type !== 'text' ? '📎 Mídia' : 'Nova conversa'));
+        }
+      }
+
+      // Build unread data
+      const unreadData: UnreadConversation[] = [];
 
       for (const conv of conversations) {
         const contact = conv.contact as any;
         const contactName = contact?.name || contact?.call_name || contact?.phone_number || 'Desconhecido';
-        const initials = contactName
-          .split(' ')
-          .map((n: string) => n[0])
-          .slice(0, 2)
-          .join('')
-          .toUpperCase();
+        const initials = contactName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase();
 
-        // Buscar mensagens não lidas do usuário
-        const { data: unreadMessages } = await supabase
-          .from('messages')
-          .select('id, content, sent_at')
-          .eq('conversation_id', conv.id)
-          .eq('from_type', 'user')
-          .is('read_at', null)
-          .order('sent_at', { ascending: false })
-          .limit(1);
-
-        const { count: unreadCount } = await supabase
-          .from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('conversation_id', conv.id)
-          .eq('from_type', 'user')
-          .is('read_at', null);
-
-        // Incluir conversa se:
-        // 1. Tem mensagens não lidas do cliente
-        // 2. OU nunca teve atendimento humano (status = 'nina' e sem mensagens human)
-        const hasUnreadMessages = unreadCount && unreadCount > 0;
+        const unread = unreadByConv.get(conv.id);
+        const hasUnreadMessages = !!unread && unread.count > 0;
         const needsHumanAttention = conv.status === 'nina' && !conversationsWithHuman.has(conv.id);
 
-        if (hasUnreadMessages || needsHumanAttention) {
-          // Buscar última mensagem para preview se não houver não lida
-          let lastMessageContent = unreadMessages?.[0]?.content || '';
-          
-          if (!lastMessageContent) {
-            const { data: lastMsg } = await supabase
-              .from('messages')
-              .select('content, type')
-              .eq('conversation_id', conv.id)
-              .order('sent_at', { ascending: false })
-              .limit(1);
-            
-            lastMessageContent = lastMsg?.[0]?.content || (lastMsg?.[0]?.type !== 'text' ? '📎 Mídia' : 'Nova conversa');
-          }
+        if (!hasUnreadMessages && !needsHumanAttention) continue;
 
-          // Determinar o tipo da conversa
-          const conversationType: 'pending_lead' | 'unread_message' = 
-            needsHumanAttention && !hasUnreadMessages ? 'pending_lead' : 'unread_message';
+        const lastMessageContent = unread?.lastContent || lastMsgByConv.get(conv.id) || '📎 Mídia';
+        const conversationType: 'pending_lead' | 'unread_message' =
+          needsHumanAttention && !hasUnreadMessages ? 'pending_lead' : 'unread_message';
 
-          unreadData.push({
-            id: conv.id,
-            contactName,
-            contactInitials: initials,
-            lastMessage: lastMessageContent || '📎 Mídia',
-            unreadCount: hasUnreadMessages ? (unreadCount || 0) : 1,
-            lastMessageAt: conv.last_message_at,
-            type: conversationType
-          });
-        }
+        unreadData.push({
+          id: conv.id,
+          contactName,
+          contactInitials: initials,
+          lastMessage: lastMessageContent,
+          unreadCount: hasUnreadMessages ? unread!.count : 1,
+          lastMessageAt: conv.last_message_at,
+          type: conversationType,
+        });
       }
 
-      // Ordenar por última mensagem
-      unreadData.sort((a, b) => 
-        new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
-      );
+      unreadData.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
 
-      // Separar em listas distintas
       const leads = unreadData.filter(c => c.type === 'pending_lead');
       const messages = unreadData.filter(c => c.type === 'unread_message');
 
-      // Detectar novos itens e tocar som apropriado
+      // Sound notifications for new items
       const currentLeadIds = new Set(leads.map(l => l.id));
       const currentMessageIds = new Set(messages.map(m => m.id));
 
-      // Verificar se há novos leads (somente se já temos dados anteriores)
       if (previousLeadIdsRef.current.size > 0) {
-        const newLeads = leads.filter(l => !previousLeadIdsRef.current.has(l.id));
-        if (newLeads.length > 0) {
-          playNewLeadSound();
-        }
+        if (leads.some(l => !previousLeadIdsRef.current.has(l.id))) playNewLeadSound();
       }
-
-      // Verificar se há novas mensagens não lidas
       if (previousMessageIdsRef.current.size > 0) {
-        const newMessages = messages.filter(m => !previousMessageIdsRef.current.has(m.id));
-        if (newMessages.length > 0) {
-          playNotificationSound();
-        }
+        if (messages.some(m => !previousMessageIdsRef.current.has(m.id))) playNotificationSound();
       }
 
-      // Atualizar refs com IDs atuais
       previousLeadIdsRef.current = currentLeadIds;
       previousMessageIdsRef.current = currentMessageIds;
 
@@ -194,55 +175,49 @@ export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = (
     }
   }, []);
 
+  // Debounced version for realtime events
+  const debouncedFetch = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      fetchUnreadConversations();
+    }, 2000);
+  }, [fetchUnreadConversations]);
+
   useEffect(() => {
     fetchUnreadConversations();
 
-    // Real-time subscription para novas mensagens
     const channel = supabase
       .channel('unread-messages-global')
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages'
-        },
+        { event: 'INSERT', schema: 'public', table: 'messages' },
         (payload) => {
-          // Refetch quando nova mensagem do usuário chegar
           if (payload.new && (payload.new as any).from_type === 'user') {
-            fetchUnreadConversations();
+            debouncedFetch();
           }
         }
       )
       .on(
         'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'messages'
-        },
+        { event: 'UPDATE', schema: 'public', table: 'messages' },
         (payload) => {
-          // Refetch quando mensagem for marcada como lida
           if (payload.new && (payload.new as any).read_at) {
-            fetchUnreadConversations();
+            debouncedFetch();
           }
         }
       )
       .subscribe();
 
     return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       supabase.removeChannel(channel);
     };
-  }, [fetchUnreadConversations]);
+  }, [fetchUnreadConversations, debouncedFetch]);
 
   return (
     <UnreadMessagesContext.Provider value={{ 
-      totalUnread, 
-      unreadConversations, 
-      pendingLeadsCount,
-      unreadMessagesCount,
-      pendingLeads,
-      unreadMessages,
+      totalUnread, unreadConversations, pendingLeadsCount,
+      unreadMessagesCount, pendingLeads, unreadMessages,
       refetch: fetchUnreadConversations 
     }}>
       {children}

@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
 import { useAuth } from './useAuth';
 import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 
 type AppRole = 'admin' | 'operator' | 'viewer';
 
@@ -13,40 +13,30 @@ interface UseUserRoleReturn {
 
 export function useUserRole(): UseUserRoleReturn {
   const { user } = useAuth();
-  const [role, setRole] = useState<AppRole | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!user) {
-      setRole(null);
-      setLoading(false);
-      return;
-    }
-
-    const fetchRole = async () => {
-      setLoading(true);
+  const { data: role = null, isLoading: loading } = useQuery({
+    queryKey: ['user-role', user?.id],
+    queryFn: async () => {
       const { data, error } = await supabase
         .from('user_roles')
         .select('role')
-        .eq('user_id', user.id)
+        .eq('user_id', user!.id)
         .maybeSingle();
 
       if (error) {
         console.error('Error fetching user role:', error);
-        setRole(null);
-      } else {
-        setRole(data?.role ?? null);
+        return null;
       }
-      setLoading(false);
-    };
-
-    fetchRole();
-  }, [user?.id]);
+      return (data?.role as AppRole) ?? null;
+    },
+    enabled: !!user?.id,
+    staleTime: Infinity,
+  });
 
   return {
     role,
     isAdmin: role === 'admin',
     isOperator: role === 'operator',
-    loading,
+    loading: !!user?.id && loading,
   };
 }
