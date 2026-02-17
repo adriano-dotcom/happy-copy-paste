@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Phone, Mic, ChevronDown, ChevronUp, RotateCcw, Loader2, Clock, Star, MessageSquare, Target } from 'lucide-react';
+import { Phone, Mic, ChevronDown, ChevronUp, RotateCcw, Loader2, Clock, Star, MessageSquare, Target, PhoneOff } from 'lucide-react';
 import { Button } from './ui/button';
 import { useVoiceQualification } from '@/hooks/useVoiceQualification';
 import { supabase } from '@/integrations/supabase/client';
@@ -38,6 +38,7 @@ const VoiceQualificationSection: React.FC<VoiceQualificationSectionProps> = ({ c
   const { data: vq, isLoading } = useVoiceQualification(contactId);
   const [showTranscript, setShowTranscript] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [isHangingUp, setIsHangingUp] = useState(false);
   const queryClient = useQueryClient();
 
   if (isLoading) {
@@ -70,6 +71,24 @@ const VoiceQualificationSection: React.FC<VoiceQualificationSectionProps> = ({ c
       toast.error('Erro ao disparar ligação');
     } finally {
       setIsRetrying(false);
+    }
+  };
+
+  const handleHangup = async () => {
+    if (!vq) return;
+    setIsHangingUp(true);
+    try {
+      const { error } = await supabase.functions.invoke('elevenlabs-hangup', {
+        body: { vq_id: vq.id, elevenlabs_conversation_id: vq.elevenlabs_conversation_id }
+      });
+      if (error) throw error;
+      toast.success('Ligação encerrada com sucesso!');
+      queryClient.invalidateQueries({ queryKey: ['voice-qualification', contactId] });
+    } catch (err: any) {
+      console.error('Error hanging up:', err);
+      toast.error('Erro ao encerrar ligação');
+    } finally {
+      setIsHangingUp(false);
     }
   };
 
@@ -156,6 +175,20 @@ const VoiceQualificationSection: React.FC<VoiceQualificationSectionProps> = ({ c
             </pre>
           )}
         </div>
+      )}
+
+      {/* Hangup Button */}
+      {['calling', 'in_progress'].includes(vq.status) && (
+        <Button
+          onClick={handleHangup}
+          disabled={isHangingUp}
+          size="sm"
+          className="w-full bg-red-500/20 border border-red-500/30 hover:bg-red-500/30 text-red-300 text-xs"
+          variant="outline"
+        >
+          {isHangingUp ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <PhoneOff className="w-3.5 h-3.5 mr-1.5" />}
+          Encerrar Ligação
+        </Button>
       )}
 
       {/* Retry Button */}
