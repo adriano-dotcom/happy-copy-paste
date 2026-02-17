@@ -20,7 +20,7 @@ export const LeadScoreBadge: React.FC<LeadScoreBadgeProps> = ({ clientMemory, co
         iconColor: 'text-orange-400',
         borderColor: 'border-orange-500/40',
         glow: 'shadow-lg shadow-orange-500/20',
-        pulse: true
+        pulse: false
       };
     }
     if (score >= 40) {

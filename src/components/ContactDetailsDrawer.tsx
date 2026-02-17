@@ -167,7 +167,7 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
           <div className="flex flex-col items-center text-center pt-4 pb-6">
             <div className="relative mb-4">
               {/* Glow effect behind avatar */}
-              <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/30 to-teal-500/30 blur-2xl rounded-full scale-150 animate-pulse" />
+              <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/20 to-teal-500/20 blur-2xl rounded-full scale-150 opacity-60" />
               {/* Avatar ring */}
               <div className="relative w-24 h-24 rounded-full p-1 bg-gradient-to-tr from-cyan-400 via-teal-400 to-cyan-500 shadow-lg shadow-cyan-500/30">
                 <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center text-3xl font-bold text-cyan-300 shadow-inner">
