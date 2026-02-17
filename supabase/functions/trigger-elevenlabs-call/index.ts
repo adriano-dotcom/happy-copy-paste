@@ -230,6 +230,39 @@ async function processCall(
     .eq('id', vq.id);
 
   try {
+    // 1. Horário — extrair só HH:MM
+    const spNow = getNowInSP();
+    const horarioFormatado = spNow.getHours().toString().padStart(2, '0')
+      + ':' + spNow.getMinutes().toString().padStart(2, '0');
+
+    // 2. Produto — buscar do deal/pipeline do contato
+    const { data: deal } = await supabase
+      .from('deals')
+      .select('pipeline_id, pipelines(name)')
+      .eq('contact_id', vq.contact_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const pipelineName = (deal as any)?.pipelines?.name?.toLowerCase() || '';
+    const produtoMap: Record<string, string> = {
+      'transporte': 'Seguro de Transporte e Carga',
+      'saude': 'Plano de Saúde',
+      'saúde': 'Plano de Saúde',
+      'auto': 'Seguro Auto',
+      'empresarial': 'Seguro Empresarial',
+      'vida': 'Seguro de Vida',
+    };
+    let produtoInteresse = 'seguros';
+    for (const [key, value] of Object.entries(produtoMap)) {
+      if (pipelineName.includes(key)) {
+        produtoInteresse = value;
+        break;
+      }
+    }
+
+    console.log(`[ElevenLabs Call] Dynamic vars: horario=${horarioFormatado}, produto=${produtoInteresse}, pipeline="${pipelineName}"`);
+
     const response = await fetch('https://api.us.elevenlabs.io/v1/convai/twilio/outbound-call', {
       method: 'POST',
       headers: {
@@ -245,8 +278,8 @@ async function processCall(
             lead_name: leadName,
             lead_id: vq.contact_id,
             vq_id: vq.id,
-            produto_interesse: 'Seguro de Carga',
-            horario: getNowInSP().toLocaleString('pt-BR'),
+            produto_interesse: produtoInteresse,
+            horario: horarioFormatado,
           }
         }
       }),
