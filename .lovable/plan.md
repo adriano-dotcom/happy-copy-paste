@@ -1,80 +1,60 @@
 
 
-## Corrigir dynamic_variables do agente Iris na ElevenLabs
+## Corrigir estrutura do payload no Post-Call Webhook
 
 ### Problema
-O prompt da Iris usa 4 variaveis dinamicas (`lead_name`, `produto_interesse`, `lead_id`, `horario`), mas o codigo atual tem 2 problemas:
+O webhook da ElevenLabs envia o payload com os dados dentro de `payload.data`, mas o codigo atual busca em `payload` diretamente. Resultado: `conversation_id` e `vq_id` nao sao encontrados e o webhook retorna 400.
 
-1. **`horario`** envia data completa (`17/02/2026 13:45:00`) em vez de `HH:MM` como o prompt espera
-2. **`produto_interesse`** esta fixo como "Seguro de Carga", mas deveria refletir o real interesse do lead (Auto, Vida, Saude, Empresarial, Transporte)
+### Evidencia dos logs
+```
+Payload: {"type":"post_call_transcription","data":{"conversation_id":"conv_9101khp7rsgfeb4s27k6w2ccp6jf","transcript":[...],...}}
+Erro: "No vq_id or conversation_id in payload"
+```
 
 ### Mudancas
 
-**Arquivo: `supabase/functions/trigger-elevenlabs-call/index.ts`**
+**Arquivo: `supabase/functions/elevenlabs-post-call-webhook/index.ts`**
 
-**1. Corrigir formato do `horario`**
-- Alterar de `getNowInSP().toLocaleString('pt-BR')` para extrair apenas `HH:MM`
-- Exemplo: `"13:45"` em vez de `"17/02/2026, 13:45:00"`
+1. **Extrair dados de `payload.data`** em vez de `payload` diretamente:
+   - `conversation_id` → `payload.data.conversation_id`
+   - `transcript` → `payload.data.transcript`
+   - `analysis` → `payload.data.analysis || payload.data.data_collection_results`
+   - `dynamic_variables` → `payload.data.conversation_initiation_client_data?.dynamic_variables`
+   - `call_status` → `payload.data.call_status || payload.data.status`
 
-**2. Tornar `produto_interesse` dinamico**
-- Buscar o deal associado ao contato para identificar o pipeline/produto
-- Consultar `deals` + `pipelines` para o `contact_id`
-- Mapear o nome do pipeline para o produto de interesse:
-  - Pipeline "Transporte" → "Seguro de Transporte e Carga"
-  - Pipeline "Saude" → "Plano de Saude"
-  - Pipeline "Auto" → "Seguro Auto"
-  - Pipeline "Empresarial" → "Seguro Empresarial"
-  - Pipeline "Vida" → "Seguro de Vida"
-  - Fallback → "seguros" (generico)
-- Alternativa: se a conversa do lead tiver `nina_context.qualification_answers`, extrair o produto de la
+2. **Ignorar payloads do tipo `post_call_audio`** — o webhook recebe 2 chamadas: uma com transcrição (`post_call_transcription`) e outra com audio (`post_call_audio`). Devemos processar apenas a transcrição.
 
-### Codigo da mudanca
+3. **Manter fallback** para a estrutura antiga (campos no root do payload) por segurança.
 
-Na funcao `processCall`:
+### Codigo
 
 ```text
-// 1. Horario — extrair so HH:MM
-const spNow = getNowInSP();
-const horarioFormatado = spNow.getHours().toString().padStart(2, '0') 
-  + ':' + spNow.getMinutes().toString().padStart(2, '0');
+// Extrair tipo do evento
+const eventType = payload.type;
 
-// 2. Produto — buscar do deal/pipeline do contato
-const { data: deal } = await supabase
-  .from('deals')
-  .select('pipeline_id, pipelines(name)')
-  .eq('contact_id', vq.contact_id)
-  .order('created_at', { ascending: false })
-  .limit(1)
-  .maybeSingle();
-
-const pipelineName = deal?.pipelines?.name?.toLowerCase() || '';
-const produtoMap = {
-  'transporte': 'Seguro de Transporte e Carga',
-  'saude': 'Plano de Saúde',
-  'saúde': 'Plano de Saúde',
-  'auto': 'Seguro Auto',
-  'empresarial': 'Seguro Empresarial',
-  'vida': 'Seguro de Vida',
-};
-let produtoInteresse = 'seguros';
-for (const [key, value] of Object.entries(produtoMap)) {
-  if (pipelineName.includes(key)) {
-    produtoInteresse = value;
-    break;
-  }
+// Ignorar eventos de audio — so processar transcricao
+if (eventType === 'post_call_audio') {
+  return new Response(JSON.stringify({ status: 'audio_ignored' }), {
+    status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  });
 }
 
-// 3. Enviar variaveis corrigidas
-dynamic_variables: {
-  lead_name: leadName,
-  lead_id: vq.contact_id,
-  vq_id: vq.id,
-  produto_interesse: produtoInteresse,
-  horario: horarioFormatado,
-}
+// Dados podem vir no root ou dentro de payload.data
+const data = payload.data || payload;
+
+const conversationId = data.conversation_id || payload.conversation_id;
+const transcript = data.transcript || data.full_transcript || payload.transcript || '';
+const analysis = data.analysis || data.data_collection_results || payload.analysis || {};
+const dynamicVars = data.conversation_initiation_client_data?.dynamic_variables 
+  || payload.conversation_initiation_client_data?.dynamic_variables 
+  || payload.dynamic_variables || {};
+const callStatus = data.call_status || data.status || payload.call_status || 'completed';
+
+const vqId = dynamicVars.vq_id;
+const leadId = dynamicVars.lead_id;
 ```
 
-### Resumo
-- `horario`: de `"17/02/2026, 13:45:00"` para `"13:45"`
-- `produto_interesse`: de `"Seguro de Carga"` fixo para valor dinamico baseado no pipeline do deal
-
+### Resultado esperado
+- Webhook processa corretamente o payload da ElevenLabs
+- Voice qualification e atualizada com transcript, resumo e resultado
+- Timeline do chat mostra os dados da ligacao em tempo real
