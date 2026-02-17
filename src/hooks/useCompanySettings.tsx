@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
 interface CompanySettings {
@@ -11,13 +12,11 @@ interface CompanySettings {
 const CompanySettingsContext = createContext<CompanySettings | undefined>(undefined);
 
 export const CompanySettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [companyName, setCompanyName] = useState('Viver de IA');
-  const [sdrName, setSdrName] = useState('Nina');
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const fetchSettings = async () => {
-    try {
-      setLoading(true);
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ['company-settings'],
+    queryFn: async () => {
       const { data, error } = await supabase
         .from('nina_settings')
         .select('company_name, sdr_name')
@@ -25,7 +24,6 @@ export const CompanySettingsProvider: React.FC<{ children: React.ReactNode }> = 
 
       if (error) throw error;
 
-      // Se não existe registro, criar um padrão automaticamente
       if (!data) {
         console.log('[useCompanySettings] No settings found, creating default...');
         const { data: newData, error: insertError } = await supabase
@@ -39,30 +37,20 @@ export const CompanySettingsProvider: React.FC<{ children: React.ReactNode }> = 
 
         if (insertError) {
           console.error('[useCompanySettings] Error creating default settings:', insertError);
-        } else if (newData) {
-          setCompanyName(newData.company_name || 'Sua Empresa');
-          setSdrName(newData.sdr_name || 'Agente');
+          return { company_name: 'Sua Empresa', sdr_name: 'Agente' };
         }
-      } else {
-        setCompanyName(data.company_name || 'Sua Empresa');
-        setSdrName(data.sdr_name || 'Agente');
+        return newData;
       }
-    } catch (error) {
-      console.error('[useCompanySettings] Error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchSettings();
-  }, []);
+      return data;
+    },
+    staleTime: Infinity,
+  });
 
   const value: CompanySettings = {
-    companyName,
-    sdrName,
+    companyName: data?.company_name || 'Sua Empresa',
+    sdrName: data?.sdr_name || 'Agente',
     loading,
-    refetch: fetchSettings,
+    refetch: async () => { await queryClient.invalidateQueries({ queryKey: ['company-settings'] }); },
   };
 
   return (
