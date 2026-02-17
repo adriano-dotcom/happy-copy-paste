@@ -195,7 +195,7 @@ async function processCall(
     .eq('id', vq.id);
 
   try {
-    const response = await fetch('https://api.elevenlabs.io/v1/convai/twilio/outbound-call', {
+    const response = await fetch('https://api.us.elevenlabs.io/v1/convai/twilio/outbound-call', {
       method: 'POST',
       headers: {
         'xi-api-key': apiKey,
