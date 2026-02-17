@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LayoutDashboard, MessageSquare, Users, Settings as SettingsIcon, LogOut, ShieldCheck, Calendar, Kanban, Code2, Megaphone, Target } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Users, Settings as SettingsIcon, LogOut, ShieldCheck, Calendar, Kanban, Code2, Megaphone, Target, Headphones } from 'lucide-react';
 import { useLocation, Link } from 'react-router-dom';
 import { Sidebar, SidebarBody, SidebarLink, useSidebar } from '@/components/ui/sidebar';
 import { motion } from 'framer-motion';
@@ -16,6 +16,7 @@ const allMenuItems = [
   { id: 'scheduling', label: 'Agendamentos', icon: Calendar, adminOnly: false },
   { id: 'campaigns', label: 'Campanhas', icon: Target, adminOnly: true },
   { id: 'prospecting', label: 'Prospecção', icon: Megaphone, adminOnly: true },
+  { id: 'voice-dashboard', label: 'Ligações IA', icon: Headphones, adminOnly: true },
   { id: 'team', label: 'Equipe', icon: ShieldCheck, adminOnly: true },
   { id: 'functions', label: 'Funções', icon: Code2, adminOnly: true },
   { id: 'settings', label: 'Configurações', icon: SettingsIcon, adminOnly: true },

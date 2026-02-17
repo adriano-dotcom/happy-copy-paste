@@ -15,6 +15,7 @@ import Scheduling from './components/Scheduling';
 const Dashboard = React.lazy(() => import('./components/Dashboard'));
 const ProspectingDashboard = React.lazy(() => import('./components/ProspectingDashboard'));
 const CampaignsDashboard = React.lazy(() => import('./components/CampaignsDashboard'));
+const VoiceDashboard = React.lazy(() => import('./components/VoiceDashboard'));
 const Settings = React.lazy(() => import('./components/Settings'));
 const Team = React.lazy(() => import('./components/Team'));
 const Functions = React.lazy(() => import('./components/Functions'));
@@ -129,6 +130,13 @@ const App: React.FC = () => {
                 <AdminRoute>
                   <Suspense fallback={<RouteLoader />}>
                     <CampaignsDashboard />
+                  </Suspense>
+                </AdminRoute>
+              } />
+              <Route path="/voice-dashboard" element={
+                <AdminRoute>
+                  <Suspense fallback={<RouteLoader />}>
+                    <VoiceDashboard />
                   </Suspense>
                 </AdminRoute>
               } />
