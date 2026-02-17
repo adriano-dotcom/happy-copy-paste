@@ -1,59 +1,64 @@
-## Cancelar ligacoes ElevenLabs quando lead clicar "Foi engano"
 
-### Problema
 
-Quando o lead clica "Foi engano" no botao de triagem, a conversa e pausada e a tag "engano" e adicionada, mas qualquer qualificacao por voz (voice_qualification) pendente ou agendada e cancelada. Isso significa que a Iris nao pode ligar para o lead mesmo apos ele indicar que foi engano.
+## Painel ElevenLabs - Dashboard de Ligacoes da Iris
 
-### Solucao
+### O que sera construido
 
-**Arquivo: `supabase/functions/nina-orchestrator/index.ts**`
+Uma nova pagina `/voice-dashboard` acessivel apenas por admins, com um item "Ligacoes IA" no menu lateral (icone de telefone/headset), posicionado entre "Prospeccao" e "Equipe".
 
-No bloco que trata `btn_engano` (linha ~3982-4038), adicionar um passo para cancelar todas as voice_qualifications pendentes do contato:
+### Conteudo do Dashboard
 
-```text
-Apos pausar a conversa e antes de marcar a mensagem como processada:
+**KPIs principais (cards no topo):**
+- Total de ligacoes (todas as voice_qualifications)
+- Taxa de atendimento (completed vs total)
+- Taxa de qualificacao (qualificado vs completed)
+- Ligacoes pendentes/agendadas (status pending/scheduled)
+- Ligacoes canceladas
+- Ligacoes com falha (failed, not_contacted)
 
-1. Buscar voice_qualifications com status 'pending', 'scheduled' ou 'calling'
-   para o contact_id da conversa
-2. Atualizar todas para status = 'cancelled' com observations indicando
-   "Cancelado: lead clicou Foi engano"
-```
+**Tabela de ligacoes recentes:**
+- Colunas: Contato (nome + telefone), Status (badge colorido), Resultado da qualificacao, Nivel de interesse, Tentativa (X/Y), Data/hora, Resumo (truncado)
+- Filtros por status e periodo
+- Ordenacao por data
+
+**Graficos:**
+- Distribuicao por status (pie/donut chart)
+- Ligacoes por dia (area chart, ultimos 30 dias)
+- Taxa de qualificacao por dia (line chart)
+
+**Secao de erros/falhas:**
+- Lista das ultimas falhas com motivo (observations)
+- Contagem de call_initiation_failure vs no_answer vs completed
 
 ### Secao tecnica
 
-Inserir o seguinte bloco apos a linha que pausa a conversa (apos linha 4005) e antes de adicionar a tag:
+**Novos arquivos:**
+1. `src/components/VoiceDashboard.tsx` - Componente principal do dashboard
+2. `src/hooks/useVoiceDashboardMetrics.ts` - Hook com useQuery para buscar metricas agregadas da tabela voice_qualifications
 
+**Arquivos modificados:**
+1. `src/components/Sidebar.tsx`
+   - Adicionar item `{ id: 'voice-dashboard', label: 'Ligacoes IA', icon: Headphones, adminOnly: true }` no array `allMenuItems`, entre Prospeccao e Equipe
+
+2. `src/App.tsx`
+   - Importar VoiceDashboard com lazy loading
+   - Adicionar rota `/voice-dashboard` dentro de AdminRoute
+
+**Consultas ao banco (dentro do hook):**
 ```typescript
-// Cancel any pending/scheduled voice qualifications
-const { data: pendingVqs } = await supabase
+// Buscar todas as VQs com dados do contato
+const { data } = await supabase
   .from('voice_qualifications')
-  .select('id')
-  .eq('contact_id', conversation.contact_id)
-  .in('status', ['pending', 'scheduled', 'calling']);
-
-if (pendingVqs && pendingVqs.length > 0) {
-  await supabase
-    .from('voice_qualifications')
-    .update({
-      status: 'cancelled',
-      completed_at: new Date().toISOString(),
-      observations: 'Cancelado automaticamente: lead clicou "Foi engano"',
-    })
-    .in('id', pendingVqs.map(v => v.id));
-  console.log(`[Nina] Cancelled ${pendingVqs.length} pending voice qualifications (engano)`);
-}
+  .select('*, contacts(name, phone_number)')
+  .order('created_at', { ascending: false })
+  .limit(500);
 ```
 
-Tambem precisa garantir que o `VoiceCallTimelineCard` exiba o status `cancelled` corretamente:
+**Metricas calculadas no frontend a partir dos dados:**
+- Contagem por status (completed, pending, failed, cancelled, etc)
+- Taxa de atendimento = completed / (completed + no_answer + failed + not_contacted)
+- Taxa de qualificacao = qualificados / completed
+- Agrupamento por dia para graficos temporais
+- Duracao estimada (diferenca entre called_at e completed_at)
 
-**Arquivo: `src/components/VoiceCallTimelineCard.tsx**`
-
-- Adicionar `cancelled` ao mapeamento de status: `cancelled → "Cancelada"`
-- Usar cor cinza/slate para o badge de cancelado
-- Adicionar ao `getStatusConfig` se necessario
-
-### Resultado esperado
-
-- Lead clica "Foi engano" → conversa pausada + tag adicionada + todas as VQs pendentes canceladas
-- Timeline mostra "Cancelada" em vez de continuar mostrando "Agendada"
-- Nenhuma ligacao sera feita para esse lead
+**Padrao visual:** Mesmo estilo dark do Dashboard existente (bg-slate-950, cards com bg-white/5, bordas com gradiente cyan/teal, badges coloridos por status)
