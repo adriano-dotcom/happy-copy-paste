@@ -58,6 +58,15 @@ const VoiceCallTimelineCard: React.FC<VoiceCallTimelineCardProps> = ({ qualifica
           textColor: 'text-slate-400',
           iconBg: 'bg-slate-500/20'
         };
+      case 'cancelled':
+        return {
+          icon: PhoneOff,
+          label: 'Cancelada',
+          bgColor: 'bg-slate-500/10',
+          borderColor: 'border-slate-500/30',
+          textColor: 'text-slate-400',
+          iconBg: 'bg-slate-500/20'
+        };
       default:
         return {
           icon: Phone,
@@ -100,6 +109,7 @@ const VoiceCallTimelineCard: React.FC<VoiceCallTimelineCardProps> = ({ qualifica
       case 'in_progress': return 'Em andamento';
       case 'pending':
       case 'scheduled': return 'Agendada';
+      case 'cancelled': return 'Cancelada';
       default: return status;
     }
   };
