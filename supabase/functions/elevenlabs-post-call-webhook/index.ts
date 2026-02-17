@@ -19,12 +19,24 @@ serve(async (req: Request) => {
     const payload = await req.json();
     console.log('[ElevenLabs Webhook] Received payload:', JSON.stringify(payload).substring(0, 500));
 
-    // Extract data from ElevenLabs post-call webhook
-    const conversationId = payload.conversation_id;
-    const transcript = payload.transcript || payload.full_transcript || '';
-    const analysis = payload.analysis || payload.data_collection_results || {};
-    const dynamicVars = payload.conversation_initiation_client_data?.dynamic_variables || payload.dynamic_variables || {};
-    const callStatus = payload.call_status || payload.status || 'completed';
+    // Ignore audio events — only process transcription
+    if (payload.type === 'post_call_audio') {
+      console.log('[ElevenLabs Webhook] Ignoring post_call_audio event');
+      return new Response(JSON.stringify({ status: 'audio_ignored' }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Data may come nested in payload.data or at root level
+    const data = payload.data || payload;
+
+    const conversationId = data.conversation_id || payload.conversation_id;
+    const transcript = data.transcript || data.full_transcript || payload.transcript || '';
+    const analysis = data.analysis || data.data_collection_results || payload.analysis || {};
+    const dynamicVars = data.conversation_initiation_client_data?.dynamic_variables 
+      || payload.conversation_initiation_client_data?.dynamic_variables 
+      || payload.dynamic_variables || {};
+    const callStatus = data.call_status || data.status || payload.call_status || 'completed';
 
     const vqId = dynamicVars.vq_id;
     const leadId = dynamicVars.lead_id;
