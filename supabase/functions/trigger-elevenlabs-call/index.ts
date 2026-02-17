@@ -219,7 +219,12 @@ async function processCall(
   if (!phone.startsWith('55')) phone = '55' + phone;
   phone = '+' + phone;
 
-  const leadName = contact.name || contact.call_name || 'Cliente';
+  // Normalize: only first name, Title Case
+  const rawName = contact.name || contact.call_name || 'Cliente';
+  const firstName = rawName.trim().split(/\s+/)[0] || 'Cliente';
+  const leadName = firstName.length < 3 
+    ? firstName 
+    : firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
 
   console.log(`[ElevenLabs Call] Calling ${leadName} at ${phone} (VQ: ${vq.id}, attempt: ${vq.attempt_number})`);
 
