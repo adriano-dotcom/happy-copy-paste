@@ -1,76 +1,86 @@
 
-# Fix: Atlas nao respondeu ao "Sim" - mensagem nao foi enfileirada
 
-## Diagnostico
+# Analise Profunda de UX: Sistema "Tremendo" ao Mudar de Tela
 
-A mensagem "Sim" do contato Vera Lucia (5544999060048) foi salva no banco de dados (`messages` tabela, ID `ee404837`), mas **nunca foi inserida na `nina_processing_queue`**. Por isso, o nina-orchestrator nunca processou essa mensagem e o Atlas nunca respondeu.
+## Problema Identificado
 
-### Por que isso aconteceu?
+Ao navegar entre telas (ex: Chat -> Dashboard -> Contatos), todo o sistema parece "recarregar" e ficar estranho. A causa raiz sao multiplos problemas arquiteturais que se acumulam.
 
-O webhook usa `EdgeRuntime.waitUntil()` para processar mensagens em background apos retornar HTTP 200. A sequencia e:
+## Causas Raiz Encontradas
 
-```text
-1. Webhook recebe "Sim" do WhatsApp
-2. Insere na message_grouping_queue (deduplicacao)
-3. Retorna HTTP 200 imediatamente
-4. Background: cria contato, conversa, salva mensagem no DB  <-- completou
-5. Background: insere na nina_processing_queue              <-- NAO completou (early_drop)
-6. Background: processa media (se houver)
-```
+### 1. Nenhum cache de dados - tudo recarrega do zero
+O projeto tem `@tanstack/react-query` instalado mas **nunca e usado**. Todos os componentes usam `useEffect + useState` manuais. Isso significa que toda vez que voce sai de uma tela e volta, os dados sao buscados do zero, mostrando loading spinners desnecessarios.
 
-Os logs mostram multiplos `early_drop` shutdowns no periodo. A funcao foi encerrada entre os passos 4 e 5, salvando a mensagem mas sem enfileira-la para a IA.
+### 2. UnreadMessagesProvider faz consultas excessivas (N+1)
+O componente que conta mensagens nao lidas executa uma consulta individual para **cada conversa** ativa. Com 50 conversas, sao 100+ consultas ao banco a cada atualizacao. E como ele escuta eventos em tempo real, qualquer mensagem nova dispara tudo de novo, causando lentidao global.
 
-### Problema estrutural
+### 3. useUserRole recarrega em cada tela admin
+Cada `AdminRoute` (Equipe, Funcoes, Prospeccao, Campanhas, Configuracoes) cria uma instancia separada do `useUserRole`, cada uma fazendo sua propria consulta ao banco. Ao navegar entre telas admin, multiplicas consultas redundantes sao disparadas.
 
-A insercao na `nina_processing_queue` (linha 1069 do webhook) esta dentro do bloco de background (`EdgeRuntime.waitUntil`). Isso significa que o insert nao e garantido - se o runtime encerrar por `early_drop`, a mensagem fica orfao.
+### 4. animate-pulse em elementos persistentes
+Elementos como o avatar glow no `ContactDetailsDrawer` usam `animate-pulse` infinito, que pode causar re-paints constantes do navegador, contribuindo para a sensacao de instabilidade.
 
-## Solucao em duas partes
+## Plano de Correcao
 
-### Parte 1: Acao imediata - Reprocessar a mensagem "Sim"
+### Etapa 1: Adicionar React Query (cache global de dados)
+- Criar `QueryClientProvider` no `App.tsx` com `staleTime` de 5 minutos
+- Isso permite que dados fiquem em cache e nao sejam re-buscados ao voltar para uma tela
 
-Inserir manualmente a mensagem "Sim" na `nina_processing_queue` para que o Atlas responda agora:
+### Etapa 2: Cachear o papel do usuario (useUserRole)
+- Converter `useUserRole` para usar React Query com `staleTime: Infinity`
+- O papel do usuario nao muda durante a sessao, entao uma unica consulta e suficiente
+- Elimina 5+ consultas redundantes ao navegar entre telas admin
 
-```sql
-INSERT INTO nina_processing_queue (message_id, conversation_id, contact_id, priority, status, context_data)
-VALUES (
-  'ee404837-b2e1-4e1b-ab8f-58497a086dc7',
-  '6975d61f-cc25-40e2-81e3-4aceec23667c',
-  'c9efeb61-df22-440f-aade-3f5a4c5c29a1',
-  1,
-  'pending',
-  '{"message_type": "text", "original_type": "text", "recovery": true}'
-);
-```
+### Etapa 3: Otimizar UnreadMessagesProvider
+- Substituir o loop N+1 por uma unica consulta SQL agregada usando `.rpc()` ou uma query otimizada
+- Adicionar debounce de 2 segundos nos eventos realtime para evitar rafagas de re-fetch
+- Isso reduz drasticamente a carga no banco e os re-renders da Sidebar
 
-Depois, disparar o `nina-orchestrator` para processar.
+### Etapa 4: Remover animate-pulse de elementos persistentes
+- Substituir `animate-pulse` por gradientes estaticos em elementos que ficam visiveis por longos periodos (como glow de avatares)
+- Manter `animate-pulse` apenas em indicadores temporarios de loading
 
-### Parte 2: Prevencao - Mover queue insert para ANTES do response
+### Etapa 5: Estabilizar transicoes de rota
+- Adicionar `key` estavel no `Outlet` do layout para evitar desmontagem desnecessaria
+- Garantir que o `ProtectedRoute` e `AdminRoute` nao causem flash de loading quando dados ja estao em cache
 
-Alterar o `whatsapp-webhook/index.ts` para fazer o insert na `nina_processing_queue` **sincronamente**, antes de retornar HTTP 200. A leitura da conversa e do contato precisam acontecer no hot path, mas como sao operacoes rapidas (SELECT simples), o impacto no tempo de resposta e minimo.
+## Detalhes Tecnicos
 
-**Abordagem**: Apos inserir na `message_grouping_queue`, fazer uma busca rapida pelo contato e conversa e inserir na `nina_processing_queue` diretamente no handler principal. O processamento pesado (media, OCR) continua no background.
+### Arquivo: `src/App.tsx`
+- Importar `QueryClient` e `QueryClientProvider` do `@tanstack/react-query`
+- Envolver a arvore de componentes com `QueryClientProvider`
+- Configurar `defaultOptions.queries.staleTime = 5 * 60 * 1000` e `refetchOnWindowFocus: false`
 
-### Parte 3: Safety net - Sweep de mensagens orfaos
+### Arquivo: `src/hooks/useUserRole.ts`
+- Substituir `useEffect + useState` por `useQuery` do React Query
+- Usar `queryKey: ['user-role', user?.id]`
+- Configurar `staleTime: Infinity` (papel nao muda na sessao)
+- Manter a mesma interface publica (`role`, `isAdmin`, `isOperator`, `loading`)
 
-Adicionar ao `cleanup-queues/index.ts` uma verificacao que detecta mensagens de usuario (`from_type = 'user'`) nos ultimos 30 minutos que nao tem entrada correspondente na `nina_processing_queue`, e cujas conversas estao com `status = 'nina'`. Essas mensagens orfaos serao automaticamente enfileiradas.
+### Arquivo: `src/contexts/UnreadMessagesContext.tsx`
+- Substituir o loop N+1 (linhas 89-151) por uma query unica otimizada:
+  - Buscar conversas ativas com contagem de mensagens nao lidas em um unico SELECT com subquery
+  - Usar `LEFT JOIN` ou subquery para contar `unread_count` por conversa
+- Adicionar debounce de 2s no callback do realtime para evitar rafagas
+- Usar `useRef` com timestamp para ignorar refetches dentro da janela de debounce
 
-## Arquivos a editar
+### Arquivo: `src/components/ContactDetailsDrawer.tsx`
+- Linha 170: Remover `animate-pulse` do glow do avatar
+- Substituir por gradiente estatico com `opacity` fixa
 
-1. **SQL**: Insert manual para reprocessar o "Sim" agora
-2. **`supabase/functions/whatsapp-webhook/index.ts`**: Mover o insert na `nina_processing_queue` para o hot path (antes do return HTTP 200)
-3. **`supabase/functions/cleanup-queues/index.ts`**: Adicionar funcao `recoverOrphanedMessages` como safety net
+### Arquivo: `src/components/chat/LeadScoreBadge.tsx`
+- Linhas 54 e 64: Condicionar `animate-pulse` para nao executar indefinidamente
+- Usar `animation-iteration-count: 3` via classe customizada para pulsar apenas 3 vezes
 
-## Detalhe tecnico da mudanca no webhook
+### Arquivo: `src/components/AdminRoute.tsx`
+- Usar o hook `useUserRole` refatorado (que agora usa React Query)
+- O cache evita loading spinner redundante ao navegar entre telas admin
 
-No handler principal (linhas 326-373), apos inserir na `message_grouping_queue`, adicionar:
+## Resultado Esperado
 
-```text
-Para cada mensagem:
-  1. Buscar contato pelo telefone (SELECT rapido)
-  2. Buscar conversa ativa (SELECT rapido)
-  3. Se conversa.status === 'nina':
-     - INSERT na nina_processing_queue com scheduled_for = now + 15s
-  4. Continuar com EdgeRuntime.waitUntil para o resto
-```
+- Navegacao entre telas sem "tremor" ou recarregamento visual
+- Dados permanecem em cache ao voltar para telas ja visitadas
+- Sidebar estavel sem re-renders excessivos
+- Consultas ao banco reduzidas em ~80% durante navegacao normal
+- Papel do usuario consultado uma unica vez por sessao
 
-Isso garante que mesmo com `early_drop`, a mensagem ja esta na fila para a IA processar.
