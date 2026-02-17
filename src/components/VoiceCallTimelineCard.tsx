@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
-import { Bot, Phone, PhoneMissed, PhoneOff, Clock, Star, ChevronDown, ChevronUp, FileText, ArrowRight, Calendar } from 'lucide-react';
+import { Bot, Phone, PhoneMissed, PhoneOff, Clock, Star, ChevronDown, ChevronUp, FileText, ArrowRight, Calendar, Loader2 } from 'lucide-react';
 import { VoiceQualification } from '@/hooks/useVoiceQualification';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
+import { Button } from './ui/button';
 
 interface VoiceCallTimelineCardProps {
   qualification: VoiceQualification;
@@ -8,6 +12,25 @@ interface VoiceCallTimelineCardProps {
 
 const VoiceCallTimelineCard: React.FC<VoiceCallTimelineCardProps> = ({ qualification }) => {
   const [showTranscript, setShowTranscript] = useState(false);
+  const [isHangingUp, setIsHangingUp] = useState(false);
+  const queryClient = useQueryClient();
+
+  const handleHangup = async () => {
+    setIsHangingUp(true);
+    try {
+      const { error } = await supabase.functions.invoke('elevenlabs-hangup', {
+        body: { vq_id: qualification.id, elevenlabs_conversation_id: qualification.elevenlabs_conversation_id }
+      });
+      if (error) throw error;
+      toast.success('Ligação encerrada com sucesso!');
+      queryClient.invalidateQueries({ queryKey: ['voice-qualification', qualification.contact_id] });
+    } catch (err: any) {
+      console.error('Error hanging up:', err);
+      toast.error('Erro ao encerrar ligação');
+    } finally {
+      setIsHangingUp(false);
+    }
+  };
 
   const formatTime = (dateStr: string | null): string => {
     if (!dateStr) return '--:--';
@@ -153,6 +176,18 @@ const VoiceCallTimelineCard: React.FC<VoiceCallTimelineCardProps> = ({ qualifica
               </div>
             </div>
           </div>
+          {['calling', 'in_progress'].includes(qualification.status) && (
+            <Button
+              onClick={handleHangup}
+              disabled={isHangingUp}
+              size="sm"
+              className="bg-red-500/20 border border-red-500/30 hover:bg-red-500/30 text-red-300 text-xs h-8 px-3"
+              variant="outline"
+            >
+              {isHangingUp ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <PhoneOff className="w-3.5 h-3.5 mr-1" />}
+              Encerrar
+            </Button>
+          )}
         </div>
 
         {/* Qualification Result + Interest */}
