@@ -1,118 +1,93 @@
 
 
-## Corrigir carregamento excessivo na pagina de Contatos
+## Botao Pausar/Retomar Automacao de Ligacoes no Voice Dashboard
 
-### Problema identificado
+### O que sera feito
 
-A pagina `/contacts` usa `useState` + `useEffect` puro para buscar dados (sem cache). Toda vez que o usuario navega para a pagina, o `loadContacts()` executa com `setLoading(true)`, mostrando o spinner "Carregando base de dados..." mesmo que os dados ja tenham sido buscados anteriormente. O mesmo acontece com `loadCampaigns()` e `loadFiltersData()`.
+Adicionar um botao toggle no header do Voice Dashboard (`/voice-dashboard`) que permite pausar e retomar a automacao `auto-voice-trigger` sem precisar acessar o console. Quando pausada, a edge function verifica o flag no banco e aborta silenciosamente.
 
-Alem disso, o `fetchContacts` no `api.ts` faz 3-4 queries sequenciais ao banco (contacts, deals+conversations, template messages), tornando o carregamento lento.
+### Mudancas
 
-### Causa raiz
+**1. Migração de banco - adicionar coluna `auto_voice_paused` na tabela `nina_settings`**
 
-- `Contacts.tsx` linha 220-224: `useEffect(() => { loadContacts(); loadCampaigns(); loadFiltersData(); }, [])` - executa TODA VEZ que o componente monta (toda navegacao)
-- Nao usa React Query, entao nao ha cache entre navegacoes
-- `CompanySettingsProvider` tambem usa useEffect puro (mas afeta menos)
+```sql
+ALTER TABLE nina_settings ADD COLUMN auto_voice_paused boolean NOT NULL DEFAULT false;
+ALTER TABLE nina_settings ADD COLUMN auto_voice_paused_at timestamptz;
+ALTER TABLE nina_settings ADD COLUMN auto_voice_paused_by text;
+```
 
-### Solucao
+**2. Edge function `supabase/functions/auto-voice-trigger/index.ts`**
 
-**1. Converter `Contacts.tsx` para usar React Query (cache entre navegacoes)**
+Adicionar verificacao logo apos o check de horario comercial:
 
-Substituir o pattern `useState/useEffect/setLoading` por `useQuery` com `staleTime: 5 * 60 * 1000` (5 min), alinhado com a configuracao global do QueryClient. Isso significa que ao navegar de volta para `/contacts`, os dados aparecem instantaneamente do cache.
+```typescript
+// Check if automation is paused
+const { data: settings } = await supabase
+  .from('nina_settings')
+  .select('auto_voice_paused')
+  .limit(1)
+  .single();
 
-Mudancas em `src/components/Contacts.tsx`:
-- Remover `const [loading, setLoading] = useState(true)` e `const [contacts, setContacts] = useState([])`
-- Criar 3 queries com useQuery:
-  - `useQuery({ queryKey: ['contacts-list'], queryFn: api.fetchContacts })` 
-  - `useQuery({ queryKey: ['campaigns-active'], queryFn: ... })`
-  - `useQuery({ queryKey: ['contacts-filters-data'], queryFn: ... })`
-- O `loading` passa a ser `isLoading` do useQuery (so `true` no primeiro fetch, nao nas navegacoes seguintes)
-- Manter `loadContacts()` como `refetch()` para os callbacks de create/delete/update
+if (settings?.auto_voice_paused) {
+  console.log('[Auto Voice] Automation is PAUSED. Skipping.');
+  return new Response(JSON.stringify({ status: 'paused' }), { ... });
+}
+```
 
-**2. Converter `CompanySettingsProvider` para usar React Query**
+**3. `src/components/VoiceDashboard.tsx` - botao no header**
 
-Substituir o `useState/useEffect` por `useQuery` com `staleTime: Infinity` (settings raramente mudam). Isso evita refetch desnecessario na inicializacao.
+Adicionar ao lado do titulo um botao com icone `Pause`/`Play` que:
+- Busca o estado atual de `auto_voice_paused` da tabela `nina_settings` via useQuery
+- Ao clicar, faz update direto na tabela `nina_settings` 
+- Mostra estado visual claro: verde "Automacao Ativa" / vermelho "Automacao Pausada"
+- Inclui confirmacao antes de pausar (toast de confirmacao)
 
-Mudancas em `src/hooks/useCompanySettings.tsx`:
-- Usar `useQuery({ queryKey: ['company-settings'], queryFn: ..., staleTime: Infinity })`
-- Manter o `refetch` para quando o usuario alterar configuracoes
+Visual do botao no header:
 
-**3. Melhorar o loading state visual**
+```
+Ligacoes IA -- Iris        [⏸ Pausar Automacao]   (quando ativa)
+Ligacoes IA -- Iris        [▶ Retomar Automacao]   (quando pausada)
+```
 
-Usar `isLoading` (primeiro carregamento) vs `isFetching` (refetch em background) do React Query:
-- Primeiro carregamento: mostra o spinner (inevitavel)
-- Navegacoes subsequentes: mostra dados do cache imediatamente, refetch silencioso em background
+Quando pausada, exibe um banner amarelo abaixo do header:
+```
+⚠ Automacao de ligacoes PAUSADA desde 17/02 18:30. Nenhuma ligacao automatica sera feita.
+```
 
 ### Secao tecnica
 
-**Contacts.tsx - substituir o bloco de state e useEffect:**
+**Arquivos modificados:**
+1. `supabase/functions/auto-voice-trigger/index.ts` - adicionar check de `auto_voice_paused` no inicio
+2. `src/components/VoiceDashboard.tsx` - adicionar botao toggle + banner de status + query/mutation
 
+**Logica do toggle no VoiceDashboard:**
 ```typescript
-// ANTES (linhas 92-224):
-const [contacts, setContacts] = useState<ExtendedContact[]>([]);
-const [loading, setLoading] = useState(true);
-// ... loadContacts/loadCampaigns/loadFiltersData
-useEffect(() => { loadContacts(); loadCampaigns(); loadFiltersData(); }, []);
-
-// DEPOIS:
-const { data: contacts = [], isLoading: loading, refetch: refetchContacts } = useQuery({
-  queryKey: ['contacts-list'],
-  queryFn: () => api.fetchContacts(),
-  staleTime: 5 * 60 * 1000,
-});
-
-const { data: availableCampaigns = [] } = useQuery({
-  queryKey: ['campaigns-active'],
+const { data: voiceSettings, refetch } = useQuery({
+  queryKey: ['voice-automation-status'],
   queryFn: async () => {
     const { data } = await supabase
-      .from('campaigns').select('id, name, color')
-      .eq('is_active', true).order('name');
-    return data || [];
-  },
-  staleTime: 5 * 60 * 1000,
-});
-
-const { data: filtersData } = useQuery({
-  queryKey: ['contacts-filters-data'],
-  queryFn: async () => {
-    const [owners, pipelines] = await Promise.all([
-      supabase.from('team_members').select('id, name').eq('status', 'active').order('name'),
-      supabase.from('pipelines').select('id, name, slug, icon, color').eq('is_active', true).order('name')
-    ]);
-    return { owners: owners.data || [], pipelines: pipelines.data || [] };
-  },
-  staleTime: 5 * 60 * 1000,
-});
-
-const availableOwners = filtersData?.owners || [];
-const availablePipelines = filtersData?.pipelines || [];
-```
-
-Substituir todas as chamadas `loadContacts()` por `refetchContacts()`.
-
-**CompanySettingsProvider - converter para React Query:**
-
-```typescript
-const { data, isLoading: loading, refetch } = useQuery({
-  queryKey: ['company-settings'],
-  queryFn: async () => {
-    const { data, error } = await supabase
       .from('nina_settings')
-      .select('company_name, sdr_name')
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) {
-      // criar default...
-    }
+      .select('id, auto_voice_paused, auto_voice_paused_at')
+      .limit(1).single();
     return data;
   },
-  staleTime: Infinity,
 });
+
+const togglePause = async () => {
+  const newState = !voiceSettings?.auto_voice_paused;
+  await supabase.from('nina_settings').update({
+    auto_voice_paused: newState,
+    auto_voice_paused_at: newState ? new Date().toISOString() : null,
+  }).eq('id', voiceSettings.id);
+  refetch();
+  toast.success(newState ? 'Automacao pausada' : 'Automacao retomada');
+};
 ```
 
-### Resultado esperado
-- Primeiro acesso: carrega normalmente (spinner aparece 1x)
-- Navegacoes seguintes: dados aparecem instantaneamente do cache
-- Refetch silencioso em background quando staleTime expira
-- Sem re-renders desnecessarios ou loops de useEffect
+**Migracao SQL:**
+```sql
+ALTER TABLE nina_settings 
+  ADD COLUMN IF NOT EXISTS auto_voice_paused boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS auto_voice_paused_at timestamptz;
+```
 
