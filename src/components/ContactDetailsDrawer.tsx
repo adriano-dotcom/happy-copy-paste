@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { User, Building2, MapPin, Phone, Mail, FileText, Calendar, Edit, MessageSquare, Target, Pencil, Check, X, Loader2, MessageCircle } from 'lucide-react';
+import { User, Building2, MapPin, Phone, Mail, FileText, Calendar, Edit, MessageSquare, Target, Pencil, Check, X, Loader2, MessageCircle, Mic } from 'lucide-react';
 import { displayPhoneInternational } from '@/utils/phoneFormatter';
 import { CallHistoryPanel } from './CallHistoryPanel';
 import { useContactCallHistory } from '@/hooks/useContactCallHistory';
+import VoiceQualificationSection from './VoiceQualificationSection';
 import { api } from '@/services/api';
 import { toast } from 'sonner';
 
@@ -304,7 +305,17 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
             </div>
           </section>
 
-          {/* Dados da Empresa - se houver mais dados */}
+          {/* Qualificação por Voz (ElevenLabs) */}
+          <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+          <section>
+            <SectionHeader icon={Mic} title="Qualificação por Voz" />
+            <div className="bg-white/[0.02] rounded-xl border border-white/[0.03] p-3">
+              <VoiceQualificationSection 
+                contactId={contact?.id || null}
+                contactName={contact?.name}
+              />
+            </div>
+          </section>
           {contact.fleet_size && (
             <>
               <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />

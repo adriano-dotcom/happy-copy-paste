@@ -2305,6 +2305,110 @@ export type Database = {
         }
         Relationships: []
       }
+      voice_qualifications: {
+        Row: {
+          agent_id: string | null
+          attempt_number: number
+          best_contact_time: string | null
+          call_sid: string | null
+          call_summary: string | null
+          called_at: string | null
+          completed_at: string | null
+          contact_id: string
+          created_at: string
+          deal_id: string | null
+          elevenlabs_agent_id: string | null
+          elevenlabs_conversation_id: string | null
+          full_transcript: string | null
+          id: string
+          interest_level: string | null
+          max_attempts: number
+          next_step: string | null
+          observations: string | null
+          qualification_result: string | null
+          scheduled_for: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          agent_id?: string | null
+          attempt_number?: number
+          best_contact_time?: string | null
+          call_sid?: string | null
+          call_summary?: string | null
+          called_at?: string | null
+          completed_at?: string | null
+          contact_id: string
+          created_at?: string
+          deal_id?: string | null
+          elevenlabs_agent_id?: string | null
+          elevenlabs_conversation_id?: string | null
+          full_transcript?: string | null
+          id?: string
+          interest_level?: string | null
+          max_attempts?: number
+          next_step?: string | null
+          observations?: string | null
+          qualification_result?: string | null
+          scheduled_for?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string | null
+          attempt_number?: number
+          best_contact_time?: string | null
+          call_sid?: string | null
+          call_summary?: string | null
+          called_at?: string | null
+          completed_at?: string | null
+          contact_id?: string
+          created_at?: string
+          deal_id?: string | null
+          elevenlabs_agent_id?: string | null
+          elevenlabs_conversation_id?: string | null
+          full_transcript?: string | null
+          id?: string
+          interest_level?: string | null
+          max_attempts?: number
+          next_step?: string | null
+          observations?: string | null
+          qualification_result?: string | null
+          scheduled_for?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_qualifications_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_qualifications_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_qualifications_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_qualifications_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webhook_dead_letter: {
         Row: {
           created_at: string | null

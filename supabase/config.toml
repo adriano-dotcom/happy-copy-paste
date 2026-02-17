@@ -146,3 +146,11 @@ verify_jwt = true
 # Relatório semanal de leads desqualificados
 [functions.generate-disqualified-report]
 verify_jwt = false
+
+# ElevenLabs outbound call trigger (chamada via pg_cron)
+[functions.trigger-elevenlabs-call]
+verify_jwt = false
+
+# ElevenLabs post-call webhook (chamada externa)
+[functions.elevenlabs-post-call-webhook]
+verify_jwt = false

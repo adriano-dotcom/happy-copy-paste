@@ -5390,6 +5390,49 @@ Qual desses te interessa?`;
         }
       }
     }
+
+    // ===== VOICE QUALIFICATION TRIGGER FOR IRIS =====
+    if (agent.slug === 'iris' && isHandoff) {
+      try {
+        // Check if there's already a pending/calling voice qualification for this contact
+        const { data: existingVQ } = await supabase
+          .from('voice_qualifications')
+          .select('id, status')
+          .eq('contact_id', conversation.contact_id)
+          .in('status', ['pending', 'scheduled', 'calling'])
+          .maybeSingle();
+
+        if (!existingVQ) {
+          // Get the deal for this contact
+          const { data: contactDeal } = await supabase
+            .from('deals')
+            .select('id')
+            .eq('contact_id', conversation.contact_id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          // Schedule voice qualification call in 5 minutes
+          const scheduledFor = new Date(Date.now() + 5 * 60 * 1000);
+          await supabase
+            .from('voice_qualifications')
+            .insert({
+              contact_id: conversation.contact_id,
+              deal_id: contactDeal?.id || null,
+              agent_id: agent.id,
+              scheduled_for: scheduledFor.toISOString(),
+              status: 'pending',
+            });
+          
+          console.log(`[Nina][Iris] 📞 Voice qualification scheduled for contact ${conversation.contact_id} at ${scheduledFor.toISOString()}`);
+        } else {
+          console.log(`[Nina][Iris] ⏭️ Voice qualification already exists (${existingVQ.status}) for contact ${conversation.contact_id}`);
+        }
+      } catch (vqError) {
+        console.error('[Nina][Iris] Error scheduling voice qualification:', vqError);
+      }
+    }
+    // ===== END VOICE QUALIFICATION TRIGGER =====
   }
 
   // ===== ENSURE DEAL HAS OWNER (even without handoff) =====
