@@ -38,6 +38,20 @@ serve(async (req: Request) => {
       });
     }
 
+    // Check if automation is paused
+    const { data: pauseSettings } = await supabase
+      .from('nina_settings')
+      .select('auto_voice_paused')
+      .limit(1)
+      .single();
+
+    if (pauseSettings?.auto_voice_paused) {
+      console.log('[Auto Voice] Automation is PAUSED. Skipping.');
+      return new Response(JSON.stringify({ status: 'paused' }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     // Find conversations where last message was 5-15 min ago, contact not blocked, no recent VQ
     const { data: candidates, error: queryError } = await supabase
       .rpc('auto_voice_trigger_candidates');

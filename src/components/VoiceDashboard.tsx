@@ -1,7 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { Phone, PhoneOff, PhoneMissed, CheckCircle, Clock, XCircle, TrendingUp, AlertTriangle, Loader2, Star, Filter } from 'lucide-react';
+import { Phone, PhoneOff, PhoneMissed, CheckCircle, Clock, XCircle, TrendingUp, AlertTriangle, Loader2, Star, Filter, Pause, Play } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, PieChart, Pie, Cell, Line, LineChart } from 'recharts';
 import { useVoiceDashboardMetrics, VoiceDashboardRecord } from '@/hooks/useVoiceDashboardMetrics';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 type StatusFilter = 'all' | 'completed' | 'pending' | 'failed' | 'no_answer' | 'cancelled';
 
@@ -45,6 +48,41 @@ const KPICard: React.FC<{ title: string; value: string | number; subtitle?: stri
 const VoiceDashboard: React.FC = () => {
   const { data: metrics, isLoading } = useVoiceDashboardMetrics();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [toggling, setToggling] = useState(false);
+
+  const { data: voiceSettings, refetch: refetchSettings } = useQuery({
+    queryKey: ['voice-automation-status'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('nina_settings')
+        .select('id, auto_voice_paused, auto_voice_paused_at')
+        .limit(1)
+        .single();
+      return data;
+    },
+  });
+
+  const isPaused = voiceSettings?.auto_voice_paused ?? false;
+
+  const togglePause = async () => {
+    if (!voiceSettings?.id) return;
+    setToggling(true);
+    const newState = !isPaused;
+    const { error } = await supabase
+      .from('nina_settings')
+      .update({
+        auto_voice_paused: newState,
+        auto_voice_paused_at: newState ? new Date().toISOString() : null,
+      } as any)
+      .eq('id', voiceSettings.id);
+    setToggling(false);
+    if (error) {
+      toast.error('Erro ao atualizar automação');
+      return;
+    }
+    refetchSettings();
+    toast.success(newState ? 'Automação pausada' : 'Automação retomada');
+  };
 
   const filteredRecords = useMemo(() => {
     if (!metrics) return [];
@@ -98,16 +136,44 @@ const VoiceDashboard: React.FC = () => {
     );
   };
 
-  return (
+    return (
     <div className="h-full overflow-y-auto p-6 space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-          <Phone className="w-7 h-7 text-violet-400" />
-          Ligações IA — Iris
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">Dashboard de qualificação por voz via ElevenLabs</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <Phone className="w-7 h-7 text-violet-400" />
+            Ligações IA — Iris
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">Dashboard de qualificação por voz via ElevenLabs</p>
+        </div>
+        <button
+          onClick={togglePause}
+          disabled={toggling || !voiceSettings}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all disabled:opacity-50 ${
+            isPaused
+              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'
+              : 'bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30'
+          }`}
+        >
+          {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+          {toggling ? 'Aguarde...' : isPaused ? 'Retomar Automação' : 'Pausar Automação'}
+        </button>
       </div>
+
+      {/* Paused Banner */}
+      {isPaused && (
+        <div className="flex items-center gap-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 text-sm">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          <span>
+            Automação de ligações <strong>PAUSADA</strong>
+            {voiceSettings?.auto_voice_paused_at && (
+              <> desde {new Date(voiceSettings.auto_voice_paused_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}</>
+            )}
+            . Nenhuma ligação automática será feita.
+          </span>
+        </div>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
