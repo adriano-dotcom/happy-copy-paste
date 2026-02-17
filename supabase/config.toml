@@ -151,6 +151,10 @@ verify_jwt = false
 [functions.trigger-elevenlabs-call]
 verify_jwt = false
 
+# Auto voice trigger (cron a cada 5 min)
+[functions.auto-voice-trigger]
+verify_jwt = false
+
 # ElevenLabs post-call webhook (chamada externa)
 [functions.elevenlabs-post-call-webhook]
 verify_jwt = false
