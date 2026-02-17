@@ -65,6 +65,7 @@ serve(async (req: Request) => {
 
     if (body.contact_id && body.force) {
       console.log(`[ElevenLabs Call] Force mode for contact: ${body.contact_id}`);
+      
       // Find the latest voice qualification for this contact
       const { data: vq } = await supabase
         .from('voice_qualifications')
@@ -72,21 +73,55 @@ serve(async (req: Request) => {
         .eq('contact_id', body.contact_id)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
 
-      if (!vq) {
-        return new Response(JSON.stringify({ error: 'No voice qualification found' }), {
-          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+      let qualificationToProcess = vq;
+
+      if (!qualificationToProcess) {
+        // No existing VQ — create one on the fly
+        console.log(`[ElevenLabs Call] No existing VQ, creating new one for contact ${body.contact_id}`);
+        
+        const { data: contact } = await supabase
+          .from('contacts')
+          .select('id, phone_number, name, call_name')
+          .eq('id', body.contact_id)
+          .single();
+
+        if (!contact) {
+          return new Response(JSON.stringify({ error: 'Contact not found' }), {
+            status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        const { data: newVq, error: insertError } = await supabase
+          .from('voice_qualifications')
+          .insert({
+            contact_id: body.contact_id,
+            status: 'pending',
+            scheduled_for: new Date().toISOString(),
+            attempt_number: 1,
+            max_attempts: 3,
+          })
+          .select('*, contacts(phone_number, name, call_name)')
+          .single();
+
+        if (insertError) {
+          console.error('[ElevenLabs Call] Error creating VQ:', insertError);
+          return new Response(JSON.stringify({ error: 'Failed to create voice qualification' }), {
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        qualificationToProcess = newVq;
       }
 
       // Reset and process immediately
       await supabase
         .from('voice_qualifications')
         .update({ status: 'pending', scheduled_for: new Date().toISOString() })
-        .eq('id', vq.id);
+        .eq('id', qualificationToProcess.id);
 
-      const result = await processCall(supabase, { ...vq, contacts: vq.contacts }, elevenlabsApiKey, elevenlabsAgentId, elevenlabsPhoneNumberId);
+      const result = await processCall(supabase, qualificationToProcess, elevenlabsApiKey, elevenlabsAgentId, elevenlabsPhoneNumberId);
       return new Response(JSON.stringify(result), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
