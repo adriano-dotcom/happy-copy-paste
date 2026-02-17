@@ -1,33 +1,80 @@
 
 
-## Adicionar botao de disparo manual de chamada Iris no painel lateral
+## Corrigir dynamic_variables do agente Iris na ElevenLabs
 
-### Objetivo
-Colocar um botao visivel na lateral (ContactDetailsDrawer) para que o vendedor possa disparar uma ligacao da Iris manualmente a qualquer momento, mesmo quando o lead nao caiu na automacao.
+### Problema
+O prompt da Iris usa 4 variaveis dinamicas (`lead_name`, `produto_interesse`, `lead_id`, `horario`), mas o codigo atual tem 2 problemas:
+
+1. **`horario`** envia data completa (`17/02/2026 13:45:00`) em vez de `HH:MM` como o prompt espera
+2. **`produto_interesse`** esta fixo como "Seguro de Carga", mas deveria refletir o real interesse do lead (Auto, Vida, Saude, Empresarial, Transporte)
 
 ### Mudancas
 
-**1. Adicionar botao "Ligar com Iris" na secao de acoes do ContactDetailsDrawer**
-- Arquivo: `src/components/ContactDetailsDrawer.tsx`
-- Adicionar um terceiro botao ao lado de "Editar" e "Conversar", ou logo abaixo deles
-- Botao com icone de telefone/microfone e texto "Ligar com Iris"
-- Ao clicar, invoca `trigger-elevenlabs-call` com `{ contact_id, force: true }`
-- Mostra loading enquanto dispara e toast de sucesso/erro
-- Invalida a query de voice-qualification para atualizar o status na tela
+**Arquivo: `supabase/functions/trigger-elevenlabs-call/index.ts`**
 
-### Visual
-- Botao com gradiente violeta/roxo para diferenciar das acoes existentes (cyan = editar, outline = conversar)
-- Icone `Mic` (microfone) para indicar agente de voz
-- Estado de loading com spinner enquanto a chamada esta sendo disparada
+**1. Corrigir formato do `horario`**
+- Alterar de `getNowInSP().toLocaleString('pt-BR')` para extrair apenas `HH:MM`
+- Exemplo: `"13:45"` em vez de `"17/02/2026, 13:45:00"`
 
-### Detalhes tecnicos
-- Importar `supabase` de `@/integrations/supabase/client`
-- Importar `useQueryClient` de `@tanstack/react-query`
-- Adicionar estado local `isCallingIris` para controlar loading
-- Funcao `handleCallIris` que:
-  1. Seta loading
-  2. Invoca `supabase.functions.invoke('trigger-elevenlabs-call', { body: { contact_id: contact.id, force: true } })`
-  3. Toast de sucesso ou erro
-  4. Invalida queries `['voice-qualification', contact.id]` e `['contact-voice-qualifications', contact.id]`
-- Botao posicionado na area de acoes (linha ~231), abaixo dos botoes Editar/Conversar
+**2. Tornar `produto_interesse` dinamico**
+- Buscar o deal associado ao contato para identificar o pipeline/produto
+- Consultar `deals` + `pipelines` para o `contact_id`
+- Mapear o nome do pipeline para o produto de interesse:
+  - Pipeline "Transporte" → "Seguro de Transporte e Carga"
+  - Pipeline "Saude" → "Plano de Saude"
+  - Pipeline "Auto" → "Seguro Auto"
+  - Pipeline "Empresarial" → "Seguro Empresarial"
+  - Pipeline "Vida" → "Seguro de Vida"
+  - Fallback → "seguros" (generico)
+- Alternativa: se a conversa do lead tiver `nina_context.qualification_answers`, extrair o produto de la
+
+### Codigo da mudanca
+
+Na funcao `processCall`:
+
+```text
+// 1. Horario — extrair so HH:MM
+const spNow = getNowInSP();
+const horarioFormatado = spNow.getHours().toString().padStart(2, '0') 
+  + ':' + spNow.getMinutes().toString().padStart(2, '0');
+
+// 2. Produto — buscar do deal/pipeline do contato
+const { data: deal } = await supabase
+  .from('deals')
+  .select('pipeline_id, pipelines(name)')
+  .eq('contact_id', vq.contact_id)
+  .order('created_at', { ascending: false })
+  .limit(1)
+  .maybeSingle();
+
+const pipelineName = deal?.pipelines?.name?.toLowerCase() || '';
+const produtoMap = {
+  'transporte': 'Seguro de Transporte e Carga',
+  'saude': 'Plano de Saúde',
+  'saúde': 'Plano de Saúde',
+  'auto': 'Seguro Auto',
+  'empresarial': 'Seguro Empresarial',
+  'vida': 'Seguro de Vida',
+};
+let produtoInteresse = 'seguros';
+for (const [key, value] of Object.entries(produtoMap)) {
+  if (pipelineName.includes(key)) {
+    produtoInteresse = value;
+    break;
+  }
+}
+
+// 3. Enviar variaveis corrigidas
+dynamic_variables: {
+  lead_name: leadName,
+  lead_id: vq.contact_id,
+  vq_id: vq.id,
+  produto_interesse: produtoInteresse,
+  horario: horarioFormatado,
+}
+```
+
+### Resumo
+- `horario`: de `"17/02/2026, 13:45:00"` para `"13:45"`
+- `produto_interesse`: de `"Seguro de Carga"` fixo para valor dinamico baseado no pipeline do deal
 
