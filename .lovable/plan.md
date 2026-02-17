@@ -1,76 +1,118 @@
 
 
-## Botao para forcar encerramento de chamadas ElevenLabs em andamento
+## Corrigir carregamento excessivo na pagina de Contatos
 
-### Como funciona
+### Problema identificado
 
-A ElevenLabs oferece um endpoint WebSocket de monitoramento que aceita comandos de controle, incluindo `end_call`. O fluxo sera:
+A pagina `/contacts` usa `useState` + `useEffect` puro para buscar dados (sem cache). Toda vez que o usuario navega para a pagina, o `loadContacts()` executa com `setLoading(true)`, mostrando o spinner "Carregando base de dados..." mesmo que os dados ja tenham sido buscados anteriormente. O mesmo acontece com `loadCampaigns()` e `loadFiltersData()`.
 
-1. Usuario clica no botao "Encerrar" no card da chamada em andamento
-2. Frontend chama uma nova edge function `elevenlabs-hangup`
-3. A edge function conecta ao WebSocket de monitoramento da ElevenLabs, envia o comando `end_call`, e atualiza o status local para `cancelled`
+Alem disso, o `fetchContacts` no `api.ts` faz 3-4 queries sequenciais ao banco (contacts, deals+conversations, template messages), tornando o carregamento lento.
 
-### Mudancas
+### Causa raiz
 
-**Novo arquivo: `supabase/functions/elevenlabs-hangup/index.ts`**
+- `Contacts.tsx` linha 220-224: `useEffect(() => { loadContacts(); loadCampaigns(); loadFiltersData(); }, [])` - executa TODA VEZ que o componente monta (toda navegacao)
+- Nao usa React Query, entao nao ha cache entre navegacoes
+- `CompanySettingsProvider` tambem usa useEffect puro (mas afeta menos)
 
-Edge function que:
-- Recebe `{ vq_id, elevenlabs_conversation_id }` no body
-- Conecta ao WebSocket `wss://api.us.elevenlabs.io/v1/convai/conversations/{conversation_id}/monitor` com header `xi-api-key`
-- Envia o comando `{ "command_type": "end_call" }`
-- Fecha o WebSocket
-- Atualiza a `voice_qualifications` com `status: 'cancelled'`, `completed_at: now()`, `observations: 'Encerrada manualmente pelo operador'`
+### Solucao
 
-**Arquivo modificado: `src/components/VoiceQualificationSection.tsx`**
+**1. Converter `Contacts.tsx` para usar React Query (cache entre navegacoes)**
 
-- Adicionar botao "Encerrar Ligacao" visivel quando `vq.status === 'calling'` ou `vq.status === 'in_progress'`
-- O botao chama `supabase.functions.invoke('elevenlabs-hangup', { body: { vq_id, elevenlabs_conversation_id } })`
-- Estilo similar ao botao de hangup do API4COM (vermelho, icone PhoneOff)
-- Estado de loading durante a chamada
+Substituir o pattern `useState/useEffect/setLoading` por `useQuery` com `staleTime: 5 * 60 * 1000` (5 min), alinhado com a configuracao global do QueryClient. Isso significa que ao navegar de volta para `/contacts`, os dados aparecem instantaneamente do cache.
 
-**Arquivo modificado: `src/components/VoiceCallTimelineCard.tsx`**
+Mudancas em `src/components/Contacts.tsx`:
+- Remover `const [loading, setLoading] = useState(true)` e `const [contacts, setContacts] = useState([])`
+- Criar 3 queries com useQuery:
+  - `useQuery({ queryKey: ['contacts-list'], queryFn: api.fetchContacts })` 
+  - `useQuery({ queryKey: ['campaigns-active'], queryFn: ... })`
+  - `useQuery({ queryKey: ['contacts-filters-data'], queryFn: ... })`
+- O `loading` passa a ser `isLoading` do useQuery (so `true` no primeiro fetch, nao nas navegacoes seguintes)
+- Manter `loadContacts()` como `refetch()` para os callbacks de create/delete/update
 
-- Adicionar botao "Encerrar" no header do card quando status e `calling` ou `in_progress`
-- Mesmo comportamento do VoiceQualificationSection
+**2. Converter `CompanySettingsProvider` para usar React Query**
+
+Substituir o `useState/useEffect` por `useQuery` com `staleTime: Infinity` (settings raramente mudam). Isso evita refetch desnecessario na inicializacao.
+
+Mudancas em `src/hooks/useCompanySettings.tsx`:
+- Usar `useQuery({ queryKey: ['company-settings'], queryFn: ..., staleTime: Infinity })`
+- Manter o `refetch` para quando o usuario alterar configuracoes
+
+**3. Melhorar o loading state visual**
+
+Usar `isLoading` (primeiro carregamento) vs `isFetching` (refetch em background) do React Query:
+- Primeiro carregamento: mostra o spinner (inevitavel)
+- Navegacoes subsequentes: mostra dados do cache imediatamente, refetch silencioso em background
 
 ### Secao tecnica
 
-**Edge function `elevenlabs-hangup`:**
+**Contacts.tsx - substituir o bloco de state e useEffect:**
 
 ```typescript
-// 1. Validar params
-const { vq_id, elevenlabs_conversation_id } = await req.json();
+// ANTES (linhas 92-224):
+const [contacts, setContacts] = useState<ExtendedContact[]>([]);
+const [loading, setLoading] = useState(true);
+// ... loadContacts/loadCampaigns/loadFiltersData
+useEffect(() => { loadContacts(); loadCampaigns(); loadFiltersData(); }, []);
 
-// 2. Conectar ao WebSocket de monitoramento
-const ws = new WebSocket(
-  `wss://api.us.elevenlabs.io/v1/convai/conversations/${elevenlabs_conversation_id}/monitor`,
-  { headers: { 'xi-api-key': elevenlabsApiKey } }
-);
+// DEPOIS:
+const { data: contacts = [], isLoading: loading, refetch: refetchContacts } = useQuery({
+  queryKey: ['contacts-list'],
+  queryFn: () => api.fetchContacts(),
+  staleTime: 5 * 60 * 1000,
+});
 
-// 3. Enviar comando end_call
-ws.send(JSON.stringify({ command_type: "end_call" }));
+const { data: availableCampaigns = [] } = useQuery({
+  queryKey: ['campaigns-active'],
+  queryFn: async () => {
+    const { data } = await supabase
+      .from('campaigns').select('id, name, color')
+      .eq('is_active', true).order('name');
+    return data || [];
+  },
+  staleTime: 5 * 60 * 1000,
+});
 
-// 4. Fechar conexao
-ws.close();
+const { data: filtersData } = useQuery({
+  queryKey: ['contacts-filters-data'],
+  queryFn: async () => {
+    const [owners, pipelines] = await Promise.all([
+      supabase.from('team_members').select('id, name').eq('status', 'active').order('name'),
+      supabase.from('pipelines').select('id, name, slug, icon, color').eq('is_active', true).order('name')
+    ]);
+    return { owners: owners.data || [], pipelines: pipelines.data || [] };
+  },
+  staleTime: 5 * 60 * 1000,
+});
 
-// 5. Atualizar DB
-await supabase.from('voice_qualifications').update({
-  status: 'cancelled',
-  completed_at: new Date().toISOString(),
-  observations: 'Encerrada manualmente pelo operador'
-}).eq('id', vq_id);
+const availableOwners = filtersData?.owners || [];
+const availablePipelines = filtersData?.pipelines || [];
 ```
 
-**Botao no VoiceQualificationSection (apos o bloco de status):**
+Substituir todas as chamadas `loadContacts()` por `refetchContacts()`.
+
+**CompanySettingsProvider - converter para React Query:**
 
 ```typescript
-{['calling', 'in_progress'].includes(vq.status) && (
-  <Button onClick={handleHangup} disabled={isHangingUp}
-    className="w-full bg-red-500/20 border-red-500/30 text-red-300 hover:bg-red-500/30">
-    <PhoneOff /> Encerrar Ligacao
-  </Button>
-)}
+const { data, isLoading: loading, refetch } = useQuery({
+  queryKey: ['company-settings'],
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from('nina_settings')
+      .select('company_name, sdr_name')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      // criar default...
+    }
+    return data;
+  },
+  staleTime: Infinity,
+});
 ```
 
-**Config.toml** - Adicionar `verify_jwt = false` para a nova function.
+### Resultado esperado
+- Primeiro acesso: carrega normalmente (spinner aparece 1x)
+- Navegacoes seguintes: dados aparecem instantaneamente do cache
+- Refetch silencioso em background quando staleTime expira
+- Sem re-renders desnecessarios ou loops de useEffect
 
