@@ -41,7 +41,10 @@ import { useActiveCall } from '@/hooks/useActiveCall';
 import { ActiveCallIndicator } from './ActiveCallIndicator';
 import { CallHistoryPanel } from './CallHistoryPanel';
 import CallTimelineCard from './CallTimelineCard';
+import VoiceCallTimelineCard from './VoiceCallTimelineCard';
 import { useNinaProcessingStatus } from '@/hooks/useNinaProcessingStatus';
+import { useContactVoiceQualifications } from '@/hooks/useContactVoiceQualifications';
+import { VoiceQualification } from '@/hooks/useVoiceQualification';
 import { TypingIndicator } from './TypingIndicator';
 import { SendWhatsAppTemplateModal } from './SendWhatsAppTemplateModal';
 import { AudioPlayer } from './AudioPlayer';
@@ -381,6 +384,7 @@ const ChatInterface: React.FC = () => {
   
   // Active call state
   const { activeCall, callHistory, loading: callHistoryLoading, dismissActiveCall } = useActiveCall(selectedChatId);
+  const { voiceQualifications } = useContactVoiceQualifications(activeChat?.contactId || null);
 
   // Handle scroll in messages area for new messages badge (debounced for performance)
   const scrollDebounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -425,7 +429,8 @@ const ChatInterface: React.FC = () => {
     
     type TimelineItem = 
       | { type: 'message'; data: typeof activeChat.messages[0]; date: Date }
-      | { type: 'call'; data: typeof callHistory[0]; date: Date };
+      | { type: 'call'; data: typeof callHistory[0]; date: Date }
+      | { type: 'voice_call'; data: typeof voiceQualifications[0]; date: Date };
     
     const items: TimelineItem[] = [
       ...activeChat.messages.map(msg => ({
@@ -437,11 +442,16 @@ const ChatInterface: React.FC = () => {
         type: 'call' as const,
         data: call,
         date: new Date(call.started_at)
+      })),
+      ...voiceQualifications.map(vq => ({
+        type: 'voice_call' as const,
+        data: vq,
+        date: new Date(vq.called_at || vq.created_at)
       }))
     ];
     
     return items.sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [activeChat?.messages, callHistory]);
+  }, [activeChat?.messages, callHistory, voiceQualifications]);
 
   // Date label helper (memoized)
   const getDateLabel = useCallback((date: Date): string => {
@@ -2494,7 +2504,22 @@ const ChatInterface: React.FC = () => {
                   );
                 }
 
-                const msg = item.data;
+                if (item.type === 'voice_call') {
+                  return (
+                    <React.Fragment key={`voice-${item.data.id}`}>
+                      {showDateSeparator && (
+                        <div className="flex justify-center my-6">
+                          <span className="px-4 py-1.5 bg-slate-800/80 border border-slate-700 text-slate-400 text-xs font-medium rounded-full shadow-sm backdrop-blur-sm">
+                            {getDateLabel(item.date)}
+                          </span>
+                        </div>
+                      )}
+                      <VoiceCallTimelineCard qualification={item.data} />
+                    </React.Fragment>
+                  );
+                }
+
+                const msg = item.data as UIMessage;
 
                 return (
                   <React.Fragment key={msg.id}>
