@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { CheckCircle, Calendar, Send, Loader2 } from 'lucide-react';
+import { CheckCircle, Calendar, Send, Loader2, Mic } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { UIConversation } from '@/types';
+import { useQueryClient } from '@tanstack/react-query';
 import { ScheduleCallbackModal } from './ScheduleCallbackModal';
 import { SendToPipedriveModal } from './SendToPipedriveModal';
 
@@ -22,7 +23,9 @@ export function QuickActionsBar({
   onDealUpdated,
   onRefetch
 }: QuickActionsBarProps) {
+  const queryClient = useQueryClient();
   const [isQualifying, setIsQualifying] = useState(false);
+  const [isCallingIris, setIsCallingIris] = useState(false);
   const [showCallbackModal, setShowCallbackModal] = useState(false);
   const [showPipedriveModal, setShowPipedriveModal] = useState(false);
 
@@ -90,6 +93,25 @@ export function QuickActionsBar({
     }
   };
 
+  const handleCallIris = async () => {
+    if (!activeChat.contactId) return;
+    setIsCallingIris(true);
+    try {
+      const { error } = await supabase.functions.invoke('trigger-elevenlabs-call', {
+        body: { contact_id: activeChat.contactId, force: true }
+      });
+      if (error) throw error;
+      toast.success('Ligação da Iris disparada!');
+      queryClient.invalidateQueries({ queryKey: ['voice-qualification', activeChat.contactId] });
+      queryClient.invalidateQueries({ queryKey: ['contact-voice-qualifications', activeChat.contactId] });
+    } catch (error: any) {
+      console.error('Error calling Iris:', error);
+      toast.error(error?.message || 'Erro ao disparar ligação');
+    } finally {
+      setIsCallingIris(false);
+    }
+  };
+
   const handleOpenPipedriveModal = () => {
     if (!activeChat.contactId) {
       toast.error('Contato não encontrado');
@@ -146,9 +168,20 @@ export function QuickActionsBar({
             className="flex-1 text-xs bg-slate-800/60 text-purple-400 border border-purple-500/30 hover:bg-purple-500/15 hover:border-purple-500/50 hover:shadow-[0_0_12px_rgba(168,85,247,0.2)] transition-all duration-200"
           >
             <Send className="w-4 h-4 mr-1.5" />
-            Pipedrive
           </Button>
         </div>
+
+        {/* Ligar com Iris */}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={handleCallIris}
+          disabled={isCallingIris}
+          className="w-full text-xs bg-gradient-to-r from-violet-600/20 to-purple-600/20 text-violet-300 border border-violet-500/30 hover:from-violet-600/30 hover:to-purple-600/30 hover:border-violet-400/50 hover:shadow-[0_0_12px_rgba(139,92,246,0.3)] transition-all duration-200 disabled:opacity-50"
+        >
+          {isCallingIris ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Mic className="w-4 h-4 mr-1.5" />}
+          {isCallingIris ? 'Disparando...' : 'Ligar com Iris'}
+        </Button>
       </div>
 
       <ScheduleCallbackModal
