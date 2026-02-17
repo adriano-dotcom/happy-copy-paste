@@ -1519,6 +1519,8 @@ export type Database = {
           async_booking_enabled: boolean | null
           audio_response_enabled: boolean | null
           auto_response_enabled: boolean
+          auto_voice_paused: boolean
+          auto_voice_paused_at: string | null
           business_days: number[]
           business_hours_end: string
           business_hours_start: string
@@ -1586,6 +1588,8 @@ export type Database = {
           async_booking_enabled?: boolean | null
           audio_response_enabled?: boolean | null
           auto_response_enabled?: boolean
+          auto_voice_paused?: boolean
+          auto_voice_paused_at?: string | null
           business_days?: number[]
           business_hours_end?: string
           business_hours_start?: string
@@ -1653,6 +1657,8 @@ export type Database = {
           async_booking_enabled?: boolean | null
           audio_response_enabled?: boolean | null
           auto_response_enabled?: boolean
+          auto_voice_paused?: boolean
+          auto_voice_paused_at?: string | null
           business_days?: number[]
           business_hours_end?: string
           business_hours_start?: string
