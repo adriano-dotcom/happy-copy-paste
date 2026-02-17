@@ -91,6 +91,19 @@ const VoiceCallTimelineCard: React.FC<VoiceCallTimelineCardProps> = ({ qualifica
     return null;
   };
 
+  const getStatusLabel = (status: string): string => {
+    switch (status) {
+      case 'completed': return 'Concluída';
+      case 'no_answer': return 'Sem resposta';
+      case 'failed': return 'Falha';
+      case 'not_contacted': return 'Não contatado';
+      case 'in_progress': return 'Em andamento';
+      case 'pending':
+      case 'scheduled': return 'Agendada';
+      default: return status;
+    }
+  };
+
   const config = getStatusConfig(qualification.status);
   const StatusIcon = config.icon;
   const qualBadge = getQualificationBadge();
@@ -119,9 +132,11 @@ const VoiceCallTimelineCard: React.FC<VoiceCallTimelineCardProps> = ({ qualifica
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 <Clock className="w-3 h-3" />
                 <span>{formatTime(qualification.called_at || qualification.created_at)}</span>
+                <span className="text-slate-600">·</span>
+                <span className={config.textColor}>{getStatusLabel(qualification.status)}</span>
                 {qualification.attempt_number > 1 && (
                   <>
-                    <span className="text-slate-600">•</span>
+                    <span className="text-slate-600">·</span>
                     <span>Tentativa {qualification.attempt_number}/{qualification.max_attempts}</span>
                   </>
                 )}
