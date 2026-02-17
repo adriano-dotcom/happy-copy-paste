@@ -1,51 +1,59 @@
+## Cancelar ligacoes ElevenLabs quando lead clicar "Foi engano"
 
+### Problema
 
-## Corrigir webhook ElevenLabs para tratar `call_initiation_failure`
-
-### Problema encontrado
-
-Nos logs, a ElevenLabs enviou um evento do tipo `call_initiation_failure` com `failure_reason: "unknown"` e SIP code 403 (operadora rejeitou a chamada). O webhook NAO filtra esse tipo de evento, entao ele caiu no fluxo de "completed" e salvou o registro com `status: completed` mas sem nenhum dado (sem resumo, sem qualificacao, sem transcrição).
-
-**Log real:**
-```
-type: "call_initiation_failure"
-failure_reason: "unknown"
-SipResponseCode: "403"
-```
-
-O card aparece na timeline como "Ligacao IA Concluida" mas sem nenhuma informacao util.
+Quando o lead clica "Foi engano" no botao de triagem, a conversa e pausada e a tag "engano" e adicionada, mas qualquer qualificacao por voz (voice_qualification) pendente ou agendada e cancelada. Isso significa que a Iris nao pode ligar para o lead mesmo apos ele indicar que foi engano.
 
 ### Solucao
 
-**Arquivo: `supabase/functions/elevenlabs-post-call-webhook/index.ts`**
+**Arquivo: `supabase/functions/nina-orchestrator/index.ts**`
 
-Adicionar tratamento para o evento `call_initiation_failure` ANTES do processamento normal, na mesma area onde ja filtramos `post_call_audio`:
+No bloco que trata `btn_engano` (linha ~3982-4038), adicionar um passo para cancelar todas as voice_qualifications pendentes do contato:
 
-1. Detectar `payload.type === 'call_initiation_failure'`
-2. Extrair o `conversation_id` e `vq_id` das dynamic_variables
-3. Atualizar o voice_qualification com status `failed` (nao `completed`)
-4. Aplicar a mesma logica de retentativa que ja existe para `no_answer` (reagendar em 2h se ainda tem tentativas)
-5. Salvar a razao da falha nas observations
+```text
+Apos pausar a conversa e antes de marcar a mensagem como processada:
 
-### Mudancas tecnicas
+1. Buscar voice_qualifications com status 'pending', 'scheduled' ou 'calling'
+   para o contact_id da conversa
+2. Atualizar todas para status = 'cancelled' com observations indicando
+   "Cancelado: lead clicou Foi engano"
+```
+
+### Secao tecnica
+
+Inserir o seguinte bloco apos a linha que pausa a conversa (apos linha 4005) e antes de adicionar a tag:
 
 ```typescript
-// Novo bloco apos o filtro de post_call_audio:
-if (payload.type === 'call_initiation_failure') {
-  const failData = payload.data || payload;
-  const convId = failData.conversation_id || payload.conversation_id;
-  const dynVars = failData.metadata?.dynamic_variables 
-    || payload.dynamic_variables || {};
-  const vqId = dynVars.vq_id;
-  const failReason = failData.failure_reason || 'unknown';
-  
-  // Buscar VQ por vq_id ou conversation_id
-  // Tratar como no_answer (reagendar ou marcar not_contacted)
-  // Salvar observations com o motivo da falha
+// Cancel any pending/scheduled voice qualifications
+const { data: pendingVqs } = await supabase
+  .from('voice_qualifications')
+  .select('id')
+  .eq('contact_id', conversation.contact_id)
+  .in('status', ['pending', 'scheduled', 'calling']);
+
+if (pendingVqs && pendingVqs.length > 0) {
+  await supabase
+    .from('voice_qualifications')
+    .update({
+      status: 'cancelled',
+      completed_at: new Date().toISOString(),
+      observations: 'Cancelado automaticamente: lead clicou "Foi engano"',
+    })
+    .in('id', pendingVqs.map(v => v.id));
+  console.log(`[Nina] Cancelled ${pendingVqs.length} pending voice qualifications (engano)`);
 }
 ```
 
-Isso vai fazer com que:
-- Chamadas que a operadora rejeita (SIP 403) sejam tratadas como falha
-- O card na timeline mostre "Falha na Ligacao" em vez de "Concluida"
-- A retentativa em 2h seja acionada corretamente
+Tambem precisa garantir que o `VoiceCallTimelineCard` exiba o status `cancelled` corretamente:
+
+**Arquivo: `src/components/VoiceCallTimelineCard.tsx**`
+
+- Adicionar `cancelled` ao mapeamento de status: `cancelled → "Cancelada"`
+- Usar cor cinza/slate para o badge de cancelado
+- Adicionar ao `getStatusConfig` se necessario
+
+### Resultado esperado
+
+- Lead clica "Foi engano" → conversa pausada + tag adicionada + todas as VQs pendentes canceladas
+- Timeline mostra "Cancelada" em vez de continuar mostrando "Agendada"
+- Nenhuma ligacao sera feita para esse lead
