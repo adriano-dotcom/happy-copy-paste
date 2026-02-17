@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X, CheckSquare, Square, Minus, AlertTriangle, Send, Tag, User, CalendarDays, Archive } from 'lucide-react';
 import { useUserRole } from '@/hooks/useUserRole';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from './ui/button';
 import { api } from '../services/api';
 import { Contact } from '../types';
@@ -89,8 +90,13 @@ const formatTemplateName = (name?: string): string => {
 
 const Contacts: React.FC = () => {
   const navigate = useNavigate();
-  const [contacts, setContacts] = useState<ExtendedContact[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+
+  const { data: contacts = [], isLoading: loading, refetch: refetchContacts } = useQuery<ExtendedContact[]>({
+    queryKey: ['contacts-list'],
+    queryFn: () => api.fetchContacts() as Promise<ExtendedContact[]>,
+    staleTime: 5 * 60 * 1000,
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -127,7 +133,16 @@ const Contacts: React.FC = () => {
   const [letterFilter, setLetterFilter] = useState<string>('all');
   const [campaignFilter, setCampaignFilter] = useState<string>('all');
   const [verticalFilter, setVerticalFilter] = useState<'all' | 'transporte' | 'frotas' | 'none'>('all');
-  const [availableCampaigns, setAvailableCampaigns] = useState<{id: string; name: string; color: string | null}[]>([]);
+  const { data: availableCampaigns = [] } = useQuery({
+    queryKey: ['campaigns-active'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('campaigns').select('id, name, color')
+        .eq('is_active', true).order('name');
+      return data || [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
   
   // New filters: Owner, Pipeline, and Chat status
   const [ownerFilter, setOwnerFilter] = useState<string>('all');
@@ -135,8 +150,22 @@ const Contacts: React.FC = () => {
   const [createdDateFilter, setCreatedDateFilter] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month'>('all');
   const [chatStatusFilter, setChatStatusFilter] = useState<'all' | 'active' | 'archived' | 'none'>('all');
   const [templateFilter, setTemplateFilter] = useState<'all' | 'with' | 'without'>('all');
-  const [availableOwners, setAvailableOwners] = useState<{id: string; name: string}[]>([]);
-  const [availablePipelines, setAvailablePipelines] = useState<{id: string; name: string; slug: string; icon: string | null; color: string | null}[]>([]);
+  const { data: filtersData } = useQuery({
+    queryKey: ['contacts-filters-data'],
+    queryFn: async () => {
+      const [ownersRes, pipelinesRes] = await Promise.all([
+        supabase.from('team_members').select('id, name').eq('status', 'active').order('name'),
+        supabase.from('pipelines').select('id, name, slug, icon, color').eq('is_active', true).order('name')
+      ]);
+      return { 
+        owners: (ownersRes.data || []) as {id: string; name: string}[], 
+        pipelines: (pipelinesRes.data || []) as {id: string; name: string; slug: string; icon: string | null; color: string | null}[] 
+      };
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const availableOwners = filtersData?.owners || [];
+  const availablePipelines = filtersData?.pipelines || [];
 
   const handleConverse = async (contactId: string) => {
     try {
@@ -187,41 +216,7 @@ const Contacts: React.FC = () => {
       setIsDeleting(false);
     }
   };
-  const loadContacts = async () => {
-    try {
-      setLoading(true);
-      const data = await api.fetchContacts();
-      setContacts(data);
-    } catch (error) {
-      console.error("Erro ao carregar contatos", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadCampaigns = async () => {
-    const { data } = await supabase
-      .from('campaigns')
-      .select('id, name, color')
-      .eq('is_active', true)
-      .order('name');
-    if (data) setAvailableCampaigns(data);
-  };
-
-  const loadFiltersData = async () => {
-    const [ownersRes, pipelinesRes] = await Promise.all([
-      supabase.from('team_members').select('id, name').eq('status', 'active').order('name'),
-      supabase.from('pipelines').select('id, name, slug, icon, color').eq('is_active', true).order('name')
-    ]);
-    if (ownersRes.data) setAvailableOwners(ownersRes.data);
-    if (pipelinesRes.data) setAvailablePipelines(pipelinesRes.data);
-  };
-
-  useEffect(() => {
-    loadContacts();
-    loadCampaigns();
-    loadFiltersData();
-  }, []);
+  const loadContacts = () => { refetchContacts(); };
 
   const getStatusColor = (status: string) => {
     const option = statusOptions.find(o => o.value === status);
