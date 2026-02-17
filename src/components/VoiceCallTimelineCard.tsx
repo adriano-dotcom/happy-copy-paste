@@ -111,7 +111,10 @@ const VoiceCallTimelineCard: React.FC<VoiceCallTimelineCardProps> = ({ qualifica
             <div>
               <p className={`font-semibold ${config.textColor} flex items-center gap-2`}>
                 {config.label}
-                <span className="text-[10px] px-1.5 py-0.5 bg-violet-500/20 text-violet-300 rounded-full font-medium">Iris</span>
+                {['completed', 'no_answer', 'failed', 'not_contacted'].includes(qualification.status)
+                  ? <span className="text-[10px] px-1.5 py-0.5 bg-violet-500/20 text-violet-300 rounded-full font-medium">elevenlabs</span>
+                  : <span className="text-[10px] px-1.5 py-0.5 bg-violet-500/20 text-violet-300 rounded-full font-medium">Iris</span>
+                }
               </p>
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 <Clock className="w-3 h-3" />
