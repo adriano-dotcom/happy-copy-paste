@@ -9,6 +9,8 @@ import { useContactCallHistory } from '@/hooks/useContactCallHistory';
 import VoiceQualificationSection from './VoiceQualificationSection';
 import { api } from '@/services/api';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface ContactData {
   id: string;
@@ -66,18 +68,40 @@ const formatCEP = (cep: string | undefined) => {
 
 const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpenChange, contact, onEdit, onConverse, onContactUpdate }) => {
   const { callHistory, loading: callsLoading } = useContactCallHistory(contact?.id || null);
+  const queryClient = useQueryClient();
   
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isCallingIris, setIsCallingIris] = useState(false);
 
   // Reset editing state when contact changes or drawer closes
   useEffect(() => {
     if (!open) {
       setIsEditingName(false);
       setEditedName('');
+      setIsCallingIris(false);
     }
   }, [open, contact?.id]);
+
+  const handleCallIris = async () => {
+    if (!contact?.id) return;
+    setIsCallingIris(true);
+    try {
+      const { error } = await supabase.functions.invoke('trigger-elevenlabs-call', {
+        body: { contact_id: contact.id, force: true }
+      });
+      if (error) throw error;
+      toast.success('Ligação da Iris disparada com sucesso!');
+      queryClient.invalidateQueries({ queryKey: ['voice-qualification', contact.id] });
+      queryClient.invalidateQueries({ queryKey: ['contact-voice-qualifications', contact.id] });
+    } catch (error: any) {
+      console.error('Error calling Iris:', error);
+      toast.error(error?.message || 'Erro ao disparar ligação da Iris');
+    } finally {
+      setIsCallingIris(false);
+    }
+  };
 
   const handleStartEditing = () => {
     setEditedName(contact?.name || '');
@@ -245,6 +269,14 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
               Conversar
             </Button>
           </div>
+          <Button 
+            onClick={handleCallIris}
+            disabled={isCallingIris}
+            className="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-lg shadow-violet-500/30 border-0 transition-all duration-300 hover:scale-[1.02] disabled:opacity-50"
+          >
+            {isCallingIris ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mic className="w-4 h-4 mr-2" />}
+            {isCallingIris ? 'Disparando...' : 'Ligar com Iris'}
+          </Button>
         </SheetHeader>
 
         {/* Gradient divider */}
