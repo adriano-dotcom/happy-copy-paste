@@ -27,6 +27,68 @@ serve(async (req: Request) => {
       });
     }
 
+    // Handle call initiation failures (SIP 403, carrier rejection, etc.)
+    if (payload.type === 'call_initiation_failure') {
+      const failData = payload.data || payload;
+      const convId = failData.conversation_id || payload.conversation_id;
+      const dynVars = failData.metadata?.dynamic_variables 
+        || failData.conversation_initiation_client_data?.dynamic_variables
+        || payload.dynamic_variables || {};
+      const vqId = dynVars.vq_id;
+      const failReason = failData.failure_reason || 'unknown';
+
+      console.log(`[ElevenLabs Webhook] call_initiation_failure: reason=${failReason}, vq_id=${vqId}, conv=${convId}`);
+
+      if (!vqId && !convId) {
+        console.error('[ElevenLabs Webhook] call_initiation_failure without identification');
+        return new Response(JSON.stringify({ status: 'failure_logged', reason: failReason }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      // Find VQ record
+      let vq;
+      if (vqId) {
+        const { data } = await supabase.from('voice_qualifications').select('*').eq('id', vqId).single();
+        vq = data;
+      }
+      if (!vq && convId) {
+        const { data } = await supabase.from('voice_qualifications').select('*').eq('elevenlabs_conversation_id', convId).single();
+        vq = data;
+      }
+
+      if (!vq) {
+        console.error('[ElevenLabs Webhook] VQ not found for call_initiation_failure');
+        return new Response(JSON.stringify({ status: 'failure_logged', reason: failReason }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      // Apply retry logic (same as no_answer)
+      const newAttempt = (vq.attempt_number || 1) + 1;
+      if (newAttempt > (vq.max_attempts || 3)) {
+        await supabase.from('voice_qualifications').update({
+          status: 'not_contacted',
+          completed_at: new Date().toISOString(),
+          observations: `Falha na iniciação da chamada após ${vq.max_attempts || 3} tentativas. Motivo: ${failReason}`,
+        }).eq('id', vq.id);
+        console.log(`[ElevenLabs Webhook] VQ ${vq.id} marked not_contacted after max attempts (failure: ${failReason})`);
+      } else {
+        const retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+        await supabase.from('voice_qualifications').update({
+          status: 'pending',
+          attempt_number: newAttempt,
+          scheduled_for: retryAt.toISOString(),
+          observations: `Tentativa ${vq.attempt_number}: falha na iniciação (${failReason})`,
+        }).eq('id', vq.id);
+        console.log(`[ElevenLabs Webhook] VQ ${vq.id} scheduled retry ${newAttempt} after initiation failure`);
+      }
+
+      return new Response(JSON.stringify({ status: 'failure_handled', vq_id: vq.id, retry: newAttempt <= (vq.max_attempts || 3) }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     // Data may come nested in payload.data or at root level
     const data = payload.data || payload;
 
