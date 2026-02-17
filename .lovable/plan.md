@@ -1,45 +1,33 @@
 
-## Mostrar ligacoes da Iris (Voice Qualifications) na timeline do chat
+
+## Adicionar botao de disparo manual de chamada Iris no painel lateral
 
 ### Objetivo
-Trazer as ligacoes feitas pelo agente Iris (ElevenLabs) para dentro da timeline do chat, permitindo que o vendedor veja o resumo, resultado da qualificacao, transcricao e proximos passos diretamente no fluxo de mensagens.
+Colocar um botao visivel na lateral (ContactDetailsDrawer) para que o vendedor possa disparar uma ligacao da Iris manualmente a qualquer momento, mesmo quando o lead nao caiu na automacao.
 
 ### Mudancas
 
-**1. Criar hook `useContactVoiceQualifications`**
-- Arquivo: `src/hooks/useContactVoiceQualifications.ts`
-- Busca todas as `voice_qualifications` do contato (nao apenas a mais recente)
-- Inclui realtime subscription para atualizar quando uma ligacao terminar
+**1. Adicionar botao "Ligar com Iris" na secao de acoes do ContactDetailsDrawer**
+- Arquivo: `src/components/ContactDetailsDrawer.tsx`
+- Adicionar um terceiro botao ao lado de "Editar" e "Conversar", ou logo abaixo deles
+- Botao com icone de telefone/microfone e texto "Ligar com Iris"
+- Ao clicar, invoca `trigger-elevenlabs-call` com `{ contact_id, force: true }`
+- Mostra loading enquanto dispara e toast de sucesso/erro
+- Invalida a query de voice-qualification para atualizar o status na tela
 
-**2. Criar componente `VoiceCallTimelineCard`**
-- Arquivo: `src/components/VoiceCallTimelineCard.tsx`
-- Card visual similar ao `CallTimelineCard` mas com visual diferenciado (icone de IA/Iris)
-- Mostra: status da ligacao, resultado da qualificacao (qualificado/nao qualificado), nivel de interesse (estrelas), resumo, proximo passo, melhor horario de contato
-- Botao expansivel para ver a transcricao completa
-- Cores e estilo coerentes com o design existente (gradientes, backdrop-blur)
-
-**3. Integrar na timeline do ChatInterface**
-- Arquivo: `src/components/ChatInterface.tsx`
-- Importar o novo hook e componente
-- Adicionar tipo `voice_call` ao `TimelineItem`
-- Mesclar os dados de `voice_qualifications` junto com mensagens e call_logs, ordenados por data (`called_at` ou `created_at`)
-- Renderizar `VoiceCallTimelineCard` quando `item.type === 'voice_call'`
+### Visual
+- Botao com gradiente violeta/roxo para diferenciar das acoes existentes (cyan = editar, outline = conversar)
+- Icone `Mic` (microfone) para indicar agente de voz
+- Estado de loading com spinner enquanto a chamada esta sendo disparada
 
 ### Detalhes tecnicos
+- Importar `supabase` de `@/integrations/supabase/client`
+- Importar `useQueryClient` de `@tanstack/react-query`
+- Adicionar estado local `isCallingIris` para controlar loading
+- Funcao `handleCallIris` que:
+  1. Seta loading
+  2. Invoca `supabase.functions.invoke('trigger-elevenlabs-call', { body: { contact_id: contact.id, force: true } })`
+  3. Toast de sucesso ou erro
+  4. Invalida queries `['voice-qualification', contact.id]` e `['contact-voice-qualifications', contact.id]`
+- Botao posicionado na area de acoes (linha ~231), abaixo dos botoes Editar/Conversar
 
-```text
-Timeline (cronologico)
-  |
-  +-- Mensagem WhatsApp (tipo existente)
-  +-- Ligacao Api4Com (tipo existente - CallTimelineCard)
-  +-- Ligacao Iris/ElevenLabs (NOVO - VoiceCallTimelineCard)
-  |     - Status: Concluida / Sem Resposta / etc
-  |     - Resultado: Qualificado / Nao Qualificado
-  |     - Interesse: Alto / Medio / Baixo (estrelas)
-  |     - Resumo da conversa
-  |     - Proximo passo
-  |     - Transcricao (expansivel)
-  +-- Mensagem WhatsApp
-```
-
-O hook buscara todas as voice_qualifications do contato (nao apenas a ultima) para que o historico completo apareca na timeline. A data de ordenacao sera `called_at` (quando disponivel) ou `created_at`.
