@@ -214,10 +214,18 @@ async function processCall(
     return { id: vq.id, status: 'failed', reason: 'no_phone' };
   }
 
-  // Format phone number with +55 if needed
+  // Format phone number with +55 if needed, and ensure mobile 9th digit
   let phone = contact.phone_number.replace(/\D/g, '');
-  if (!phone.startsWith('55')) phone = '55' + phone;
-  phone = '+' + phone;
+  if (phone.startsWith('55')) phone = phone.slice(2); // remove country code to normalize
+  // Now phone should be DDD + number (10 or 11 digits)
+  // If 10 digits, it's missing the mobile 9th digit — add it
+  if (phone.length === 10) {
+    const ddd = phone.slice(0, 2);
+    const number = phone.slice(2);
+    phone = ddd + '9' + number;
+    console.log(`[ElevenLabs Call] Added missing 9th digit: ${ddd}9${number}`);
+  }
+  phone = '+55' + phone;
 
   // Normalize: only first name, Title Case
   const rawName = contact.name || contact.call_name || 'Cliente';
