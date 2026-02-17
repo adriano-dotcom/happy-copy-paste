@@ -4004,6 +4004,25 @@ async function processQueueItem(
         })
         .eq('id', conversation.id);
       
+      // Cancel any pending/scheduled voice qualifications
+      const { data: pendingVqs } = await supabase
+        .from('voice_qualifications')
+        .select('id')
+        .eq('contact_id', conversation.contact_id)
+        .in('status', ['pending', 'scheduled', 'calling']);
+
+      if (pendingVqs && pendingVqs.length > 0) {
+        await supabase
+          .from('voice_qualifications')
+          .update({
+            status: 'cancelled',
+            completed_at: new Date().toISOString(),
+            observations: 'Cancelado automaticamente: lead clicou "Foi engano"',
+          })
+          .in('id', pendingVqs.map(v => v.id));
+        console.log(`[Nina] Cancelled ${pendingVqs.length} pending voice qualifications (engano)`);
+      }
+
       // Add tag for tracking
       const currentTags = conversation.contact?.tags || [];
       if (!currentTags.includes('engano')) {
