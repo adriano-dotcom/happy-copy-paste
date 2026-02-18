@@ -320,13 +320,31 @@ serve(async (req) => {
 
             if (existingConv) {
               conversationId = existingConv.id;
+              // Garantir que a conversa está ativa e com metadata correto para roteamento
+              await supabase
+                .from('conversations')
+                .update({
+                  status: 'nina',
+                  is_active: true,
+                  metadata: {
+                    origin: campaign.is_prospecting ? 'prospeccao' : 'campaign',
+                    campaign_id: campaign.id,
+                    is_prospecting: campaign.is_prospecting
+                  }
+                })
+                .eq('id', conversationId);
             } else {
               const { data: newConv } = await supabase
                 .from('conversations')
                 .insert({
                   contact_id: campaignContact.contact_id,
                   status: 'nina',
-                  metadata: { origin: 'campaign', campaign_id: campaign.id }
+                  is_active: true,
+                  metadata: {
+                    origin: campaign.is_prospecting ? 'prospeccao' : 'campaign',
+                    campaign_id: campaign.id,
+                    is_prospecting: campaign.is_prospecting
+                  }
                 })
                 .select('id')
                 .single();
