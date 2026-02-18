@@ -1,93 +1,123 @@
 
+## Normalizar nome do contato para apenas o primeiro nome nos templates WhatsApp
 
-## Botao Pausar/Retomar Automacao de Ligacoes no Voice Dashboard
+### Problema identificado
 
-### O que sera feito
+O nome completo do contato (ex: "EDUARDO SALES DE OLIVEIRA") está sendo passado como variável `{{1}}` do HEADER nos templates WhatsApp. Isso causa:
+- Erro `(#132005) Translated text too long` quando o nome completo ultrapassa o limite do WhatsApp
+- Experiência estranha para o destinatário receber o nome completo em maiúsculas
 
-Adicionar um botao toggle no header do Voice Dashboard (`/voice-dashboard`) que permite pausar e retomar a automacao `auto-voice-trigger` sem precisar acessar o console. Quando pausada, a edge function verifica o flag no banco e aborta silenciosamente.
+O problema existe em **três camadas**:
 
-### Mudancas
+1. **`SendWhatsAppTemplateModal.tsx` (linha 89)**: auto-preenche `contactName` inteiro como variável do header
+2. **`BulkSendTemplateModal.tsx` (linhas 264-265)**: usa `contact.name || contact.call_name` inteiro como variável do header
+3. **`send-whatsapp-template/index.ts`**: recebe as variáveis sem normalizar o nome
 
-**1. Migração de banco - adicionar coluna `auto_voice_paused` na tabela `nina_settings`**
+### Estratégia
 
-```sql
-ALTER TABLE nina_settings ADD COLUMN auto_voice_paused boolean NOT NULL DEFAULT false;
-ALTER TABLE nina_settings ADD COLUMN auto_voice_paused_at timestamptz;
-ALTER TABLE nina_settings ADD COLUMN auto_voice_paused_by text;
-```
+Aplicar a normalização em **duas camadas** para máxima robustez:
 
-**2. Edge function `supabase/functions/auto-voice-trigger/index.ts`**
+**Camada 1 - Edge function (defesa definitiva):** Adicionar função `normalizeFirstName()` que:
+- Pega apenas o primeiro token do nome
+- Converte para Title Case (primeira letra maiúscula, restante minúscula)
+- Aplica em QUALQUER variável que pareça um nome de contato quando o campo `contact_id` é fornecido
+- Ou melhor: sempre normalizar as variáveis substituindo o nome do contato pelo nome normalizado
 
-Adicionar verificacao logo apos o check de horario comercial:
+**Camada 2 - Frontend (pré-preenchimento correto):** Nos dois modais, ao auto-preencher a variável com o nome do contato, já usar o primeiro nome normalizado.
+
+### Solucao tecnica detalhada
+
+#### 1. Edge function `send-whatsapp-template/index.ts`
+
+Adicionar uma função utilitária de normalização logo após buscar o contato:
 
 ```typescript
-// Check if automation is paused
-const { data: settings } = await supabase
-  .from('nina_settings')
-  .select('auto_voice_paused')
-  .limit(1)
-  .single();
-
-if (settings?.auto_voice_paused) {
-  console.log('[Auto Voice] Automation is PAUSED. Skipping.');
-  return new Response(JSON.stringify({ status: 'paused' }), { ... });
+function normalizeFirstName(fullName: string | null | undefined): string {
+  if (!fullName) return '';
+  const firstName = fullName.trim().split(/\s+/)[0];
+  if (firstName.length < 3) return firstName; // nomes curtos preservados
+  return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
 }
 ```
 
-**3. `src/components/VoiceDashboard.tsx` - botao no header**
-
-Adicionar ao lado do titulo um botao com icone `Pause`/`Play` que:
-- Busca o estado atual de `auto_voice_paused` da tabela `nina_settings` via useQuery
-- Ao clicar, faz update direto na tabela `nina_settings` 
-- Mostra estado visual claro: verde "Automacao Ativa" / vermelho "Automacao Pausada"
-- Inclui confirmacao antes de pausar (toast de confirmacao)
-
-Visual do botao no header:
-
-```
-Ligacoes IA -- Iris        [⏸ Pausar Automacao]   (quando ativa)
-Ligacoes IA -- Iris        [▶ Retomar Automacao]   (quando pausada)
-```
-
-Quando pausada, exibe um banner amarelo abaixo do header:
-```
-⚠ Automacao de ligacoes PAUSADA desde 17/02 18:30. Nenhuma ligacao automatica sera feita.
-```
-
-### Secao tecnica
-
-**Arquivos modificados:**
-1. `supabase/functions/auto-voice-trigger/index.ts` - adicionar check de `auto_voice_paused` no inicio
-2. `src/components/VoiceDashboard.tsx` - adicionar botao toggle + banner de status + query/mutation
-
-**Logica do toggle no VoiceDashboard:**
+Após buscar o contato (linha 72-80), calcular `contactFirstName`:
 ```typescript
-const { data: voiceSettings, refetch } = useQuery({
-  queryKey: ['voice-automation-status'],
-  queryFn: async () => {
-    const { data } = await supabase
-      .from('nina_settings')
-      .select('id, auto_voice_paused, auto_voice_paused_at')
-      .limit(1).single();
-    return data;
-  },
-});
+const contactFirstName = normalizeFirstName(contact.name || contact.call_name);
+```
 
-const togglePause = async () => {
-  const newState = !voiceSettings?.auto_voice_paused;
-  await supabase.from('nina_settings').update({
-    auto_voice_paused: newState,
-    auto_voice_paused_at: newState ? new Date().toISOString() : null,
-  }).eq('id', voiceSettings.id);
-  refetch();
-  toast.success(newState ? 'Automacao pausada' : 'Automacao retomada');
+Na edge function, substituir automaticamente qualquer ocorrência do nome completo do contato nas variáveis pelo primeiro nome normalizado. A abordagem mais segura: **após montar `effectiveHeaderVars` e `effectiveBodyVars`**, percorrer cada variável e se ela corresponder ao nome completo do contato (case-insensitive), substituir pelo primeiro nome normalizado:
+
+```typescript
+const fullContactName = (contact.name || contact.call_name || '').trim();
+
+const normalizeIfContactName = (v: string): string => {
+  if (fullContactName && v.trim().toLowerCase() === fullContactName.toLowerCase()) {
+    return contactFirstName;
+  }
+  return v;
+};
+
+effectiveHeaderVars = effectiveHeaderVars.map(normalizeIfContactName);
+effectiveBodyVars = effectiveBodyVars.map(normalizeIfContactName);
+```
+
+Isso garante que mesmo se o frontend enviar o nome completo, a edge function corrija antes de enviar ao WhatsApp.
+
+#### 2. `SendWhatsAppTemplateModal.tsx`
+
+No useEffect que auto-preenche variáveis (linha 82-109), aplicar `normalizeFirstName()` localmente:
+
+```typescript
+// Antes (linha 89):
+initialHeaderVars[0] = contactName;
+
+// Depois:
+initialHeaderVars[0] = normalizeFirstName(contactName);
+```
+
+Adicionar a função `normalizeFirstName` no topo do componente:
+```typescript
+const normalizeFirstName = (name?: string): string => {
+  if (!name) return '';
+  const first = name.trim().split(/\s+/)[0];
+  if (first.length < 3) return first;
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 };
 ```
 
-**Migracao SQL:**
-```sql
-ALTER TABLE nina_settings 
-  ADD COLUMN IF NOT EXISTS auto_voice_paused boolean NOT NULL DEFAULT false,
-  ADD COLUMN IF NOT EXISTS auto_voice_paused_at timestamptz;
+#### 3. `BulkSendTemplateModal.tsx`
+
+No `handleStartSending` (linha 263-265), trocar:
+
+```typescript
+// Antes (linha 265):
+headerVariables.push(contact.name || contact.call_name || 'Cliente');
+
+// Depois:
+headerVariables.push(normalizeFirstName(contact.name || contact.call_name) || 'Cliente');
 ```
 
+E nas variáveis de body (linhas 271-275) onde nome também é usado:
+```typescript
+// Antes (linha 274):
+bodyVariables.push(contact.name || contact.call_name || 'Cliente');
+
+// Depois:
+bodyVariables.push(normalizeFirstName(contact.name || contact.call_name) || 'Cliente');
+```
+
+Adicionar a mesma função `normalizeFirstName` no topo do componente.
+
+### Resultado esperado
+
+- "EDUARDO SALES DE OLIVEIRA" → "Eduardo" no header do template
+- "KAUAN FELIPE" → "Kauan" 
+- "maria jose santos" → "Maria"
+- Nomes curtos como "Ed" → preservados sem alteração
+- O truncamento de 60 chars ainda funciona como fallback, mas raramente será necessário pois primeiros nomes raramente ultrapassam o limite
+
+### Arquivos modificados
+
+1. `supabase/functions/send-whatsapp-template/index.ts` — adicionar `normalizeFirstName` + normalização automática nas variáveis
+2. `src/components/SendWhatsAppTemplateModal.tsx` — normalizar no auto-preenchimento
+3. `src/components/BulkSendTemplateModal.tsx` — normalizar no auto-preenchimento em massa
