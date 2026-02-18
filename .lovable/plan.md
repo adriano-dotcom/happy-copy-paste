@@ -1,114 +1,137 @@
 
-## Alinhar normalização de nome em `process-campaign`
+## Análise do Fluxo: Campanha → Atlas → IA responde (nunca humano no primeiro contato)
 
-### Problema
+### O fluxo atual (como funciona hoje)
 
-A edge function `process-campaign` já possui uma função `normalizeContactName` (linhas 19-26), mas ela tem dois problemas em relação ao padrão adotado nos outros arquivos:
+```text
+1. process-campaign (cron)
+   ├── Envia template WhatsApp via API Meta
+   ├── Cria/Reutiliza conversa com status='nina'
+   │   └── metadata: { origin: 'campaign', campaign_id: X }
+   └── Cria deal no pipeline de prospecção (se is_prospecting=true)
 
-**Problema 1 - Lógica incompleta:**
+2. Lead responde → whatsapp-webhook recebe
+   ├── Encontra conversa existente (status='nina')
+   ├── Salva mensagem
+   └── Insere na nina_processing_queue (debounce 15s)
+
+3. nina-orchestrator processa a fila
+   ├── detectAgent() verifica metadata da conversa
+   │   ├── SE metadata.origin === 'prospeccao' → Atlas ✅
+   │   └── SE qualquer outro valor → cai no default ou keywords
+   ├── SE agent='nina' (padrão inbound) → responde como inbound
+   └── Envia resposta via whatsapp-sender
+```
+
+### Problemas críticos identificados
+
+**Bug 1 — `origin: 'campaign'` vs `origin: 'prospeccao'` (linha 329 de process-campaign)**
+
+O `process-campaign` grava o metadata como:
 ```typescript
-// Função atual (process-campaign) - incompleta
-function normalizeContactName(name: string | null): string {
-  if (!name || !name.trim()) return 'Cliente';
-  const firstName = name.trim().split(/\s+/)[0];
-  // Só normaliza se TUDO MAIÚSCULO e comprimento > 2
-  if (firstName === firstName.toUpperCase() && firstName.length > 2) {
-    return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
-  }
-  // Para nomes mistos como "Eduardo Sales", retorna "Eduardo" — OK neste caso
-  // Mas para "eduardo sales" (tudo minúsculo), retorna "eduardo" sem Title Case!
-  return firstName.charAt(0).toUpperCase() + firstName.slice(1);
+metadata: { origin: 'campaign', campaign_id: campaign.id }
+```
+
+Mas o `nina-orchestrator` (linha 1481) verifica:
+```typescript
+if (conversationMetadata.origin === 'prospeccao') {
+  // Roteia para Atlas
 }
 ```
 
-A lógica correta (adotada em `send-whatsapp-template`, `SendWhatsAppTemplateModal`, `BulkSendTemplateModal`):
+Resultado: **o Atlas nunca é ativado** para leads de campanha, mesmo em campanhas `is_prospecting=true`. A conversa cai no agente padrão (inbound).
+
+**Bug 2 — Conversa existente não atualiza metadata nem status**
+
+Quando o contato já tem uma conversa (linha 315-322):
 ```typescript
-function normalizeFirstName(name: string | null): string {
-  if (!name || !name.trim()) return 'Cliente';
-  const firstName = name.trim().split(/\s+/)[0];
-  if (firstName.length < 3) return firstName; // preserva nomes curtos
-  return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+if (existingConv) {
+  conversationId = existingConv.id;  // Reutiliza sem atualizar nada!
 }
 ```
-A diferença chave: sempre aplica `.toLowerCase()` no `slice(1)`, garantindo Title Case em todos os casos.
 
-**Problema 2 - Normalização só no fallback:**
-Nas linhas 248 e 261, `normalizeContactName` é chamado apenas quando `templateVars[header_1]` não existe:
-```typescript
-const varValue = templateVars[`header_${i + 1}`] || normalizeContactName(contact.name);
-```
-Se a campanha foi configurada com `header_1 = "EDUARDO SALES"` (nome completo), o valor passa diretamente sem normalização.
+Não atualiza:
+- `metadata` (fica com origem antiga ou vazia)
+- `status` (pode estar 'paused', 'human', etc. — não ativa a IA)
+- `is_active` (pode estar false)
+
+Resultado: leads que já tiveram conversa anterior podem ter a IA desativada ou receber o agente errado.
+
+**Bug 3 — Rejeição e "não responsável" verificam `origin === 'prospeccao'` (nunca dispara)**
+
+Nas linhas 3456 e 3562 do orchestrator, as detecções especiais de prospecção (rejeição, "não sou o responsável") também verificam `origin === 'prospeccao'`. Com `origin: 'campaign'`, essas proteções nunca funcionam.
+
+**Bug 4 — `follow-up automations` também verificam a origin**
+
+O sistema de follow-up automático (`process-followups`) usa a origin para diferenciar comportamentos de prospecção. Mesmo problema.
 
 ### Solução
 
-**Duas mudanças em `supabase/functions/process-campaign/index.ts`:**
+**Mudança única em `supabase/functions/process-campaign/index.ts`:**
 
-**1. Substituir `normalizeContactName` por `normalizeFirstName` com lógica correta (linhas 19-26):**
+Substituir `origin: 'campaign'` por `origin: 'prospeccao'` quando a campanha for `is_prospecting=true`:
+
 ```typescript
-// ANTES
-function normalizeContactName(name: string | null): string {
-  if (!name || !name.trim()) return 'Cliente';
-  const firstName = name.trim().split(/\s+/)[0];
-  if (firstName === firstName.toUpperCase() && firstName.length > 2) {
-    return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
-  }
-  return firstName.charAt(0).toUpperCase() + firstName.slice(1);
-}
+// ANTES (linha 329):
+metadata: { origin: 'campaign', campaign_id: campaign.id }
 
-// DEPOIS
-function normalizeFirstName(name: string | null): string {
-  if (!name || !name.trim()) return 'Cliente';
-  const firstName = name.trim().split(/\s+/)[0];
-  if (firstName.length < 3) return firstName;
-  return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+// DEPOIS:
+metadata: { 
+  origin: campaign.is_prospecting ? 'prospeccao' : 'campaign', 
+  campaign_id: campaign.id,
+  is_prospecting: campaign.is_prospecting
 }
 ```
 
-**2. Aplicar normalização obrigatória em todas as variáveis (linhas 247-264):**
-
-Para header:
-```typescript
-// ANTES
-const varValue = templateVars[`header_${i + 1}`] || normalizeContactName(contact.name);
-
-// DEPOIS - normaliza independente da origem do valor
-const rawValue = templateVars[`header_${i + 1}`] || contact.name || 'Cliente';
-const varValue = normalizeFirstName(rawValue);
-```
-
-Para body: a mesma lógica — mas **apenas quando o valor parece ser um nome** (para não quebrar variáveis de body que não são nomes, como empresa, produto, etc.). A abordagem segura é aplicar a normalização à variável se ela corresponder ao nome completo do contato (case-insensitive), igual ao que foi feito no `send-whatsapp-template`:
+**Para a conversa existente reutilizada (linhas 321-322):**
+Atualizar a conversa existente para garantir que `status='nina'`, `is_active=true` e o `metadata` correto:
 
 ```typescript
-// Normalização defensiva: se a variável é o nome completo do contato, normaliza
-const fullName = (contact.name || '').trim();
-const normalizeIfName = (v: string) => {
-  if (fullName && v.trim().toLowerCase() === fullName.toLowerCase()) {
-    return normalizeFirstName(contact.name);
-  }
-  return v;
-};
+if (existingConv) {
+  conversationId = existingConv.id;
+  // Garantir que a conversa está ativa e com metadata correto
+  await supabase
+    .from('conversations')
+    .update({
+      status: 'nina',
+      is_active: true,
+      metadata: {
+        origin: campaign.is_prospecting ? 'prospeccao' : 'campaign',
+        campaign_id: campaign.id
+      }
+    })
+    .eq('id', conversationId);
+}
 ```
 
-Para o **header** especificamente (variável `{{1}}` é quase sempre o nome do contato), aplicar sempre:
-```typescript
-const varValue = normalizeFirstName(templateVars[`header_${i + 1}`] || contact.name || 'Cliente');
+### Resultado esperado após a correção
+
+```text
+1. process-campaign envia template
+   └── Cria/Atualiza conversa:
+       metadata: { origin: 'prospeccao', campaign_id: X }
+       status: 'nina'
+       is_active: true
+
+2. Lead responde → nina-orchestrator processa
+   ├── detectAgent() lê metadata.origin === 'prospeccao' ✅
+   ├── Encontra agente Atlas (slug='atlas') ✅
+   └── Atlas responde (nunca humano no primeiro contato)
+
+3. Proteções especiais ativadas:
+   ├── isProspectingRejection() detecta rejeições ✅
+   ├── detectNotResponsible() para "não sou o responsável" ✅
+   └── Soft rejections capturam data de vencimento ✅
 ```
 
-Para o **body**, aplicar a normalização defensiva (normaliza só se for o nome completo):
-```typescript
-const rawValue = templateVars[`body_${i + 1}`] || contact.name || 'Cliente';
-const varValue = normalizeIfName(rawValue);
-```
+### Arquivos a modificar
 
-### Arquivo modificado
+- `supabase/functions/process-campaign/index.ts`
+  - Linha 329: alterar `origin: 'campaign'` → origem condicional baseada em `is_prospecting`
+  - Linhas 321-334: ao reutilizar conversa existente, adicionar UPDATE para garantir `status='nina'`, `is_active=true` e `metadata` correto
 
-- `supabase/functions/process-campaign/index.ts` — renomear função, corrigir lógica e aplicar normalização em todas as variáveis, não só no fallback
+### Impacto zero em outros fluxos
 
-### Resultado esperado
-
-| Entrada | Resultado atual | Resultado novo |
-|---|---|---|
-| `templateVars.header_1 = "EDUARDO SALES"` | "EDUARDO SALES" (sem normalização) | "Eduardo" |
-| `templateVars.header_1 = undefined`, `contact.name = "KAUAN FELIPE"` | "Kauan" (já correto) | "Kauan" |
-| `templateVars.header_1 = undefined`, `contact.name = "maria jose"` | "Maria" (já correto, letras mistas) | "Maria" |
-| `templateVars.body_1 = "Transportadora XYZ"` | "Transportadora XYZ" (preservado) | "Transportadora XYZ" (preservado — não é nome do contato) |
+- Campanhas com `is_prospecting=false` continuam com `origin: 'campaign'` (sem mudança de comportamento)
+- Fluxos inbound não são afetados
+- O agente Atlas só é ativado se `origin === 'prospeccao'` E o agente com slug `'atlas'` estiver cadastrado e ativo
