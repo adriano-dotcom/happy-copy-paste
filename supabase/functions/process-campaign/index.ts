@@ -16,13 +16,11 @@ function toBRT(date: Date | string): string {
 }
 
 // ===== NAME NORMALIZATION =====
-function normalizeContactName(name: string | null): string {
+function normalizeFirstName(name: string | null): string {
   if (!name || !name.trim()) return 'Cliente';
   const firstName = name.trim().split(/\s+/)[0];
-  if (firstName === firstName.toUpperCase() && firstName.length > 2) {
-    return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
-  }
-  return firstName.charAt(0).toUpperCase() + firstName.slice(1);
+  if (firstName.length < 3) return firstName;
+  return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
 }
 
 serve(async (req) => {
@@ -241,11 +239,19 @@ serve(async (req) => {
 
           // Process header variables
           const headerComponent = template.components?.find((c: any) => c.type === 'HEADER');
+          const fullContactName = (contact.name || '').trim();
+          const normalizeIfName = (v: string) => {
+            if (fullContactName && v.trim().toLowerCase() === fullContactName.toLowerCase()) {
+              return normalizeFirstName(contact.name);
+            }
+            return v;
+          };
           if (headerComponent?.text) {
             const headerMatches = [...headerComponent.text.matchAll(/\{\{(\d+)\}\}/g)];
             if (headerMatches.length > 0) {
-            const headerParams = headerMatches.map((_, i) => {
-                const varValue = templateVars[`header_${i + 1}`] || normalizeContactName(contact.name);
+              const headerParams = headerMatches.map((_, i) => {
+                // Header vars always normalized (almost always a name)
+                const varValue = normalizeFirstName(templateVars[`header_${i + 1}`] || contact.name || 'Cliente');
                 return { type: 'text', text: varValue };
               });
               components.push({ type: 'header', parameters: headerParams });
@@ -257,8 +263,10 @@ serve(async (req) => {
           if (bodyComponent?.text) {
             const bodyMatches = [...bodyComponent.text.matchAll(/\{\{(\d+)\}\}/g)];
             if (bodyMatches.length > 0) {
-            const bodyParams = bodyMatches.map((_, i) => {
-                const varValue = templateVars[`body_${i + 1}`] || normalizeContactName(contact.name);
+              const bodyParams = bodyMatches.map((_, i) => {
+                // Body vars: normalize defensively (only if value matches full contact name)
+                const rawValue = templateVars[`body_${i + 1}`] || contact.name || 'Cliente';
+                const varValue = normalizeIfName(rawValue);
                 return { type: 'text', text: varValue };
               });
               components.push({ type: 'body', parameters: bodyParams });
