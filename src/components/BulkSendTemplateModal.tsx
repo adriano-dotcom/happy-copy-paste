@@ -260,9 +260,15 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
         const bodyExpected = countExpectedParams(body?.text);
 
         // Build header variables (typically contact name)
+        const normalizeFirstName = (n?: string | null) => {
+          if (!n) return '';
+          const first = n.trim().split(/\s+/)[0];
+          if (first.length < 3) return first;
+          return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+        };
         const headerVariables: string[] = [];
         if (headerExpected >= 1) {
-          headerVariables.push(contact.name || contact.call_name || 'Cliente');
+          headerVariables.push(normalizeFirstName(contact.name || contact.call_name) || 'Cliente');
         }
 
         // Build body variables (typically company name)
@@ -271,7 +277,7 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
           bodyVariables.push(contact.company || contact.name || 'Transportadora');
         }
         if (bodyExpected >= 2) {
-          bodyVariables.push(contact.name || contact.call_name || 'Cliente');
+          bodyVariables.push(normalizeFirstName(contact.name || contact.call_name) || 'Cliente');
         }
 
         // Send template with proper header and body variables

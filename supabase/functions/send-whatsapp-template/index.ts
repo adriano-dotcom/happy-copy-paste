@@ -16,6 +16,13 @@ interface SendTemplateRequest {
   is_prospecting?: boolean; // Flag to mark as active prospecting
 }
 
+function normalizeFirstName(fullName: string | null | undefined): string {
+  if (!fullName) return '';
+  const firstName = fullName.trim().split(/\s+/)[0];
+  if (firstName.length < 3) return firstName;
+  return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+}
+
 function countExpectedParamsFromText(text?: string | null): number {
   if (!text) return 0;
   // WhatsApp templates use placeholders like {{1}}, {{2}}...
@@ -79,6 +86,10 @@ serve(async (req) => {
       throw new Error('Contact not found');
     }
 
+    // Compute normalized first name for this contact
+    const contactFirstName = normalizeFirstName(contact.name);
+    const fullContactName = (contact.name || '').trim();
+
     // Get template details from local DB
     const { data: template, error: templateError } = await supabase
       .from('whatsapp_templates')
@@ -111,6 +122,16 @@ serve(async (req) => {
       effectiveHeaderVars = effectiveBodyVars;
       effectiveBodyVars = [];
     }
+
+    // Auto-normalize: if any variable equals the full contact name (case-insensitive), replace with first name
+    const normalizeIfContactName = (v: string): string => {
+      if (fullContactName && v.trim().toLowerCase() === fullContactName.toLowerCase()) {
+        return contactFirstName;
+      }
+      return v;
+    };
+    effectiveHeaderVars = effectiveHeaderVars.map(normalizeIfContactName);
+    effectiveBodyVars = effectiveBodyVars.map(normalizeIfContactName);
 
     // Truncate header variables to respect WhatsApp's 60-char limit (fixed text + params)
     if (headerExpected > 0 && tplHeaderComponent?.text && effectiveHeaderVars.length > 0) {

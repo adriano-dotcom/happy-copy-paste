@@ -52,6 +52,14 @@ export const SendWhatsAppTemplateModal: React.FC<SendWhatsAppTemplateModalProps>
   const [bodyVariables, setBodyVariables] = useState<string[]>([]);
   const [isProspecting, setIsProspecting] = useState(false);
 
+  // Normalize to first name only, Title Case
+  const normalizeFirstName = (name?: string): string => {
+    if (!name) return '';
+    const first = name.trim().split(/\s+/)[0];
+    if (first.length < 3) return first;
+    return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+  };
+
   // Count variables in a text by finding {{N}} patterns
   const countVariables = (text: string | undefined): number => {
     if (!text) return 0;
@@ -86,7 +94,7 @@ export const SendWhatsAppTemplateModal: React.FC<SendWhatsAppTemplateModalProps>
       // Initialize header variables
       const initialHeaderVars = Array(headerCount).fill('');
       if (headerCount >= 1 && contactName) {
-        initialHeaderVars[0] = contactName;
+        initialHeaderVars[0] = normalizeFirstName(contactName);
       }
       setHeaderVariables(initialHeaderVars);
       
