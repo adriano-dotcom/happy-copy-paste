@@ -112,6 +112,16 @@ serve(async (req) => {
       effectiveBodyVars = [];
     }
 
+    // Truncate header variables to respect WhatsApp's 60-char limit (fixed text + params)
+    if (headerExpected > 0 && tplHeaderComponent?.text && effectiveHeaderVars.length > 0) {
+      const fixedHeaderText = tplHeaderComponent.text.replace(/\{\{\d+\}\}/g, '');
+      const maxVarLength = Math.max(0, 60 - fixedHeaderText.length);
+      effectiveHeaderVars = effectiveHeaderVars.map((v) =>
+        v.length > maxVarLength ? v.substring(0, maxVarLength).trim() : v
+      );
+      console.log(`Header var truncation: fixed="${fixedHeaderText}" (${fixedHeaderText.length}), maxVar=${maxVarLength}`);
+    }
+
     // Build components array for the API
     const components: any[] = [];
 
