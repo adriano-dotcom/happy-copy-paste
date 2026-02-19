@@ -451,12 +451,15 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         pc.addEventListener('connectionstatechange', handler);
       });
 
-      // 7. Send accept WITHOUT SDP (Meta docs: only pre_accept needs SDP)
-      console.log(`[WebRTC][${ts()}] Sending accept (no SDP)...`);
+      // 7. Send accept WITH final SDP (Meta requires session parameter)
+      const finalSdp = fixSdpForMeta(pc.localDescription?.sdp || immediateSdp);
+      console.log(`[WebRTC][${ts()}] Sending accept with final SDP...`);
+      logSdpDetails('ANSWER (final for accept)', finalSdp);
 
       const { error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
         body: {
           call_id: call.id,
+          sdp_answer: finalSdp,
           action: 'accept',
         },
       });
