@@ -1,72 +1,50 @@
 
 
-# Fix: Audio mudo nas chamadas WhatsApp - Correcoes WebRTC no frontend
+# Fix: Audio mudo nas chamadas WhatsApp - Plano revisado (sem TURN)
 
-## Problema raiz identificado
+## O que muda em relacao ao plano anterior
 
-Apos investigar o codigo e pesquisar a documentacao da Meta e relatos de desenvolvedores, encontrei **2 problemas criticos** no frontend que explicam o audio mudo mesmo com backend retornando 200:
+Removemos a dependencia de servidores TURN (que exigem credenciais). O foco agora e nas correcoes que nao precisam de nenhuma configuracao externa.
 
-### 1. SDP Answer com `a=setup:actpass` em vez de `a=setup:active`
-A documentacao da Meta e multiplos relatos de desenvolvedores confirmam: o SDP answer enviado para a Meta **precisa** ter `a=setup:active`, mas o navegador gera automaticamente `a=setup:actpass`. Sem essa correcao, a negociacao de midia falha silenciosamente.
+## Correcoes a implementar
 
-### 2. Falta de TURN servers
-O codigo atual usa apenas STUN servers (Google). Em redes com NAT restritivo (muito comum em escritorios e redes 4G), STUN nao e suficiente para estabelecer conexao de midia. Sem TURN servers, os ICE candidates nao conseguem atravessar o NAT e o audio nao flui.
+### 1. Corrigir SDP Answer (CRITICO)
 
----
+O navegador gera `a=setup:actpass` no SDP answer, mas a Meta exige `a=setup:active`. Vamos adicionar uma funcao que corrige isso antes de enviar.
 
-## Plano de correcao
+### 2. Adicionar mais STUN servers (sem credenciais)
 
-### Passo 1: Corrigir SDP Answer antes de enviar (`IncomingCallModal.tsx`)
+Em vez de TURN (que precisa de credenciais), vamos adicionar STUN servers publicos adicionais para melhorar a chance de conectividade:
+- Google STUN (ja existente)
+- Cloudflare STUN (gratuito, sem credenciais)
+- Mozilla STUN (gratuito, sem credenciais)
 
-Adicionar funcao que modifica o SDP answer gerado pelo navegador:
-- Trocar `a=setup:actpass` por `a=setup:active`
-- Aplicar antes de enviar para o backend
+### 3. Logs de debug detalhados
 
-### Passo 2: Adicionar TURN servers
-
-Adicionar servidores TURN gratuitos do Metered.ca como fallback, alem dos STUN existentes. Isso garante conectividade em redes restritivas.
-
-### Passo 3: Adicionar logs de debug detalhados
-
-- Log de ICE candidates sendo coletados
-- Log do SDP final (modificado) antes de enviar
-- Log do estado das tracks de audio remotas
-- Log quando audio comeca a tocar
-
----
+Adicionar logs para facilitar diagnostico futuro:
+- ICE candidates coletados
+- SDP modificado
+- Estado das tracks de audio remotas
+- Confirmacao de audio tocando
 
 ## Detalhes tecnicos
 
-### Modificacao do SDP
+### Arquivo: `src/components/IncomingCallModal.tsx`
 
-```text
-Antes (gerado pelo navegador):
-  a=setup:actpass
+**Funcao de correcao do SDP:**
+- Substituir `a=setup:actpass` por `a=setup:active` no SDP answer
+- Aplicar antes de enviar ao backend via edge function
 
-Depois (corrigido para Meta):
-  a=setup:active
-```
+**ICE servers atualizados (todos gratuitos, sem credenciais):**
+- `stun:stun.l.google.com:19302`
+- `stun:stun1.l.google.com:19302`
+- `stun:stun.cloudflare.com:3478`
+- `stun:stun.services.mozilla.com:3478`
 
-Esta e uma exigencia documentada da Meta API para chamadas WhatsApp WebRTC.
-
-### ICE Servers atualizados
-
-```text
-Atual:
-  - stun:stun.l.google.com:19302
-  - stun:stun1.l.google.com:19302
-
-Novo:
-  - stun:stun.l.google.com:19302
-  - stun:stun1.l.google.com:19302
-  - turn:a.relay.metered.ca:80 (TCP fallback)
-  - turn:a.relay.metered.ca:443 (TLS fallback)
-```
-
-### Debug logs adicionais
-
-- `[WebRTC] ICE candidate:` para cada candidate coletado
-- `[WebRTC] Modified SDP answer:` com as primeiras linhas do SDP corrigido
-- `[WebRTC] Remote track state:` para verificar se a track remota esta ativa
-- `[WebRTC] Audio element playing:` para confirmar que o elemento de audio esta reproduzindo
+**Logs adicionais:**
+- `[WebRTC] ICE candidate:` tipo e protocolo de cada candidate
+- `[WebRTC] Original SDP setup line:` linha original antes da correcao
+- `[WebRTC] Modified SDP:` primeiras 5 linhas do SDP corrigido
+- `[WebRTC] Remote track:` estado da track de audio remota
+- `[WebRTC] Audio playing:` confirmacao de reproducao
 
