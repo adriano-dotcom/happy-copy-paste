@@ -1,50 +1,53 @@
 
 
-# Fix: Audio mudo nas chamadas WhatsApp - Plano revisado (sem TURN)
+# Logs de debug avancados para WebRTC
 
-## O que muda em relacao ao plano anterior
+Adicionar logs mais detalhados em `src/components/IncomingCallModal.tsx` para facilitar o diagnostico de problemas de audio nas chamadas WhatsApp.
 
-Removemos a dependencia de servidores TURN (que exigem credenciais). O foco agora e nas correcoes que nao precisam de nenhuma configuracao externa.
+## Logs a adicionar
 
-## Correcoes a implementar
+### 1. ICE Gathering detalhado
+- Log do `iceGatheringState` inicial antes de comecar
+- Contador de ICE candidates coletados (total por tipo: host, srflx, relay)
+- Log quando ICE gathering termina com resumo dos candidates
 
-### 1. Corrigir SDP Answer (CRITICO)
+### 2. Connection state completo
+- Adicionar `onsignalingstatechange` para rastrear estado de sinalizacao
+- Log de `pc.getStats()` apos conexao para verificar bytes enviados/recebidos e codec negociado
+- Log do `iceCandidatePairState` (par de candidates selecionado)
 
-O navegador gera `a=setup:actpass` no SDP answer, mas a Meta exige `a=setup:active`. Vamos adicionar uma funcao que corrige isso antes de enviar.
+### 3. Audio track status detalhado
+- Log de `enabled`, `muted`, `readyState` da track remota a cada segundo por 5 segundos apos conexao
+- Log do `AudioContext` state (running/suspended) para detectar bloqueio do navegador
+- Log de `audio.volume`, `audio.muted`, `audio.paused` do elemento de audio
+- Verificar se `srcObject` tem tracks ativas
 
-### 2. Adicionar mais STUN servers (sem credenciais)
+### 4. SDP diagnostico
+- Log completo das linhas `m=audio` e `a=rtpmap` do SDP offer recebido (para verificar codecs)
+- Log completo das mesmas linhas do SDP answer enviado
+- Verificar se o SDP offer contem candidates ICE inline (trickle vs full)
 
-Em vez de TURN (que precisa de credenciais), vamos adicionar STUN servers publicos adicionais para melhorar a chance de conectividade:
-- Google STUN (ja existente)
-- Cloudflare STUN (gratuito, sem credenciais)
-- Mozilla STUN (gratuito, sem credenciais)
-
-### 3. Logs de debug detalhados
-
-Adicionar logs para facilitar diagnostico futuro:
-- ICE candidates coletados
-- SDP modificado
-- Estado das tracks de audio remotas
-- Confirmacao de audio tocando
+### 5. Timing
+- Timestamp em cada log para medir latencia entre etapas
+- Tempo total desde clique em "atender" ate audio tocando
 
 ## Detalhes tecnicos
 
 ### Arquivo: `src/components/IncomingCallModal.tsx`
 
-**Funcao de correcao do SDP:**
-- Substituir `a=setup:actpass` por `a=setup:active` no SDP answer
-- Aplicar antes de enviar ao backend via edge function
+**Novas funcoes auxiliares:**
+- `logSdpDetails(label, sdp)` - extrai e loga linhas relevantes do SDP (m=audio, a=rtpmap, a=setup, candidates)
+- `logAudioState(audio, track)` - loga estado completo do audio element e track remota
+- `logPeerStats(pc)` - chama `pc.getStats()` e loga bytes, codec, candidate pair
 
-**ICE servers atualizados (todos gratuitos, sem credenciais):**
-- `stun:stun.l.google.com:19302`
-- `stun:stun1.l.google.com:19302`
-- `stun:stun.cloudflare.com:3478`
-- `stun:stun.services.mozilla.com:3478`
+**Novos event handlers no PeerConnection:**
+- `pc.onsignalingstatechange` - loga mudancas de sinalizacao
+- `pc.onicecandidateerror` - loga erros de ICE candidate (importante para diagnosticar STUN failures)
 
-**Logs adicionais:**
-- `[WebRTC] ICE candidate:` tipo e protocolo de cada candidate
-- `[WebRTC] Original SDP setup line:` linha original antes da correcao
-- `[WebRTC] Modified SDP:` primeiras 5 linhas do SDP corrigido
-- `[WebRTC] Remote track:` estado da track de audio remota
-- `[WebRTC] Audio playing:` confirmacao de reproducao
+**Monitor de audio pos-conexao:**
+- `setInterval` de 1 segundo por 5 segundos apos `ontrack` para logar estado da track e do audio element
+- Limpa automaticamente apos 5 iteracoes
+
+**Correcao menor:**
+- Remover a linha duplicada `peerConnectionRef.current = pc;` (linha 109)
 
