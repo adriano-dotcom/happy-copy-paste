@@ -162,3 +162,16 @@ verify_jwt = false
 # ElevenLabs hangup (encerrar ligação manualmente)
 [functions.elevenlabs-hangup]
 verify_jwt = true
+
+# WhatsApp Calling via Meta Cloud API
+[functions.whatsapp-call-webhook]
+verify_jwt = false
+
+[functions.whatsapp-call-accept]
+verify_jwt = false
+
+[functions.whatsapp-call-reject]
+verify_jwt = false
+
+[functions.whatsapp-call-terminate]
+verify_jwt = false
