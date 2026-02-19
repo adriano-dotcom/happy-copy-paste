@@ -254,10 +254,22 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       onDismiss();
     }, 20000);
 
-    // Create and unlock Audio element immediately in user gesture context
+    // Unlock audio pipeline in user gesture context
+    const audioCtx = new AudioContext();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    // Create silent oscillator to fully unlock audio output
+    const silentOsc = audioCtx.createOscillator();
+    const silentGain = audioCtx.createGain();
+    silentGain.gain.value = 0;
+    silentOsc.connect(silentGain);
+    silentGain.connect(audioCtx.destination);
+    silentOsc.start();
+    silentOsc.stop(audioCtx.currentTime + 0.1);
+
     const audio = new Audio();
     audio.autoplay = true;
-    audio.play().catch(() => {});
+    audio.volume = 1;
+    audio.muted = false;
     remoteAudioRef.current = audio;
 
     try {
@@ -337,11 +349,21 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
           remoteTrackRef.current = event.track;
           if (remoteAudioRef.current) {
             remoteAudioRef.current.srcObject = event.streams[0];
-            remoteAudioRef.current.play().then(() => {
-              const elapsed = (performance.now() - acceptStartRef.current).toFixed(0);
-              console.log(`[WebRTC][${ts()}] ✓ Audio element playing! Time since accept: ${elapsed}ms`);
-              logAudioState(remoteAudioRef.current, event.track);
-            }).catch(err => console.warn(`[WebRTC][${ts()}] Audio play error:`, err));
+            remoteAudioRef.current.volume = 1;
+            remoteAudioRef.current.muted = false;
+            const tryPlay = () => {
+              remoteAudioRef.current?.play()
+                .then(() => {
+                  const elapsed = (performance.now() - acceptStartRef.current).toFixed(0);
+                  console.log(`[WebRTC][${ts()}] ✓ Audio playing successfully! Time since accept: ${elapsed}ms`);
+                  logAudioState(remoteAudioRef.current, event.track);
+                })
+                .catch(err => {
+                  console.warn(`[WebRTC][${ts()}] Audio play failed, retrying in 500ms:`, err);
+                  setTimeout(tryPlay, 500);
+                });
+            };
+            tryPlay();
           }
           event.track.onunmute = () => console.log(`[WebRTC][${ts()}] Remote audio track unmuted`);
           event.track.onended = () => console.log(`[WebRTC][${ts()}] Remote audio track ended`);
