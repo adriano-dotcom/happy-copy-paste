@@ -136,9 +136,40 @@ export function useConversations() {
   }, []);
 
   const handleMessageUpdate = useCallback((payload: any) => {
-    console.log('[Realtime] Message updated:', payload.new);
     const updatedMessage = payload.new as DBMessage;
-    
+    const oldMessage = payload.old as Partial<DBMessage>;
+
+    // PERFORMANCE FIX: detectar se é apenas mudança de status/timestamps (entrega/leitura)
+    // Quando campanhas enviam 200+ templates, a Meta confirma entrega gerando 200+ UPDATE events
+    // Esses eventos só mudam status/delivered_at/read_at — não precisam re-renderizar o estado completo
+    const isOnlyStatusChange =
+      oldMessage &&
+      updatedMessage.content === oldMessage.content &&
+      updatedMessage.from_type === oldMessage.from_type &&
+      updatedMessage.type === oldMessage.type;
+
+    if (isOnlyStatusChange) {
+      // Atualização cirúrgica: apenas muda o status da mensagem específica sem map completo
+      setConversations(prev => {
+        return prev.map(conv => {
+          if (conv.id !== updatedMessage.conversation_id) return conv; // early return para 99% das conversas
+          const hasMsg = conv.messages.some(m => m.id === updatedMessage.id);
+          if (!hasMsg) return conv; // mensagem não está no cache, ignorar
+          return {
+            ...conv,
+            messages: conv.messages.map(msg =>
+              msg.id === updatedMessage.id
+                ? { ...msg, status: updatedMessage.status as any }
+                : msg
+            )
+          };
+        });
+      });
+      return;
+    }
+
+    // Mudança de conteúdo real — atualizar mensagem completa
+    console.log('[Realtime] Message updated (content change):', updatedMessage.id);
     setConversations(prev => {
       return prev.map(conv => {
         if (conv.id === updatedMessage.conversation_id) {
