@@ -106,8 +106,8 @@ Deno.serve(async (req) => {
       // Step 2: Small delay for Meta to process SDP
       await new Promise(r => setTimeout(r, 1500));
 
-      // Step 3: accept (with empty SDP to satisfy Meta validation without resetting media)
-      console.log(`[both] Sending accept for call ${whatsappCallId} (empty SDP)`);
+      // Step 3: accept (with full SDP — if it fails, pre_accept already established media)
+      console.log(`[both] Sending accept for call ${whatsappCallId}`);
       const acceptRes = await fetch(metaUrl, {
         method: 'POST',
         headers: {
@@ -118,7 +118,7 @@ Deno.serve(async (req) => {
           messaging_product: 'whatsapp',
           call_id: whatsappCallId,
           action: 'accept',
-          session: { sdp_type: 'answer', sdp: '' },
+          session: { sdp_type: 'answer', sdp: sdp_answer },
         }),
       });
 
@@ -126,10 +126,8 @@ Deno.serve(async (req) => {
       console.log(`[both] accept response: ${acceptRes.status} ${acceptBody}`);
 
       if (!acceptRes.ok) {
-        return new Response(JSON.stringify({ error: 'accept failed', details: acceptBody }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        // Log warning but DON'T fail — pre_accept already established the media session
+        console.warn(`[both] accept returned ${acceptRes.status} but pre_accept succeeded, continuing...`);
       }
 
       // Step 4: Update DB (non-blocking for the caller)
@@ -194,7 +192,7 @@ Deno.serve(async (req) => {
     }
 
     if (requestedAction === 'accept') {
-      console.log(`Sending accept for call ${whatsappCallId} (empty SDP)`);
+      console.log(`Sending accept for call ${whatsappCallId}`);
       const acceptRes = await fetch(metaUrl, {
         method: 'POST',
         headers: {
@@ -205,7 +203,7 @@ Deno.serve(async (req) => {
           messaging_product: 'whatsapp',
           call_id: whatsappCallId,
           action: 'accept',
-          session: { sdp_type: 'answer', sdp: '' },
+          session: { sdp_type: 'answer', sdp: sdp_answer || '' },
         }),
       });
 
