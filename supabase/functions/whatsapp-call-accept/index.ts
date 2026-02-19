@@ -66,12 +66,16 @@ Deno.serve(async (req) => {
     const sdpOffer = call.sdp_offer;
     const metaUrl = `https://graph.facebook.com/v20.0/${phoneNumberId}/calls`;
 
-    // Step 1: Send pre_accept WITHOUT session (signals readiness)
+    // Step 1: Send pre_accept with SDP answer in session
     console.log(`Sending pre_accept for call ${whatsappCallId}`);
     const preAcceptPayload: any = {
       messaging_product: 'whatsapp',
       call_id: whatsappCallId,
       action: 'pre_accept',
+      session: {
+        sdp_type: 'answer',
+        sdp: sdp_answer,
+      },
     };
     const preAcceptRes = await fetch(metaUrl, {
       method: 'POST',
