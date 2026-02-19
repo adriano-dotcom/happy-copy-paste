@@ -1,70 +1,32 @@
 
-# Fix: Audio mudo nas chamadas WhatsApp
+# Fix: Chamada muda - Deadlock na sinalizacao WebRTC
 
-## Problema
-O botao de atender funciona, a sinalizacao com a Meta acontece, mas o audio fica mudo. Isso indica que o WebRTC conecta no nivel de sinalizacao, porem o audio nao flui no navegador.
+## Problema identificado
+O codigo atual cria um **deadlock** na sinalizacao com a Meta:
 
-## Causa raiz
-Duas causas provaveis trabalhando juntas:
+1. Envia `pre_accept` com SDP answer
+2. **Aguarda** o WebRTC atingir estado `connected` (timeout de 15s)
+3. So entao envia `accept`
 
-1. **Audio element "unlock" falho**: O codigo cria `new Audio()` e chama `play()` em um elemento vazio (linha 258-260). Em muitos navegadores, tocar um Audio vazio NAO desbloqueia o elemento para uso futuro com streams WebRTC. Quando o `ontrack` dispara mais tarde (fora do contexto do gesto do usuario), o `play()` falha silenciosamente.
-
-2. **AudioContext suspensa**: O navegador pode manter o AudioContext em estado "suspended", bloqueando toda reproducao de audio mesmo que o elemento esteja configurado corretamente.
+O problema e que a Meta precisa receber **ambos** os sinais (`pre_accept` + `accept`) para completar a conexao WebRTC. O WebRTC nunca atinge `connected` porque a Meta esta esperando o `accept`, e o codigo esta esperando o `connected` para enviar o `accept`. Resultado: timeout de 15s e chamada muda.
 
 ## Solucao
+Remover a espera por `connected` entre `pre_accept` e `accept`. Enviar ambos os sinais em sequencia imediata. O WebRTC vai se conectar naturalmente apos ambos os sinais serem processados pela Meta.
+
+## Detalhes tecnicos
 
 ### Arquivo: `src/components/IncomingCallModal.tsx`
 
-Tres mudancas no `handleAccept`:
+**Remover o bloco de espera por conexao (linhas 452-490)** que aguarda `webrtcConnected` e substitui-lo por envio imediato do `accept` apos `pre_accept`:
 
-1. **Desbloquear AudioContext imediatamente no clique** — chamar `new AudioContext().resume()` dentro do handler de clique para garantir que o sistema de audio do navegador esta ativo.
-
-2. **Criar Audio element com um "silent unlock" real** — em vez de tocar um elemento vazio, criar um AudioContext oscillator silencioso (frequencia 0, ganho 0) por 100ms para desbloquear o pipeline de audio.
-
-3. **Forcar play() com retry no ontrack** — quando o track remoto chega, tentar `play()` com retry apos 500ms se falhar na primeira tentativa. Tambem garantir que `volume = 1` e `muted = false` estao explicitamente setados.
-
-### Mudancas especificas:
-
-**Substituir linhas 257-261** (unlock do audio) por:
 ```typescript
-// Unlock audio pipeline in user gesture context
-const audioCtx = new AudioContext();
-if (audioCtx.state === 'suspended') await audioCtx.resume();
-// Create silent oscillator to fully unlock audio output
-const silentOsc = audioCtx.createOscillator();
-const silentGain = audioCtx.createGain();
-silentGain.gain.value = 0;
-silentOsc.connect(silentGain);
-silentGain.connect(audioCtx.destination);
-silentOsc.start();
-silentOsc.stop(audioCtx.currentTime + 0.1);
-
-const audio = new Audio();
-audio.autoplay = true;
-audio.volume = 1;
-audio.muted = false;
-remoteAudioRef.current = audio;
+// Apos pre_accept enviado com sucesso:
+// Enviar accept imediatamente (sem esperar connected)
+console.log(`Sending accept immediately after pre_accept...`);
 ```
 
-**No ontrack (linhas 338-344)**, melhorar o play com retry:
-```typescript
-if (remoteAudioRef.current) {
-  remoteAudioRef.current.srcObject = event.streams[0];
-  remoteAudioRef.current.volume = 1;
-  remoteAudioRef.current.muted = false;
-  const tryPlay = () => {
-    remoteAudioRef.current?.play()
-      .then(() => {
-        console.log(`[WebRTC] Audio playing successfully`);
-        logAudioState(remoteAudioRef.current, event.track);
-      })
-      .catch(err => {
-        console.warn(`[WebRTC] Audio play failed, retrying in 500ms:`, err);
-        setTimeout(tryPlay, 500);
-      });
-  };
-  tryPlay();
-}
-```
+**Manter** o monitoramento de conexao existente no `onconnectionstatechange` (linhas 318-338) que ja faz cleanup automatico se a conexao falhar apos 2s de grace period.
 
-Estas mudancas garantem que o pipeline de audio do navegador esta totalmente desbloqueado antes de qualquer operacao WebRTC, e que a reproducao do audio remoto tem mecanismo de retry.
+**Remover** o estado `connectionHint` ja que nao havera mais fase intermediaria de espera visivel.
+
+Isso elimina o deadlock e permite que a Meta complete a conexao WebRTC normalmente apos receber ambos os sinais.
