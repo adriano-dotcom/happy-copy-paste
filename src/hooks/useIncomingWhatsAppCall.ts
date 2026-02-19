@@ -142,11 +142,11 @@ export function useIncomingWhatsAppCall() {
           event: 'INSERT',
           schema: 'public',
           table: 'whatsapp_calls',
-          filter: 'direction=eq.inbound',
         },
         async (payload) => {
           const newCall = payload.new as any;
-          if (newCall.status === 'ringing') {
+          console.log('[IncomingCall] New whatsapp_call INSERT:', newCall.id, newCall.status, newCall.direction);
+          if (newCall.direction === 'inbound' && newCall.status === 'ringing') {
             console.log('Incoming WhatsApp call:', newCall.id);
             const enrichedCall = await enrichCallWithContact(newCall);
             callRef.current = enrichedCall;
