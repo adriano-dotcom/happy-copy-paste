@@ -449,33 +449,9 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         .eq('id', call.id);
       console.log(`[WebRTC][${ts()}] DB updated to 'answered', waiting for WebRTC connection...`);
 
-      // 7. Wait for ICE connection before sending accept
-      console.log(`[WebRTC][${ts()}] Waiting for ICE connection before sending accept...`);
-      await new Promise<void>((resolve) => {
-        const checkIce = () => {
-          const state = pc.iceConnectionState;
-          if (state === 'connected' || state === 'completed') {
-            console.log(`[WebRTC][${ts()}] ICE connected (${state}), proceeding with accept`);
-            resolve();
-            return true;
-          }
-          return false;
-        };
-
-        // Check immediately
-        if (checkIce()) return;
-
-        // Listen for changes
-        const handler = () => { if (checkIce()) pc.removeEventListener('iceconnectionstatechange', handler); };
-        pc.addEventListener('iceconnectionstatechange', handler);
-
-        // Timeout fallback: send accept anyway after 10s
-        setTimeout(() => {
-          pc.removeEventListener('iceconnectionstatechange', handler);
-          console.warn(`[WebRTC][${ts()}] ICE wait timeout (10s), sending accept anyway. Current state: ${pc.iceConnectionState}`);
-          resolve();
-        }, 10000);
-      });
+      // 7. Small delay for Meta to process pre_accept, then send accept
+      console.log(`[WebRTC][${ts()}] Waiting 500ms for Meta to process pre_accept...`);
+      await new Promise(r => setTimeout(r, 500));
 
       // Send accept
       console.log(`[WebRTC][${ts()}] Sending accept...`);
