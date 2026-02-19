@@ -5,20 +5,90 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { IncomingWhatsAppCall } from '@/hooks/useIncomingWhatsAppCall';
 
-/** Fix SDP answer for Meta: replace actpass with active */
+// ── Debug helpers ──────────────────────────────────────────────
+
+function ts() {
+  return new Date().toISOString();
+}
+
+function logSdpDetails(label: string, sdp: string | undefined) {
+  if (!sdp) { console.warn(`[WebRTC][${ts()}] ${label}: SDP is empty/undefined`); return; }
+  const lines = sdp.split('\r\n');
+  const interesting = lines.filter(l =>
+    l.startsWith('m=audio') ||
+    l.startsWith('a=rtpmap') ||
+    l.startsWith('a=setup') ||
+    l.startsWith('a=candidate') ||
+    l.startsWith('a=ice-ufrag') ||
+    l.startsWith('a=ice-pwd')
+  );
+  console.log(`[WebRTC][${ts()}] ${label} SDP details:`, interesting);
+  const hasCandidates = lines.some(l => l.startsWith('a=candidate'));
+  console.log(`[WebRTC][${ts()}] ${label} has inline ICE candidates: ${hasCandidates} (${hasCandidates ? 'full' : 'trickle'} ICE)`);
+}
+
+function logAudioState(audio: HTMLAudioElement | null, track: MediaStreamTrack | null) {
+  if (audio) {
+    const srcTracks = audio.srcObject instanceof MediaStream ? audio.srcObject.getTracks() : [];
+    console.log(`[WebRTC][${ts()}] Audio element — paused: ${audio.paused}, volume: ${audio.volume}, muted: ${audio.muted}, srcObject tracks: ${srcTracks.length}`);
+    srcTracks.forEach((t, i) => {
+      console.log(`[WebRTC][${ts()}]   srcObject track[${i}]: kind=${t.kind} enabled=${t.enabled} muted=${t.muted} readyState=${t.readyState}`);
+    });
+  } else {
+    console.warn(`[WebRTC][${ts()}] Audio element is null`);
+  }
+  if (track) {
+    console.log(`[WebRTC][${ts()}] Remote track — kind: ${track.kind}, enabled: ${track.enabled}, muted: ${track.muted}, readyState: ${track.readyState}`);
+  }
+  // AudioContext state
+  try {
+    const ctx = new AudioContext();
+    console.log(`[WebRTC][${ts()}] AudioContext state: ${ctx.state}`);
+    ctx.close();
+  } catch (e) {
+    console.warn(`[WebRTC][${ts()}] AudioContext check failed:`, e);
+  }
+}
+
+async function logPeerStats(pc: RTCPeerConnection) {
+  try {
+    const stats = await pc.getStats();
+    stats.forEach(report => {
+      if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+        console.log(`[WebRTC][${ts()}] Active candidate pair — local: ${report.localCandidateId}, remote: ${report.remoteCandidateId}, bytesSent: ${report.bytesSent}, bytesReceived: ${report.bytesReceived}`);
+      }
+      if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+        console.log(`[WebRTC][${ts()}] Inbound audio RTP — packetsReceived: ${report.packetsReceived}, bytesReceived: ${report.bytesReceived}, packetsLost: ${report.packetsLost}, jitter: ${report.jitter}`);
+      }
+      if (report.type === 'outbound-rtp' && report.kind === 'audio') {
+        console.log(`[WebRTC][${ts()}] Outbound audio RTP — packetsSent: ${report.packetsSent}, bytesSent: ${report.bytesSent}`);
+      }
+      if (report.type === 'codec') {
+        console.log(`[WebRTC][${ts()}] Codec — mimeType: ${report.mimeType}, clockRate: ${report.clockRate}, channels: ${report.channels}`);
+      }
+    });
+  } catch (e) {
+    console.warn(`[WebRTC][${ts()}] getStats() failed:`, e);
+  }
+}
+
+// ── SDP fix for Meta ───────────────────────────────────────────
+
 function fixSdpForMeta(sdp: string): string {
   const lines = sdp.split('\r\n');
   const fixed = lines.map(line => {
     if (line.startsWith('a=setup:')) {
-      console.log('[WebRTC] Original SDP setup line:', line);
+      console.log(`[WebRTC][${ts()}] Original SDP setup line: ${line}`);
       return 'a=setup:active';
     }
     return line;
   });
   const result = fixed.join('\r\n');
-  console.log('[WebRTC] Modified SDP (first 5 lines):', result.split('\r\n').slice(0, 5).join(' | '));
+  console.log(`[WebRTC][${ts()}] Modified SDP (first 5 lines):`, result.split('\r\n').slice(0, 5).join(' | '));
   return result;
 }
+
+// ── ICE config ─────────────────────────────────────────────────
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -26,6 +96,8 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.cloudflare.com:3478' },
   { urls: 'stun:stun.services.mozilla.com:3478' },
 ];
+
+// ── Component ──────────────────────────────────────────────────
 
 interface IncomingCallModalProps {
   call: IncomingWhatsAppCall | null;
@@ -40,7 +112,13 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const remoteTrackRef = useRef<MediaStreamTrack | null>(null);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioMonitorRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const acceptStartRef = useRef<number>(0);
+
+  // ICE candidate counters
+  const iceCandidateCountRef = useRef<Record<string, number>>({ host: 0, srflx: 0, relay: 0, prflx: 0, unknown: 0 });
 
   // Duration timer
   useEffect(() => {
@@ -59,6 +137,10 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
   }, [call?.status]);
 
   const cleanup = useCallback(() => {
+    if (audioMonitorRef.current) {
+      clearInterval(audioMonitorRef.current);
+      audioMonitorRef.current = null;
+    }
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
@@ -72,12 +154,14 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       remoteAudioRef.current.srcObject = null;
       remoteAudioRef.current = null;
     }
+    remoteTrackRef.current = null;
     if (durationIntervalRef.current) {
       clearInterval(durationIntervalRef.current);
       durationIntervalRef.current = null;
     }
     setIsMuted(false);
     setCallDuration(0);
+    iceCandidateCountRef.current = { host: 0, srflx: 0, relay: 0, prflx: 0, unknown: 0 };
   }, []);
 
   // Cleanup on unmount or call gone
@@ -89,83 +173,138 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
   const handleAccept = async () => {
     if (!call || isAccepting) return;
     setIsAccepting(true);
+    acceptStartRef.current = performance.now();
+    console.log(`[WebRTC][${ts()}] ▶ Accept clicked — starting call flow`);
     onStopRingtone();
 
-    // IMPORTANT: Create and unlock Audio element immediately in user gesture context
-    // This prevents browser from blocking playback after async operations
+    // Create and unlock Audio element immediately in user gesture context
     const audio = new Audio();
     audio.autoplay = true;
-    audio.play().catch(() => {}); // Unlock audio context on iOS/Safari
+    audio.play().catch(() => {});
     remoteAudioRef.current = audio;
 
     try {
       // 1. Get microphone
+      console.log(`[WebRTC][${ts()}] Requesting microphone...`);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
+      console.log(`[WebRTC][${ts()}] Microphone acquired — tracks: ${stream.getAudioTracks().length}`);
 
-      // 2. Create RTCPeerConnection with expanded STUN servers
+      // 2. Create RTCPeerConnection
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-      peerConnectionRef.current = pc;
       peerConnectionRef.current = pc;
 
       // Add local audio track
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      // Handle remote audio — assign stream to pre-created audio element
-      pc.ontrack = (event) => {
-        console.log('[WebRTC] ontrack event, kind:', event.track.kind, 'readyState:', event.track.readyState);
-        if (event.track.kind === 'audio' && remoteAudioRef.current) {
-          remoteAudioRef.current.srcObject = event.streams[0];
-          remoteAudioRef.current.play().then(() => {
-            console.log('[WebRTC] Audio element playing:', !remoteAudioRef.current?.paused);
-          }).catch(err => console.warn('[WebRTC] Audio play error:', err));
-          event.track.onunmute = () => console.log('[WebRTC] Remote audio track unmuted');
-          event.track.onended = () => console.log('[WebRTC] Remote audio track ended');
-        }
+      // ── Event handlers ──
+
+      // Signaling state
+      pc.onsignalingstatechange = () => {
+        console.log(`[WebRTC][${ts()}] Signaling state: ${pc.signalingState}`);
       };
 
-      // Log ICE candidates
+      // ICE candidate errors
+      (pc as any).onicecandidateerror = (event: any) => {
+        console.warn(`[WebRTC][${ts()}] ICE candidate error — code: ${event.errorCode}, text: ${event.errorText}, url: ${event.url}`);
+      };
+
+      // ICE candidates with counting
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          console.log('[WebRTC] ICE candidate:', event.candidate.type, event.candidate.protocol, event.candidate.address);
+          const type = event.candidate.type || 'unknown';
+          iceCandidateCountRef.current[type] = (iceCandidateCountRef.current[type] || 0) + 1;
+          console.log(`[WebRTC][${ts()}] ICE candidate: type=${event.candidate.type} protocol=${event.candidate.protocol} address=${event.candidate.address}`);
+        } else {
+          console.log(`[WebRTC][${ts()}] ICE gathering done (null candidate). Summary:`, { ...iceCandidateCountRef.current });
         }
       };
 
-      // Debug: log connection state changes
-      pc.onconnectionstatechange = () => {
-        console.log('[WebRTC] Connection state:', pc.connectionState);
-      };
-      pc.oniceconnectionstatechange = () => {
-        console.log('[WebRTC] ICE connection state:', pc.iceConnectionState);
+      // ICE gathering state
+      pc.onicegatheringstatechange = () => {
+        console.log(`[WebRTC][${ts()}] ICE gathering state: ${pc.iceGatheringState}`);
       };
 
-      // 3. Set remote SDP offer
+      // Connection state
+      pc.onconnectionstatechange = () => {
+        console.log(`[WebRTC][${ts()}] Connection state: ${pc.connectionState}`);
+        if (pc.connectionState === 'connected') {
+          const elapsed = (performance.now() - acceptStartRef.current).toFixed(0);
+          console.log(`[WebRTC][${ts()}] ✓ Connected! Time since accept click: ${elapsed}ms`);
+          // Log stats after short delay to let data flow
+          setTimeout(() => logPeerStats(pc), 2000);
+        }
+      };
+
+      // ICE connection state
+      pc.oniceconnectionstatechange = () => {
+        console.log(`[WebRTC][${ts()}] ICE connection state: ${pc.iceConnectionState}`);
+      };
+
+      // Remote audio track
+      pc.ontrack = (event) => {
+        console.log(`[WebRTC][${ts()}] ontrack — kind: ${event.track.kind}, readyState: ${event.track.readyState}, streams: ${event.streams.length}`);
+        if (event.track.kind === 'audio') {
+          remoteTrackRef.current = event.track;
+          if (remoteAudioRef.current) {
+            remoteAudioRef.current.srcObject = event.streams[0];
+            remoteAudioRef.current.play().then(() => {
+              const elapsed = (performance.now() - acceptStartRef.current).toFixed(0);
+              console.log(`[WebRTC][${ts()}] ✓ Audio element playing! Time since accept: ${elapsed}ms`);
+              logAudioState(remoteAudioRef.current, event.track);
+            }).catch(err => console.warn(`[WebRTC][${ts()}] Audio play error:`, err));
+          }
+          event.track.onunmute = () => console.log(`[WebRTC][${ts()}] Remote audio track unmuted`);
+          event.track.onended = () => console.log(`[WebRTC][${ts()}] Remote audio track ended`);
+          event.track.onmute = () => console.log(`[WebRTC][${ts()}] Remote audio track muted`);
+
+          // Start audio monitor: log state every 1s for 5 iterations
+          let monitorCount = 0;
+          if (audioMonitorRef.current) clearInterval(audioMonitorRef.current);
+          audioMonitorRef.current = setInterval(() => {
+            monitorCount++;
+            console.log(`[WebRTC][${ts()}] Audio monitor [${monitorCount}/5]:`);
+            logAudioState(remoteAudioRef.current, remoteTrackRef.current);
+            if (monitorCount >= 5) {
+              clearInterval(audioMonitorRef.current!);
+              audioMonitorRef.current = null;
+              console.log(`[WebRTC][${ts()}] Audio monitor finished`);
+            }
+          }, 1000);
+        }
+      };
+
+      // 3. Log and set remote SDP offer
       if (call.sdp_offer) {
+        console.log(`[WebRTC][${ts()}] Setting remote SDP offer...`);
+        logSdpDetails('OFFER', call.sdp_offer);
         await pc.setRemoteDescription(new RTCSessionDescription({
           type: 'offer',
           sdp: call.sdp_offer,
         }));
-        console.log('[WebRTC] Remote description set');
+        console.log(`[WebRTC][${ts()}] Remote description set`);
       }
 
       // 4. Create SDP answer
       const answer = await pc.createAnswer();
+      console.log(`[WebRTC][${ts()}] Answer created`);
+      logSdpDetails('ANSWER (before fix)', answer.sdp);
       await pc.setLocalDescription(answer);
-      console.log('[WebRTC] Local description set, waiting for ICE gathering...');
+      console.log(`[WebRTC][${ts()}] Local description set, ICE gathering state: ${pc.iceGatheringState}`);
 
       // 5. Wait for ICE gathering to complete
       await new Promise<void>((resolve) => {
         if (pc.iceGatheringState === 'complete') {
-          console.log('[WebRTC] ICE gathering already complete');
+          console.log(`[WebRTC][${ts()}] ICE gathering already complete`);
           resolve();
         } else {
           const timeout = setTimeout(() => {
-            console.warn('[WebRTC] ICE gathering timeout after 5s, proceeding anyway');
+            console.warn(`[WebRTC][${ts()}] ICE gathering timeout after 5s, proceeding. Candidates so far:`, { ...iceCandidateCountRef.current });
             resolve();
           }, 5000);
           pc.addEventListener('icegatheringstatechange', () => {
             if (pc.iceGatheringState === 'complete') {
-              console.log('[WebRTC] ICE gathering complete');
+              console.log(`[WebRTC][${ts()}] ICE gathering complete. Candidates:`, { ...iceCandidateCountRef.current });
               clearTimeout(timeout);
               resolve();
             }
@@ -174,9 +313,10 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       });
 
       const finalSdp = fixSdpForMeta(pc.localDescription?.sdp || '');
-      console.log('[WebRTC] Sending pre_accept with fixed SDP answer');
+      logSdpDetails('ANSWER (after fix)', finalSdp);
 
-      // 6. Send pre_accept first (tells Meta we're preparing)
+      // 6. Send pre_accept
+      console.log(`[WebRTC][${ts()}] Sending pre_accept...`);
       const { error: preAcceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
         body: {
           call_id: call.id,
@@ -188,22 +328,21 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       if (preAcceptError) {
         throw new Error(preAcceptError.message || 'Failed to pre_accept call');
       }
+      console.log(`[WebRTC][${ts()}] pre_accept sent, waiting for WebRTC connection...`);
 
-      console.log('[WebRTC] pre_accept sent, waiting for WebRTC connection...');
-
-      // 7. Wait for WebRTC connection to be established before sending accept
+      // 7. Wait for WebRTC connection
       await new Promise<void>((resolve, reject) => {
         if (pc.connectionState === 'connected') {
-          console.log('[WebRTC] Already connected, sending accept immediately');
+          console.log(`[WebRTC][${ts()}] Already connected`);
           resolve();
           return;
         }
         const timeout = setTimeout(() => {
-          console.warn('[WebRTC] Connection timeout after 10s, sending accept anyway');
+          console.warn(`[WebRTC][${ts()}] Connection timeout after 10s, sending accept anyway. State: ${pc.connectionState}, ICE: ${pc.iceConnectionState}`);
           resolve();
         }, 10000);
         const handler = () => {
-          console.log('[WebRTC] Connection state changed to:', pc.connectionState);
+          console.log(`[WebRTC][${ts()}] Connection state changed to: ${pc.connectionState}`);
           if (pc.connectionState === 'connected') {
             clearTimeout(timeout);
             pc.removeEventListener('connectionstatechange', handler);
@@ -217,8 +356,8 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         pc.addEventListener('connectionstatechange', handler);
       });
 
-      // 8. Send accept (starts the audio stream)
-      console.log('[WebRTC] Sending accept');
+      // 8. Send accept
+      console.log(`[WebRTC][${ts()}] Sending accept...`);
       const { error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
         body: {
           call_id: call.id,
@@ -231,9 +370,10 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         throw new Error(acceptError.message || 'Failed to accept call');
       }
 
-      console.log('Call accepted successfully');
+      const totalElapsed = (performance.now() - acceptStartRef.current).toFixed(0);
+      console.log(`[WebRTC][${ts()}] ✓ Call accepted successfully. Total time: ${totalElapsed}ms`);
     } catch (error: any) {
-      console.error('Error accepting call:', error);
+      console.error(`[WebRTC][${ts()}] ✗ Error accepting call:`, error);
       toast.error('Erro ao atender chamada: ' + (error.message || 'Erro desconhecido'));
       cleanup();
       onDismiss();
@@ -352,7 +492,6 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
             <div className="flex items-center gap-6 mt-4">
               {isRinging && (
                 <>
-                  {/* Reject */}
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.95 }}
@@ -362,7 +501,6 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
                     <PhoneOff className="w-7 h-7 text-white" />
                   </motion.button>
 
-                  {/* Accept */}
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.95 }}
@@ -377,7 +515,6 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
 
               {isAnswered && (
                 <>
-                  {/* Mute */}
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.95 }}
@@ -389,7 +526,6 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
                     {isMuted ? <MicOff className="w-6 h-6 text-white" /> : <Mic className="w-6 h-6 text-white" />}
                   </motion.button>
 
-                  {/* Hangup */}
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.95 }}
