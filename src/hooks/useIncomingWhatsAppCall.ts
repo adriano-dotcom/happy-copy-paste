@@ -164,9 +164,14 @@ export function useIncomingWhatsAppCall() {
         },
         (payload) => {
           const updated = payload.new as any;
+          console.log('[IncomingCall] UPDATE received:', updated.id, 'status:', updated.status);
           const currentCall = callRef.current;
 
-          if (!currentCall || currentCall.id !== updated.id) return;
+          if (!currentCall || currentCall.id !== updated.id) {
+            console.log('[IncomingCall] UPDATE ignored — no matching active call. Current:', currentCall?.id);
+            return;
+          }
+          console.log('[IncomingCall] UPDATE matches active call. New status:', updated.status);
 
           if (['answered', 'ended', 'rejected', 'missed', 'failed'].includes(updated.status)) {
             stopRingtoneAudio();

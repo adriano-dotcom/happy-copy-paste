@@ -136,6 +136,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
     };
   }, [call?.status]);
 
+
   const cleanup = useCallback(() => {
     if (audioMonitorRef.current) {
       clearInterval(audioMonitorRef.current);
@@ -169,6 +170,36 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
     if (!call) cleanup();
     return cleanup;
   }, [call, cleanup]);
+
+  // Safety polling: check DB status every 3s when call is answered
+  useEffect(() => {
+    if (call?.status !== 'answered' || !call?.id) return;
+
+    const terminalStatuses = ['ended', 'rejected', 'missed', 'failed'];
+    const pollId = setInterval(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('whatsapp_calls')
+          .select('id, status')
+          .eq('id', call.id)
+          .single();
+
+        if (error) {
+          console.error(`[WebRTC][Polling] Error fetching call status:`, error);
+          return;
+        }
+        if (data && terminalStatuses.includes(data.status)) {
+          console.log(`[WebRTC][Polling] Call ${call.id} ended with status: ${data.status}. Closing modal.`);
+          cleanup();
+          onDismiss();
+        }
+      } catch (err) {
+        console.error(`[WebRTC][Polling] Unexpected error:`, err);
+      }
+    }, 3000);
+
+    return () => clearInterval(pollId);
+  }, [call?.status, call?.id, cleanup, onDismiss]);
 
   const handleAccept = async () => {
     if (!call || isAccepting) return;
@@ -231,8 +262,20 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         if (pc.connectionState === 'connected') {
           const elapsed = (performance.now() - acceptStartRef.current).toFixed(0);
           console.log(`[WebRTC][${ts()}] ✓ Connected! Time since accept click: ${elapsed}ms`);
-          // Log stats after short delay to let data flow
           setTimeout(() => logPeerStats(pc), 2000);
+        }
+        // Auto-dismiss on WebRTC disconnection (with 2s grace period)
+        if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
+          console.warn(`[WebRTC][${ts()}] Connection ${pc.connectionState} — starting 2s grace period`);
+          setTimeout(() => {
+            if (peerConnectionRef.current && ['disconnected', 'failed', 'closed'].includes(peerConnectionRef.current.connectionState)) {
+              console.log(`[WebRTC][${ts()}] Connection still ${peerConnectionRef.current.connectionState} after grace period — closing modal`);
+              cleanup();
+              onDismiss();
+            } else {
+              console.log(`[WebRTC][${ts()}] Connection recovered after grace period`);
+            }
+          }, 2000);
         }
       };
 
