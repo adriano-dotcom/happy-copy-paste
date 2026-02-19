@@ -1,56 +1,67 @@
 
-# Fix: Audio track encerrado pela Meta apos accept
+# Fix: Aguardar conexao ICE antes de enviar accept
 
-## Problema identificado
-Os logs mostram claramente o que esta acontecendo:
+## Problema
+Os dois sinais (`pre_accept` e `accept`) retornam 200, mas o audio fica mudo nos dois lados. A causa: o `accept` esta sendo enviado imediatamente apos `pre_accept` (em milissegundos), sem dar tempo para a Meta processar o SDP e estabelecer a conexao ICE.
 
-```
-Remote audio track unmuted  (20:54:44.536Z)
-Remote audio track ended    (20:54:44.626Z)  -- 90ms depois!
-```
-
-O audio remoto e ativado, mas a Meta **encerra o track** quase imediatamente. A causa: o `accept` esta sendo enviado **com o SDP answer duplicado** no campo `session`. A Meta interpreta isso como uma nova negociacao de sessao, o que invalida a sessao ja estabelecida pelo `pre_accept`.
-
-Segundo o protocolo da Meta, `pre_accept` carrega o SDP answer, e `accept` e apenas uma confirmacao final -- **sem sessao/SDP**.
+O fluxo correto da Meta e:
+1. `pre_accept` com SDP -- Meta inicia negociacao ICE
+2. Aguardar a conexao ICE se estabelecer (estado `connected` ou `completed`)
+3. `accept` com SDP -- Meta ativa o fluxo de midia
 
 ## Solucao
-Duas mudancas coordenadas:
+Substituir o envio imediato do `accept` por uma espera pelo estado ICE `connected` ou `completed`, com timeout de 10 segundos como fallback.
 
-### 1. Edge Function: `supabase/functions/whatsapp-call-accept/index.ts`
+A diferenca do codigo anterior (que causava deadlock) e que agora monitoramos o `iceConnectionState` em vez do `connectionState`. O `iceConnectionState` pode atingir `connected` apos o `pre_accept` sem precisar do `accept`, porque a negociacao ICE e independente da sinalizacao de midia.
 
-Modificar o bloco `accept` para **nao enviar o SDP** na chamada a Meta. Remover a obrigatoriedade do `sdp_answer` para a acao `accept` e enviar o payload sem o campo `session`:
+## Detalhes tecnicos
 
-```typescript
-if (requestedAction === 'accept') {
-  console.log(`Sending accept for call ${whatsappCallId}`);
-  const acceptRes = await fetch(metaUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      call_id: whatsappCallId,
-      action: 'accept',
-    }),
-  });
-  // ... resto igual
-}
-```
+### Arquivo: `src/components/IncomingCallModal.tsx`
 
-### 2. Frontend: `src/components/IncomingCallModal.tsx`
-
-Remover o envio do `sdp_answer` na chamada de `accept`, ja que a edge function nao precisa mais dele:
+**Substituir linhas 452-461** (envio imediato do accept) pelo seguinte bloco:
 
 ```typescript
+// 7. Wait for ICE connection before sending accept
+console.log(`[WebRTC][${ts()}] Waiting for ICE connection before sending accept...`);
+await new Promise<void>((resolve) => {
+  const checkIce = () => {
+    const state = pc.iceConnectionState;
+    if (state === 'connected' || state === 'completed') {
+      console.log(`[WebRTC][${ts()}] ICE connected (${state}), proceeding with accept`);
+      resolve();
+      return true;
+    }
+    return false;
+  };
+
+  // Check immediately
+  if (checkIce()) return;
+
+  // Listen for changes
+  const handler = () => { if (checkIce()) pc.removeEventListener('iceconnectionstatechange', handler); };
+  pc.addEventListener('iceconnectionstatechange', handler);
+
+  // Timeout fallback: send accept anyway after 10s
+  setTimeout(() => {
+    pc.removeEventListener('iceconnectionstatechange', handler);
+    console.warn(`[WebRTC][${ts()}] ICE wait timeout (10s), sending accept anyway. Current state: ${pc.iceConnectionState}`);
+    resolve();
+  }, 10000);
+});
+
+// Send accept
+console.log(`[WebRTC][${ts()}] Sending accept...`);
 const { error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
   body: {
     call_id: call.id,
+    sdp_answer: finalSdp,
     action: 'accept',
-    // sem sdp_answer
   },
 });
 ```
 
-Essas mudancas garantem que o `pre_accept` negocia a sessao WebRTC e o `accept` apenas confirma, sem reenviar o SDP que causa a Meta a encerrar o track de audio.
+Esta abordagem:
+- Da tempo para a Meta processar o `pre_accept` e estabelecer ICE
+- Usa `iceConnectionState` (que pode atingir `connected` sem `accept`) em vez de `connectionState`
+- Tem timeout de 10s como seguranca para nao travar indefinidamente
+- Mantem todo o resto do fluxo identico
