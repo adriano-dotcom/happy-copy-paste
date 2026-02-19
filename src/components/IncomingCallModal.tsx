@@ -5,6 +5,28 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { IncomingWhatsAppCall } from '@/hooks/useIncomingWhatsAppCall';
 
+/** Fix SDP answer for Meta: replace actpass with active */
+function fixSdpForMeta(sdp: string): string {
+  const lines = sdp.split('\r\n');
+  const fixed = lines.map(line => {
+    if (line.startsWith('a=setup:')) {
+      console.log('[WebRTC] Original SDP setup line:', line);
+      return 'a=setup:active';
+    }
+    return line;
+  });
+  const result = fixed.join('\r\n');
+  console.log('[WebRTC] Modified SDP (first 5 lines):', result.split('\r\n').slice(0, 5).join(' | '));
+  return result;
+}
+
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:stun.services.mozilla.com:3478' },
+];
+
 interface IncomingCallModalProps {
   call: IncomingWhatsAppCall | null;
   onDismiss: () => void;
@@ -81,13 +103,9 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       localStreamRef.current = stream;
 
-      // 2. Create RTCPeerConnection
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-        ],
-      });
+      // 2. Create RTCPeerConnection with expanded STUN servers
+      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      peerConnectionRef.current = pc;
       peerConnectionRef.current = pc;
 
       // Add local audio track
@@ -95,10 +113,21 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
 
       // Handle remote audio — assign stream to pre-created audio element
       pc.ontrack = (event) => {
-        console.log('[WebRTC] ontrack event, kind:', event.track.kind);
+        console.log('[WebRTC] ontrack event, kind:', event.track.kind, 'readyState:', event.track.readyState);
         if (event.track.kind === 'audio' && remoteAudioRef.current) {
           remoteAudioRef.current.srcObject = event.streams[0];
-          remoteAudioRef.current.play().catch(err => console.warn('[WebRTC] Audio play error:', err));
+          remoteAudioRef.current.play().then(() => {
+            console.log('[WebRTC] Audio element playing:', !remoteAudioRef.current?.paused);
+          }).catch(err => console.warn('[WebRTC] Audio play error:', err));
+          event.track.onunmute = () => console.log('[WebRTC] Remote audio track unmuted');
+          event.track.onended = () => console.log('[WebRTC] Remote audio track ended');
+        }
+      };
+
+      // Log ICE candidates
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log('[WebRTC] ICE candidate:', event.candidate.type, event.candidate.protocol, event.candidate.address);
         }
       };
 
@@ -144,8 +173,8 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         }
       });
 
-      const finalSdp = pc.localDescription?.sdp;
-      console.log('[WebRTC] Sending pre_accept with SDP answer');
+      const finalSdp = fixSdpForMeta(pc.localDescription?.sdp || '');
+      console.log('[WebRTC] Sending pre_accept with fixed SDP answer');
 
       // 6. Send pre_accept first (tells Meta we're preparing)
       const { error: preAcceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
