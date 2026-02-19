@@ -317,7 +317,7 @@ serve(async (req) => {
           for (const call of calls) {
             const callId = call.id;
             const fromNumber = call.from;
-            const callType = call.type; // "connect" or "terminate"
+            const callType = call.event || call.type; // Meta uses "event" field: "connect" or "terminate"
             const sdp = call.session?.sdp;
             const sdpType = call.session?.sdp_type;
 
