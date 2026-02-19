@@ -403,47 +403,78 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       await pc.setLocalDescription(answer);
       console.log(`[WebRTC][${ts()}] Local description set, ICE gathering state: ${pc.iceGatheringState}`);
 
-      // 5. Wait for ICE gathering to complete
-      await new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === 'complete') {
-          console.log(`[WebRTC][${ts()}] ICE gathering already complete`);
-          resolve();
-        } else {
-          const timeout = setTimeout(() => {
-            console.warn(`[WebRTC][${ts()}] ICE gathering timeout after 5s, proceeding. Candidates so far:`, { ...iceCandidateCountRef.current });
-            resolve();
-          }, 5000);
-          pc.addEventListener('icegatheringstatechange', () => {
-            if (pc.iceGatheringState === 'complete') {
-              console.log(`[WebRTC][${ts()}] ICE gathering complete. Candidates:`, { ...iceCandidateCountRef.current });
-              clearTimeout(timeout);
-              resolve();
-            }
-          });
-        }
-      });
+      // 5. Send pre_accept IMMEDIATELY (don't wait for ICE gathering)
+      // With ice-lite, Meta doesn't need our candidates — only our DTLS fingerprint
+      const immediateSdp = fixSdpForMeta(pc.localDescription?.sdp || '');
+      console.log(`[WebRTC][${ts()}] Sending pre_accept immediately (no ICE wait)...`);
+      logSdpDetails('ANSWER (immediate)', immediateSdp);
 
-      const finalSdp = fixSdpForMeta(pc.localDescription?.sdp || '');
-      logSdpDetails('ANSWER (after fix)', finalSdp);
-
-      // 6. Send pre_accept + accept in a single edge function call (eliminates one network round-trip)
-      console.log(`[WebRTC][${ts()}] Sending pre_accept + accept in single call (action=both)...`);
-      const { data: acceptData, error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
+      const { error: preAcceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
         body: {
           call_id: call.id,
-          sdp_answer: finalSdp,
-          action: 'both',
+          sdp_answer: immediateSdp,
+          action: 'pre_accept',
+        },
+      });
+
+      if (preAcceptError) {
+        throw new Error(preAcceptError.message || 'pre_accept failed');
+      }
+
+      console.log(`[WebRTC][${ts()}] pre_accept OK. Waiting for connectionState=connected (DTLS)...`);
+
+      // 6. Wait for connectionState === 'connected' (DTLS handshake completes)
+      await new Promise<void>((resolve, reject) => {
+        if (pc.connectionState === 'connected') {
+          console.log(`[WebRTC][${ts()}] connectionState already connected`);
+          resolve();
+          return;
+        }
+        const timeout = setTimeout(() => {
+          console.warn(`[WebRTC][${ts()}] connectionState timeout (15s). Current: ${pc.connectionState}`);
+          // Proceed anyway — accept might trigger media even without DTLS confirmation
+          resolve();
+        }, 15000);
+
+        const handler = () => {
+          console.log(`[WebRTC][${ts()}] connectionState changed to: ${pc.connectionState}`);
+          if (pc.connectionState === 'connected') {
+            clearTimeout(timeout);
+            pc.removeEventListener('connectionstatechange', handler);
+            resolve();
+          } else if (pc.connectionState === 'failed') {
+            clearTimeout(timeout);
+            pc.removeEventListener('connectionstatechange', handler);
+            reject(new Error('WebRTC connection failed'));
+          }
+        };
+        pc.addEventListener('connectionstatechange', handler);
+      });
+
+      // 7. Send accept (DTLS is done, media can flow)
+      console.log(`[WebRTC][${ts()}] Sending accept...`);
+      const { error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
+        body: {
+          call_id: call.id,
+          sdp_answer: immediateSdp,
+          action: 'accept',
         },
       });
 
       if (acceptError) {
-        throw new Error(acceptError.message || 'Failed to accept call');
+        throw new Error(acceptError.message || 'accept failed');
       }
 
-      const totalElapsed = (performance.now() - acceptStartRef.current).toFixed(0);
-      console.log(`[WebRTC][${ts()}] ✓ pre_accept + accept completed in ${totalElapsed}ms:`, acceptData);
+      // Update DB status (non-blocking for UI)
+      supabase
+        .from('whatsapp_calls')
+        .update({ status: 'answered', answered_at: new Date().toISOString() })
+        .eq('id', call.id)
+        .then(() => console.log(`[WebRTC][${ts()}] DB status updated to answered`));
 
-      // Update local state (DB already updated by edge function)
+      const totalElapsed = (performance.now() - acceptStartRef.current).toFixed(0);
+      console.log(`[WebRTC][${ts()}] ✓ pre_accept + DTLS + accept completed in ${totalElapsed}ms`);
+
       setLocalStatus('answered');
       clearTimeout(totalTimeoutId);
     } catch (error: any) {
