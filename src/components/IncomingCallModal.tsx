@@ -17,6 +17,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
   const [isAccepting, setIsAccepting] = useState(false);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Duration timer
@@ -43,6 +44,11 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(t => t.stop());
       localStreamRef.current = null;
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.pause();
+      remoteAudioRef.current.srcObject = null;
+      remoteAudioRef.current = null;
     }
     if (durationIntervalRef.current) {
       clearInterval(durationIntervalRef.current);
@@ -80,11 +86,23 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       // Add local audio track
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      // Handle remote audio
+      // Handle remote audio — persist ref to prevent GC
       pc.ontrack = (event) => {
-        const audio = new Audio();
-        audio.srcObject = event.streams[0];
-        audio.play().catch(console.warn);
+        console.log('[WebRTC] ontrack event, kind:', event.track.kind);
+        if (event.track.kind === 'audio') {
+          const audio = new Audio();
+          audio.srcObject = event.streams[0];
+          remoteAudioRef.current = audio;
+          audio.play().catch(err => console.warn('[WebRTC] Audio play error:', err));
+        }
+      };
+
+      // Debug: log connection state changes
+      pc.onconnectionstatechange = () => {
+        console.log('[WebRTC] Connection state:', pc.connectionState);
+      };
+      pc.oniceconnectionstatechange = () => {
+        console.log('[WebRTC] ICE connection state:', pc.iceConnectionState);
       };
 
       // 3. Set remote SDP offer
@@ -93,17 +111,41 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
           type: 'offer',
           sdp: call.sdp_offer,
         }));
+        console.log('[WebRTC] Remote description set');
       }
 
       // 4. Create SDP answer
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
+      console.log('[WebRTC] Local description set, waiting for ICE gathering...');
 
-      // 5. Send accept to edge function
+      // 5. Wait for ICE gathering to complete
+      await new Promise<void>((resolve) => {
+        if (pc.iceGatheringState === 'complete') {
+          console.log('[WebRTC] ICE gathering already complete');
+          resolve();
+        } else {
+          const timeout = setTimeout(() => {
+            console.warn('[WebRTC] ICE gathering timeout after 5s, proceeding anyway');
+            resolve();
+          }, 5000);
+          pc.addEventListener('icegatheringstatechange', () => {
+            if (pc.iceGatheringState === 'complete') {
+              console.log('[WebRTC] ICE gathering complete');
+              clearTimeout(timeout);
+              resolve();
+            }
+          });
+        }
+      });
+
+      // 6. Send accept to edge function with complete SDP (includes ICE candidates)
+      const finalSdp = pc.localDescription?.sdp;
+      console.log('[WebRTC] Sending SDP answer with ICE candidates');
       const { error } = await supabase.functions.invoke('whatsapp-call-accept', {
         body: {
           call_id: call.id,
-          sdp_answer: answer.sdp,
+          sdp_answer: finalSdp,
         },
       });
 

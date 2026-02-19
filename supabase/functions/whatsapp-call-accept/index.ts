@@ -63,25 +63,40 @@ Deno.serve(async (req) => {
 
     const phoneNumberId = call.phone_number_id;
     const whatsappCallId = call.whatsapp_call_id;
+    const sdpOffer = call.sdp_offer;
     const metaUrl = `https://graph.facebook.com/v20.0/${phoneNumberId}/calls`;
 
-    // Step 1: Send pre_accept
+    // Step 1: Send pre_accept with SDP offer in session
     console.log(`Sending pre_accept for call ${whatsappCallId}`);
+    const preAcceptPayload: any = {
+      messaging_product: 'whatsapp',
+      call_id: whatsappCallId,
+      action: 'pre_accept',
+    };
+    if (sdpOffer) {
+      preAcceptPayload.session = {
+        sdp_type: 'offer',
+        sdp: sdpOffer,
+      };
+    }
     const preAcceptRes = await fetch(metaUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        call_id: whatsappCallId,
-        action: 'pre_accept',
-      }),
+      body: JSON.stringify(preAcceptPayload),
     });
 
     const preAcceptBody = await preAcceptRes.text();
     console.log(`pre_accept response: ${preAcceptRes.status} ${preAcceptBody}`);
+
+    if (!preAcceptRes.ok) {
+      return new Response(JSON.stringify({ error: 'pre_accept failed', details: preAcceptBody }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Step 2: Send accept with SDP answer
     console.log(`Sending accept for call ${whatsappCallId}`);
