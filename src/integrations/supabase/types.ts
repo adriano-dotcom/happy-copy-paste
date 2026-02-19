@@ -2508,6 +2508,69 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_calls: {
+        Row: {
+          answered_at: string | null
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string
+          direction: string
+          duration_seconds: number | null
+          ended_at: string | null
+          from_number: string | null
+          hangup_cause: string | null
+          id: string
+          metadata: Json | null
+          phone_number_id: string | null
+          sdp_offer: string | null
+          started_at: string | null
+          status: string
+          to_number: string | null
+          updated_at: string
+          whatsapp_call_id: string | null
+        }
+        Insert: {
+          answered_at?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          direction?: string
+          duration_seconds?: number | null
+          ended_at?: string | null
+          from_number?: string | null
+          hangup_cause?: string | null
+          id?: string
+          metadata?: Json | null
+          phone_number_id?: string | null
+          sdp_offer?: string | null
+          started_at?: string | null
+          status?: string
+          to_number?: string | null
+          updated_at?: string
+          whatsapp_call_id?: string | null
+        }
+        Update: {
+          answered_at?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          direction?: string
+          duration_seconds?: number | null
+          ended_at?: string | null
+          from_number?: string | null
+          hangup_cause?: string | null
+          id?: string
+          metadata?: Json | null
+          phone_number_id?: string | null
+          sdp_offer?: string | null
+          started_at?: string | null
+          status?: string
+          to_number?: string | null
+          updated_at?: string
+          whatsapp_call_id?: string | null
+        }
+        Relationships: []
+      }
       whatsapp_campaigns: {
         Row: {
           completed_at: string | null

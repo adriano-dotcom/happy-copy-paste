@@ -33,6 +33,8 @@ import { UnreadMessagesProvider } from './contexts/UnreadMessagesContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { Toaster } from 'sonner';
+import { useIncomingWhatsAppCall } from './hooks/useIncomingWhatsAppCall';
+import { IncomingCallModal } from './components/IncomingCallModal';
 
 // Default redirect component - redirects all users to /chat
 const DefaultRedirect: React.FC = () => {
@@ -41,11 +43,19 @@ const DefaultRedirect: React.FC = () => {
 
 // Componente de Layout que envolve a aplicação principal
 const AppLayout: React.FC = () => {
+  const { incomingCall, dismissCall, stopRingtone } = useIncomingWhatsAppCall();
+
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-slate-950 text-slate-50 overflow-hidden">
       {/* Background Ambient Glows */}
       <div className="fixed top-0 left-0 w-[500px] h-[500px] bg-cyan-900/20 rounded-full blur-[128px] pointer-events-none -translate-x-1/2 -translate-y-1/2 z-0"></div>
       <div className="fixed bottom-0 right-0 w-[500px] h-[500px] bg-violet-900/10 rounded-full blur-[128px] pointer-events-none translate-x-1/2 translate-y-1/2 z-0"></div>
+      
+      <IncomingCallModal 
+        call={incomingCall} 
+        onDismiss={dismissCall} 
+        onStopRingtone={stopRingtone} 
+      />
       
       <Sidebar />
       
