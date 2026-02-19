@@ -69,6 +69,13 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
     setIsAccepting(true);
     onStopRingtone();
 
+    // IMPORTANT: Create and unlock Audio element immediately in user gesture context
+    // This prevents browser from blocking playback after async operations
+    const audio = new Audio();
+    audio.autoplay = true;
+    audio.play().catch(() => {}); // Unlock audio context on iOS/Safari
+    remoteAudioRef.current = audio;
+
     try {
       // 1. Get microphone
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -86,14 +93,12 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       // Add local audio track
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      // Handle remote audio — persist ref to prevent GC
+      // Handle remote audio — assign stream to pre-created audio element
       pc.ontrack = (event) => {
         console.log('[WebRTC] ontrack event, kind:', event.track.kind);
-        if (event.track.kind === 'audio') {
-          const audio = new Audio();
-          audio.srcObject = event.streams[0];
-          remoteAudioRef.current = audio;
-          audio.play().catch(err => console.warn('[WebRTC] Audio play error:', err));
+        if (event.track.kind === 'audio' && remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = event.streams[0];
+          remoteAudioRef.current.play().catch(err => console.warn('[WebRTC] Audio play error:', err));
         }
       };
 
