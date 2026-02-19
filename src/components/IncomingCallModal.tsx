@@ -403,64 +403,17 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       await pc.setLocalDescription(answer);
       console.log(`[WebRTC][${ts()}] Local description set, ICE gathering state: ${pc.iceGatheringState}`);
 
-      // 5. Send pre_accept IMMEDIATELY (don't wait for ICE gathering)
-      // With ice-lite, Meta doesn't need our candidates — only our DTLS fingerprint
+      // 5. Send both (pre_accept + accept) in a SINGLE edge function call
+      // This eliminates the 7s overhead of a second function boot + DB + vault lookup
       const immediateSdp = fixSdpForMeta(pc.localDescription?.sdp || '');
-      console.log(`[WebRTC][${ts()}] Sending pre_accept immediately (no ICE wait)...`);
+      console.log(`[WebRTC][${ts()}] Sending both (pre_accept + accept) immediately...`);
       logSdpDetails('ANSWER (immediate)', immediateSdp);
 
-      const { error: preAcceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
+      const { data: acceptData, error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
         body: {
           call_id: call.id,
           sdp_answer: immediateSdp,
-          action: 'pre_accept',
-        },
-      });
-
-      if (preAcceptError) {
-        throw new Error(preAcceptError.message || 'pre_accept failed');
-      }
-
-      console.log(`[WebRTC][${ts()}] pre_accept OK. Waiting for connectionState=connected (DTLS)...`);
-
-      // 6. Wait for connectionState === 'connected' (DTLS handshake completes)
-      await new Promise<void>((resolve, reject) => {
-        if (pc.connectionState === 'connected') {
-          console.log(`[WebRTC][${ts()}] connectionState already connected`);
-          resolve();
-          return;
-        }
-        const timeout = setTimeout(() => {
-          console.warn(`[WebRTC][${ts()}] connectionState timeout (15s). Current: ${pc.connectionState}`);
-          // Proceed anyway — accept might trigger media even without DTLS confirmation
-          resolve();
-        }, 15000);
-
-        const handler = () => {
-          console.log(`[WebRTC][${ts()}] connectionState changed to: ${pc.connectionState}`);
-          if (pc.connectionState === 'connected') {
-            clearTimeout(timeout);
-            pc.removeEventListener('connectionstatechange', handler);
-            resolve();
-          } else if (pc.connectionState === 'failed') {
-            clearTimeout(timeout);
-            pc.removeEventListener('connectionstatechange', handler);
-            reject(new Error('WebRTC connection failed'));
-          }
-        };
-        pc.addEventListener('connectionstatechange', handler);
-      });
-
-      // 7. Send accept WITH final SDP (Meta requires session parameter)
-      const finalSdp = fixSdpForMeta(pc.localDescription?.sdp || immediateSdp);
-      console.log(`[WebRTC][${ts()}] Sending accept with final SDP...`);
-      logSdpDetails('ANSWER (final for accept)', finalSdp);
-
-      const { error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
-        body: {
-          call_id: call.id,
-          sdp_answer: finalSdp,
-          action: 'accept',
+          action: 'both',
         },
       });
 
@@ -468,12 +421,23 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         throw new Error(acceptError.message || 'accept failed');
       }
 
-      // Update DB status (non-blocking for UI)
-      supabase
-        .from('whatsapp_calls')
-        .update({ status: 'answered', answered_at: new Date().toISOString() })
-        .eq('id', call.id)
-        .then(() => console.log(`[WebRTC][${ts()}] DB status updated to answered`));
+      console.log(`[WebRTC][${ts()}] both completed:`, acceptData);
+
+      // 6. Wait for connectionState === 'connected' (may already be connected)
+      if (pc.connectionState !== 'connected') {
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => resolve(), 10000);
+          const handler = () => {
+            if (pc.connectionState === 'connected' || pc.connectionState === 'failed') {
+              clearTimeout(timeout);
+              pc.removeEventListener('connectionstatechange', handler);
+              resolve();
+            }
+          };
+          pc.addEventListener('connectionstatechange', handler);
+        });
+      }
+      console.log(`[WebRTC][${ts()}] Connection state: ${pc.connectionState}`);
 
       const totalElapsed = (performance.now() - acceptStartRef.current).toFixed(0);
       console.log(`[WebRTC][${ts()}] ✓ pre_accept + DTLS + accept completed in ${totalElapsed}ms`);

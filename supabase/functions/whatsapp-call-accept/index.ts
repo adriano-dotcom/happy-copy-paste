@@ -104,7 +104,7 @@ Deno.serve(async (req) => {
       }
 
       // Step 2: Small delay for Meta to process SDP
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 1500));
 
       // Step 3: accept (with session SDP - Meta requires it)
       console.log(`[both] Sending accept for call ${whatsappCallId} with SDP`);
