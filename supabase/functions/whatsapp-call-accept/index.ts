@@ -112,13 +112,6 @@ Deno.serve(async (req) => {
     }
 
     if (requestedAction === 'accept') {
-      if (!sdp_answer) {
-        return new Response(JSON.stringify({ error: 'sdp_answer required for accept' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
       console.log(`Sending accept for call ${whatsappCallId}`);
       const acceptRes = await fetch(metaUrl, {
         method: 'POST',
@@ -130,10 +123,6 @@ Deno.serve(async (req) => {
           messaging_product: 'whatsapp',
           call_id: whatsappCallId,
           action: 'accept',
-          session: {
-            sdp_type: 'answer',
-            sdp: sdp_answer,
-          },
         }),
       });
 

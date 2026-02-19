@@ -455,7 +455,6 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       const { error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
         body: {
           call_id: call.id,
-          sdp_answer: finalSdp,
           action: 'accept',
         },
       });
