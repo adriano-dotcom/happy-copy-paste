@@ -273,11 +273,24 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
     remoteAudioRef.current = audio;
 
     try {
-      // 1. Get microphone
+      // 1. Get microphone (with listen-only fallback)
       console.log(`[WebRTC][${ts()}] Requesting microphone...`);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log(`[WebRTC][${ts()}] Microphone acquired — tracks: ${stream.getAudioTracks().length}`);
+      } catch (micError: any) {
+        console.warn(`[WebRTC][${ts()}] Microphone unavailable: ${micError.message}. Using silent track (listen-only).`);
+        toast.warning('Microfone indisponível. Você pode ouvir, mas não falar.');
+        const ctx = new AudioContext();
+        const oscillator = ctx.createOscillator();
+        const dst = ctx.createMediaStreamDestination();
+        oscillator.connect(dst);
+        oscillator.start();
+        stream = dst.stream;
+        oscillator.frequency.setValueAtTime(0, ctx.currentTime);
+      }
       localStreamRef.current = stream;
-      console.log(`[WebRTC][${ts()}] Microphone acquired — tracks: ${stream.getAudioTracks().length}`);
 
       // 2. Create RTCPeerConnection
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -446,8 +459,16 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       clearTimeout(totalTimeoutId);
     } catch (error: any) {
       console.error(`[WebRTC][${ts()}] ✗ Error accepting call:`, error);
-      toast.error('Erro ao atender chamada: ' + (error.message || 'Erro desconhecido'));
-      setLocalStatus(null); // Revert optimistic update
+
+      let userMessage = error.message || 'Erro desconhecido';
+      if (error.name === 'NotFoundError' || error.message?.includes('Requested device not found')) {
+        userMessage = 'Microfone não encontrado. Conecte um microfone e tente novamente.';
+      } else if (error.name === 'NotAllowedError') {
+        userMessage = 'Permissão de microfone negada. Libere o acesso nas configurações do navegador.';
+      }
+
+      toast.error('Erro ao atender chamada: ' + userMessage);
+      setLocalStatus(null);
       clearTimeout(totalTimeoutId);
       cleanup();
       onDismiss();
