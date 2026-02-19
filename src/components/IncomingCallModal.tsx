@@ -426,39 +426,13 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       const finalSdp = fixSdpForMeta(pc.localDescription?.sdp || '');
       logSdpDetails('ANSWER (after fix)', finalSdp);
 
-      // 6. Send pre_accept
-      console.log(`[WebRTC][${ts()}] Sending pre_accept...`);
-      const { error: preAcceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
+      // 6. Send pre_accept + accept in a single edge function call (eliminates one network round-trip)
+      console.log(`[WebRTC][${ts()}] Sending pre_accept + accept in single call (action=both)...`);
+      const { data: acceptData, error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
         body: {
           call_id: call.id,
           sdp_answer: finalSdp,
-          action: 'pre_accept',
-        },
-      });
-
-      if (preAcceptError) {
-        throw new Error(preAcceptError.message || 'Failed to pre_accept call');
-      }
-      console.log(`[WebRTC][${ts()}] pre_accept sent successfully`);
-
-      // Early DB update: mark as answered immediately after pre_accept
-      console.log(`[WebRTC][${ts()}] Updating DB status to 'answered' early...`);
-      await supabase
-        .from('whatsapp_calls')
-        .update({ status: 'answered', answered_at: new Date().toISOString() })
-        .eq('id', call.id);
-      console.log(`[WebRTC][${ts()}] DB updated to 'answered', waiting for WebRTC connection...`);
-
-      // 7. Send accept immediately after pre_accept (no delay needed, network RTT already provides processing time)
-      console.log(`[WebRTC][${ts()}] Sending accept immediately after pre_accept (no delay)...`);
-
-      // Send accept
-      console.log(`[WebRTC][${ts()}] Sending accept...`);
-      const { error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
-        body: {
-          call_id: call.id,
-          sdp_answer: finalSdp,
-          action: 'accept',
+          action: 'both',
         },
       });
 
@@ -467,7 +441,10 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       }
 
       const totalElapsed = (performance.now() - acceptStartRef.current).toFixed(0);
-      console.log(`[WebRTC][${ts()}] ✓ Call accepted successfully. Total time: ${totalElapsed}ms`);
+      console.log(`[WebRTC][${ts()}] ✓ pre_accept + accept completed in ${totalElapsed}ms:`, acceptData);
+
+      // Update local state (DB already updated by edge function)
+      setLocalStatus('answered');
       clearTimeout(totalTimeoutId);
     } catch (error: any) {
       console.error(`[WebRTC][${ts()}] ✗ Error accepting call:`, error);
