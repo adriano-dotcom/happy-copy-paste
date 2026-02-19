@@ -449,9 +449,8 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         .eq('id', call.id);
       console.log(`[WebRTC][${ts()}] DB updated to 'answered', waiting for WebRTC connection...`);
 
-      // 7. Small delay for Meta to process pre_accept, then send accept
-      console.log(`[WebRTC][${ts()}] Waiting 500ms for Meta to process pre_accept...`);
-      await new Promise(r => setTimeout(r, 500));
+      // 7. Send accept immediately after pre_accept (no delay needed, network RTT already provides processing time)
+      console.log(`[WebRTC][${ts()}] Sending accept immediately after pre_accept (no delay)...`);
 
       // Send accept
       console.log(`[WebRTC][${ts()}] Sending accept...`);
