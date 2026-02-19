@@ -110,6 +110,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
   const [callDuration, setCallDuration] = useState(0);
   const [isAccepting, setIsAccepting] = useState(false);
   const [localStatus, setLocalStatus] = useState<string | null>(null);
+  const [connectionHint, setConnectionHint] = useState<string | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -426,31 +427,47 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         .eq('id', call.id);
       console.log(`[WebRTC][${ts()}] DB updated to 'answered', waiting for WebRTC connection...`);
 
-      // 7. Wait for WebRTC connection
-      await new Promise<void>((resolve, reject) => {
+      // 7. Wait for WebRTC connection (MUST connect before sending accept per Meta protocol)
+      setConnectionHint('Conectando áudio...');
+      const webrtcConnected = await new Promise<boolean>((resolve) => {
         if (pc.connectionState === 'connected') {
           console.log(`[WebRTC][${ts()}] Already connected`);
-          resolve();
+          resolve(true);
           return;
         }
         const timeout = setTimeout(() => {
-          console.warn(`[WebRTC][${ts()}] Connection timeout after 10s, sending accept anyway. State: ${pc.connectionState}, ICE: ${pc.iceConnectionState}`);
-          resolve();
-        }, 10000);
+          console.warn(`[WebRTC][${ts()}] Connection timeout after 15s. State: ${pc.connectionState}, ICE: ${pc.iceConnectionState}`);
+          logPeerStats(pc);
+          resolve(false);
+        }, 15000);
         const handler = () => {
           console.log(`[WebRTC][${ts()}] Connection state changed to: ${pc.connectionState}`);
           if (pc.connectionState === 'connected') {
             clearTimeout(timeout);
             pc.removeEventListener('connectionstatechange', handler);
-            resolve();
+            resolve(true);
           } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
             clearTimeout(timeout);
             pc.removeEventListener('connectionstatechange', handler);
-            reject(new Error('WebRTC connection failed'));
+            resolve(false);
           }
         };
         pc.addEventListener('connectionstatechange', handler);
       });
+
+      if (!webrtcConnected) {
+        console.error(`[WebRTC][${ts()}] ✗ WebRTC connection failed — NOT sending accept. Audio would be mute.`);
+        setConnectionHint('Falha na conexão de áudio');
+        toast.error('Não foi possível conectar o áudio da chamada. Verifique sua rede.');
+        // Wait 3s to show error, then cleanup
+        await new Promise(r => setTimeout(r, 3000));
+        clearTimeout(totalTimeoutId);
+        cleanup();
+        onDismiss();
+        return;
+      }
+
+      setConnectionHint(null);
 
       // 8. Send accept
       console.log(`[WebRTC][${ts()}] Sending accept...`);
@@ -582,8 +599,11 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
                 <p className="text-slate-400 mt-1">{displayNumber}</p>
               )}
               <p className="text-sm text-cyan-400 mt-2">
-                {isRinging && 'Chamada WhatsApp recebida...'}
-                {isAnswered && formatDuration(callDuration)}
+                {isRinging && !isAccepting && 'Chamada WhatsApp recebida...'}
+                {isAccepting && connectionHint && (
+                  <span className="text-yellow-400 animate-pulse">{connectionHint}</span>
+                )}
+                {isAnswered && !connectionHint && formatDuration(callDuration)}
               </p>
             </div>
 
