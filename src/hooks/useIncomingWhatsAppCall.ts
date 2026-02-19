@@ -1,3 +1,4 @@
+// useIncomingWhatsAppCall v3 — stable hook count (force HMR rebuild)
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { isNotificationSoundEnabled, getNotificationVolume } from '@/utils/notificationSound';
