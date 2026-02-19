@@ -195,5 +195,40 @@ export function useIncomingWhatsAppCall() {
     };
   }, [enrichCallWithContact]);
 
+  // Safety polling: clean up orphaned ringing calls every 5s
+  useEffect(() => {
+    const currentCall = incomingCall;
+    if (!currentCall?.id || currentCall.status !== 'ringing') return;
+
+    const pollId = setInterval(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('whatsapp_calls')
+          .select('id, status')
+          .eq('id', currentCall.id)
+          .single();
+
+        if (error) {
+          console.warn('[IncomingCall][Polling] Error checking call status:', error);
+          return;
+        }
+        if (!data) return;
+
+        console.log(`[IncomingCall][Polling] Call ${currentCall.id} — DB status: ${data.status}, frontend: ${currentCall.status}`);
+
+        if (data.status !== 'ringing') {
+          console.log(`[IncomingCall][Polling] Call ${currentCall.id} no longer ringing (DB: ${data.status}). Dismissing.`);
+          stopRingtoneAudio();
+          setIncomingCall(null);
+          callRef.current = null;
+        }
+      } catch (err) {
+        console.error('[IncomingCall][Polling] Unexpected error:', err);
+      }
+    }, 5000);
+
+    return () => clearInterval(pollId);
+  }, [incomingCall?.id, incomingCall?.status]);
+
   return { incomingCall, dismissCall, stopRingtone };
 }

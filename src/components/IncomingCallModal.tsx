@@ -171,9 +171,9 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
     return cleanup;
   }, [call, cleanup]);
 
-  // Safety polling: check DB status every 3s when call is answered
+  // Safety polling: check DB status every 3s for ANY active call
   useEffect(() => {
-    if (call?.status !== 'answered' || !call?.id) return;
+    if (!call?.id) return;
 
     const terminalStatuses = ['ended', 'rejected', 'missed', 'failed'];
     const pollId = setInterval(async () => {
@@ -188,8 +188,19 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
           console.error(`[WebRTC][Polling] Error fetching call status:`, error);
           return;
         }
-        if (data && terminalStatuses.includes(data.status)) {
+        if (!data) return;
+
+        // Terminal status → close modal
+        if (terminalStatuses.includes(data.status)) {
           console.log(`[WebRTC][Polling] Call ${call.id} ended with status: ${data.status}. Closing modal.`);
+          cleanup();
+          onDismiss();
+          return;
+        }
+
+        // DB says answered but frontend still ringing → answered elsewhere
+        if (data.status === 'answered' && call.status === 'ringing') {
+          console.log(`[WebRTC][Polling] Call ${call.id} answered elsewhere (DB: answered, frontend: ringing). Closing modal.`);
           cleanup();
           onDismiss();
         }
@@ -199,7 +210,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
     }, 3000);
 
     return () => clearInterval(pollId);
-  }, [call?.status, call?.id, cleanup, onDismiss]);
+  }, [call?.id, call?.status, cleanup, onDismiss]);
 
   const handleAccept = async () => {
     if (!call || isAccepting) return;
