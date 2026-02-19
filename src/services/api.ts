@@ -348,13 +348,15 @@ export const api = {
     
     if (conversationIds.length > 0) {
       // Query template messages with metadata to get template_name
+      // PERFORMANCE: limit to 1 per conversation (most recent), max 1000 rows
       const { data: templateMessages } = await supabase
         .from('messages')
         .select('conversation_id, metadata')
         .in('conversation_id', conversationIds)
         .eq('from_type', 'nina')
         .contains('metadata', { is_template: true })
-        .order('sent_at', { ascending: false });
+        .order('sent_at', { ascending: false })
+        .limit(1000); // PERFORMANCE FIX: evita retornar todos os templates históricos
       
       if (templateMessages && templateMessages.length > 0) {
         // Build map of conversation_id → template_name (most recent first)
@@ -1732,12 +1734,15 @@ export const api = {
     // and passed from the client side (derived from their email)
 
     // OTIMIZAÇÃO: Lazy loading - carregar apenas últimas 20 mensagens por conversa
-    // Isso reduz drasticamente o carregamento inicial (de 20.000 para ~4.000 mensagens)
+    // PERFORMANCE FIX: filtro temporal de 30 dias para usar índice em sent_at (evita table scan)
     const conversationIds = allConversations.map(c => c.id);
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const { data: allMessages, error: msgError } = await supabase
       .from('messages')
       .select('id, conversation_id, content, from_type, type, status, sent_at, media_url, metadata, whatsapp_message_id, delivered_at, read_at, media_type, reply_to_id')
       .in('conversation_id', conversationIds)
+      .gte('sent_at', thirtyDaysAgo.toISOString()) // PERFORMANCE FIX: filtro temporal permite uso do índice
       .order('sent_at', { ascending: false }) // Mais recentes primeiro para garantir últimas mensagens
       .limit(4000); // 20 msgs * 200 convs = 4000 (muito menor que 20000)
 
