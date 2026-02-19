@@ -1,32 +1,56 @@
 
-# Fix: Chamada muda - Deadlock na sinalizacao WebRTC
+# Fix: Audio track encerrado pela Meta apos accept
 
 ## Problema identificado
-O codigo atual cria um **deadlock** na sinalizacao com a Meta:
+Os logs mostram claramente o que esta acontecendo:
 
-1. Envia `pre_accept` com SDP answer
-2. **Aguarda** o WebRTC atingir estado `connected` (timeout de 15s)
-3. So entao envia `accept`
-
-O problema e que a Meta precisa receber **ambos** os sinais (`pre_accept` + `accept`) para completar a conexao WebRTC. O WebRTC nunca atinge `connected` porque a Meta esta esperando o `accept`, e o codigo esta esperando o `connected` para enviar o `accept`. Resultado: timeout de 15s e chamada muda.
-
-## Solucao
-Remover a espera por `connected` entre `pre_accept` e `accept`. Enviar ambos os sinais em sequencia imediata. O WebRTC vai se conectar naturalmente apos ambos os sinais serem processados pela Meta.
-
-## Detalhes tecnicos
-
-### Arquivo: `src/components/IncomingCallModal.tsx`
-
-**Remover o bloco de espera por conexao (linhas 452-490)** que aguarda `webrtcConnected` e substitui-lo por envio imediato do `accept` apos `pre_accept`:
-
-```typescript
-// Apos pre_accept enviado com sucesso:
-// Enviar accept imediatamente (sem esperar connected)
-console.log(`Sending accept immediately after pre_accept...`);
+```
+Remote audio track unmuted  (20:54:44.536Z)
+Remote audio track ended    (20:54:44.626Z)  -- 90ms depois!
 ```
 
-**Manter** o monitoramento de conexao existente no `onconnectionstatechange` (linhas 318-338) que ja faz cleanup automatico se a conexao falhar apos 2s de grace period.
+O audio remoto e ativado, mas a Meta **encerra o track** quase imediatamente. A causa: o `accept` esta sendo enviado **com o SDP answer duplicado** no campo `session`. A Meta interpreta isso como uma nova negociacao de sessao, o que invalida a sessao ja estabelecida pelo `pre_accept`.
 
-**Remover** o estado `connectionHint` ja que nao havera mais fase intermediaria de espera visivel.
+Segundo o protocolo da Meta, `pre_accept` carrega o SDP answer, e `accept` e apenas uma confirmacao final -- **sem sessao/SDP**.
 
-Isso elimina o deadlock e permite que a Meta complete a conexao WebRTC normalmente apos receber ambos os sinais.
+## Solucao
+Duas mudancas coordenadas:
+
+### 1. Edge Function: `supabase/functions/whatsapp-call-accept/index.ts`
+
+Modificar o bloco `accept` para **nao enviar o SDP** na chamada a Meta. Remover a obrigatoriedade do `sdp_answer` para a acao `accept` e enviar o payload sem o campo `session`:
+
+```typescript
+if (requestedAction === 'accept') {
+  console.log(`Sending accept for call ${whatsappCallId}`);
+  const acceptRes = await fetch(metaUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      call_id: whatsappCallId,
+      action: 'accept',
+    }),
+  });
+  // ... resto igual
+}
+```
+
+### 2. Frontend: `src/components/IncomingCallModal.tsx`
+
+Remover o envio do `sdp_answer` na chamada de `accept`, ja que a edge function nao precisa mais dele:
+
+```typescript
+const { error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
+  body: {
+    call_id: call.id,
+    action: 'accept',
+    // sem sdp_answer
+  },
+});
+```
+
+Essas mudancas garantem que o `pre_accept` negocia a sessao WebRTC e o `accept` apenas confirma, sem reenviar o SDP que causa a Meta a encerrar o track de audio.
