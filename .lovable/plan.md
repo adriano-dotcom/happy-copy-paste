@@ -1,53 +1,38 @@
 
+# Fix: Tela de chamada continua tocando após a ligação terminar
 
-# Logs de debug avancados para WebRTC
+## Problema
+Após atender e completar a chamada, a modal continua exibida na tela. O banco de dados mostra corretamente o status `ended`, mas o frontend não fecha a modal.
 
-Adicionar logs mais detalhados em `src/components/IncomingCallModal.tsx` para facilitar o diagnostico de problemas de audio nas chamadas WhatsApp.
+## Causa raiz
+O hook `useIncomingWhatsAppCall` depende **exclusivamente** do Supabase Realtime para detectar que a chamada terminou. Se o evento UPDATE do realtime for perdido (reconexão, latência, etc.), a modal fica presa indefinidamente. Não existe nenhum mecanismo de fallback.
 
-## Logs a adicionar
+## Correções propostas
 
-### 1. ICE Gathering detalhado
-- Log do `iceGatheringState` inicial antes de comecar
-- Contador de ICE candidates coletados (total por tipo: host, srflx, relay)
-- Log quando ICE gathering termina com resumo dos candidates
+### 1. Adicionar polling de segurança no IncomingCallModal
+Quando a chamada está no estado `answered`, iniciar um polling a cada 3 segundos que consulta o status da chamada diretamente no banco. Se o status for `ended`, `rejected`, `missed` ou `failed`, fechar a modal automaticamente.
 
-### 2. Connection state completo
-- Adicionar `onsignalingstatechange` para rastrear estado de sinalizacao
-- Log de `pc.getStats()` apos conexao para verificar bytes enviados/recebidos e codec negociado
-- Log do `iceCandidatePairState` (par de candidates selecionado)
+### 2. Detectar desconexão WebRTC como sinal de fim
+No `IncomingCallModal`, quando o `connectionState` do PeerConnection mudar para `disconnected`, `failed` ou `closed`, fechar a modal automaticamente (após um pequeno delay para evitar falsos positivos em reconexões breves).
 
-### 3. Audio track status detalhado
-- Log de `enabled`, `muted`, `readyState` da track remota a cada segundo por 5 segundos apos conexao
-- Log do `AudioContext` state (running/suspended) para detectar bloqueio do navegador
-- Log de `audio.volume`, `audio.muted`, `audio.paused` do elemento de audio
-- Verificar se `srcObject` tem tracks ativas
+### 3. Adicionar log no hook de realtime
+Adicionar logs no handler de UPDATE do hook para confirmar se o evento está chegando ou não.
 
-### 4. SDP diagnostico
-- Log completo das linhas `m=audio` e `a=rtpmap` do SDP offer recebido (para verificar codecs)
-- Log completo das mesmas linhas do SDP answer enviado
-- Verificar se o SDP offer contem candidates ICE inline (trickle vs full)
-
-### 5. Timing
-- Timestamp em cada log para medir latencia entre etapas
-- Tempo total desde clique em "atender" ate audio tocando
-
-## Detalhes tecnicos
+## Detalhes técnicos
 
 ### Arquivo: `src/components/IncomingCallModal.tsx`
 
-**Novas funcoes auxiliares:**
-- `logSdpDetails(label, sdp)` - extrai e loga linhas relevantes do SDP (m=audio, a=rtpmap, a=setup, candidates)
-- `logAudioState(audio, track)` - loga estado completo do audio element e track remota
-- `logPeerStats(pc)` - chama `pc.getStats()` e loga bytes, codec, candidate pair
+**Polling de segurança (novo useEffect):**
+- Ativo apenas quando `call?.status === 'answered'`
+- A cada 3 segundos, consulta `whatsapp_calls` pelo `call.id`
+- Se status no banco for terminal (`ended`, `rejected`, `missed`, `failed`), chama `cleanup()` e `onDismiss()`
 
-**Novos event handlers no PeerConnection:**
-- `pc.onsignalingstatechange` - loga mudancas de sinalizacao
-- `pc.onicecandidateerror` - loga erros de ICE candidate (importante para diagnosticar STUN failures)
+**Detecção de desconexão WebRTC:**
+- No handler `onconnectionstatechange`, adicionar lógica para estados `disconnected`/`failed`/`closed`
+- Ao detectar, aguardar 2 segundos e verificar se reconectou; se não, fechar modal
 
-**Monitor de audio pos-conexao:**
-- `setInterval` de 1 segundo por 5 segundos apos `ontrack` para logar estado da track e do audio element
-- Limpa automaticamente apos 5 iteracoes
+### Arquivo: `src/hooks/useIncomingWhatsAppCall.ts`
 
-**Correcao menor:**
-- Remover a linha duplicada `peerConnectionRef.current = pc;` (linha 109)
-
+**Logs adicionais:**
+- Log em cada UPDATE recebido (antes do filtro de ID) para confirmar que eventos chegam
+- Log quando o status muda para terminal
