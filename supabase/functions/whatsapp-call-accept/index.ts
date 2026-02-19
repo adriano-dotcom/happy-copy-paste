@@ -2,7 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
 Deno.serve(async (req) => {
@@ -15,10 +15,11 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
   try {
-    const { call_id, sdp_answer } = await req.json();
+    const { call_id, sdp_answer, action } = await req.json();
+    // action: 'pre_accept' or 'accept' (default: legacy both)
 
-    if (!call_id || !sdp_answer) {
-      return new Response(JSON.stringify({ error: 'call_id and sdp_answer required' }), {
+    if (!call_id) {
+      return new Response(JSON.stringify({ error: 'call_id required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -63,79 +64,106 @@ Deno.serve(async (req) => {
 
     const phoneNumberId = call.phone_number_id;
     const whatsappCallId = call.whatsapp_call_id;
-    const sdpOffer = call.sdp_offer;
     const metaUrl = `https://graph.facebook.com/v20.0/${phoneNumberId}/calls`;
 
-    // Step 1: Send pre_accept with SDP answer in session
-    console.log(`Sending pre_accept for call ${whatsappCallId}`);
-    const preAcceptPayload: any = {
-      messaging_product: 'whatsapp',
-      call_id: whatsappCallId,
-      action: 'pre_accept',
-      session: {
-        sdp_type: 'answer',
-        sdp: sdp_answer,
-      },
-    };
-    const preAcceptRes = await fetch(metaUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(preAcceptPayload),
-    });
+    // Step-based flow: frontend calls pre_accept first, then accept after WebRTC connects
+    const requestedAction = action || 'pre_accept';
 
-    const preAcceptBody = await preAcceptRes.text();
-    console.log(`pre_accept response: ${preAcceptRes.status} ${preAcceptBody}`);
+    if (requestedAction === 'pre_accept') {
+      if (!sdp_answer) {
+        return new Response(JSON.stringify({ error: 'sdp_answer required for pre_accept' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    if (!preAcceptRes.ok) {
-      return new Response(JSON.stringify({ error: 'pre_accept failed', details: preAcceptBody }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Step 2: Send accept with SDP answer
-    console.log(`Sending accept for call ${whatsappCallId}`);
-    const acceptRes = await fetch(metaUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        call_id: whatsappCallId,
-        action: 'accept',
-        session: {
-          sdp_type: 'answer',
-          sdp: sdp_answer,
+      console.log(`Sending pre_accept for call ${whatsappCallId}`);
+      const preAcceptRes = await fetch(metaUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
         },
-      }),
-    });
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          call_id: whatsappCallId,
+          action: 'pre_accept',
+          session: {
+            sdp_type: 'answer',
+            sdp: sdp_answer,
+          },
+        }),
+      });
 
-    const acceptBody = await acceptRes.text();
-    console.log(`accept response: ${acceptRes.status} ${acceptBody}`);
+      const preAcceptBody = await preAcceptRes.text();
+      console.log(`pre_accept response: ${preAcceptRes.status} ${preAcceptBody}`);
 
-    if (!acceptRes.ok) {
-      return new Response(JSON.stringify({ error: 'Failed to accept call on Meta', details: acceptBody }), {
-        status: 500,
+      if (!preAcceptRes.ok) {
+        return new Response(JSON.stringify({ error: 'pre_accept failed', details: preAcceptBody }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ success: true, step: 'pre_accept' }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Update call status to answered
-    await supabase
-      .from('whatsapp_calls')
-      .update({
-        status: 'answered',
-        answered_at: new Date().toISOString(),
-      })
-      .eq('id', call_id);
+    if (requestedAction === 'accept') {
+      if (!sdp_answer) {
+        return new Response(JSON.stringify({ error: 'sdp_answer required for accept' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
+      console.log(`Sending accept for call ${whatsappCallId}`);
+      const acceptRes = await fetch(metaUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          call_id: whatsappCallId,
+          action: 'accept',
+          session: {
+            sdp_type: 'answer',
+            sdp: sdp_answer,
+          },
+        }),
+      });
+
+      const acceptBody = await acceptRes.text();
+      console.log(`accept response: ${acceptRes.status} ${acceptBody}`);
+
+      if (!acceptRes.ok) {
+        return new Response(JSON.stringify({ error: 'accept failed', details: acceptBody }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Update call status to answered
+      await supabase
+        .from('whatsapp_calls')
+        .update({
+          status: 'answered',
+          answered_at: new Date().toISOString(),
+        })
+        .eq('id', call_id);
+
+      return new Response(JSON.stringify({ success: true, step: 'accept' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: 'Invalid action. Use pre_accept or accept.' }), {
+      status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
