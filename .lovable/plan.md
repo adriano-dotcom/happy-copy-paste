@@ -1,162 +1,212 @@
 
-## Diagnóstico: Carregamento Excessivo nas Páginas Contatos e Chat
 
-### Causa Raiz Identificada
+## Implementar Chamadas WhatsApp via Meta Cloud API
 
-Foram identificados **3 problemas de performance** encadeados que causam lentidão, especialmente quando templates Meta estão sendo disparados em massa (via campanha ou prospecção):
+Este plano cria toda a infraestrutura de chamadas WhatsApp neste projeto: tabela, 4 edge functions, hook realtime com ringtone e modal WebRTC fullscreen.
 
 ---
 
-### Problema 1 — Query de Templates sem LIMIT na página Contatos
+### Passo 1: Criar tabela `whatsapp_calls` (Migracao SQL)
 
-**Arquivo:** `src/services/api.ts` → função `fetchContacts()` (linhas 349-378)
+```sql
+CREATE TABLE public.whatsapp_calls (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  whatsapp_call_id text,
+  contact_id uuid,
+  conversation_id uuid,
+  direction text NOT NULL DEFAULT 'inbound',
+  status text NOT NULL DEFAULT 'ringing',
+  phone_number_id text,
+  from_number text,
+  to_number text,
+  sdp_offer text,
+  started_at timestamptz DEFAULT now(),
+  answered_at timestamptz,
+  ended_at timestamptz,
+  duration_seconds integer,
+  hangup_cause text,
+  metadata jsonb DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 
-A função `fetchContacts` executa uma query extra na tabela `messages` para detectar templates enviados:
+ALTER TABLE public.whatsapp_calls ENABLE ROW LEVEL SECURITY;
 
-```typescript
-// Query atual — SEM LIMIT (retorna TODAS as mensagens de template de TODAS as conversas)
-const { data: templateMessages } = await supabase
-  .from('messages')
-  .select('conversation_id, metadata')
-  .in('conversation_id', conversationIds)   // até 500 IDs
-  .eq('from_type', 'nina')
-  .contains('metadata', { is_template: true })
-  .order('sent_at', { ascending: false });  // sem .limit()
+CREATE POLICY "Authenticated users can view whatsapp_calls"
+  ON public.whatsapp_calls FOR SELECT
+  USING (is_authenticated_user());
+
+CREATE POLICY "Authenticated users can manage whatsapp_calls"
+  ON public.whatsapp_calls FOR ALL
+  USING (is_authenticated_user())
+  WITH CHECK (is_authenticated_user());
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.whatsapp_calls;
 ```
 
-Quando uma campanha de prospecção dispara 100-500 templates simultaneamente, essa query retorna **todos os registros** de template de todas as conversas — potencialmente milhares de linhas — sem nenhum limite. Isso travava a página de Contatos para todos os usuários ao mesmo tempo.
-
-**Fix:** Adicionar `.limit(1000)` e um select mais enxuto.
+Nota: inclui coluna `sdp_offer` para armazenar o SDP recebido da Meta, necessario para o frontend gerar o SDP answer via WebRTC.
 
 ---
 
-### Problema 2 — Realtime global "chat-realtime-unified" causa re-renders em cascade
+### Passo 2: Criar 4 Edge Functions
 
-**Arquivo:** `src/hooks/useConversations.ts` (linhas 238-263)
+Todas com `verify_jwt = false` no `supabase/config.toml` (webhook e chamadas precisam funcionar sem JWT do frontend).
 
-O canal unificado escuta TODOS os eventos de `messages UPDATE` no banco. Quando uma campanha dispara 200 templates e a Meta confirma a entrega (`status: delivered`) para cada um, isso gera **200 eventos UPDATE simultâneos** no canal realtime. Cada evento dispara `handleMessageUpdate` que chama `setConversations(prev => prev.map(...))`, causando um re-render completo do estado com 200+ conversas para cada evento.
+#### 2.1 `whatsapp-call-webhook` (recebe eventos da Meta)
 
-O session replay confirmou: a UI fica com o spinner "Sincronizando conversas..." por longos períodos quando templates são enviados.
+- **GET**: verificacao de webhook (challenge/verify_token) -- usa `whatsapp_verify_token` da `nina_settings`
+- **POST**: processa eventos de chamada da Meta:
+  - Evento `connect` (chamada entrando): cria registro na `whatsapp_calls` com `status='ringing'`, armazena `sdp_offer` e `whatsapp_call_id`, resolve contato pelo numero
+  - Evento `terminate` (chamada encerrada pelo caller): atualiza para `status='missed'` ou `status='ended'`
+  - Retorna 200 imediatamente para a Meta
 
-**Fix:** Adicionar debounce nos updates de status de mensagem (delivered/read) — esses eventos não precisam ser processados imediatamente pois só mudam o ícone de status (✓/✓✓). Filtrar eventos `UPDATE` de mensagem que são apenas mudanças de `status`/`delivered_at`/`read_at` para não disparar re-render completo do estado de conversas.
-
----
-
-### Problema 3 — `fetchConversations` busca 4000 mensagens em uma única query sem filtro temporal
-
-**Arquivo:** `src/services/api.ts` → `fetchConversations()` (linhas 1737-1742)
-
-```typescript
-const { data: allMessages } = await supabase
-  .from('messages')
-  .select('id, conversation_id, content, ...')
-  .in('conversation_id', conversationIds)  // até 200 IDs
-  .order('sent_at', { ascending: false })
-  .limit(4000);  // 4000 mensagens sem filtro de data
+Fluxo da Meta:
+```text
+Meta envia POST com:
+{
+  "entry": [{
+    "changes": [{
+      "value": {
+        "calls": [{
+          "id": "wacid.xxx",
+          "from": "5511999999999",
+          "type": "connect",  // ou "terminate"
+          "session": {
+            "sdp_type": "offer",
+            "sdp": "v=0\r\n..."
+          }
+        }]
+      }
+    }]
+  }]
+}
 ```
 
-Com 200 conversas ativas e disparos de campanha acontecendo, o PostgREST precisa varrer todas as mensagens de cada conversa para ordenar e limitar. Sem índice combinado em `(conversation_id, sent_at)`, isso gera um table scan pesado, especialmente com mensagens recém-inseridas pela campanha.
+#### 2.2 `whatsapp-call-accept` (atender chamada)
 
-**Fix:** Adicionar filtro temporal para buscar mensagens apenas dos últimos 30 dias na carga inicial. Conversas antigas mostrarão botão "carregar mais" (já implementado via `loadMoreMessages`).
+- Recebe `{ call_id, sdp_answer }` do frontend
+- Busca `whatsapp_call_id` e `phone_number_id` na tabela
+- Envia `pre_accept` para Meta API (`POST /{phone_number_id}/calls`)
+- Envia `accept` com o SDP answer para Meta API
+- Atualiza status para `answered` na tabela
 
----
-
-### Solução Técnica
-
-#### Mudança 1 — Limitar query de templates em `fetchContacts` (`src/services/api.ts`)
-
-```typescript
-// ANTES: sem limit
-const { data: templateMessages } = await supabase
-  .from('messages')
-  .select('conversation_id, metadata')
-  .in('conversation_id', conversationIds)
-  .eq('from_type', 'nina')
-  .contains('metadata', { is_template: true })
-  .order('sent_at', { ascending: false });
-
-// DEPOIS: com limit e select menor
-const { data: templateMessages } = await supabase
-  .from('messages')
-  .select('conversation_id, metadata->template_name')
-  .in('conversation_id', conversationIds)
-  .eq('from_type', 'nina')
-  .contains('metadata', { is_template: true })
-  .order('sent_at', { ascending: false })
-  .limit(500); // Suficiente para 500 contatos (1 template por conversa)
-```
-
-#### Mudança 2 — Filtrar eventos UPDATE de mensagem no realtime para não re-renderizar em status changes (`src/hooks/useConversations.ts`)
-
-Adicionar verificação no `handleMessageUpdate`: se a única coisa que mudou foi `status`, `delivered_at` ou `read_at`, fazer uma atualização cirúrgica apenas do ícone da mensagem, sem re-mapear toda a lista de conversas com `setConversations(prev => prev.map(...))`.
-
-```typescript
-const handleMessageUpdate = useCallback((payload: any) => {
-  const updatedMessage = payload.new as DBMessage;
-  const oldMessage = payload.old as Partial<DBMessage>;
-  
-  // OTIMIZAÇÃO: Se apenas status/timestamps mudaram, atualizar só o necessário
-  const isOnlyStatusChange = 
-    updatedMessage.content === oldMessage?.content &&
-    updatedMessage.from_type === oldMessage?.from_type;
-  
-  if (isOnlyStatusChange) {
-    // Atualização leve: só muda o status da mensagem específica
-    setConversations(prev => prev.map(conv => {
-      if (conv.id !== updatedMessage.conversation_id) return conv; // early return
-      // ... apenas atualiza a mensagem específica
-    }));
-    return;
+Endpoint Meta:
+```text
+POST https://graph.facebook.com/v20.0/{phone_number_id}/calls
+{
+  "call_id": "wacid.xxx",
+  "action": "pre_accept",  // depois "accept"
+  "session": {
+    "sdp_type": "answer",
+    "sdp": "v=0\r\n..."
   }
-  
-  // ... lógica completa de update para mudanças de conteúdo
-}, []);
+}
+Authorization: Bearer {whatsapp_access_token}
 ```
 
-Obs: o `payload.old` já vem disponível no canal realtime quando `REPLICA IDENTITY FULL` está configurado para a tabela (que é o caso para tabelas com realtime ativo).
+#### 2.3 `whatsapp-call-reject` (rejeitar chamada)
 
-#### Mudança 3 — Filtro temporal em `fetchConversations` (`src/services/api.ts`)
+- Recebe `{ call_id }`
+- Envia `reject` para Meta API
+- Atualiza status para `rejected` na tabela
 
-```typescript
-// ANTES: sem filtro de data
-const { data: allMessages } = await supabase
-  .from('messages')
-  .select('...')
-  .in('conversation_id', conversationIds)
-  .order('sent_at', { ascending: false })
-  .limit(4000);
+#### 2.4 `whatsapp-call-terminate` (desligar chamada em andamento)
 
-// DEPOIS: apenas mensagens dos últimos 30 dias na carga inicial
-const thirtyDaysAgo = new Date();
-thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-const { data: allMessages } = await supabase
-  .from('messages')
-  .select('...')
-  .in('conversation_id', conversationIds)
-  .gte('sent_at', thirtyDaysAgo.toISOString()) // filtro temporal
-  .order('sent_at', { ascending: false })
-  .limit(4000);
-```
-
-Isso permite que o PostgREST use o índice em `sent_at` ao invés de escanear toda a tabela.
+- Recebe `{ call_id }`
+- Envia `terminate` para Meta API
+- Calcula duracao, atualiza status para `ended`
 
 ---
 
-### Arquivos Modificados
+### Passo 3: Criar Hook `useIncomingWhatsAppCall`
 
-1. `src/services/api.ts`
-   - `fetchContacts()`: adicionar `.limit(500)` na query de templates (linha ~357)
-   - `fetchConversations()`: adicionar filtro temporal de 30 dias na query de mensagens (linha ~1742)
+**Arquivo:** `src/hooks/useIncomingWhatsAppCall.ts`
 
-2. `src/hooks/useConversations.ts`
-   - `handleMessageUpdate`: adicionar detecção de "apenas status change" para fazer update leve sem re-render completo do estado
+Funcionalidades:
+- Escuta canal Realtime na tabela `whatsapp_calls` (filtro `status=eq.ringing` ou `direction=eq.inbound`)
+- Quando recebe INSERT com `status='ringing'`:
+  - Busca dados do contato (nome, foto) via `contact_id`
+  - Toca ringtone usando Web Audio API (padrao similar ao `notificationSound.ts`)
+  - Expoe `incomingCall` no estado
+- Quando recebe UPDATE para `status != 'ringing'` (answered, ended, rejected, missed):
+  - Para o ringtone
+  - Limpa `incomingCall`
+- Expoe: `{ incomingCall, dismissCall, stopRingtone }`
 
-### Resultado Esperado
+Ringtone: loop de tons alternados (440Hz e 523Hz, 1s cada, simulando toque telefonico) usando `OscillatorNode` + `GainNode`, respeitando `isNotificationSoundEnabled()` e `getNotificationVolume()`.
 
-| Cenário | Antes | Depois |
-|---|---|---|
-| Campanha dispara 200 templates | Página de Contatos trava por 5-10s para todos | Contatos carrega normalmente (query limitada a 500 rows) |
-| Meta confirma entrega de 200 templates | 200 re-renders completos do estado de conversas | Atualização leve só na mensagem específica |
-| Chat abre com 200 conversas | 4000 mensagens sem filtro temporal | 4000 msgs apenas dos últimos 30 dias (query mais rápida com índice) |
-| Outro usuário com chat aberto | UI fica instável com spinners | Apenas mensagens com mudança de conteúdo causam re-renders |
+---
+
+### Passo 4: Criar Componente `IncomingCallModal`
+
+**Arquivo:** `src/components/IncomingCallModal.tsx`
+
+UI:
+- Modal fullscreen com fundo escuro translucido (`bg-slate-950/90 backdrop-blur-xl`)
+- Foto/avatar do contato com animacao de pulsacao (anel cyan pulsante via framer-motion)
+- Nome do contato e numero
+- **Estado "ringing"**: botoes "Atender" (verde) e "Rejeitar" (vermelho)
+- **Estado "answered"**: timer de duracao, botoes "Mudo" e "Desligar" (vermelho)
+
+WebRTC (no atender):
+1. `navigator.mediaDevices.getUserMedia({ audio: true })` -- captura microfone
+2. Cria `RTCPeerConnection` com STUN servers
+3. Seta SDP offer remoto (recebido do webhook via `whatsapp_calls.sdp_offer`)
+4. Cria SDP answer local
+5. Chama edge function `whatsapp-call-accept` com `{ call_id, sdp_answer }`
+6. Estabelece conexao de audio bidirecional
+
+Botoes:
+- **Atender**: inicia WebRTC, chama `whatsapp-call-accept`
+- **Rejeitar**: chama `whatsapp-call-reject`, fecha modal
+- **Mudo**: toggle `audioTrack.enabled`
+- **Desligar**: chama `whatsapp-call-terminate`, fecha `RTCPeerConnection`, fecha modal
+
+---
+
+### Passo 5: Integrar no Layout Principal
+
+**Arquivo:** `src/App.tsx`
+
+Dentro do `AppLayout` (que ja esta protegido por `ProtectedRoute`):
+```typescript
+const { incomingCall, dismissCall, stopRingtone } = useIncomingWhatsAppCall();
+
+// No JSX, antes do <Outlet />:
+<IncomingCallModal 
+  call={incomingCall} 
+  onDismiss={dismissCall} 
+  onStopRingtone={stopRingtone} 
+/>
+```
+
+---
+
+### Passo 6: Atualizar `supabase/config.toml`
+
+Adicionar as 4 novas funcoes com `verify_jwt = false`.
+
+---
+
+### Resumo dos Arquivos
+
+| Arquivo | Acao |
+|---|---|
+| Migracao SQL | Criar tabela `whatsapp_calls` + RLS + Realtime |
+| `supabase/config.toml` | Adicionar 4 funcoes |
+| `supabase/functions/whatsapp-call-webhook/index.ts` | Criar (webhook Meta) |
+| `supabase/functions/whatsapp-call-accept/index.ts` | Criar (atender + WebRTC SDP) |
+| `supabase/functions/whatsapp-call-reject/index.ts` | Criar (rejeitar) |
+| `supabase/functions/whatsapp-call-terminate/index.ts` | Criar (desligar) |
+| `src/hooks/useIncomingWhatsAppCall.ts` | Criar (Realtime + ringtone) |
+| `src/components/IncomingCallModal.tsx` | Criar (modal + WebRTC) |
+| `src/App.tsx` | Integrar hook + modal no AppLayout |
+
+### Prerequisito do usuario
+
+Apos a implementacao, o usuario precisa:
+1. Ir no Meta Developer Dashboard
+2. Em WhatsApp > Configuration > Webhook, adicionar a URL: `https://xaqepnvvoljtlsyofifu.supabase.co/functions/v1/whatsapp-call-webhook`
+3. Assinar o campo **calls** (alem de messages)
+4. Habilitar calling no numero via `POST /{phone_number_id}/settings` com `{"calling":{"status":"ENABLED"}}`
+
