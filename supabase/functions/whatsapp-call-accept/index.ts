@@ -106,8 +106,8 @@ Deno.serve(async (req) => {
       // Step 2: Small delay for Meta to process SDP
       await new Promise(r => setTimeout(r, 1500));
 
-      // Step 3: accept (WITHOUT SDP to avoid resetting the media session)
-      console.log(`[both] Sending accept for call ${whatsappCallId} (without SDP)`);
+      // Step 3: accept (with empty SDP to satisfy Meta validation without resetting media)
+      console.log(`[both] Sending accept for call ${whatsappCallId} (empty SDP)`);
       const acceptRes = await fetch(metaUrl, {
         method: 'POST',
         headers: {
@@ -118,7 +118,7 @@ Deno.serve(async (req) => {
           messaging_product: 'whatsapp',
           call_id: whatsappCallId,
           action: 'accept',
-          session: { sdp_type: 'answer' },
+          session: { sdp_type: 'answer', sdp: '' },
         }),
       });
 
@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
     }
 
     if (requestedAction === 'accept') {
-      console.log(`Sending accept for call ${whatsappCallId} (without SDP)`);
+      console.log(`Sending accept for call ${whatsappCallId} (empty SDP)`);
       const acceptRes = await fetch(metaUrl, {
         method: 'POST',
         headers: {
@@ -205,7 +205,7 @@ Deno.serve(async (req) => {
           messaging_product: 'whatsapp',
           call_id: whatsappCallId,
           action: 'accept',
-          session: { sdp_type: 'answer' },
+          session: { sdp_type: 'answer', sdp: '' },
         }),
       });
 
