@@ -1,73 +1,78 @@
 
 
-# Fix: Accept re-envia SDP completo e reseta a sessao de midia
+# Fix: Eliminar accept que reseta a sessao de midia
 
-## Diagnostico
+## Diagnostico confirmado
 
-A timeline dos logs mostra exatamente o problema:
+Timeline da chamada de teste:
 
 ```text
-23:25:49.403 — Remote audio track UNMUTED (audio fluindo!)
-23:25:50.970 — accept enviado com SDP completo → 200 OK
-23:25:51.036 — Remote audio track ENDED (1 segundo depois!)
+23:55:33.260 — Remote audio track UNMUTED (audio comecou!)
+23:55:35.163 — accept enviado com SDP completo → 200 OK
+23:55:35.263 — Remote audio track ENDED (100ms depois!)
+23:56:08    — Meta termina: erro 138021 "not receiving any media"
 ```
 
-O `pre_accept` com SDP funciona perfeitamente: ICE conecta, DTLS completa, audio remoto comeca a fluir. Mas quando o `accept` envia o **mesmo SDP completo de novo**, Meta reseta a sessao de midia, matando a conexao ativa.
+O problema e um deadlock:
+- `accept` COM SDP completo → Meta reseta a sessao de midia (audio morre)
+- `accept` SEM SDP (`sdp: ''`) → Meta rejeita com erro 100 "sdp is required"
+- `accept` sem campo `sdp` → Meta rejeita com erro 131009 "Missing session parameter"
 
-Tentativas anteriores:
-- accept SEM `session` → erro 131009 "Missing session parameter"
-- accept COM `session` completo (sdp_type + sdp) → funciona mas mata o audio
+## Solucao: eliminar o accept, usar apenas pre_accept
 
-## Solucao: enviar accept com session minima (sem campo sdp)
+O `pre_accept` ja estabelece a sessao de midia completa (ICE + DTLS + audio). O `accept` e o sinal que mata o audio. A solucao e **nao enviar accept** e apenas atualizar o status no banco.
 
-O `accept` precisa do objeto `session` para satisfazer a validacao da Meta, mas NAO deve incluir o campo `sdp` para evitar re-setup da sessao de midia.
+Se Meta eventualmente exigir o accept para manter a chamada ativa, podemos adicionar como segunda tentativa um accept com SDP minimo (sem ICE candidates e sem DTLS fingerprint) para evitar re-negociacao.
 
-### Mudanca 1: Edge function — accept com session sem sdp
+### Mudanca 1: Edge function — flow `both` sem accept
 
-No `supabase/functions/whatsapp-call-accept/index.ts`, na action `both` (linhas 117-122), mudar o body do accept:
+No `supabase/functions/whatsapp-call-accept/index.ts`, no flow `both`:
 
-**Antes:**
+1. Remover a chamada fetch para `accept` 
+2. Apos `pre_accept` suceder, ir direto para atualizar o DB
+3. Manter log indicando que accept foi omitido intencionalmente
+
 ```typescript
-body: JSON.stringify({
-  messaging_product: 'whatsapp',
-  call_id: whatsappCallId,
-  action: 'accept',
-  session: { sdp_type: 'answer', sdp: sdp_answer },
-})
+// ANTES: pre_accept → delay 1.5s → accept (mata audio)
+// DEPOIS: pre_accept → update DB (audio continua)
 ```
 
-**Depois:**
+### Mudanca 2: Edge function — accept standalone como fallback com SDP minimo
+
+Manter a action `accept` standalone mas com um SDP minimo valido (sem ICE candidates, sem DTLS fingerprint) para casos onde o frontend precise enviar accept separadamente:
+
 ```typescript
-body: JSON.stringify({
-  messaging_product: 'whatsapp',
-  call_id: whatsappCallId,
-  action: 'accept',
-  session: { sdp_type: 'answer' },
-})
+const minimalSdp = 'v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\n';
 ```
 
-Mesma mudanca na action `accept` standalone (linhas ~200-220).
+### Mudanca 3: Frontend — nao esperar resposta do accept
 
-Tambem atualizar o log para refletir que nao enviamos SDP no accept:
-`[both] Sending accept for call ${whatsappCallId} (without SDP)`
-
-### Mudanca 2: Edge function — remover obrigatoriedade de sdp_answer para accept
-
-Na action `accept` standalone, remover a validacao que exige `sdp_answer` (ja que nao e mais enviado).
-
-### Mudanca 3: Frontend — nao enviar sdp_answer no accept standalone
-
-No `IncomingCallModal.tsx`, se houver algum fallback para chamada `accept` separada, nao incluir `sdp_answer`.
+O frontend ja trata o flow como `both`, entao nao precisa de mudanca significativa. Apenas ajustar o log para refletir que so pre_accept e enviado.
 
 ## Resultado esperado
 
 ```text
 pre_accept: session = { sdp_type: 'answer', sdp: '<SDP completo>' }  → setup midia
-accept:     session = { sdp_type: 'answer' }                         → confirma sem resetar
+(sem accept) → DB atualizado para 'answered'
 
-Audio continua fluindo porque a sessao de midia NAO e re-criada.
+Audio continua fluindo porque nenhum sinal reseta a sessao.
 ```
 
-## Risco
+## Risco e mitigacao
 
-Se Meta rejeitar `session` sem `sdp` (erro 131009 novamente), a alternativa seria testar com API v22.0 ou enviar um SDP minimo (sem candidatos ICE e sem fingerprint DTLS) no accept.
+- **Risco**: Meta pode dropar a chamada apos X segundos se nao receber `accept`
+- **Mitigacao**: Se isso acontecer na proxima teste, adicionamos accept com SDP minimo (sem candidates/fingerprint) como segunda iteracao
+- A duracao da chamada de teste (33s) sugere que Meta tolerou o pre_accept por esse tempo antes do accept resetar tudo. Sem o accept, a chamada deve durar indefinidamente
+
+## Secao tecnica
+
+### Arquivo: `supabase/functions/whatsapp-call-accept/index.ts`
+
+**Flow `both` (linhas ~85-145):**
+- Remover linhas 106-131 (delay + accept fetch + error handling)
+- Ir direto de pre_accept sucesso para update DB
+
+**Flow `accept` standalone (linhas ~192-230):**
+- Trocar SDP completo por SDP minimo: `v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\n`
+- Manter como non-fatal (warn em vez de error)
+
