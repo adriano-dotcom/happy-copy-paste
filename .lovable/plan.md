@@ -1,42 +1,39 @@
 
-# Fix: ICE nunca conecta - precisa enviar accept sem esperar ICE
 
-## Investigacao concluida
+# Fix: Enviar accept imediatamente apos pre_accept (sem delay)
 
-**A chamada NAO esta sendo enviada ao ElevenLabs.** Sao sistemas separados:
-- WhatsApp Calls: Meta Cloud API + WebRTC (navegador)
-- ElevenLabs (Iris): Twilio + chamada telefonica
+## Problema identificado
 
-## Problema real identificado
+O audio remoto aparece por ~300ms e depois encerra porque o `accept` demora demais para chegar na Meta. A timeline mostra:
 
-Os logs mostram que o ICE **nunca** atinge estado `connected` antes do timeout de 10s:
-- `pre_accept` enviado: 20:59:52
-- `accept` enviado: 21:00:03 (11s depois = timeout)
+- pre_accept enviado -> 2.6s de rede -> resposta
+- +500ms delay desnecessario
+- accept enviado -> 7s de rede -> resposta
+- Total: ~11.5s -- Meta ja desistiu
 
-O ICE nao conecta por dois motivos possiveis:
-1. O protocolo da Meta **nao funciona como WebRTC padrao** -- o ICE so se completa apos o `accept`, nao antes
-2. A rede pode ter NAT simetrico (apenas STUN, sem TURN)
-
-Na pratica, estamos de volta ao **mesmo deadlock** de antes: esperamos o ICE conectar para enviar `accept`, mas o ICE precisa do `accept` para conectar.
+O track de audio remoto encerra em 21:28:05.501, mas o accept so e enviado em 21:28:06.003.
 
 ## Solucao
 
-Voltar a enviar `accept` **imediatamente** apos `pre_accept` (sem esperar ICE), mas com um pequeno delay fixo de 500ms para dar tempo a Meta processar o `pre_accept`.
+Remover o delay de 500ms e enviar o `accept` **imediatamente** apos o `pre_accept` retornar com sucesso. O pre_accept ja leva ~2.6s de rede, entao a Meta ja teve tempo de processar.
+
+## Detalhes tecnicos
 
 ### Arquivo: `src/components/IncomingCallModal.tsx`
 
-Substituir o bloco de espera por ICE (linhas 452-478) por:
+Remover as 3 linhas do delay de 500ms (aproximadamente linhas 452-454):
 
 ```typescript
-// 7. Small delay for Meta to process pre_accept, then send accept
+// REMOVER estas linhas:
 console.log(`[WebRTC][${ts()}] Waiting 500ms for Meta to process pre_accept...`);
 await new Promise(r => setTimeout(r, 500));
 ```
 
-Manter o resto do codigo identico (envio do accept na sequencia).
+Manter o log e o envio do accept logo em seguida, sem nenhum delay. O fluxo ficara:
 
-Isso:
-- Da 500ms para a Meta processar o SDP do `pre_accept`
-- Envia o `accept` logo em seguida, sem esperar ICE
-- Permite que o ICE se complete naturalmente apos ambos os sinais
-- Elimina o timeout de 10s que esta atrasando tudo
+```
+pre_accept enviado -> aguarda resposta -> accept enviado imediatamente
+```
+
+Isso reduz o tempo total em ~500ms, fazendo o accept chegar antes da Meta encerrar o track de audio.
+
