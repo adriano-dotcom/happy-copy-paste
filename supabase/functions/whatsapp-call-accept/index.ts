@@ -103,34 +103,11 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Step 2: Small delay for Meta to process SDP
-      await new Promise(r => setTimeout(r, 1500));
+      // accept intentionally omitted — pre_accept already established the media session
+      // Sending accept with full SDP resets the media session and kills audio
+      console.log(`[both] Skipping accept to preserve media session established by pre_accept`);
 
-      // Step 3: accept (with full SDP — if it fails, pre_accept already established media)
-      console.log(`[both] Sending accept for call ${whatsappCallId}`);
-      const acceptRes = await fetch(metaUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          call_id: whatsappCallId,
-          action: 'accept',
-          session: { sdp_type: 'answer', sdp: sdp_answer },
-        }),
-      });
-
-      const acceptBody = await acceptRes.text();
-      console.log(`[both] accept response: ${acceptRes.status} ${acceptBody}`);
-
-      if (!acceptRes.ok) {
-        // Log warning but DON'T fail — pre_accept already established the media session
-        console.warn(`[both] accept returned ${acceptRes.status} but pre_accept succeeded, continuing...`);
-      }
-
-      // Step 4: Update DB (non-blocking for the caller)
+      // Update DB
       await supabase
         .from('whatsapp_calls')
         .update({ status: 'answered', answered_at: new Date().toISOString() })
@@ -140,9 +117,8 @@ Deno.serve(async (req) => {
 
       return new Response(JSON.stringify({
         success: true,
-        step: 'both',
+        step: 'both_pre_accept_only',
         pre_accept_status: preAcceptRes.status,
-        accept_status: acceptRes.status,
       }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -192,7 +168,9 @@ Deno.serve(async (req) => {
     }
 
     if (requestedAction === 'accept') {
-      console.log(`Sending accept for call ${whatsappCallId}`);
+      // Use minimal SDP to satisfy Meta validation without resetting media session
+      const minimalSdp = 'v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\n';
+      console.log(`Sending accept with minimal SDP for call ${whatsappCallId}`);
       const acceptRes = await fetch(metaUrl, {
         method: 'POST',
         headers: {
@@ -203,7 +181,7 @@ Deno.serve(async (req) => {
           messaging_product: 'whatsapp',
           call_id: whatsappCallId,
           action: 'accept',
-          session: { sdp_type: 'answer', sdp: sdp_answer || '' },
+          session: { sdp_type: 'answer', sdp: minimalSdp },
         }),
       });
 
@@ -211,10 +189,8 @@ Deno.serve(async (req) => {
       console.log(`accept response: ${acceptRes.status} ${acceptBody}`);
 
       if (!acceptRes.ok) {
-        return new Response(JSON.stringify({ error: 'accept failed', details: acceptBody }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        // Non-fatal: log warning, still update DB
+        console.warn(`accept with minimal SDP returned ${acceptRes.status}: ${acceptBody}`);
       }
 
       // Update call status to answered
