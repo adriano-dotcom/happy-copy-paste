@@ -230,5 +230,21 @@ export function useIncomingWhatsAppCall() {
     return () => clearInterval(pollId);
   }, [incomingCall?.id, incomingCall?.status]);
 
+  // Max ringing timeout: Meta doesn't send "answered" event when call is picked up on phone.
+  // No real phone rings for more than 30s, so auto-dismiss after 30s of ringing.
+  useEffect(() => {
+    const currentCall = incomingCall;
+    if (!currentCall?.id || currentCall.status !== 'ringing') return;
+
+    const timeout = setTimeout(() => {
+      console.warn(`[IncomingCall] Ringing timeout (30s) for call ${currentCall.id} — auto-dismissing (likely answered on phone or missed)`);
+      stopRingtoneAudio();
+      setIncomingCall(null);
+      callRef.current = null;
+    }, 30000);
+
+    return () => clearTimeout(timeout);
+  }, [incomingCall?.id, incomingCall?.status]);
+
   return { incomingCall, dismissCall, stopRingtone };
 }
