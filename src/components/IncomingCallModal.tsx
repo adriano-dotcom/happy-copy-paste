@@ -109,6 +109,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
   const [isMuted, setIsMuted] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [isAccepting, setIsAccepting] = useState(false);
+  const [localStatus, setLocalStatus] = useState<string | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -120,9 +121,23 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
   // ICE candidate counters
   const iceCandidateCountRef = useRef<Record<string, number>>({ host: 0, srflx: 0, relay: 0, prflx: 0, unknown: 0 });
 
+  // Sync localStatus when call.status changes externally
+  useEffect(() => {
+    if (call?.status && call.status !== 'ringing') {
+      setLocalStatus(call.status);
+    }
+  }, [call?.status]);
+
+  // Reset localStatus when call disappears
+  useEffect(() => {
+    if (!call) setLocalStatus(null);
+  }, [call]);
+
+  const effectiveStatus = localStatus || call?.status;
+
   // Duration timer
   useEffect(() => {
-    if (call?.status === 'answered') {
+    if (effectiveStatus === 'answered') {
       setCallDuration(0);
       durationIntervalRef.current = setInterval(() => {
         setCallDuration(prev => prev + 1);
@@ -134,7 +149,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         durationIntervalRef.current = null;
       }
     };
-  }, [call?.status]);
+  }, [effectiveStatus]);
 
 
   const cleanup = useCallback(() => {
@@ -199,7 +214,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         }
 
         // DB says answered but frontend still ringing → answered elsewhere
-        if (data.status === 'answered' && call.status === 'ringing') {
+        if (data.status === 'answered' && call.status === 'ringing' && !localStatus) {
           console.log(`[WebRTC][Polling] Call ${call.id} answered elsewhere (DB: answered, frontend: ringing). Closing modal.`);
           cleanup();
           onDismiss();
@@ -210,14 +225,33 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
     }, 3000);
 
     return () => clearInterval(pollId);
-  }, [call?.id, call?.status, cleanup, onDismiss]);
+  }, [call?.id, call?.status, localStatus, cleanup, onDismiss]);
+
+  // Absolute timeout: auto-dismiss modal after 60s regardless of status
+  useEffect(() => {
+    if (!call?.id) return;
+    const timeout = setTimeout(() => {
+      console.warn(`[WebRTC][${ts()}] Absolute 60s timeout reached — auto-closing modal for call ${call.id}`);
+      cleanup();
+      onDismiss();
+    }, 60000);
+    return () => clearTimeout(timeout);
+  }, [call?.id, cleanup, onDismiss]);
 
   const handleAccept = async () => {
     if (!call || isAccepting) return;
     setIsAccepting(true);
+    setLocalStatus('answered'); // Optimistic UI update
     acceptStartRef.current = performance.now();
-    console.log(`[WebRTC][${ts()}] ▶ Accept clicked — starting call flow`);
+    console.log(`[WebRTC][${ts()}] ▶ Accept clicked — starting call flow (optimistic UI set to answered)`);
     onStopRingtone();
+
+    // Total timeout: if handleAccept takes longer than 20s, cleanup
+    const totalTimeoutId = setTimeout(() => {
+      console.warn(`[WebRTC][${ts()}] handleAccept total timeout (20s) — cleaning up`);
+      cleanup();
+      onDismiss();
+    }, 20000);
 
     // Create and unlock Audio element immediately in user gesture context
     const audio = new Audio();
@@ -382,7 +416,15 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       if (preAcceptError) {
         throw new Error(preAcceptError.message || 'Failed to pre_accept call');
       }
-      console.log(`[WebRTC][${ts()}] pre_accept sent, waiting for WebRTC connection...`);
+      console.log(`[WebRTC][${ts()}] pre_accept sent successfully`);
+
+      // Early DB update: mark as answered immediately after pre_accept
+      console.log(`[WebRTC][${ts()}] Updating DB status to 'answered' early...`);
+      await supabase
+        .from('whatsapp_calls')
+        .update({ status: 'answered', answered_at: new Date().toISOString() })
+        .eq('id', call.id);
+      console.log(`[WebRTC][${ts()}] DB updated to 'answered', waiting for WebRTC connection...`);
 
       // 7. Wait for WebRTC connection
       await new Promise<void>((resolve, reject) => {
@@ -426,9 +468,12 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
 
       const totalElapsed = (performance.now() - acceptStartRef.current).toFixed(0);
       console.log(`[WebRTC][${ts()}] ✓ Call accepted successfully. Total time: ${totalElapsed}ms`);
+      clearTimeout(totalTimeoutId);
     } catch (error: any) {
       console.error(`[WebRTC][${ts()}] ✗ Error accepting call:`, error);
       toast.error('Erro ao atender chamada: ' + (error.message || 'Erro desconhecido'));
+      setLocalStatus(null); // Revert optimistic update
+      clearTimeout(totalTimeoutId);
       cleanup();
       onDismiss();
     } finally {
@@ -485,8 +530,8 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
 
   const displayName = call?.contact_name || call?.from_number || 'Número desconhecido';
   const displayNumber = call?.from_number || '';
-  const isRinging = call?.status === 'ringing';
-  const isAnswered = call?.status === 'answered';
+  const isRinging = effectiveStatus === 'ringing';
+  const isAnswered = effectiveStatus === 'answered';
 
   return (
     <AnimatePresence>
