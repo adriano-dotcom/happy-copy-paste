@@ -1,67 +1,42 @@
 
-# Fix: Aguardar conexao ICE antes de enviar accept
+# Fix: ICE nunca conecta - precisa enviar accept sem esperar ICE
 
-## Problema
-Os dois sinais (`pre_accept` e `accept`) retornam 200, mas o audio fica mudo nos dois lados. A causa: o `accept` esta sendo enviado imediatamente apos `pre_accept` (em milissegundos), sem dar tempo para a Meta processar o SDP e estabelecer a conexao ICE.
+## Investigacao concluida
 
-O fluxo correto da Meta e:
-1. `pre_accept` com SDP -- Meta inicia negociacao ICE
-2. Aguardar a conexao ICE se estabelecer (estado `connected` ou `completed`)
-3. `accept` com SDP -- Meta ativa o fluxo de midia
+**A chamada NAO esta sendo enviada ao ElevenLabs.** Sao sistemas separados:
+- WhatsApp Calls: Meta Cloud API + WebRTC (navegador)
+- ElevenLabs (Iris): Twilio + chamada telefonica
+
+## Problema real identificado
+
+Os logs mostram que o ICE **nunca** atinge estado `connected` antes do timeout de 10s:
+- `pre_accept` enviado: 20:59:52
+- `accept` enviado: 21:00:03 (11s depois = timeout)
+
+O ICE nao conecta por dois motivos possiveis:
+1. O protocolo da Meta **nao funciona como WebRTC padrao** -- o ICE so se completa apos o `accept`, nao antes
+2. A rede pode ter NAT simetrico (apenas STUN, sem TURN)
+
+Na pratica, estamos de volta ao **mesmo deadlock** de antes: esperamos o ICE conectar para enviar `accept`, mas o ICE precisa do `accept` para conectar.
 
 ## Solucao
-Substituir o envio imediato do `accept` por uma espera pelo estado ICE `connected` ou `completed`, com timeout de 10 segundos como fallback.
 
-A diferenca do codigo anterior (que causava deadlock) e que agora monitoramos o `iceConnectionState` em vez do `connectionState`. O `iceConnectionState` pode atingir `connected` apos o `pre_accept` sem precisar do `accept`, porque a negociacao ICE e independente da sinalizacao de midia.
-
-## Detalhes tecnicos
+Voltar a enviar `accept` **imediatamente** apos `pre_accept` (sem esperar ICE), mas com um pequeno delay fixo de 500ms para dar tempo a Meta processar o `pre_accept`.
 
 ### Arquivo: `src/components/IncomingCallModal.tsx`
 
-**Substituir linhas 452-461** (envio imediato do accept) pelo seguinte bloco:
+Substituir o bloco de espera por ICE (linhas 452-478) por:
 
 ```typescript
-// 7. Wait for ICE connection before sending accept
-console.log(`[WebRTC][${ts()}] Waiting for ICE connection before sending accept...`);
-await new Promise<void>((resolve) => {
-  const checkIce = () => {
-    const state = pc.iceConnectionState;
-    if (state === 'connected' || state === 'completed') {
-      console.log(`[WebRTC][${ts()}] ICE connected (${state}), proceeding with accept`);
-      resolve();
-      return true;
-    }
-    return false;
-  };
-
-  // Check immediately
-  if (checkIce()) return;
-
-  // Listen for changes
-  const handler = () => { if (checkIce()) pc.removeEventListener('iceconnectionstatechange', handler); };
-  pc.addEventListener('iceconnectionstatechange', handler);
-
-  // Timeout fallback: send accept anyway after 10s
-  setTimeout(() => {
-    pc.removeEventListener('iceconnectionstatechange', handler);
-    console.warn(`[WebRTC][${ts()}] ICE wait timeout (10s), sending accept anyway. Current state: ${pc.iceConnectionState}`);
-    resolve();
-  }, 10000);
-});
-
-// Send accept
-console.log(`[WebRTC][${ts()}] Sending accept...`);
-const { error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
-  body: {
-    call_id: call.id,
-    sdp_answer: finalSdp,
-    action: 'accept',
-  },
-});
+// 7. Small delay for Meta to process pre_accept, then send accept
+console.log(`[WebRTC][${ts()}] Waiting 500ms for Meta to process pre_accept...`);
+await new Promise(r => setTimeout(r, 500));
 ```
 
-Esta abordagem:
-- Da tempo para a Meta processar o `pre_accept` e estabelecer ICE
-- Usa `iceConnectionState` (que pode atingir `connected` sem `accept`) em vez de `connectionState`
-- Tem timeout de 10s como seguranca para nao travar indefinidamente
-- Mantem todo o resto do fluxo identico
+Manter o resto do codigo identico (envio do accept na sequencia).
+
+Isso:
+- Da 500ms para a Meta processar o SDP do `pre_accept`
+- Envia o `accept` logo em seguida, sem esperar ICE
+- Permite que o ICE se complete naturalmente apos ambos os sinais
+- Elimina o timeout de 10s que esta atrasando tudo
