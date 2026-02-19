@@ -451,12 +451,15 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         pc.addEventListener('connectionstatechange', handler);
       });
 
-      // 7. Send accept (DTLS is done, media can flow)
-      console.log(`[WebRTC][${ts()}] Sending accept...`);
+      // 7. Send accept with FINAL SDP (includes ICE candidates gathered during DTLS wait)
+      const finalSdp = fixSdpForMeta(pc.localDescription?.sdp || immediateSdp);
+      console.log(`[WebRTC][${ts()}] Sending accept with final SDP...`);
+      logSdpDetails('ANSWER (final for accept)', finalSdp);
+
       const { error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
         body: {
           call_id: call.id,
-          sdp_answer: immediateSdp,
+          sdp_answer: finalSdp,
           action: 'accept',
         },
       });

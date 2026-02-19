@@ -62,6 +62,7 @@ Deno.serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          messaging_product: 'whatsapp',
           call_id: call.whatsapp_call_id,
           action: 'terminate',
         }),
