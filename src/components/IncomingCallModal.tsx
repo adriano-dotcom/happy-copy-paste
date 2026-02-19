@@ -144,18 +144,62 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         }
       });
 
-      // 6. Send accept to edge function with complete SDP (includes ICE candidates)
       const finalSdp = pc.localDescription?.sdp;
-      console.log('[WebRTC] Sending SDP answer with ICE candidates');
-      const { error } = await supabase.functions.invoke('whatsapp-call-accept', {
+      console.log('[WebRTC] Sending pre_accept with SDP answer');
+
+      // 6. Send pre_accept first (tells Meta we're preparing)
+      const { error: preAcceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
         body: {
           call_id: call.id,
           sdp_answer: finalSdp,
+          action: 'pre_accept',
         },
       });
 
-      if (error) {
-        throw new Error(error.message || 'Failed to accept call');
+      if (preAcceptError) {
+        throw new Error(preAcceptError.message || 'Failed to pre_accept call');
+      }
+
+      console.log('[WebRTC] pre_accept sent, waiting for WebRTC connection...');
+
+      // 7. Wait for WebRTC connection to be established before sending accept
+      await new Promise<void>((resolve, reject) => {
+        if (pc.connectionState === 'connected') {
+          console.log('[WebRTC] Already connected, sending accept immediately');
+          resolve();
+          return;
+        }
+        const timeout = setTimeout(() => {
+          console.warn('[WebRTC] Connection timeout after 10s, sending accept anyway');
+          resolve();
+        }, 10000);
+        const handler = () => {
+          console.log('[WebRTC] Connection state changed to:', pc.connectionState);
+          if (pc.connectionState === 'connected') {
+            clearTimeout(timeout);
+            pc.removeEventListener('connectionstatechange', handler);
+            resolve();
+          } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+            clearTimeout(timeout);
+            pc.removeEventListener('connectionstatechange', handler);
+            reject(new Error('WebRTC connection failed'));
+          }
+        };
+        pc.addEventListener('connectionstatechange', handler);
+      });
+
+      // 8. Send accept (starts the audio stream)
+      console.log('[WebRTC] Sending accept');
+      const { error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
+        body: {
+          call_id: call.id,
+          sdp_answer: finalSdp,
+          action: 'accept',
+        },
+      });
+
+      if (acceptError) {
+        throw new Error(acceptError.message || 'Failed to accept call');
       }
 
       console.log('Call accepted successfully');
