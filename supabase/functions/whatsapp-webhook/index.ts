@@ -307,6 +307,101 @@ serve(async (req) => {
         });
       }
 
+      // ===== HANDLE INCOMING CALLS =====
+      const calls = value.calls;
+      if (calls && calls.length > 0) {
+        console.log('[Webhook] 📞 Call event received:', JSON.stringify(calls).substring(0, 500));
+        const phoneNumberId = value.metadata?.phone_number_id;
+        
+        EdgeRuntime.waitUntil((async () => {
+          for (const call of calls) {
+            const callId = call.id;
+            const fromNumber = call.from;
+            const callType = call.type; // "connect" or "terminate"
+            const sdp = call.session?.sdp;
+            const sdpType = call.session?.sdp_type;
+
+            console.log(`[Webhook] 📞 Call event: type=${callType}, id=${callId}, from=${fromNumber}`);
+
+            if (callType === 'connect') {
+              // Resolve contact by phone number
+              const normalizedPhone = fromNumber?.replace(/\D/g, '');
+              let contactId: string | null = null;
+              let conversationId: string | null = null;
+
+              if (normalizedPhone) {
+                const contact = await findContactByPhone(supabase, normalizedPhone);
+                if (contact) {
+                  contactId = contact.id;
+                  const { data: conv } = await supabase
+                    .from('conversations')
+                    .select('id')
+                    .eq('contact_id', contact.id)
+                    .eq('is_active', true)
+                    .order('last_message_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+                  if (conv) conversationId = conv.id;
+                }
+              }
+
+              const { error: insertError } = await supabase
+                .from('whatsapp_calls')
+                .insert({
+                  whatsapp_call_id: callId,
+                  contact_id: contactId,
+                  conversation_id: conversationId,
+                  direction: 'inbound',
+                  status: 'ringing',
+                  phone_number_id: phoneNumberId,
+                  from_number: fromNumber,
+                  sdp_offer: sdp,
+                  metadata: { sdp_type: sdpType },
+                });
+
+              if (insertError) {
+                console.error('[Webhook] 📞 Error inserting call:', insertError);
+              } else {
+                console.log(`[Webhook] 📞 Call ${callId} created with status=ringing`);
+              }
+            } else if (callType === 'terminate') {
+              const { data: existingCall } = await supabase
+                .from('whatsapp_calls')
+                .select('id, status, started_at, answered_at')
+                .eq('whatsapp_call_id', callId)
+                .limit(1)
+                .maybeSingle();
+
+              if (existingCall) {
+                const newStatus = existingCall.status === 'answered' ? 'ended' : 'missed';
+                const endedAt = new Date().toISOString();
+                let durationSeconds: number | null = null;
+                if (existingCall.answered_at) {
+                  durationSeconds = Math.round(
+                    (new Date(endedAt).getTime() - new Date(existingCall.answered_at).getTime()) / 1000
+                  );
+                }
+                await supabase
+                  .from('whatsapp_calls')
+                  .update({
+                    status: newStatus,
+                    ended_at: endedAt,
+                    duration_seconds: durationSeconds,
+                    hangup_cause: call.reason || 'caller_hangup',
+                  })
+                  .eq('id', existingCall.id);
+                console.log(`[Webhook] 📞 Call ${callId} updated to status=${newStatus}`);
+              }
+            }
+          }
+        })());
+
+        return new Response(JSON.stringify({ status: 'processing_call' }), { 
+          status: 200, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        });
+      }
+
       const messages = value.messages;
       const contacts = value.contacts;
       const phoneNumberId = value.metadata?.phone_number_id;
