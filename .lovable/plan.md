@@ -1,73 +1,73 @@
 
 
-# Fix: Tratamento de erro "Requested device not found" ao atender chamada
+# Fix: Accept re-envia SDP completo e reseta a sessao de midia
 
-## Problema
+## Diagnostico
 
-Ao clicar em "Atender", o sistema tenta acessar o microfone via `getUserMedia({ audio: true })`. Se nao ha microfone disponivel (ou a permissao foi negada), o erro "Requested device not found" aparece e a chamada nao conecta.
+A timeline dos logs mostra exatamente o problema:
 
-O ringtone funciona normalmente porque usa `AudioContext` com oscilador sintetico (nao precisa de microfone). Mas a conexao WebRTC precisa de uma track de audio local.
-
-## Solucao
-
-Duas melhorias:
-
-### 1. Mensagem de erro amigavel e orientativa
-
-Detectar especificamente o erro `NotFoundError` / "Requested device not found" e mostrar uma mensagem clara ao usuario explicando que precisa conectar um microfone ou liberar permissao.
-
-No `catch` (linha 447-451 de `IncomingCallModal.tsx`):
-
-```typescript
-catch (error: any) {
-  console.error(`[WebRTC][${ts()}] Error accepting call:`, error);
-
-  let userMessage = error.message || 'Erro desconhecido';
-  if (error.name === 'NotFoundError' || error.message?.includes('Requested device not found')) {
-    userMessage = 'Microfone nao encontrado. Conecte um microfone e tente novamente.';
-  } else if (error.name === 'NotAllowedError') {
-    userMessage = 'Permissao de microfone negada. Libere o acesso nas configuracoes do navegador.';
-  }
-
-  toast.error('Erro ao atender chamada: ' + userMessage);
-  setLocalStatus(null);
-  clearTimeout(totalTimeoutId);
-}
+```text
+23:25:49.403 — Remote audio track UNMUTED (audio fluindo!)
+23:25:50.970 — accept enviado com SDP completo → 200 OK
+23:25:51.036 — Remote audio track ENDED (1 segundo depois!)
 ```
 
-### 2. Fallback: conectar sem microfone (listen-only mode)
+O `pre_accept` com SDP funciona perfeitamente: ICE conecta, DTLS completa, audio remoto comeca a fluir. Mas quando o `accept` envia o **mesmo SDP completo de novo**, Meta reseta a sessao de midia, matando a conexao ativa.
 
-Se `getUserMedia` falhar, criar uma stream silenciosa para que o usuario consiga pelo menos **ouvir** o interlocutor, mesmo sem poder falar. Isso e melhor do que perder a chamada completamente.
+Tentativas anteriores:
+- accept SEM `session` → erro 131009 "Missing session parameter"
+- accept COM `session` completo (sdp_type + sdp) → funciona mas mata o audio
 
-Na secao de captura do microfone (linha 276-280):
+## Solucao: enviar accept com session minima (sem campo sdp)
 
+O `accept` precisa do objeto `session` para satisfazer a validacao da Meta, mas NAO deve incluir o campo `sdp` para evitar re-setup da sessao de midia.
+
+### Mudanca 1: Edge function — accept com session sem sdp
+
+No `supabase/functions/whatsapp-call-accept/index.ts`, na action `both` (linhas 117-122), mudar o body do accept:
+
+**Antes:**
 ```typescript
-let stream: MediaStream;
-try {
-  stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  console.log(`[WebRTC] Microphone acquired`);
-} catch (micError: any) {
-  console.warn(`[WebRTC] Microphone unavailable: ${micError.message}. Using silent track (listen-only).`);
-  toast.warning('Microfone indisponivel. Voce pode ouvir, mas nao falar.');
-
-  // Create silent audio track as fallback
-  const ctx = new AudioContext();
-  const oscillator = ctx.createOscillator();
-  const dst = ctx.createMediaStreamDestination();
-  oscillator.connect(dst);
-  oscillator.start();
-  stream = dst.stream;
-  // Mute the oscillator (it produces silence by default at freq 0)
-  oscillator.frequency.setValueAtTime(0, ctx.currentTime);
-}
-localStreamRef.current = stream;
+body: JSON.stringify({
+  messaging_product: 'whatsapp',
+  call_id: whatsappCallId,
+  action: 'accept',
+  session: { sdp_type: 'answer', sdp: sdp_answer },
+})
 ```
 
-Isso permite que a chamada conecte e o usuario ouca o audio remoto, mesmo sem microfone.
+**Depois:**
+```typescript
+body: JSON.stringify({
+  messaging_product: 'whatsapp',
+  call_id: whatsappCallId,
+  action: 'accept',
+  session: { sdp_type: 'answer' },
+})
+```
+
+Mesma mudanca na action `accept` standalone (linhas ~200-220).
+
+Tambem atualizar o log para refletir que nao enviamos SDP no accept:
+`[both] Sending accept for call ${whatsappCallId} (without SDP)`
+
+### Mudanca 2: Edge function — remover obrigatoriedade de sdp_answer para accept
+
+Na action `accept` standalone, remover a validacao que exige `sdp_answer` (ja que nao e mais enviado).
+
+### Mudanca 3: Frontend — nao enviar sdp_answer no accept standalone
+
+No `IncomingCallModal.tsx`, se houver algum fallback para chamada `accept` separada, nao incluir `sdp_answer`.
 
 ## Resultado esperado
 
-- Sem microfone: chamada conecta em modo "somente ouvir", toast amarelo avisa o usuario
-- Com permissao negada: mensagem clara orientando o usuario a liberar acesso
-- Com microfone disponivel: comportamento normal, sem mudanca
+```text
+pre_accept: session = { sdp_type: 'answer', sdp: '<SDP completo>' }  → setup midia
+accept:     session = { sdp_type: 'answer' }                         → confirma sem resetar
 
+Audio continua fluindo porque a sessao de midia NAO e re-criada.
+```
+
+## Risco
+
+Se Meta rejeitar `session` sem `sdp` (erro 131009 novamente), a alternativa seria testar com API v22.0 ou enviar um SDP minimo (sem candidatos ICE e sem fingerprint DTLS) no accept.
