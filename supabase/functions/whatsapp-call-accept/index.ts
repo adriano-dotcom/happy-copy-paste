@@ -192,9 +192,10 @@ Deno.serve(async (req) => {
     }
 
     if (requestedAction === 'accept') {
-      // Use minimal SDP to satisfy Meta validation without resetting media session
-      const minimalSdp = 'v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\n';
-      console.log(`Sending accept with minimal SDP for call ${whatsappCallId}`);
+      // Use the full SDP provided by frontend (same used in pre_accept)
+      // Minimal SDP without media section causes Meta to reject/terminate the call
+      const acceptSdp = sdp_answer || 'v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\n';
+      console.log(`Sending accept for call ${whatsappCallId} (SDP length: ${acceptSdp.length}, has media: ${acceptSdp.includes('m=audio')})`);
       const acceptRes = await fetch(metaUrl, {
         method: 'POST',
         headers: {
@@ -205,7 +206,7 @@ Deno.serve(async (req) => {
           messaging_product: 'whatsapp',
           call_id: whatsappCallId,
           action: 'accept',
-          session: { sdp_type: 'answer', sdp: minimalSdp },
+          session: { sdp_type: 'answer', sdp: acceptSdp },
         }),
       });
 
