@@ -21,11 +21,13 @@ interface CallQueueItem {
 
 interface UseWhatsAppAutoAttendantReturn {
   state: AutoAttendantState;
+  setState: (s: AutoAttendantState) => void;
   isActive: boolean;
   currentCall: CallQueueItem | null;
   queueLength: number;
   activate: () => void;
   deactivate: () => void;
+  resetForNext: () => void;
   logs: string[];
 }
 
@@ -106,7 +108,6 @@ export function useWhatsAppAutoAttendant(): UseWhatsAppAutoAttendantReturn {
         },
         (payload: any) => {
           const call = payload.new;
-          // Detect outbound calls transitioning to pending_bridge
           if (call.status === 'pending_bridge' && call.direction === 'outbound') {
             const alreadyQueued = queueRef.current.some(q => q.id === call.id);
             if (!alreadyQueued) {
@@ -133,20 +134,52 @@ export function useWhatsAppAutoAttendant(): UseWhatsAppAutoAttendantReturn {
     };
   }, [isActive, addLog]);
 
-  const activate = useCallback(() => {
+  const activate = useCallback(async () => {
     setIsActive(true);
+    // Set flag in DB so other hooks know auto-attendant is active
+    try {
+      const { data: settings } = await supabase
+        .from('nina_settings')
+        .select('id')
+        .limit(1)
+        .single();
+      if (settings) {
+        await supabase
+          .from('nina_settings')
+          .update({ auto_attendant_active: true } as any)
+          .eq('id', settings.id);
+      }
+    } catch (err) {
+      console.error('[AutoAttendant] Failed to set auto_attendant_active flag:', err);
+    }
   }, []);
 
-  const deactivate = useCallback(() => {
+  const deactivate = useCallback(async () => {
     setIsActive(false);
     setState('idle');
     setCurrentCall(null);
     queueRef.current = [];
     processingRef.current = false;
     addLog('Desativado');
+    // Clear flag in DB
+    try {
+      const { data: settings } = await supabase
+        .from('nina_settings')
+        .select('id')
+        .limit(1)
+        .single();
+      if (settings) {
+        await supabase
+          .from('nina_settings')
+          .update({ auto_attendant_active: false } as any)
+          .eq('id', settings.id);
+      }
+    } catch (err) {
+      console.error('[AutoAttendant] Failed to clear auto_attendant_active flag:', err);
+    }
   }, [addLog]);
 
-  // Process queue - expose current call for the page to handle
+  // Process queue
   useEffect(() => {
     if (!isActive) return;
 
@@ -166,20 +199,22 @@ export function useWhatsAppAutoAttendant(): UseWhatsAppAutoAttendantReturn {
     return () => clearInterval(interval);
   }, [isActive, state, addLog]);
 
-  // Allow external code to update state
   const resetForNext = useCallback(() => {
+    addLog('resetForNext — liberando fila para próxima chamada');
     processingRef.current = false;
     setCurrentCall(null);
     setState('idle');
-  }, []);
+  }, [addLog]);
 
   return {
     state,
+    setState,
     isActive,
     currentCall,
     queueLength: queueRef.current.length,
     activate,
     deactivate,
+    resetForNext,
     logs,
   };
 }

@@ -1,4 +1,4 @@
-// useIncomingWhatsAppCall v3 — stable hook count (force HMR rebuild)
+// useIncomingWhatsAppCall v4 — suppress modal when auto-attendant is active
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { isNotificationSoundEnabled, getNotificationVolume } from '@/utils/notificationSound';
@@ -16,7 +16,6 @@ export interface IncomingWhatsAppCall {
   sdp_offer: string | null;
   started_at: string | null;
   metadata: Record<string, any>;
-  // Enriched contact data
   contact_name: string | null;
   contact_photo: string | null;
 }
@@ -148,6 +147,21 @@ export function useIncomingWhatsAppCall() {
           const newCall = payload.new as any;
           console.log('[IncomingCall] New whatsapp_call INSERT:', newCall.id, newCall.status, newCall.direction);
           if (newCall.direction === 'inbound' && newCall.status === 'ringing') {
+            // Check if auto-attendant is active — if so, suppress modal
+            try {
+              const { data: settings } = await supabase
+                .from('nina_settings')
+                .select('auto_attendant_active')
+                .limit(1)
+                .single();
+              if ((settings as any)?.auto_attendant_active === true) {
+                console.log('[IncomingCall] Auto-attendant active — suppressing modal for call', newCall.id);
+                return;
+              }
+            } catch (err) {
+              console.warn('[IncomingCall] Failed to check auto_attendant_active:', err);
+            }
+
             console.log('Incoming WhatsApp call:', newCall.id);
             const enrichedCall = await enrichCallWithContact(newCall);
             callRef.current = enrichedCall;
@@ -176,8 +190,6 @@ export function useIncomingWhatsAppCall() {
 
           if (['answered', 'ended', 'rejected', 'missed', 'failed'].includes(updated.status)) {
             stopRingtoneAudio();
-            // Dismiss for all users — the answering user's IncomingCallModal
-            // maintains its own localStatus and stays open independently
             console.log(`[IncomingCall] Dismissing call ${updated.id} (status: ${updated.status})`);
             setIncomingCall(null);
             callRef.current = null;
@@ -192,21 +204,18 @@ export function useIncomingWhatsAppCall() {
     };
   }, [enrichCallWithContact]);
 
-  // Safety polling + ringing timeout (combined into single useEffect to keep hook count stable)
+  // Safety polling + ringing timeout
   useEffect(() => {
     const currentCall = incomingCall;
     if (!currentCall?.id || currentCall.status !== 'ringing') return;
 
-    // Max ringing timeout: Meta doesn't send "answered" event when call is picked up on phone.
-    // No real phone rings for more than 30s, so auto-dismiss after 30s of ringing.
     const ringingTimeout = setTimeout(() => {
-      console.warn(`[IncomingCall] Ringing timeout (30s) for call ${currentCall.id} — auto-dismissing (likely answered on phone or missed)`);
+      console.warn(`[IncomingCall] Ringing timeout (30s) for call ${currentCall.id} — auto-dismissing`);
       stopRingtoneAudio();
       setIncomingCall(null);
       callRef.current = null;
     }, 30000);
 
-    // Polling: clean up orphaned ringing calls every 5s
     const pollId = setInterval(async () => {
       try {
         const { data, error } = await supabase
