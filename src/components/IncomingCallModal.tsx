@@ -110,7 +110,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
   const [callDuration, setCallDuration] = useState(0);
   const [isAccepting, setIsAccepting] = useState(false);
   const [localStatus, setLocalStatus] = useState<string | null>(null);
-  
+  const [localCallData, setLocalCallData] = useState<IncomingWhatsAppCall | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -135,7 +135,9 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
     if (!call) setLocalStatus(null);
   }, [call]);
 
-  const effectiveStatus = localStatus || call?.status;
+  // Use localCallData as fallback when hook dismisses the call
+  const activeCall = call || localCallData;
+  const effectiveStatus = localStatus || activeCall?.status;
 
   // Duration timer
   useEffect(() => {
@@ -186,15 +188,19 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
     iceCandidateCountRef.current = { host: 0, srflx: 0, relay: 0, prflx: 0, unknown: 0 };
   }, []);
 
-  // Cleanup on unmount or call gone
+  // Cleanup on unmount or call gone (but NOT if we're in an active answered call)
   useEffect(() => {
-    if (!call) cleanup();
-    return cleanup;
-  }, [call, cleanup]);
+    if (!call && localStatus !== 'answered') cleanup();
+    return () => {
+      // Only cleanup on unmount if not answered
+      if (localStatus !== 'answered') cleanup();
+    };
+  }, [call, cleanup, localStatus]);
 
   // Safety polling: check DB status every 3s for ANY active call
   useEffect(() => {
-    if (!call?.id) return;
+    const callId = call?.id || localCallData?.id;
+    if (!callId) return;
 
     const terminalStatuses = ['ended', 'rejected', 'missed', 'failed'];
     const pollId = setInterval(async () => {
@@ -202,7 +208,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
         const { data, error } = await supabase
           .from('whatsapp_calls')
           .select('id, status')
-          .eq('id', call.id)
+          .eq('id', callId)
           .single();
 
         if (error) {
@@ -213,15 +219,18 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
 
         // Terminal status → close modal
         if (terminalStatuses.includes(data.status)) {
-          console.log(`[WebRTC][Polling] Call ${call.id} ended with status: ${data.status}. Closing modal.`);
+          console.log(`[WebRTC][Polling] Call ${callId} ended with status: ${data.status}. Closing modal.`);
+          setLocalCallData(null);
+          setLocalStatus(null);
           cleanup();
           onDismiss();
           return;
         }
 
         // DB says answered but frontend still ringing → answered elsewhere
-        if (data.status === 'answered' && call.status === 'ringing' && !localStatus) {
-          console.log(`[WebRTC][Polling] Call ${call.id} answered elsewhere (DB: answered, frontend: ringing). Closing modal.`);
+        if (data.status === 'answered' && !localStatus) {
+          console.log(`[WebRTC][Polling] Call ${callId} answered elsewhere. Closing modal.`);
+          setLocalCallData(null);
           cleanup();
           onDismiss();
         }
@@ -231,7 +240,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
     }, 3000);
 
     return () => clearInterval(pollId);
-  }, [call?.id, call?.status, localStatus, cleanup, onDismiss]);
+  }, [call?.id, localCallData?.id, localStatus, cleanup, onDismiss]);
 
   // Absolute timeout: auto-dismiss modal after 60s regardless of status
   useEffect(() => {
@@ -248,6 +257,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
     if (!call || isAccepting) return;
     setIsAccepting(true);
     setLocalStatus('answered'); // Optimistic UI update
+    setLocalCallData(call); // Persist call data locally so modal survives hook dismissal
     acceptStartRef.current = performance.now();
     console.log(`[WebRTC][${ts()}] ▶ Accept clicked — starting call flow (optimistic UI set to answered)`);
     onStopRingtone();
@@ -550,16 +560,19 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
   };
 
   const handleHangup = async () => {
-    if (!call) return;
+    const callId = call?.id || localCallData?.id;
+    if (!callId) return;
 
     try {
       await supabase.functions.invoke('whatsapp-call-terminate', {
-        body: { call_id: call.id },
+        body: { call_id: callId },
       });
     } catch (error) {
       console.error('Error terminating call:', error);
     }
 
+    setLocalCallData(null);
+    setLocalStatus(null);
     cleanup();
     onDismiss();
   };
@@ -580,14 +593,14 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
     return `${m}:${s}`;
   };
 
-  const displayName = call?.contact_name || call?.from_number || 'Número desconhecido';
-  const displayNumber = call?.from_number || '';
+  const displayName = activeCall?.contact_name || activeCall?.from_number || 'Número desconhecido';
+  const displayNumber = activeCall?.from_number || '';
   const isRinging = effectiveStatus === 'ringing';
   const isAnswered = effectiveStatus === 'answered';
 
   return (
     <AnimatePresence>
-      {call && (
+      {activeCall && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -619,8 +632,8 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
                 </>
               )}
               <div className="w-28 h-28 rounded-full bg-slate-800 border-2 border-cyan-500/50 flex items-center justify-center overflow-hidden">
-                {call.contact_photo ? (
-                  <img src={call.contact_photo} alt={displayName} className="w-full h-full object-cover" />
+                {activeCall.contact_photo ? (
+                  <img src={activeCall.contact_photo} alt={displayName} className="w-full h-full object-cover" />
                 ) : (
                   <User className="w-12 h-12 text-slate-400" />
                 )}
@@ -630,7 +643,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
             {/* Name and number */}
             <div className="text-center">
               <h2 className="text-2xl font-semibold text-white">{displayName}</h2>
-              {call.contact_name && displayNumber && (
+              {activeCall.contact_name && displayNumber && (
                 <p className="text-slate-400 mt-1">{displayNumber}</p>
               )}
               <p className="text-sm text-cyan-400 mt-2">

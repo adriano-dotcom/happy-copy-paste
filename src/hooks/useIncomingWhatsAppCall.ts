@@ -176,15 +176,11 @@ export function useIncomingWhatsAppCall() {
 
           if (['answered', 'ended', 'rejected', 'missed', 'failed'].includes(updated.status)) {
             stopRingtoneAudio();
-
-            if (updated.status === 'answered') {
-              // Keep modal open for active call
-              setIncomingCall(prev => prev ? { ...prev, status: 'answered' } : null);
-            } else {
-              // Call ended/rejected/missed — dismiss
-              setIncomingCall(null);
-              callRef.current = null;
-            }
+            // Dismiss for all users — the answering user's IncomingCallModal
+            // maintains its own localStatus and stays open independently
+            console.log(`[IncomingCall] Dismissing call ${updated.id} (status: ${updated.status})`);
+            setIncomingCall(null);
+            callRef.current = null;
           }
         }
       )
