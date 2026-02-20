@@ -54,6 +54,7 @@ import { LeadScoreBadge, WaitingTimeBadge, HandoffSummaryCard, QuickActionsBar, 
 import { MessageBubble } from './chat/MessageBubble';
 import { EmailComposeModal } from './EmailComposeModal';
 import { SendToPipedriveModal } from './chat/SendToPipedriveModal';
+import { OutboundCallModal } from './OutboundCallModal';
 import { HorizontalScrollPills } from './ui/horizontal-scroll-pills';
 import { WhatsAppPaymentAlertBanner } from './WhatsAppPaymentAlertBanner';
 
@@ -117,6 +118,7 @@ const ChatInterface: React.FC = () => {
   
   // Call modal state
   const [showCallModal, setShowCallModal] = useState(false);
+  const [showWhatsAppCallModal, setShowWhatsAppCallModal] = useState(false);
   const [defaultExtension, setDefaultExtension] = useState('1000');
   
   // WhatsApp template modal state
@@ -2332,9 +2334,24 @@ const ChatInterface: React.FC = () => {
                         }
                         setShowCallModal(true);
                       }}
-                      title="Fazer ligação"
+                      title="Fazer ligação (API4Com)"
                     >
                       <Phone className="w-5 h-5" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10"
+                      onClick={() => {
+                        if (!activeChat.contactPhone) {
+                          toast.error('Contato sem número de telefone');
+                          return;
+                        }
+                        setShowWhatsAppCallModal(true);
+                      }}
+                      title="Ligar via WhatsApp"
+                    >
+                      <PhoneCall className="w-5 h-5" />
                     </Button>
                   </>
                 )}
@@ -3282,6 +3299,21 @@ const ChatInterface: React.FC = () => {
           conversationId={activeChat.id}
           defaultExtension={defaultExtension}
           onCallInitiated={() => setShowCallModal(false)}
+        />
+      )}
+
+      {/* WhatsApp Outbound Call Modal */}
+      {activeChat && (
+        <OutboundCallModal
+          isOpen={showWhatsAppCallModal}
+          onClose={() => setShowWhatsAppCallModal(false)}
+          contact={{
+            id: activeChat.contactId,
+            name: activeChat.contactName,
+            phone: activeChat.contactPhone,
+            avatar: activeChat.contactAvatar,
+          }}
+          conversationId={activeChat.id}
         />
       )}
 
