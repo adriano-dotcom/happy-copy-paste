@@ -3267,6 +3267,43 @@ async function processQueueItem(
     return;
   }
 
+  // ===== AUTO-VOICE ON WINDOW OPEN =====
+  // If enabled, trigger Iris call when a lead opens a new conversation window
+  if (settings?.auto_voice_on_window && settings?.auto_attendant_active) {
+    const windowJustOpened = windowStart && 
+      (now.getTime() - windowStart.getTime()) < 30000; // 30s threshold
+    
+    if (windowJustOpened) {
+      // Check for recent VQ in last 24h to avoid spam
+      const { data: recentVq } = await supabase
+        .from('voice_qualifications')
+        .select('id')
+        .eq('contact_id', conversation.contact_id)
+        .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+        .limit(1)
+        .maybeSingle();
+      
+      if (!recentVq) {
+        // Fire-and-forget: trigger Iris call in background
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        fetch(`${supabaseUrl}/functions/v1/trigger-elevenlabs-call`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ contact_id: conversation.contact_id, force: true })
+        }).catch(err => console.error('[Nina] Auto-voice trigger error:', err));
+        
+        console.log(`[Nina] Auto-voice: triggered call for contact ${conversation.contact_id}`);
+      } else {
+        console.log(`[Nina] Auto-voice: skipped, VQ exists for contact ${conversation.contact_id}`);
+      }
+    }
+  }
+  // ===== END AUTO-VOICE ON WINDOW OPEN =====
+
   // Check if auto-response is enabled
   if (!settings?.auto_response_enabled) {
     console.log('[Nina] Auto-response disabled, marking as processed without responding');
