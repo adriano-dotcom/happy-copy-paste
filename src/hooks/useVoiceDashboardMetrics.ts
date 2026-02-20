@@ -18,6 +18,7 @@ export interface VoiceDashboardRecord {
   called_at: string | null;
   completed_at: string | null;
   created_at: string;
+  trigger_source: string;
   contacts: {
     name: string | null;
     phone_number: string;
@@ -38,6 +39,10 @@ export interface VoiceDashboardMetrics {
   qualificationRate: number;
   dailyData: { date: string; total: number; completed: number; qualified: number }[];
   recentFailures: VoiceDashboardRecord[];
+  autoWindowTotal: number;
+  autoWindowCalled: number;
+  autoWindowCompleted: number;
+  autoWindowRate: number;
 }
 
 function computeMetrics(records: VoiceDashboardRecord[]): VoiceDashboardMetrics {
@@ -48,6 +53,9 @@ function computeMetrics(records: VoiceDashboardRecord[]): VoiceDashboardMetrics 
   let cancelledCount = 0;
   let failedCount = 0;
   let noAnswerCount = 0;
+  let autoWindowTotal = 0;
+  let autoWindowCalled = 0;
+  let autoWindowCompleted = 0;
 
   records.forEach(r => {
     byStatus[r.status] = (byStatus[r.status] || 0) + 1;
@@ -62,11 +70,19 @@ function computeMetrics(records: VoiceDashboardRecord[]): VoiceDashboardMetrics 
     if (r.status === 'cancelled') cancelledCount++;
     if (['failed', 'not_contacted', 'call_initiation_failure'].includes(r.status)) failedCount++;
     if (r.status === 'no_answer') noAnswerCount++;
+
+    // Auto-window metrics
+    if (r.trigger_source === 'auto_window') {
+      autoWindowTotal++;
+      if (!['pending', 'scheduled'].includes(r.status)) autoWindowCalled++;
+      if (r.status === 'completed') autoWindowCompleted++;
+    }
   });
 
   const attemptedCount = completedCount + noAnswerCount + failedCount;
   const attendanceRate = attemptedCount > 0 ? (completedCount / attemptedCount) * 100 : 0;
   const qualificationRate = completedCount > 0 ? (qualifiedCount / completedCount) * 100 : 0;
+  const autoWindowRate = autoWindowCalled > 0 ? (autoWindowCompleted / autoWindowCalled) * 100 : 0;
 
   // Daily aggregation
   const dailyMap: Record<string, { total: number; completed: number; qualified: number }> = {};
@@ -109,6 +125,10 @@ function computeMetrics(records: VoiceDashboardRecord[]): VoiceDashboardMetrics 
     qualificationRate,
     dailyData,
     recentFailures,
+    autoWindowTotal,
+    autoWindowCalled,
+    autoWindowCompleted,
+    autoWindowRate,
   };
 }
 
@@ -118,7 +138,7 @@ export function useVoiceDashboardMetrics() {
     queryFn: async (): Promise<VoiceDashboardMetrics> => {
       const { data, error } = await supabase
         .from('voice_qualifications')
-        .select('id, contact_id, deal_id, agent_id, elevenlabs_conversation_id, status, qualification_result, interest_level, call_summary, observations, attempt_number, max_attempts, scheduled_for, called_at, completed_at, created_at, contacts(name, phone_number)')
+        .select('id, contact_id, deal_id, agent_id, elevenlabs_conversation_id, status, qualification_result, interest_level, call_summary, observations, attempt_number, max_attempts, scheduled_for, called_at, completed_at, created_at, trigger_source, contacts(name, phone_number)')
         .order('created_at', { ascending: false })
         .limit(500);
 

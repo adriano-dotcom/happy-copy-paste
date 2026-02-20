@@ -1,0 +1,1 @@
+ALTER TABLE voice_qualifications ADD COLUMN trigger_source text NOT NULL DEFAULT 'manual';

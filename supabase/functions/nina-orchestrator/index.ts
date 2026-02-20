@@ -3295,7 +3295,7 @@ async function processQueueItem(
               'Authorization': `Bearer ${supabaseServiceKey}`,
               'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ contact_id: conversation.contact_id, force: true })
+            body: JSON.stringify({ contact_id: conversation.contact_id, force: true, trigger_source: 'auto_window' })
           }).catch(err => console.error('[Nina] Auto-voice trigger error:', err));
         };
         

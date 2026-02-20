@@ -2346,6 +2346,7 @@ export type Database = {
           qualification_result: string | null
           scheduled_for: string
           status: string
+          trigger_source: string
           updated_at: string
         }
         Insert: {
@@ -2370,6 +2371,7 @@ export type Database = {
           qualification_result?: string | null
           scheduled_for?: string
           status?: string
+          trigger_source?: string
           updated_at?: string
         }
         Update: {
@@ -2394,6 +2396,7 @@ export type Database = {
           qualification_result?: string | null
           scheduled_for?: string
           status?: string
+          trigger_source?: string
           updated_at?: string
         }
         Relationships: [
