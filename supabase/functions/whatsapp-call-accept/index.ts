@@ -103,9 +103,33 @@ Deno.serve(async (req) => {
         });
       }
 
-      // accept intentionally omitted — pre_accept already established the media session
-      // Sending accept with full SDP resets the media session and kills audio
-      console.log(`[both] Skipping accept to preserve media session established by pre_accept`);
+      // Step 2: accept with minimal SDP (no media section) to formally accept
+      // without re-negotiating the media session established by pre_accept
+      await new Promise(r => setTimeout(r, 1500)); // Wait for DTLS to complete
+
+      const minimalSdp = 'v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\n';
+      console.log(`[both] Sending accept with minimal SDP for call ${whatsappCallId}`);
+      const acceptRes = await fetch(metaUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          call_id: whatsappCallId,
+          action: 'accept',
+          session: { sdp_type: 'answer', sdp: minimalSdp },
+        }),
+      });
+
+      const acceptBody = await acceptRes.text();
+      console.log(`[both] accept response: ${acceptRes.status} ${acceptBody}`);
+
+      if (!acceptRes.ok) {
+        // Non-fatal: log but continue — pre_accept already established media
+        console.warn(`[both] accept failed (non-fatal): ${acceptBody}`);
+      }
 
       // Update DB
       await supabase
