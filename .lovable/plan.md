@@ -1,63 +1,83 @@
 
-# Fix: Modal Discreto quando Auto-Attendant esta Ativo
+# Auto-Attendant sem precisar da pagina /auto-attendant aberta
 
-## Problema
-Quando o Auto-Attendant esta ativo e a Iris atende as chamadas automaticamente, o modal grande de chamada (`IncomingCallModal`) ainda aparece para os operadores humanos nas outras paginas (`/chat`, `/dashboard`, etc.), bloqueando a tela inteira.
+## Contexto Tecnico
 
-O codigo de supressao ja existe no `useIncomingWhatsAppCall`, mas pode haver uma corrida de tempo (race condition) entre o INSERT da chamada e a consulta ao flag `auto_attendant_active`. Alem disso, mesmo que funcione, o usuario quer poder **monitorar** as chamadas sendo atendidas pela Iris sem ser bloqueado pelo modal.
+O Audio Bridge atual precisa de um navegador porque usa WebRTC para conectar a chamada WhatsApp (Meta) com o agente ElevenLabs (Iris). Isso e uma limitacao do protocolo — nao e possivel fazer server-side puro.
 
 ## Solucao
 
-Substituir a logica binaria (mostrar ou nao o modal) por uma logica de 3 estados:
-1. **Auto-attendant desligado**: Modal completo (comportamento atual)
-2. **Auto-attendant ligado**: Banner discreto no topo da tela, sem bloquear a interface
-3. **Auto-attendant ligado + chamada ja tratada**: Banner desaparece apos alguns segundos
+Mover toda a logica do Auto-Attendant (WebRTC + AudioBridge + ElevenLabs) para dentro do layout principal do app. Assim, quando o usuario ativa o auto-attendant (de qualquer pagina), o bridge roda em background independente da rota.
 
-### Etapa 1: Hook retorna flag de supressao em vez de esconder silenciosamente
+O usuario pode estar no `/chat`, `/kanban`, `/settings` — nao importa. O bridge funciona silenciosamente em segundo plano.
 
-No `useIncomingWhatsAppCall.ts`:
-- Em vez de `return` silencioso quando `auto_attendant_active === true`, retornar a chamada com um flag `suppressedByAutoAttendant: true`
-- Isso permite que o componente pai decida como exibir (modal cheio vs banner discreto)
+### O que muda para o usuario
+- Ativar/desativar o Auto-Attendant direto pela Sidebar ou por qualquer pagina
+- Nao precisa mais abrir `/auto-attendant`
+- Um pequeno indicador na Sidebar mostra que esta ativo
+- As chamadas sao atendidas automaticamente pela Iris enquanto qualquer aba do sistema estiver aberta
 
-### Etapa 2: Criar componente `AutoAttendantCallBanner`
+### Etapa 1: Criar componente `AutoAttendantEngine`
 
-Componente pequeno e discreto que aparece quando `suppressedByAutoAttendant === true`:
-- Barra fina no topo da tela (nao bloqueia interacao)
-- Mostra: nome do contato, numero, indicador "Iris atendendo..."
-- Desaparece automaticamente quando a chamada muda de status (answered, ended, etc.)
-- Animacao suave de entrada/saida
+Extrair toda a logica de processamento de chamadas do `AutoAttendant.tsx` (WebRTC, AudioBridge, ElevenLabs, terminacao) para um componente invisivel `AutoAttendantEngine.tsx` que:
+- Nao renderiza nada visivel (apenas logica)
+- Usa os mesmos hooks: `useWhatsAppAutoAttendant` + `useElevenLabsBridge`
+- Gerencia todo o ciclo: detectar chamada -> WebRTC -> AudioBridge -> ElevenLabs -> terminacao
+- Faz o AudioContext unlock automaticamente na primeira interacao do usuario com a pagina
 
-### Etapa 3: Atualizar `AppLayout` no `App.tsx`
+### Etapa 2: Montar o Engine no AppLayout
 
-- Renderizar o `AutoAttendantCallBanner` quando a chamada esta suprimida
-- Manter o `IncomingCallModal` apenas para chamadas nao suprimidas
-- Logica: se `suppressedByAutoAttendant` -> banner; senao -> modal completo
+No `App.tsx`, dentro do `AppLayout`, renderizar `AutoAttendantEngine` condicionalmente quando `auto_attendant_active === true` no banco. Usar um hook simples para checar esse flag via Realtime.
 
-### Etapa 4: Garantir que o flag e setado antes da primeira chamada
+### Etapa 3: Toggle na Sidebar
 
-No `useWhatsAppAutoAttendant.activate()`, o `await` no update do banco ja esta correto, mas adicionar um pequeno delay (200ms) entre setar o flag e comecar a escutar chamadas para garantir que a propagacao realtime nao perca o timing.
+Adicionar um botao de toggle na Sidebar para ativar/desativar o Auto-Attendant. Quando clicado:
+- Seta `auto_attendant_active = true/false` no banco
+- Mostra indicador visual (icone pulsando) quando ativo
 
----
+### Etapa 4: Manter /auto-attendant como painel de monitoramento (opcional)
+
+A pagina `/auto-attendant` continua existindo, mas apenas como dashboard de monitoramento (logs, niveis de audio, status). A logica real roda no Engine.
 
 ## Detalhes Tecnicos
 
+### Arquivos novos:
+1. **`src/components/AutoAttendantEngine.tsx`** — Componente headless com toda logica extraida do `AutoAttendant.tsx` (WebRTC, SDP exchange, AudioBridge, ElevenLabs session, terminacao, beforeunload)
+2. **`src/hooks/useAutoAttendantFlag.ts`** — Hook que monitora `nina_settings.auto_attendant_active` via Realtime e expoe toggle
+
 ### Arquivos modificados:
+3. **`src/App.tsx`** — Importar e renderizar `AutoAttendantEngine` dentro do `AppLayout` quando flag ativo
+4. **`src/components/Sidebar.tsx`** — Adicionar botao toggle do Auto-Attendant com indicador visual
+5. **`src/pages/AutoAttendant.tsx`** — Simplificar para apenas monitoramento (logs/UI), sem logica de processamento
 
-1. **`src/hooks/useIncomingWhatsAppCall.ts`**
-   - Adicionar campo `suppressedByAutoAttendant` no estado retornado
-   - Quando `auto_attendant_active === true`: setar a chamada com flag de supressao em vez de ignorar completamente
-   - Nao tocar ringtone quando suprimida
+### Fluxo:
 
-2. **`src/components/AutoAttendantCallBanner.tsx`** (novo)
-   - Banner discreto fixo no topo
-   - Mostra icone de robo/IA + nome do contato + "Iris esta atendendo"
-   - Barra de progresso animada
-   - Auto-dismiss apos a chamada sair de `ringing`
-   - Estilo: bg-cyan-900/80, texto pequeno, sem bloqueio de cliques
+```text
+  Usuario clica toggle na Sidebar
+         |
+         v
+  nina_settings.auto_attendant_active = true
+         |
+         v
+  AutoAttendantEngine monta no AppLayout
+         |
+         v
+  Escuta chamadas via Realtime (whatsapp_calls INSERT)
+         |
+         v
+  Chamada inbound detectada
+         |
+         v
+  WebRTC + SDP exchange + AudioBridge + ElevenLabs
+         |
+         v
+  Iris atende automaticamente (em background)
+         |
+         v
+  Banner discreto mostra "Iris atendendo..." (ja implementado)
+```
 
-3. **`src/App.tsx`**
-   - Importar e renderizar `AutoAttendantCallBanner` dentro do `AppLayout`
-   - Condicional: se chamada suprimida, mostrar banner; se nao, mostrar modal
-
-4. **`src/hooks/useWhatsAppAutoAttendant.ts`**
-   - Nenhuma mudanca estrutural, apenas garantir que `activate()` aguarda o update do banco antes de escutar chamadas
+### Restricao mantida:
+- O usuario ainda precisa ter pelo menos uma aba do sistema aberta (qualquer pagina)
+- Isso e necessario porque o WebRTC precisa de um navegador para funcionar
+- Mas NAO precisa mais ser a pagina `/auto-attendant` especificamente
