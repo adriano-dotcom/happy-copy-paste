@@ -57,58 +57,85 @@ Deno.serve(async (req) => {
             const callType = call.type; // "connect" or "terminate"
             const sdp = call.session?.sdp;
             const sdpType = call.session?.sdp_type;
+            const callDirection = call.direction; // "BUSINESS_INITIATED" for outbound
 
-            console.log(`Call event: type=${callType}, id=${callId}, from=${fromNumber}`);
+            console.log(`Call event: type=${callType}, id=${callId}, from=${fromNumber}, direction=${callDirection}`);
 
             if (callType === 'connect') {
-              // Resolve contact by phone number
-              const normalizedPhone = fromNumber?.replace(/\D/g, '');
-              let contactId: string | null = null;
-              let conversationId: string | null = null;
+              // Check if this is a business-initiated (outbound) call response
+              if (callDirection === 'BUSINESS_INITIATED') {
+                // Outbound call: Meta is sending back the SDP answer from the lead
+                console.log(`Outbound call response: id=${callId}, updating with SDP answer`);
 
-              if (normalizedPhone) {
-                const { data: contact } = await supabase
-                  .from('contacts')
-                  .select('id')
-                  .or(`phone_number.eq.${normalizedPhone},phone_number.eq.+${normalizedPhone}`)
+                const { data: existingCall } = await supabase
+                  .from('whatsapp_calls')
+                  .select('id, status')
+                  .eq('whatsapp_call_id', callId)
                   .limit(1)
                   .maybeSingle();
 
-                if (contact) {
-                  contactId = contact.id;
-                  // Find active conversation
-                  const { data: conv } = await supabase
-                    .from('conversations')
+                if (existingCall) {
+                  await supabase
+                    .from('whatsapp_calls')
+                    .update({
+                      status: 'ringing',
+                      sdp_answer: sdp,
+                      metadata: { sdp_type: sdpType, direction: callDirection },
+                    })
+                    .eq('id', existingCall.id);
+
+                  console.log(`Outbound call ${callId} updated with SDP answer, status=ringing`);
+                } else {
+                  console.warn(`Outbound call ${callId} not found in DB for connect event`);
+                }
+              } else {
+                // Inbound call: create new record (existing behavior)
+                const normalizedPhone = fromNumber?.replace(/\D/g, '');
+                let contactId: string | null = null;
+                let conversationId: string | null = null;
+
+                if (normalizedPhone) {
+                  const { data: contact } = await supabase
+                    .from('contacts')
                     .select('id')
-                    .eq('contact_id', contact.id)
-                    .eq('is_active', true)
-                    .order('last_message_at', { ascending: false })
+                    .or(`phone_number.eq.${normalizedPhone},phone_number.eq.+${normalizedPhone}`)
                     .limit(1)
                     .maybeSingle();
 
-                  if (conv) conversationId = conv.id;
+                  if (contact) {
+                    contactId = contact.id;
+                    const { data: conv } = await supabase
+                      .from('conversations')
+                      .select('id')
+                      .eq('contact_id', contact.id)
+                      .eq('is_active', true)
+                      .order('last_message_at', { ascending: false })
+                      .limit(1)
+                      .maybeSingle();
+
+                    if (conv) conversationId = conv.id;
+                  }
                 }
-              }
 
-              // Create call record with ringing status
-              const { error: insertError } = await supabase
-                .from('whatsapp_calls')
-                .insert({
-                  whatsapp_call_id: callId,
-                  contact_id: contactId,
-                  conversation_id: conversationId,
-                  direction: 'inbound',
-                  status: 'ringing',
-                  phone_number_id: phoneNumberId,
-                  from_number: fromNumber,
-                  sdp_offer: sdp,
-                  metadata: { sdp_type: sdpType },
-                });
+                const { error: insertError } = await supabase
+                  .from('whatsapp_calls')
+                  .insert({
+                    whatsapp_call_id: callId,
+                    contact_id: contactId,
+                    conversation_id: conversationId,
+                    direction: 'inbound',
+                    status: 'ringing',
+                    phone_number_id: phoneNumberId,
+                    from_number: fromNumber,
+                    sdp_offer: sdp,
+                    metadata: { sdp_type: sdpType },
+                  });
 
-              if (insertError) {
-                console.error('Error inserting call:', insertError);
-              } else {
-                console.log(`Call ${callId} created with status=ringing`);
+                if (insertError) {
+                  console.error('Error inserting call:', insertError);
+                } else {
+                  console.log(`Call ${callId} created with status=ringing`);
+                }
               }
             } else if (callType === 'terminate') {
               // Update call status

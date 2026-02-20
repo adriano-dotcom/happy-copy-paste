@@ -167,6 +167,9 @@ verify_jwt = true
 [functions.whatsapp-call-webhook]
 verify_jwt = false
 
+[functions.whatsapp-call-initiate]
+verify_jwt = true
+
 [functions.whatsapp-call-accept]
 verify_jwt = false
 

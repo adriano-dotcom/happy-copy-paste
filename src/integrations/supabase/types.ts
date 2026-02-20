@@ -2522,6 +2522,7 @@ export type Database = {
           id: string
           metadata: Json | null
           phone_number_id: string | null
+          sdp_answer: string | null
           sdp_offer: string | null
           started_at: string | null
           status: string
@@ -2542,6 +2543,7 @@ export type Database = {
           id?: string
           metadata?: Json | null
           phone_number_id?: string | null
+          sdp_answer?: string | null
           sdp_offer?: string | null
           started_at?: string | null
           status?: string
@@ -2562,6 +2564,7 @@ export type Database = {
           id?: string
           metadata?: Json | null
           phone_number_id?: string | null
+          sdp_answer?: string | null
           sdp_offer?: string | null
           started_at?: string | null
           status?: string

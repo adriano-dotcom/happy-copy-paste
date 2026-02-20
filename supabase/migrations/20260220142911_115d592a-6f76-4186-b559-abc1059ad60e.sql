@@ -1,0 +1,1 @@
+ALTER TABLE public.whatsapp_calls ADD COLUMN sdp_answer text;
