@@ -436,27 +436,31 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
 
       // 5. Send pre_accept with full SDP (including ICE candidates)
       const fullSdp = fixSdpForMeta(pc.localDescription?.sdp || '');
-      console.log(`[WebRTC][${ts()}] Sending both (pre_accept only) with full SDP...`);
+      console.log(`[WebRTC][${ts()}] Sending pre_accept with full SDP...`);
       logSdpDetails('ANSWER (with ICE candidates)', fullSdp);
 
-      const { data: acceptData, error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
+      const { data: preAcceptData, error: preAcceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
         body: {
           call_id: call.id,
           sdp_answer: fullSdp,
-          action: 'both',
+          action: 'pre_accept',
         },
       });
 
-      if (acceptError) {
-        throw new Error(acceptError.message || 'accept failed');
+      if (preAcceptError) {
+        throw new Error(preAcceptError.message || 'pre_accept failed');
       }
 
-      console.log(`[WebRTC][${ts()}] both completed:`, acceptData);
+      console.log(`[WebRTC][${ts()}] pre_accept completed:`, preAcceptData);
 
-      // 6. Wait for connectionState === 'connected' (may already be connected)
+      // 6. Wait for connectionState === 'connected' before sending accept
       if (pc.connectionState !== 'connected') {
+        console.log(`[WebRTC][${ts()}] Waiting for connectionState === 'connected' before accept...`);
         await new Promise<void>((resolve) => {
-          const timeout = setTimeout(() => resolve(), 10000);
+          const timeout = setTimeout(() => {
+            console.warn(`[WebRTC][${ts()}] Connection timeout (10s) — sending accept anyway`);
+            resolve();
+          }, 10000);
           const handler = () => {
             if (pc.connectionState === 'connected' || pc.connectionState === 'failed') {
               clearTimeout(timeout);
@@ -467,10 +471,26 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
           pc.addEventListener('connectionstatechange', handler);
         });
       }
-      console.log(`[WebRTC][${ts()}] Connection state: ${pc.connectionState}`);
+      console.log(`[WebRTC][${ts()}] Connection state before accept: ${pc.connectionState}`);
+
+      // 7. Send accept with same SDP to formally accept the call
+      console.log(`[WebRTC][${ts()}] Sending accept with same SDP...`);
+      const { data: acceptData, error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
+        body: {
+          call_id: call.id,
+          sdp_answer: fullSdp,
+          action: 'accept',
+        },
+      });
+
+      if (acceptError) {
+        console.warn(`[WebRTC][${ts()}] accept error (non-fatal):`, acceptError.message);
+      } else {
+        console.log(`[WebRTC][${ts()}] accept completed:`, acceptData);
+      }
 
       const totalElapsed = (performance.now() - acceptStartRef.current).toFixed(0);
-      console.log(`[WebRTC][${ts()}] ✓ pre_accept + DTLS + accept completed in ${totalElapsed}ms`);
+      console.log(`[WebRTC][${ts()}] ✓ pre_accept + connection + accept completed in ${totalElapsed}ms`);
 
       setLocalStatus('answered');
       clearTimeout(totalTimeoutId);
