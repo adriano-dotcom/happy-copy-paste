@@ -178,3 +178,7 @@ verify_jwt = false
 
 [functions.whatsapp-call-terminate]
 verify_jwt = false
+
+# ElevenLabs conversation token for Auto-Attendant bridge
+[functions.elevenlabs-conversation-token]
+verify_jwt = true

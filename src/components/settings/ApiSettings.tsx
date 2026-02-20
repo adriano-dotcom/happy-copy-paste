@@ -1410,6 +1410,42 @@ const ApiSettings = forwardRef<ApiSettingsRef>((props, ref) => {
           </Collapsible.Content>
         </div>
       </Collapsible.Root>
+
+      {/* Voice Channel Toggle */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/50 overflow-hidden p-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <Phone className="w-5 h-5 text-violet-400" />
+          <div>
+            <h3 className="font-semibold text-white">Canal de Voz da Iris</h3>
+            <p className="text-xs text-slate-400">Define como a Iris faz/recebe chamadas</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              await supabase.from('nina_settings').update({ voice_call_channel: 'pstn' }).eq('id', settings.id!);
+              toast.success('Canal alterado para PSTN (Twilio)');
+            }}
+            className="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
+          >
+            📞 PSTN (Twilio)
+          </button>
+          <button
+            onClick={async () => {
+              await supabase.from('nina_settings').update({ voice_call_channel: 'whatsapp' }).eq('id', settings.id!);
+              toast.success('Canal alterado para WhatsApp Bridge');
+            }}
+            className="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
+          >
+            💬 WhatsApp Bridge
+          </button>
+        </div>
+        <div className="p-3 bg-violet-500/10 border border-violet-500/20 rounded-lg">
+          <p className="text-xs text-violet-300">
+            <strong>WhatsApp Bridge:</strong> Requer a aba <a href="/auto-attendant" target="_blank" className="underline hover:text-violet-200">/auto-attendant</a> aberta no navegador.
+          </p>
+        </div>
+      </div>
     </div>
   );
 });

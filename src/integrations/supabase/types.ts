@@ -1570,6 +1570,7 @@ export type Database = {
           test_system_prompt: string | null
           timezone: string
           updated_at: string
+          voice_call_channel: string
           whatsapp_access_token: string | null
           whatsapp_app_secret: string | null
           whatsapp_phone_number_id: string | null
@@ -1639,6 +1640,7 @@ export type Database = {
           test_system_prompt?: string | null
           timezone?: string
           updated_at?: string
+          voice_call_channel?: string
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
           whatsapp_phone_number_id?: string | null
@@ -1708,6 +1710,7 @@ export type Database = {
           test_system_prompt?: string | null
           timezone?: string
           updated_at?: string
+          voice_call_channel?: string
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
           whatsapp_phone_number_id?: string | null
