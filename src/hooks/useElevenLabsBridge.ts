@@ -9,7 +9,7 @@ export type DynamicVariables = Record<string, string>;
 interface UseElevenLabsBridgeReturn {
   status: ElevenLabsBridgeStatus;
   isSpeaking: boolean;
-  startSession: (dynamicVars: DynamicVariables) => Promise<void>;
+  startSession: (dynamicVars: DynamicVariables, micStream?: MediaStream) => Promise<void>;
   endSession: () => Promise<void>;
   error: string | null;
 }
@@ -37,7 +37,8 @@ export function useElevenLabsBridge(): UseElevenLabsBridgeReturn {
     },
   });
 
-  const startSession = useCallback(async (dynamicVars: DynamicVariables) => {
+  const startSession = useCallback(async (dynamicVars: DynamicVariables, micStream?: MediaStream) => {
+    const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     try {
       setStatus('connecting');
       setError(null);
@@ -51,13 +52,19 @@ export function useElevenLabsBridge(): UseElevenLabsBridgeReturn {
         throw new Error(fnError?.message || 'Failed to get signed URL');
       }
 
+      // Patch getUserMedia to inject caller audio instead of operator mic
+      if (micStream) {
+        console.log('[ElevenLabsBridge] Patching getUserMedia with caller audio stream');
+        navigator.mediaDevices.getUserMedia = async () => micStream;
+      }
+
       console.log('[ElevenLabsBridge] Starting session with signed URL...');
       
       await conversation.startSession({
         signedUrl: data.signed_url,
         overrides: {
           agent: {
-            firstMessage: undefined, // Use agent's default
+            firstMessage: undefined,
           },
         },
         dynamicVariables: dynamicVars as Record<string, string>,
@@ -67,6 +74,10 @@ export function useElevenLabsBridge(): UseElevenLabsBridgeReturn {
       console.error('[ElevenLabsBridge] Failed to start session:', err);
       setError(err.message);
       setStatus('error');
+    } finally {
+      // Always restore original getUserMedia
+      navigator.mediaDevices.getUserMedia = originalGetUserMedia;
+      console.log('[ElevenLabsBridge] getUserMedia restored');
     }
   }, [conversation]);
 
