@@ -86,6 +86,7 @@ const playRingtoneLoop = () => {
 
 export function useIncomingWhatsAppCall() {
   const [incomingCall, setIncomingCall] = useState<IncomingWhatsAppCall | null>(null);
+  const [suppressedByAutoAttendant, setSuppressedByAutoAttendant] = useState(false);
   const callRef = useRef<IncomingWhatsAppCall | null>(null);
 
   const enrichCallWithContact = useCallback(async (callData: any): Promise<IncomingWhatsAppCall> => {
@@ -126,6 +127,7 @@ export function useIncomingWhatsAppCall() {
   const dismissCall = useCallback(() => {
     stopRingtoneAudio();
     setIncomingCall(null);
+    setSuppressedByAutoAttendant(false);
     callRef.current = null;
   }, []);
 
@@ -147,7 +149,7 @@ export function useIncomingWhatsAppCall() {
           const newCall = payload.new as any;
           console.log('[IncomingCall] New whatsapp_call INSERT:', newCall.id, newCall.status, newCall.direction);
           if (newCall.direction === 'inbound' && newCall.status === 'ringing') {
-            // Check if auto-attendant is active — if so, suppress modal
+            let suppressed = false;
             try {
               const { data: settings } = await supabase
                 .from('nina_settings')
@@ -155,18 +157,20 @@ export function useIncomingWhatsAppCall() {
                 .limit(1)
                 .single();
               if ((settings as any)?.auto_attendant_active === true) {
-                console.log('[IncomingCall] Auto-attendant active — suppressing modal for call', newCall.id);
-                return;
+                suppressed = true;
+                console.log('[IncomingCall] Auto-attendant active — showing discrete banner for call', newCall.id);
               }
             } catch (err) {
               console.warn('[IncomingCall] Failed to check auto_attendant_active:', err);
             }
 
-            console.log('Incoming WhatsApp call:', newCall.id);
             const enrichedCall = await enrichCallWithContact(newCall);
             callRef.current = enrichedCall;
             setIncomingCall(enrichedCall);
-            playRingtoneLoop();
+            setSuppressedByAutoAttendant(suppressed);
+            if (!suppressed) {
+              playRingtoneLoop();
+            }
           }
         }
       )
@@ -192,6 +196,7 @@ export function useIncomingWhatsAppCall() {
             stopRingtoneAudio();
             console.log(`[IncomingCall] Dismissing call ${updated.id} (status: ${updated.status})`);
             setIncomingCall(null);
+            setSuppressedByAutoAttendant(false);
             callRef.current = null;
           }
         }
@@ -213,6 +218,7 @@ export function useIncomingWhatsAppCall() {
       console.warn(`[IncomingCall] Ringing timeout (30s) for call ${currentCall.id} — auto-dismissing`);
       stopRingtoneAudio();
       setIncomingCall(null);
+      setSuppressedByAutoAttendant(false);
       callRef.current = null;
     }, 30000);
 
@@ -236,6 +242,7 @@ export function useIncomingWhatsAppCall() {
           console.log(`[IncomingCall][Polling] Call ${currentCall.id} no longer ringing (DB: ${data.status}). Dismissing.`);
           stopRingtoneAudio();
           setIncomingCall(null);
+          setSuppressedByAutoAttendant(false);
           callRef.current = null;
         }
       } catch (err) {
@@ -249,5 +256,5 @@ export function useIncomingWhatsAppCall() {
     };
   }, [incomingCall?.id, incomingCall?.status]);
 
-  return { incomingCall, dismissCall, stopRingtone };
+  return { incomingCall, suppressedByAutoAttendant, dismissCall, stopRingtone };
 }
