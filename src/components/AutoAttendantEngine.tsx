@@ -197,7 +197,7 @@ const AutoAttendantEngine: React.FC = () => {
   }, [attendant.currentCall?.id, attendant.isActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Start ElevenLabs session
-  const startElevenLabsSession = useCallback(async (call: any, _micStream: MediaStream) => {
+  const startElevenLabsSession = useCallback(async (call: any, micStream: MediaStream) => {
     try {
       let leadName = 'Cliente';
       let produtoInteresse = 'seguros';
@@ -245,7 +245,7 @@ const AutoAttendantEngine: React.FC = () => {
         produto_interesse: produtoInteresse,
         vq_id: call.id,
         lead_id: call.contact_id || '',
-      });
+      }, micStream);
     } catch (err: any) {
       addLog(`Error starting ElevenLabs: ${err.message}`);
     }
