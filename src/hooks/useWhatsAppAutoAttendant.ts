@@ -135,23 +135,37 @@ export function useWhatsAppAutoAttendant(): UseWhatsAppAutoAttendantReturn {
   }, [isActive, addLog]);
 
   const activate = useCallback(async () => {
-    setIsActive(true);
-    // Set flag in DB so other hooks know auto-attendant is active
+    // Set flag in DB FIRST so other hooks know auto-attendant is active
     try {
-      const { data: settings } = await supabase
+      const { data: settings, error: selErr } = await supabase
         .from('nina_settings')
         .select('id')
         .limit(1)
         .single();
+      
+      if (selErr) {
+        console.error('[AutoAttendant] Failed to read nina_settings:', selErr);
+      }
+      
       if (settings) {
-        await supabase
+        const { error: updErr } = await supabase
           .from('nina_settings')
           .update({ auto_attendant_active: true } as any)
           .eq('id', settings.id);
+        
+        if (updErr) {
+          console.error('[AutoAttendant] Failed to set auto_attendant_active flag:', updErr);
+        } else {
+          console.log('[AutoAttendant] auto_attendant_active set to TRUE in DB');
+        }
       }
     } catch (err) {
       console.error('[AutoAttendant] Failed to set auto_attendant_active flag:', err);
     }
+    
+    // Small delay to ensure DB propagation before listening
+    await new Promise(r => setTimeout(r, 300));
+    setIsActive(true);
   }, []);
 
   const deactivate = useCallback(async () => {
