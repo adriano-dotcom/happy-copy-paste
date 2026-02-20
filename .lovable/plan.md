@@ -1,58 +1,92 @@
 
 
-# Plano: Resolver erro de ligacao WhatsApp (audio sem transmissao)
+# Fix: Reintroduzir accept com SDP minimo apos pre_accept
 
-## Status atual
+## Diagnostico confirmado
 
-O erro `session['sdp'] is required` ja foi corrigido na versao anterior. Os logs mais recentes confirmam que todas as chamadas passam pelo `pre_accept` com sucesso (200 OK) e o `accept` e pulado intencionalmente.
+A chamada de teste mostra o seguinte timeline:
 
-O problema restante e que o audio nao flui porque o SDP era enviado ao Meta **sem ICE candidates** (o browser enviava antes do ICE gathering completar).
+```text
+00:23:26.998 — Remote audio track UNMUTED (audio comecou a fluir!)
+00:23:27.027 — Remote audio track ENDED (29ms depois — Meta cortou)
+00:23:27.043 — Resposta do both recebida (DB atualizado para answered)
+00:24:00     — Meta termina: erro 138021 "not receiving any media"
+```
 
-A correcao para aguardar ICE gathering (`iceGatheringState === 'complete'`) ja foi deployada no ultimo commit. **Nenhuma mudanca adicional de codigo e necessaria neste momento.**
+O audio FUNCIONA por 29ms e depois Meta encerra. Isso confirma que:
+- `pre_accept` estabelece a sessao de midia corretamente (track unmute prova que audio flui)
+- Sem o sinal `accept`, Meta trata como "preview" e termina a sessao rapidamente
+- Meta **exige** o `accept` para manter a chamada ativa
 
-## O que foi feito (ja implementado)
+O desafio anterior: `accept` com SDP completo reseta a sessao de midia. A solucao: enviar `accept` com SDP **minimo** (sem media section, sem ICE candidates) para formalizar a chamada sem re-negociar.
 
-1. **Edge function** (`whatsapp-call-accept`): Apenas `pre_accept` e enviado. O `accept` foi removido do flow `both` porque resetava a sessao de midia.
-2. **Frontend** (`IncomingCallModal.tsx`): Aguarda ate 3 segundos para o ICE gathering completar antes de capturar o SDP e enviar ao Meta.
+## Mudancas necessarias
 
-## Proximo passo: Teste
+### 1. Edge function: adicionar accept com SDP minimo no flow `both`
 
-Faca uma chamada WhatsApp de teste e observe no console do browser:
+No `supabase/functions/whatsapp-call-accept/index.ts`, no flow `both` (linhas 106-108):
 
-1. Deve aparecer `ICE gathering complete` (ou timeout apos 3s)
-2. O log `ANSWER (with ICE candidates)` deve conter linhas `a=candidate`
-3. `pre_accept response: 200` nos logs da edge function
-4. Audio bidirecional deve funcionar
+**Antes:**
+```typescript
+// accept intentionally omitted
+console.log(`[both] Skipping accept...`);
+```
 
-## Se o audio ainda nao funcionar
+**Depois:**
+```typescript
+// Step 2: accept with minimal SDP (no media section) to formally accept
+// without re-negotiating the media session established by pre_accept
+await new Promise(r => setTimeout(r, 1500)); // Wait for DTLS to complete
 
-Ha dois cenarios possiveis e suas solucoes:
+const minimalSdp = 'v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\n';
+console.log(`[both] Sending accept with minimal SDP for call ${whatsappCallId}`);
+const acceptRes = await fetch(metaUrl, {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    messaging_product: 'whatsapp',
+    call_id: whatsappCallId,
+    action: 'accept',
+    session: { sdp_type: 'answer', sdp: minimalSdp },
+  }),
+});
 
-### Cenario A: ICE gathering nao completa (timeout 3s)
-- **Sintoma**: Log mostra "ICE gathering timeout (3s)" e SDP ainda sem candidates
-- **Causa**: STUN/TURN server inacessivel ou bloqueado
-- **Solucao**: Adicionar TURN server na configuracao do RTCPeerConnection (atualmente usa apenas STUN do Google)
+const acceptBody = await acceptRes.text();
+console.log(`[both] accept response: ${acceptRes.status} ${acceptBody}`);
 
-### Cenario B: ICE candidates presentes mas Meta ainda nao envia audio
-- **Sintoma**: SDP tem `a=candidate` lines mas track continua `muted=true`
-- **Causa**: Meta pode exigir o sinal `accept` para finalizar o handshake
-- **Solucao**: Reintroduzir o `accept` mas com SDP minimo sem media section (evita re-negociacao):
-  ```
-  v=0
-  o=- 0 0 IN IP4 0.0.0.0
-  s=-
-  t=0 0
-  ```
+if (!acceptRes.ok) {
+  // Non-fatal: log but continue — pre_accept already established media
+  console.warn(`[both] accept failed (non-fatal): ${acceptBody}`);
+}
+```
+
+O delay de 1.5s e critico: permite que o DTLS handshake complete entre o browser e o server Meta antes de enviar o accept. Sem esse delay, o accept pode chegar antes do DTLS e causar conflito.
+
+### 2. Nenhuma mudanca no frontend
+
+O frontend ja envia `action: 'both'` e aguarda a resposta. A unica diferenca e que a resposta vai demorar ~1.5s a mais (por causa do delay antes do accept), o que esta dentro do timeout de 20s existente.
+
+## Resultado esperado
+
+```text
+1. pre_accept com SDP completo → sessao de midia estabelecida
+2. Delay 1.5s → DTLS handshake completa
+3. accept com SDP minimo → Meta formaliza a chamada
+4. Audio bidirecional flui indefinidamente
+5. Chamada permanece ativa ate usuario desligar
+```
 
 ## Secao tecnica
 
-### Nenhuma mudanca de codigo nesta iteracao
-Todo o codigo necessario ja foi deployado. O plano e testar e, com base nos resultados, decidir o proximo passo.
+### Arquivo modificado
+- `supabase/functions/whatsapp-call-accept/index.ts` — linhas 106-108 substituidas por accept com SDP minimo
 
-### Checklist de validacao durante o teste
-- [ ] Console log: `ICE gathering complete` (nao timeout)
-- [ ] Console log: `has inline ICE candidates: true`
-- [ ] Edge function log: `pre_accept response: 200`
-- [ ] Audio: track `unmuted` e permanece unmuted
-- [ ] Duracao: chamada permanece conectada por mais de 60s
+### Risco e mitigacao
+- **Risco**: SDP minimo sem media section pode ser rejeitado por Meta
+- **Mitigacao**: O accept e tratado como non-fatal. Se falhar, a chamada continua com apenas pre_accept (comportamento atual). Os logs vao mostrar o resultado para decidir proximo passo
+- **Risco**: Delay de 1.5s pode ser insuficiente ou excessivo
+- **Mitigacao**: O DTLS tipicamente completa em ~200ms. 1.5s da margem generosa. Se necessario, pode ser ajustado
 
