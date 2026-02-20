@@ -3284,19 +3284,28 @@ async function processQueueItem(
         .maybeSingle();
       
       if (!recentVq) {
-        // Fire-and-forget: trigger Iris call in background
+        const delaySeconds = settings?.auto_voice_delay_seconds || 0;
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
         const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        fetch(`${supabaseUrl}/functions/v1/trigger-elevenlabs-call`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${supabaseServiceKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ contact_id: conversation.contact_id, force: true })
-        }).catch(err => console.error('[Nina] Auto-voice trigger error:', err));
         
-        console.log(`[Nina] Auto-voice: triggered call for contact ${conversation.contact_id}`);
+        const triggerCall = () => {
+          fetch(`${supabaseUrl}/functions/v1/trigger-elevenlabs-call`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ contact_id: conversation.contact_id, force: true })
+          }).catch(err => console.error('[Nina] Auto-voice trigger error:', err));
+        };
+        
+        if (delaySeconds > 0) {
+          setTimeout(triggerCall, delaySeconds * 1000);
+          console.log(`[Nina] Auto-voice: scheduled call for contact ${conversation.contact_id} in ${delaySeconds}s`);
+        } else {
+          triggerCall();
+          console.log(`[Nina] Auto-voice: triggered call for contact ${conversation.contact_id}`);
+        }
       } else {
         console.log(`[Nina] Auto-voice: skipped, VQ exists for contact ${conversation.contact_id}`);
       }

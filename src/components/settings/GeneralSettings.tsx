@@ -48,6 +48,7 @@ const GeneralSettings: React.FC = () => {
   
   // Auto-voice on window
   const [autoVoiceOnWindow, setAutoVoiceOnWindow] = useState(false);
+  const [autoVoiceDelay, setAutoVoiceDelay] = useState(0);
 
   useEffect(() => {
     setSoundEnabled(isNotificationSoundEnabled());
@@ -65,7 +66,7 @@ const GeneralSettings: React.FC = () => {
   const fetchSettings = async () => {
     const { data } = await supabase
       .from('nina_settings')
-      .select('facebook_lead_template, facebook_lead_email_template, google_lead_template, google_lead_email_template, facebook_whatsapp_enabled, facebook_email_enabled, google_whatsapp_enabled, google_email_enabled, auto_voice_on_window')
+      .select('facebook_lead_template, facebook_lead_email_template, google_lead_template, google_lead_email_template, facebook_whatsapp_enabled, facebook_email_enabled, google_whatsapp_enabled, google_email_enabled, auto_voice_on_window, auto_voice_delay_seconds')
       .single();
     
     if (data?.facebook_lead_template) {
@@ -91,6 +92,7 @@ const GeneralSettings: React.FC = () => {
     setGoogleWhatsappEnabled(data?.google_whatsapp_enabled ?? true);
     setGoogleEmailEnabled(data?.google_email_enabled ?? true);
     setAutoVoiceOnWindow((data as any)?.auto_voice_on_window ?? false);
+    setAutoVoiceDelay((data as any)?.auto_voice_delay_seconds ?? 0);
   };
 
   const fetchTemplates = async () => {
@@ -629,6 +631,52 @@ const GeneralSettings: React.FC = () => {
             }}
           />
         </div>
+
+        {autoVoiceOnWindow && (
+          <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm font-medium text-white">
+                  Delay antes de ligar
+                </Label>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Tempo de espera após o lead enviar a mensagem antes da Iris ligar
+                </p>
+              </div>
+              <span className="text-sm font-mono text-emerald-400 min-w-[60px] text-right">
+                {autoVoiceDelay === 0 ? 'Imediato' : `${Math.floor(autoVoiceDelay / 60)}m${autoVoiceDelay % 60 > 0 ? ` ${autoVoiceDelay % 60}s` : ''}`}
+              </span>
+            </div>
+            <Slider
+              value={[autoVoiceDelay]}
+              onValueChange={([val]) => setAutoVoiceDelay(val)}
+              onValueCommit={async ([val]) => {
+                try {
+                  const { error } = await supabase
+                    .from('nina_settings')
+                    .update({ auto_voice_delay_seconds: val } as any)
+                    .not('id', 'is', null);
+                  if (error) throw error;
+                  toast.success(`Delay ajustado para ${val === 0 ? 'imediato' : `${Math.floor(val / 60)}m${val % 60 > 0 ? ` ${val % 60}s` : ''}`}`);
+                } catch (error) {
+                  console.error('Error updating auto_voice_delay_seconds:', error);
+                  toast.error('Erro ao salvar delay');
+                }
+              }}
+              min={0}
+              max={300}
+              step={30}
+              className="w-full"
+            />
+            <div className="flex justify-between text-[10px] text-slate-500">
+              <span>Imediato</span>
+              <span>1min</span>
+              <span>2min</span>
+              <span>3min</span>
+              <span>5min</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Email Template Editor Modal */}

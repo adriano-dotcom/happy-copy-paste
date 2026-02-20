@@ -1520,6 +1520,7 @@ export type Database = {
           audio_response_enabled: boolean | null
           auto_attendant_active: boolean
           auto_response_enabled: boolean
+          auto_voice_delay_seconds: number
           auto_voice_on_window: boolean
           auto_voice_paused: boolean
           auto_voice_paused_at: string | null
@@ -1592,6 +1593,7 @@ export type Database = {
           audio_response_enabled?: boolean | null
           auto_attendant_active?: boolean
           auto_response_enabled?: boolean
+          auto_voice_delay_seconds?: number
           auto_voice_on_window?: boolean
           auto_voice_paused?: boolean
           auto_voice_paused_at?: string | null
@@ -1664,6 +1666,7 @@ export type Database = {
           audio_response_enabled?: boolean | null
           auto_attendant_active?: boolean
           auto_response_enabled?: boolean
+          auto_voice_delay_seconds?: number
           auto_voice_on_window?: boolean
           auto_voice_paused?: boolean
           auto_voice_paused_at?: string | null
