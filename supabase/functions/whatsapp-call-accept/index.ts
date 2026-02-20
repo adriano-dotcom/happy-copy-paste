@@ -103,12 +103,12 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Step 2: accept with minimal SDP (no media section) to formally accept
-      // without re-negotiating the media session established by pre_accept
+      // Step 2: accept with same SDP to formally accept the call
+      // Meta requires a valid SDP with media section; reusing the same SDP
+      // should not re-negotiate since ICE/DTLS are already established
       await new Promise(r => setTimeout(r, 1500)); // Wait for DTLS to complete
 
-      const minimalSdp = 'v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\n';
-      console.log(`[both] Sending accept with minimal SDP for call ${whatsappCallId}`);
+      console.log(`[both] Sending accept with same SDP for call ${whatsappCallId}`);
       const acceptRes = await fetch(metaUrl, {
         method: 'POST',
         headers: {
@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
           messaging_product: 'whatsapp',
           call_id: whatsappCallId,
           action: 'accept',
-          session: { sdp_type: 'answer', sdp: minimalSdp },
+          session: { sdp_type: 'answer', sdp: sdp_answer },
         }),
       });
 
