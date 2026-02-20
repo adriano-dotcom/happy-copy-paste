@@ -1,0 +1,1 @@
+ALTER TABLE public.nina_settings ADD COLUMN auto_attendant_active boolean NOT NULL DEFAULT false;

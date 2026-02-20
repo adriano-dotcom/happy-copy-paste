@@ -6,7 +6,7 @@ import { useWhatsAppAutoAttendant } from '@/hooks/useWhatsAppAutoAttendant';
 import { useElevenLabsBridge } from '@/hooks/useElevenLabsBridge';
 import { createAudioBridge, type AudioBridgeInstance } from '@/components/AudioBridge';
 
-// ── WebRTC helpers (same as IncomingCallModal) ──
+// ── WebRTC helpers ──
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -48,10 +48,108 @@ const AutoAttendant: React.FC = () => {
   const bridgeRef = useRef<AudioBridgeInstance | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const levelIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentCallIdRef = useRef<string | null>(null);
+  const terminatingRef = useRef(false);
+
+  // Keep currentCallIdRef in sync
+  useEffect(() => {
+    currentCallIdRef.current = attendant.currentCall?.id ?? null;
+  }, [attendant.currentCall?.id]);
 
   const addLog = useCallback((msg: string) => {
     console.log(`[AutoAttendant] ${msg}`);
   }, []);
+
+  const cleanup = useCallback(() => {
+    if (levelIntervalRef.current) {
+      clearInterval(levelIntervalRef.current);
+      levelIntervalRef.current = null;
+    }
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(t => t.stop());
+      localStreamRef.current = null;
+    }
+    if (bridgeRef.current) {
+      bridgeRef.current.disconnect();
+      bridgeRef.current = null;
+    }
+  }, []);
+
+  // Full termination: end ElevenLabs, terminate Meta call in DB, cleanup WebRTC, reset queue
+  const terminateCall = useCallback(async (reason: string) => {
+    if (terminatingRef.current) return;
+    terminatingRef.current = true;
+    const callId = currentCallIdRef.current;
+    addLog(`terminateCall (${reason}) — callId: ${callId}`);
+
+    try {
+      // 1. End ElevenLabs session
+      await elevenLabs.endSession();
+    } catch (err) {
+      addLog(`Error ending ElevenLabs: ${err}`);
+    }
+
+    // 2. Terminate call in DB via edge function
+    if (callId) {
+      try {
+        await supabase.functions.invoke('whatsapp-call-terminate', {
+          body: { call_id: callId },
+        });
+        addLog(`whatsapp-call-terminate sent for ${callId}`);
+      } catch (err) {
+        addLog(`Error calling whatsapp-call-terminate: ${err}`);
+      }
+    }
+
+    // 3. Cleanup WebRTC/AudioBridge
+    cleanup();
+
+    // 4. Reset attendant queue for next call
+    attendant.resetForNext();
+    terminatingRef.current = false;
+  }, [elevenLabs, cleanup, attendant, addLog]);
+
+  // Unmount cleanup + beforeunload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const callId = currentCallIdRef.current;
+      if (callId) {
+        // Best-effort: use sendBeacon for reliability
+        const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-call-terminate`;
+        navigator.sendBeacon(url, JSON.stringify({ call_id: callId }));
+      }
+      elevenLabs.endSession();
+      cleanup();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // Component unmount — full cleanup
+      const callId = currentCallIdRef.current;
+      elevenLabs.endSession();
+      cleanup();
+      if (callId) {
+        supabase.functions.invoke('whatsapp-call-terminate', {
+          body: { call_id: callId },
+        }).catch(() => {});
+      }
+      attendant.deactivate();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Watch ElevenLabs status — when it ends, terminate the Meta call too
+  useEffect(() => {
+    if (elevenLabs.status === 'ended' && currentCallIdRef.current && !terminatingRef.current) {
+      addLog('ElevenLabs session ended — terminating Meta call');
+      terminateCall('elevenlabs_ended');
+    }
+  }, [elevenLabs.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Unlock AudioContext on user interaction
   const handleActivate = useCallback(async () => {
@@ -75,25 +173,6 @@ const AutoAttendant: React.FC = () => {
     }
   }, [attendant]);
 
-  const cleanup = useCallback(() => {
-    if (levelIntervalRef.current) {
-      clearInterval(levelIntervalRef.current);
-      levelIntervalRef.current = null;
-    }
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
-    }
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(t => t.stop());
-      localStreamRef.current = null;
-    }
-    if (bridgeRef.current) {
-      bridgeRef.current.disconnect();
-      bridgeRef.current = null;
-    }
-  }, []);
-
   // Process current call from queue
   useEffect(() => {
     const call = attendant.currentCall;
@@ -105,33 +184,27 @@ const AutoAttendant: React.FC = () => {
       addLog(`Processing inbound call ${call.id}`);
 
       try {
-        // Create audio bridge
         const bridge = createAudioBridge();
         bridgeRef.current = bridge;
 
-        // Create silent local stream (we don't need a real mic, bridge provides audio)
         const silentStream = bridge.getSilentStream();
         localStreamRef.current = silentStream;
 
-        // Create peer connection
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
         pcRef.current = pc;
 
         silentStream.getTracks().forEach(track => pc.addTrack(track, silentStream));
 
-        // Handle remote audio from Meta
         pc.ontrack = (event) => {
           if (event.track.kind === 'audio' && !cancelled) {
             addLog('Got remote audio track from Meta');
             const { elevenLabsMicStream } = bridge.connect(event.streams[0]);
 
-            // Start audio level monitoring
             levelIntervalRef.current = setInterval(() => {
               setMetaLevel(bridge.getMetaInputLevel());
               setElLevel(bridge.getElevenLabsOutputLevel());
             }, 200);
 
-            // Now start ElevenLabs session
             startElevenLabsSession(call, elevenLabsMicStream);
           }
         };
@@ -139,21 +212,17 @@ const AutoAttendant: React.FC = () => {
         pc.onconnectionstatechange = () => {
           addLog(`Meta connection: ${pc.connectionState}`);
           if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
-            addLog('Meta connection lost — ending bridge');
-            elevenLabs.endSession();
-            cleanup();
+            addLog('Meta connection lost — terminating call');
+            terminateCall('meta_disconnected');
           }
         };
 
-        // Set remote SDP offer
         if (!call.sdp_offer) throw new Error('No SDP offer');
         await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: call.sdp_offer }));
 
-        // Create answer
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
-        // Wait for ICE gathering (max 3s)
         if (pc.iceGatheringState !== 'complete') {
           await new Promise<void>((resolve) => {
             const timeout = setTimeout(resolve, 3000);
@@ -167,14 +236,12 @@ const AutoAttendant: React.FC = () => {
 
         const fullSdp = fixSdpForMeta(pc.localDescription?.sdp || '');
 
-        // Send pre_accept
         addLog('Sending pre_accept...');
         const { error: preErr } = await supabase.functions.invoke('whatsapp-call-accept', {
           body: { call_id: call.id, sdp_answer: fullSdp, action: 'pre_accept' },
         });
         if (preErr) throw preErr;
 
-        // Wait for connection (max 10s)
         if (pc.connectionState !== 'connected') {
           await new Promise<void>((resolve) => {
             const timeout = setTimeout(resolve, 10000);
@@ -189,17 +256,19 @@ const AutoAttendant: React.FC = () => {
           });
         }
 
-        // Send accept
         addLog('Sending accept...');
         await supabase.functions.invoke('whatsapp-call-accept', {
           body: { call_id: call.id, sdp_answer: fullSdp, action: 'accept' },
         });
 
+        attendant.setState('bridged');
         addLog('Inbound call accepted and bridged!');
 
       } catch (err: any) {
         addLog(`Error processing inbound: ${err.message}`);
         cleanup();
+        attendant.resetForNext();
+        terminatingRef.current = false;
       }
     };
 
@@ -235,12 +304,10 @@ const AutoAttendant: React.FC = () => {
         pc.onconnectionstatechange = () => {
           addLog(`Outbound Meta connection: ${pc.connectionState}`);
           if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
-            elevenLabs.endSession();
-            cleanup();
+            terminateCall('meta_disconnected_outbound');
           }
         };
 
-        // Create offer
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
@@ -257,7 +324,6 @@ const AutoAttendant: React.FC = () => {
 
         const fullSdp = fixSdpForMetaOutbound(pc.localDescription?.sdp || '');
 
-        // Send offer to Meta via edge function
         addLog('Sending outbound offer...');
         const { data, error } = await supabase.functions.invoke('whatsapp-call-initiate', {
           body: {
@@ -271,7 +337,6 @@ const AutoAttendant: React.FC = () => {
           throw new Error(data?.error || error?.message || 'Failed to initiate outbound call');
         }
 
-        // Listen for SDP answer via Realtime
         const channel = supabase
           .channel(`auto-attendant-answer-${call.id}`)
           .on('postgres_changes', {
@@ -284,12 +349,12 @@ const AutoAttendant: React.FC = () => {
             if (updated.sdp_answer && pc.signalingState === 'have-local-offer') {
               addLog('Got SDP answer from lead');
               await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: updated.sdp_answer }));
+              attendant.setState('bridged');
             }
             if (['ended', 'missed', 'rejected', 'failed'].includes(updated.status)) {
               addLog(`Outbound call ended: ${updated.status}`);
               supabase.removeChannel(channel);
-              elevenLabs.endSession();
-              cleanup();
+              terminateCall('outbound_ended_' + updated.status);
             }
           })
           .subscribe();
@@ -297,6 +362,8 @@ const AutoAttendant: React.FC = () => {
       } catch (err: any) {
         addLog(`Error processing outbound: ${err.message}`);
         cleanup();
+        attendant.resetForNext();
+        terminatingRef.current = false;
       }
     };
 
@@ -314,7 +381,6 @@ const AutoAttendant: React.FC = () => {
   // Start ElevenLabs and wire audio back to Meta
   const startElevenLabsSession = useCallback(async (call: any, _micStream: MediaStream) => {
     try {
-      // Fetch contact info for dynamic vars
       let leadName = 'Cliente';
       let produtoInteresse = 'seguros';
       
@@ -331,7 +397,6 @@ const AutoAttendant: React.FC = () => {
           leadName = first.length < 3 ? first : first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
         }
 
-        // Get product from deal pipeline
         const { data: deal } = await supabase
           .from('deals')
           .select('pipeline_id, pipelines(name)')
@@ -401,7 +466,6 @@ const AutoAttendant: React.FC = () => {
 
         {/* Status Card */}
         <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 space-y-6">
-          {/* Activation */}
           {!attendant.isActive ? (
             <button
               onClick={handleActivate}
@@ -418,7 +482,7 @@ const AutoAttendant: React.FC = () => {
                   <span className="text-green-400 font-semibold">Ativo — Escutando chamadas</span>
                 </div>
                 <button
-                  onClick={() => { attendant.deactivate(); cleanup(); }}
+                  onClick={() => { terminateCall('manual_deactivate').then(() => attendant.deactivate()); }}
                   className="flex items-center gap-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg text-sm transition-colors"
                 >
                   <PowerOff className="w-4 h-4" />
