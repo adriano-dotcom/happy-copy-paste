@@ -416,16 +416,33 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       await pc.setLocalDescription(answer);
       console.log(`[WebRTC][${ts()}] Local description set, ICE gathering state: ${pc.iceGatheringState}`);
 
-      // 5. Send both (pre_accept + accept) in a SINGLE edge function call
-      // This eliminates the 7s overhead of a second function boot + DB + vault lookup
-      const immediateSdp = fixSdpForMeta(pc.localDescription?.sdp || '');
-      console.log(`[WebRTC][${ts()}] Sending both (pre_accept + accept) immediately...`);
-      logSdpDetails('ANSWER (immediate)', immediateSdp);
+      // 4b. Wait for ICE gathering to complete (max 3s) so SDP includes a=candidate lines
+      if (pc.iceGatheringState !== 'complete') {
+        console.log(`[WebRTC][${ts()}] Waiting for ICE gathering to complete...`);
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            console.warn(`[WebRTC][${ts()}] ICE gathering timeout (3s), sending with available candidates`);
+            resolve();
+          }, 3000);
+          pc.addEventListener('icegatheringstatechange', () => {
+            if (pc.iceGatheringState === 'complete') {
+              console.log(`[WebRTC][${ts()}] ICE gathering complete`);
+              clearTimeout(timeout);
+              resolve();
+            }
+          });
+        });
+      }
+
+      // 5. Send pre_accept with full SDP (including ICE candidates)
+      const fullSdp = fixSdpForMeta(pc.localDescription?.sdp || '');
+      console.log(`[WebRTC][${ts()}] Sending both (pre_accept only) with full SDP...`);
+      logSdpDetails('ANSWER (with ICE candidates)', fullSdp);
 
       const { data: acceptData, error: acceptError } = await supabase.functions.invoke('whatsapp-call-accept', {
         body: {
           call_id: call.id,
-          sdp_answer: immediateSdp,
+          sdp_answer: fullSdp,
           action: 'both',
         },
       });
