@@ -151,6 +151,32 @@ const AutoAttendant: React.FC = () => {
     }
   }, [elevenLabs.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Watch DB call status — detect when contact hangs up (webhook sets status to 'ended')
+  useEffect(() => {
+    const callId = attendant.currentCall?.id;
+    if (!callId || !attendant.isActive) return;
+
+    const channel = supabase
+      .channel(`auto-attendant-status-${callId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'whatsapp_calls',
+        filter: `id=eq.${callId}`,
+      }, (payload: any) => {
+        const updated = payload.new;
+        if (['ended', 'missed', 'rejected', 'failed'].includes(updated.status)) {
+          addLog(`Call status changed to ${updated.status} in DB — terminating`);
+          terminateCall('db_status_' + updated.status);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [attendant.currentCall?.id, attendant.isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Unlock AudioContext on user interaction
   const handleActivate = useCallback(async () => {
     try {
