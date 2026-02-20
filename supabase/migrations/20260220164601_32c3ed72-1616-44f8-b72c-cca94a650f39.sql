@@ -1,0 +1,1 @@
+ALTER TABLE nina_settings ADD COLUMN auto_voice_delay_seconds integer NOT NULL DEFAULT 0;
