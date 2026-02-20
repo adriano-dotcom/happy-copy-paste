@@ -1,0 +1,1 @@
+ALTER TABLE nina_settings ADD COLUMN auto_voice_on_window boolean NOT NULL DEFAULT false;

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Bell, Volume2, VolumeX, Facebook, MessageSquare, Mail, Pencil, Search } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Bell, Volume2, VolumeX, Facebook, MessageSquare, Mail, Pencil, Search, Phone } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -45,6 +45,9 @@ const GeneralSettings: React.FC = () => {
   // Editor modal states
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<FullEmailTemplate | null>(null);
+  
+  // Auto-voice on window
+  const [autoVoiceOnWindow, setAutoVoiceOnWindow] = useState(false);
 
   useEffect(() => {
     setSoundEnabled(isNotificationSoundEnabled());
@@ -62,7 +65,7 @@ const GeneralSettings: React.FC = () => {
   const fetchSettings = async () => {
     const { data } = await supabase
       .from('nina_settings')
-      .select('facebook_lead_template, facebook_lead_email_template, google_lead_template, google_lead_email_template, facebook_whatsapp_enabled, facebook_email_enabled, google_whatsapp_enabled, google_email_enabled')
+      .select('facebook_lead_template, facebook_lead_email_template, google_lead_template, google_lead_email_template, facebook_whatsapp_enabled, facebook_email_enabled, google_whatsapp_enabled, google_email_enabled, auto_voice_on_window')
       .single();
     
     if (data?.facebook_lead_template) {
@@ -87,6 +90,7 @@ const GeneralSettings: React.FC = () => {
     setFacebookEmailEnabled(data?.facebook_email_enabled ?? true);
     setGoogleWhatsappEnabled(data?.google_whatsapp_enabled ?? true);
     setGoogleEmailEnabled(data?.google_email_enabled ?? true);
+    setAutoVoiceOnWindow((data as any)?.auto_voice_on_window ?? false);
   };
 
   const fetchTemplates = async () => {
@@ -587,6 +591,43 @@ const GeneralSettings: React.FC = () => {
               {saving ? 'Salvando...' : 'Salvar Configurações'}
             </Button>
           </div>
+        </div>
+      </div>
+
+      {/* Auto-Voice on Window */}
+      <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
+        <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <Phone className="w-5 h-5 text-emerald-400" />
+          Ligação Automática (Iris)
+        </h3>
+        
+        <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
+          <div>
+            <Label htmlFor="auto-voice-window" className="text-sm font-medium text-white cursor-pointer">
+              Ligar automaticamente quando lead abrir conversa
+            </Label>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Iris liga para o lead assim que ele envia a primeira mensagem (abre a janela WhatsApp). Requer Auto-Attendant ativo.
+            </p>
+          </div>
+          <Switch
+            id="auto-voice-window"
+            checked={autoVoiceOnWindow}
+            onCheckedChange={async (enabled) => {
+              try {
+                const { error } = await supabase
+                  .from('nina_settings')
+                  .update({ auto_voice_on_window: enabled } as any)
+                  .not('id', 'is', null);
+                if (error) throw error;
+                setAutoVoiceOnWindow(enabled);
+                toast.success(enabled ? 'Ligação automática ativada' : 'Ligação automática desativada');
+              } catch (error) {
+                console.error('Error toggling auto_voice_on_window:', error);
+                toast.error('Erro ao alterar configuração');
+              }
+            }}
+          />
         </div>
       </div>
 
