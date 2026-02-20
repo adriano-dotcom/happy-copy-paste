@@ -1,98 +1,85 @@
 
 
-# Fluxo: Ligacao Automatica da Iris quando Lead abre conversa
+# Painel de Monitoramento: Auto-Voice on Window
 
-## Como funciona
+## Objetivo
 
-1. Lead manda mensagem para o numero WhatsApp
-2. Sistema detecta que a janela de conversa foi aberta (primeira mensagem do lead)
-3. Iris liga automaticamente para o lead via WhatsApp
+Adicionar um painel no dashboard de Voice (Iris) que mostra metricas especificas do fluxo "ligacao automatica ao abrir janela":
+- Quantos leads dispararam o auto-voice
+- Quantos foram efetivamente ligados
+- Taxa de conversao do fluxo
 
-## Onde implementar
+## Problema atual
 
-A logica sera adicionada no `nina-orchestrator`, que ja processa todas as mensagens recebidas. O ponto de insercao e logo apos a verificacao da janela WhatsApp (linha ~3259), antes do processamento normal pela IA.
+Nao existe como diferenciar ligacoes disparadas automaticamente (via auto-voice-on-window) das ligacoes manuais na tabela `voice_qualifications`. Todos os registros sao iguais.
 
-## Logica
+## Implementacao
 
-Quando uma mensagem do tipo `user` chega:
-
-1. Verificar se `nina_settings.auto_voice_on_window` esta ativo (novo campo)
-2. Verificar se e a **primeira mensagem** do lead (abre a janela) — ou seja, nao havia `whatsapp_window_start` antes, ou a janela anterior ja tinha expirado
-3. Verificar se nao existe uma `voice_qualification` recente (ultimas 24h) para esse contato
-4. Verificar se o Auto-Attendant esta ativo (`auto_attendant_active = true`)
-5. Se tudo ok, disparar `trigger-elevenlabs-call` com `force: true`
-6. Nina continua respondendo normalmente por texto (a ligacao e disparada em paralelo)
-
-## Detalhes Tecnicos
-
-### 1. Novo campo em `nina_settings`
-
-Adicionar coluna `auto_voice_on_window` (boolean, default false) para controlar se o fluxo esta ativo.
+### 1. Migration: Adicionar coluna `trigger_source` em `voice_qualifications`
 
 ```sql
-ALTER TABLE nina_settings ADD COLUMN auto_voice_on_window boolean NOT NULL DEFAULT false;
+ALTER TABLE voice_qualifications 
+ADD COLUMN trigger_source text NOT NULL DEFAULT 'manual';
 ```
 
-### 2. Mudanca no `nina-orchestrator` (trecho apos linha ~3268)
+Valores possiveis:
+- `manual` — ligacao disparada manualmente
+- `auto_window` — ligacao disparada pelo fluxo auto-voice-on-window
 
-```text
-// Apos verificar que a janela esta aberta:
+### 2. Atualizar `nina-orchestrator`
 
-if (settings.auto_voice_on_window && settings.auto_attendant_active) {
-  // Verificar se e abertura de janela (primeira msg ou janela reaberta)
-  // A janela acabou de ser atualizada pelo trigger update_whatsapp_window
-  // Se whatsapp_window_start foi atualizado nos ultimos 30 segundos, e nova janela
-  
-  const windowJustOpened = windowStart && 
-    (now.getTime() - windowStart.getTime()) < 30000; // 30s
-  
-  if (windowJustOpened) {
-    // Checar se nao tem VQ recente
-    const { data: recentVq } = await supabase
-      .from('voice_qualifications')
-      .select('id')
-      .eq('contact_id', conversation.contact_id)
-      .gte('created_at', new Date(Date.now() - 24*60*60*1000).toISOString())
-      .limit(1)
-      .maybeSingle();
-    
-    if (!recentVq) {
-      // Disparar ligacao Iris em background
-      fetch(`${supabaseUrl}/functions/v1/trigger-elevenlabs-call`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ contact_id: conversation.contact_id, force: true })
-      }).catch(err => console.error('[Nina] Auto-voice trigger error:', err));
-      
-      console.log(`[Nina] Auto-voice: triggered call for contact ${conversation.contact_id}`);
-    }
-  }
-}
-// Continua processamento normal (Nina responde por texto)
+No trecho do auto-voice (~linha 3298), passar `trigger_source: 'auto_window'` no body da chamada ao `trigger-elevenlabs-call`:
+
+```typescript
+body: JSON.stringify({ 
+  contact_id: conversation.contact_id, 
+  force: true, 
+  trigger_source: 'auto_window' 
+})
 ```
 
-### 3. Toggle na UI (Settings)
+### 3. Atualizar `trigger-elevenlabs-call`
 
-Adicionar toggle "Ligar automaticamente quando lead abrir conversa" nas configuracoes de voz (`AgentSettings` ou `GeneralSettings`).
+Quando cria ou atualiza um `voice_qualification` no modo force, incluir o `trigger_source` recebido no body:
 
-### Arquivos modificados
+```typescript
+// Na insercao de novo VQ (~linha 106)
+trigger_source: body.trigger_source || 'manual',
 
-1. **Migration SQL** — Adicionar coluna `auto_voice_on_window` em `nina_settings`
-2. **`supabase/functions/nina-orchestrator/index.ts`** — Adicionar logica de auto-voice apos verificacao de janela (~linha 3268)
-3. **`src/components/settings/AgentSettings.tsx`** ou **`GeneralSettings.tsx`** — Toggle para ativar/desativar o fluxo
+// No update de VQ existente (~linha 128)
+trigger_source: body.trigger_source || 'manual',
+```
 
-### Pre-requisitos (ja implementados)
+### 4. Atualizar `useVoiceDashboardMetrics`
 
-- Auto-Attendant ativo (toggle na Sidebar)
-- Pelo menos uma aba do sistema aberta (para WebRTC)
-- `voice_call_channel = 'whatsapp'` em `nina_settings`
+Adicionar ao select da query o campo `trigger_source` e calcular metricas novas:
+- `autoWindowTotal` — total de VQs com `trigger_source = 'auto_window'`
+- `autoWindowCalled` — VQs auto_window que passaram de pending (status != pending/scheduled)
+- `autoWindowCompleted` — VQs auto_window com status `completed`
+- `autoWindowRate` — taxa de atendimento das ligacoes auto
 
-### Seguranca
+### 5. Adicionar painel no `VoiceDashboard.tsx`
 
-- Limite de 1 chamada por contato a cada 24h (evita spam)
-- Respeita horario comercial (o `trigger-elevenlabs-call` ja faz essa checagem)
-- Flag dedicado `auto_voice_on_window` permite ligar/desligar sem afetar outras funcionalidades
-- Nina continua respondendo por texto normalmente (a ligacao e paralela)
+Novo bloco visual entre os KPIs e os graficos, com 4 mini-KPIs:
+
+| Metrica | Descricao |
+|---------|-----------|
+| Disparos Auto | Total de ligacoes auto-window |
+| Ligacoes Realizadas | Quantas foram efetivamente tentadas |
+| Atendidas | Quantas foram completadas |
+| Taxa Atendimento | % de atendimento das auto-calls |
+
+Visual: card com fundo diferenciado (borda cyan) e icone de telefone + relogio.
+
+## Arquivos modificados
+
+1. **Migration SQL** — Adicionar `trigger_source` em `voice_qualifications`
+2. **`supabase/functions/nina-orchestrator/index.ts`** — Enviar `trigger_source: 'auto_window'` na chamada
+3. **`supabase/functions/trigger-elevenlabs-call/index.ts`** — Salvar `trigger_source` no VQ
+4. **`src/hooks/useVoiceDashboardMetrics.ts`** — Incluir `trigger_source` na query e calcular metricas auto-window
+5. **`src/components/VoiceDashboard.tsx`** — Renderizar painel de monitoramento auto-voice
+
+## Nota
+
+Registros criados antes desta mudanca terao `trigger_source = 'manual'` por default, entao o painel comecara zerado e ira acumular dados conforme novas ligacoes auto forem disparadas.
+
