@@ -1,148 +1,222 @@
 
-# Chamadas Outbound via WhatsApp Calling API
 
-## Visao geral
+# Bridge Meta WhatsApp Calling + ElevenLabs (sem Twilio)
 
-Implementar chamadas iniciadas pelo business (outbound) via WhatsApp Cloud API, permitindo que agentes liguem diretamente para leads pelo WhatsApp a partir do chat. O fluxo inclui:
+## Analise do problema
 
-1. Botao de chamada WhatsApp no chat (ao lado do botao de telefone existente)
-2. Edge function que envia SDP offer para Meta API
-3. Webhook que recebe o SDP answer do lead
-4. Frontend que gerencia a sessao WebRTC (offer/answer invertido vs inbound)
-5. Modal de chamada outbound reutilizando componentes existentes
+Meta WhatsApp Calling usa WebRTC para transportar audio. ElevenLabs Conversational AI tambem usa WebRTC (via React SDK). Sao duas sessoes WebRTC independentes. Para conecta-las sem Twilio, precisamos de um "audio bridge" que pegue o audio de uma sessao e injete na outra.
 
-## Fluxo da chamada outbound
+A unica forma viavel de fazer isso sem um media server dedicado ou Twilio e usando o **navegador** como ponte de audio, via Web Audio API.
+
+## Arquitetura proposta: Auto-Attendant (Bot Operator)
 
 ```text
-+------------------+     +-------------------+     +------------------+
-|  Frontend        |     |  Edge Function    |     |  Meta Cloud API  |
-|  (Chat)          |     |  (whatsapp-call-  |     |                  |
-|                  |     |   initiate)       |     |                  |
-+--------+---------+     +--------+----------+     +--------+---------+
-         |                         |                         |
-  1. Agente clica                  |                         |
-     "Ligar WhatsApp"             |                         |
-         |                         |                         |
-  2. getUserMedia()                |                         |
-     createOffer()                 |                         |
-         |                         |                         |
-  3. POST sdp_offer  -----------> |                         |
-     + contact phone               |                         |
-         |                  4. POST /calls   -------------> |
-         |                     action: connect               |
-         |                     sdp: offer                    |
-         |                         |                         |
-         |                  5. Insere whatsapp_calls         |
-         |                     direction: outbound           |
-         |                     status: calling               |
-         |                         |                         |
-         |                         |    6. Webhook connect   |
-         |                         |    <----- SDP answer    |
-         |                         |                         |
-         |              7. whatsapp-call-webhook              |
-         |                 atualiza call com                  |
-         |                 sdp_answer + status: ringing       |
-         |                         |                         |
-  8. Realtime detecta              |                         |
-     sdp_answer no DB              |                         |
-         |                         |                         |
-  9. setRemoteDescription          |                         |
-     (SDP answer)                  |                         |
-         |                         |                         |
-  10. WebRTC connected             |                         |
-      Audio bidirecional           |                         |
-         |                         |                         |
+Lead (WhatsApp)                    Auto-Attendant (Browser Tab)                ElevenLabs (Iris)
+     |                                        |                                      |
+     |   1. Liga via WhatsApp                 |                                      |
+     | -------- SDP offer (Meta) -----------> |                                      |
+     |                                        |                                      |
+     |                            2. Auto-accept via WebRTC                          |
+     |                               (mesma logica IncomingCallModal)                |
+     |                                        |                                      |
+     |                            3. Inicia sessao ElevenLabs                        |
+     |                               via useConversation() / WebRTC                  |
+     | <------- audio bidirecional ---------> |                                      |
+     |                                        | <------ audio bidirecional --------> |
+     |                                        |                                      |
+     |                            4. Web Audio API bridge:                           |
+     |                               Meta remoteTrack --> ElevenLabs mic input       |
+     |                               ElevenLabs output --> Meta localTrack           |
+     |                                        |                                      |
+     |   5. Conversa com Iris                 |        Iris processa e responde      |
+     |                                        |                                      |
 ```
 
-## Mudancas detalhadas
+## Como funciona o Audio Bridge
 
-### 1. Nova Edge Function: `whatsapp-call-initiate`
+O navegador usa Web Audio API para conectar os dois streams:
 
-Arquivo: `supabase/functions/whatsapp-call-initiate/index.ts`
+```text
+Meta WebRTC (remoteStream)
+    |
+    v
+MediaStreamSource --> GainNode --> MediaStreamDestination
+                                        |
+                                        v
+                                  ElevenLabs (como "microfone" virtual)
 
-Responsabilidades:
-- Recebe `contact_id`, `to_number`, `sdp_offer` do frontend
-- Busca `whatsapp_access_token` e `whatsapp_phone_number_id` do Vault/nina_settings
-- Envia `POST /<phone_number_id>/calls` para Meta com `action: "connect"`, `sdp_type: "offer"`, `sdp: <sdp_offer>`
-- Cria registro em `whatsapp_calls` com `direction: 'outbound'`, `status: 'calling'`
-- Retorna o `call_id` (interno) e o `whatsapp_call_id` da resposta Meta
 
-### 2. Atualizar Webhook: `whatsapp-call-webhook`
+ElevenLabs (outputStream/speaker)
+    |
+    v
+MediaStreamSource --> GainNode --> MediaStreamDestination
+                                        |
+                                        v
+                                  Meta WebRTC (como localTrack - substitui microfone)
+```
 
-Arquivo: `supabase/functions/whatsapp-call-webhook/index.ts`
+## Componentes a implementar
 
-Alteracoes:
-- Atualmente so trata `callType === 'connect'` como inbound (cria novo registro)
-- Adicionar tratamento para quando recebe `connect` com `direction: "BUSINESS_INITIATED"`:
-  - Em vez de criar novo registro, busca o registro existente pelo `whatsapp_call_id`
-  - Atualiza com `sdp_answer` (o SDP do lead) e `status: 'ringing'`
-- O campo `event` no webhook vem como `"connect"` e o `direction` indica se e business-initiated
+### 1. Nova pagina: `/auto-attendant`
 
-### 3. Novo componente: `OutboundCallModal`
+Arquivo: `src/pages/AutoAttendant.tsx`
 
-Arquivo: `src/components/OutboundCallModal.tsx`
+Pagina dedicada que roda em uma aba do navegador (pode ser headless futuramente). Responsabilidades:
+- Escuta `whatsapp_calls` via Supabase Realtime (novas chamadas inbound com status 'ringing')
+- Auto-aceita chamadas usando a mesma logica WebRTC do IncomingCallModal (setRemoteDescription, createAnswer, pre_accept + accept)
+- Inicia sessao ElevenLabs via `useConversation()` do `@elevenlabs/react`
+- Faz bridge de audio entre as duas sessoes via Web Audio API
+- Monitora estado de ambas as conexoes
+- Loga metricas e status para debugging
+- Para chamadas outbound: escuta VQs pendentes e inicia chamada WhatsApp + ElevenLabs simultaneamente
 
-Componente que gerencia o fluxo WebRTC outbound (inverso do IncomingCallModal):
-- Ao abrir: captura microfone, cria `RTCPeerConnection`, gera SDP offer
-- Envia offer para edge function `whatsapp-call-initiate`
-- Escuta via Realtime por atualizacoes no registro `whatsapp_calls` (aguardando sdp_answer)
-- Quando recebe sdp_answer: `setRemoteDescription` e conecta audio
-- UI: avatar do contato, status (chamando/conectado), duracao, botoes mute/desligar
-- Reutiliza helpers existentes: `logPeerStats`, `logSdpDetails`, `fixSdpForMeta`, `ICE_SERVERS`
+### 2. Novo componente: `AudioBridge`
 
-### 4. Botao WhatsApp Call no ChatInterface
+Arquivo: `src/components/AudioBridge.tsx`
 
-Arquivo: `src/components/ChatInterface.tsx`
+Componente utilitario que gerencia o bridge de audio entre dois MediaStreams:
+- Recebe `metaRemoteStream` e `elevenlabsOutputStream`
+- Cria os AudioNodes necessarios (source, gain, destination)
+- Retorna os MediaStreams sinteticos para cada lado
+- Monitora niveis de audio (VAD basico) para logs
+- Cleanup automatico ao desmontar
 
-- Adicionar botao com icone `PhoneCall` ao lado do botao `Phone` existente (API4Com)
-- Ao clicar: abre `OutboundCallModal` passando dados do contato
-- Estado: `showWhatsAppCallModal` + `setShowWhatsAppCallModal`
-- Diferenciar visualmente do botao de telefone existente (cor verde WhatsApp)
+### 3. Novo hook: `useWhatsAppAutoAttendant`
 
-### 5. Adicionar ao config.toml
+Arquivo: `src/hooks/useWhatsAppAutoAttendant.ts`
+
+Encapsula a logica de:
+- Subscription Realtime para `whatsapp_calls` (inbound ringing)
+- Subscription Realtime para `voice_qualifications` (outbound pending via WhatsApp)
+- Gerenciamento da fila de chamadas (uma por vez)
+- Estado do bridge (idle, connecting_meta, connecting_elevenlabs, bridged, ending)
+
+### 4. Novo hook: `useElevenLabsBridge`
+
+Arquivo: `src/hooks/useElevenLabsBridge.ts`
+
+Wrapper ao redor do `useConversation` do ElevenLabs que:
+- Solicita token de conversacao via edge function existente ou nova
+- Configura dynamic variables (lead_name, horario, produto_interesse, vq_id)
+- Intercepta o audio output do ElevenLabs para bridging
+- Gerencia lifecycle (start, connected, ended)
+
+### 5. Nova Edge Function: `elevenlabs-conversation-token`
+
+Arquivo: `supabase/functions/elevenlabs-conversation-token/index.ts`
+
+Gera um token de conversacao para o ElevenLabs agent (Iris):
+- Chama `GET https://api.us.elevenlabs.io/v1/convai/conversation/token?agent_id=AGENT_ID`
+- Retorna o token para o frontend iniciar a sessao WebRTC
+
+### 6. Modificar `trigger-elevenlabs-call`
+
+Quando `voice_call_channel === 'whatsapp'` em nina_settings:
+- Em vez de chamar ElevenLabs API para outbound (que usa Twilio), cria um registro em `whatsapp_calls` com `direction: 'outbound'` e `status: 'pending_bridge'`
+- O Auto-Attendant detecta esse registro e inicia o fluxo: WhatsApp outbound call (via `whatsapp-call-initiate`) + ElevenLabs session + bridge
+
+### 7. Migracoes DB
+
+```sql
+-- Campo para indicar canal de voz preferido
+ALTER TABLE public.nina_settings 
+  ADD COLUMN voice_call_channel text NOT NULL DEFAULT 'pstn';
+-- Valores: 'pstn' (Twilio direto, atual) | 'whatsapp' (bridge Meta+ElevenLabs)
+
+-- Novo status para chamadas aguardando bridge
+-- (usar o campo status existente com valor 'pending_bridge')
+```
+
+### 8. Configuracoes
+
+Arquivo: `src/components/settings/ApiSettings.tsx`
+
+- Toggle "Canal de voz da Iris": PSTN (atual) / WhatsApp
+- Quando WhatsApp selecionado, mostrar instrucoes para abrir a aba Auto-Attendant
+- Status indicator mostrando se o Auto-Attendant esta ativo (via presenca Realtime)
+
+### 9. config.toml
 
 ```toml
-[functions.whatsapp-call-initiate]
+[functions.elevenlabs-conversation-token]
 verify_jwt = true
 ```
 
-### 6. Atualizar tabela `whatsapp_calls`
+### 10. Rota no App.tsx
 
-Migracao SQL:
-- Adicionar coluna `sdp_answer text` para armazenar o SDP do lead em chamadas outbound
-- O campo `sdp_offer` ja existe e sera usado tanto para inbound (offer do lead) quanto outbound (offer do business)
+```tsx
+<Route path="/auto-attendant" element={<ProtectedRoute><AutoAttendant /></ProtectedRoute>} />
+```
+
+## Fluxo detalhado: Inbound
+
+| Etapa | Acao | Componente |
+|-------|------|-----------|
+| 1 | Lead liga para numero WhatsApp | WhatsApp do lead |
+| 2 | Meta envia webhook com SDP offer | whatsapp-call-webhook |
+| 3 | Webhook cria registro `whatsapp_calls` status=ringing | whatsapp-call-webhook |
+| 4 | Auto-Attendant detecta via Realtime | useWhatsAppAutoAttendant |
+| 5 | Cria RTCPeerConnection, setRemoteDescription(offer), createAnswer | AutoAttendant |
+| 6 | Envia pre_accept + accept via whatsapp-call-accept | AutoAttendant |
+| 7 | WebRTC Meta conectado, audio do lead disponivel | AutoAttendant |
+| 8 | Busca token ElevenLabs | elevenlabs-conversation-token |
+| 9 | Inicia sessao ElevenLabs com dynamic vars | useElevenLabsBridge |
+| 10 | Bridge audio: lead audio -> Iris input, Iris output -> lead audio | AudioBridge |
+| 11 | Iris conversa com lead | ElevenLabs Agent |
+| 12 | Chamada termina (terminate webhook ou Iris encerra) | whatsapp-call-webhook |
+| 13 | Post-call: ElevenLabs envia transcricao/analise | elevenlabs-post-call-webhook |
+
+## Fluxo detalhado: Outbound
+
+| Etapa | Acao | Componente |
+|-------|------|-----------|
+| 1 | auto-voice-trigger cria VQ | auto-voice-trigger |
+| 2 | trigger-elevenlabs-call detecta channel=whatsapp | trigger-elevenlabs-call |
+| 3 | Cria registro whatsapp_calls status=pending_bridge | trigger-elevenlabs-call |
+| 4 | Auto-Attendant detecta via Realtime | useWhatsAppAutoAttendant |
+| 5 | Cria RTCPeerConnection, createOffer | AutoAttendant |
+| 6 | Envia offer via whatsapp-call-initiate | AutoAttendant |
+| 7 | Meta liga para lead, webhook retorna SDP answer | whatsapp-call-webhook |
+| 8 | Auto-Attendant detecta sdp_answer via Realtime | AutoAttendant |
+| 9 | setRemoteDescription(answer), WebRTC conectado | AutoAttendant |
+| 10 | Busca token ElevenLabs, inicia sessao | useElevenLabsBridge |
+| 11 | Bridge audio bidirecional | AudioBridge |
+| 12 | Iris conversa com lead | ElevenLabs Agent |
 
 ## Secao tecnica
 
+### Dependencia necessaria
+- `@elevenlabs/react` (npm install)
+
 ### Arquivos criados
-- `supabase/functions/whatsapp-call-initiate/index.ts` -- nova edge function
-- `src/components/OutboundCallModal.tsx` -- modal de chamada outbound
+- `src/pages/AutoAttendant.tsx` -- pagina do auto-attendant
+- `src/components/AudioBridge.tsx` -- bridge de audio Web Audio API
+- `src/hooks/useWhatsAppAutoAttendant.ts` -- logica de auto-atendimento
+- `src/hooks/useElevenLabsBridge.ts` -- integracao ElevenLabs para bridge
+- `supabase/functions/elevenlabs-conversation-token/index.ts` -- token de conversacao
 
 ### Arquivos modificados
-- `supabase/functions/whatsapp-call-webhook/index.ts` -- tratar connect de outbound
-- `src/components/ChatInterface.tsx` -- botao + estado do modal
-- `supabase/config.toml` -- registro da nova edge function
+- `supabase/functions/trigger-elevenlabs-call/index.ts` -- suporte channel whatsapp
+- `src/components/settings/ApiSettings.tsx` -- toggle canal de voz
+- `src/App.tsx` -- rota /auto-attendant
+- `supabase/config.toml` -- nova edge function
 
 ### Migracao SQL
-- `ALTER TABLE whatsapp_calls ADD COLUMN sdp_answer text;`
+```sql
+ALTER TABLE public.nina_settings 
+  ADD COLUMN voice_call_channel text NOT NULL DEFAULT 'pstn';
+```
 
-### Fluxo WebRTC (outbound vs inbound)
+### Limitacoes e consideracoes
 
-| Etapa | Inbound (atual) | Outbound (novo) |
-|-------|-----------------|-----------------|
-| Quem gera offer | Lead (via Meta) | Business (frontend) |
-| Quem gera answer | Business (frontend) | Lead (via Meta) |
-| SDP no DB | sdp_offer = offer do lead | sdp_offer = offer do business, sdp_answer = answer do lead |
-| Sinalizacao Meta | pre_accept + accept | connect (com offer) |
-| Webhook resposta | connect com offer | connect com answer |
+1. **Aba precisa estar aberta**: O Auto-Attendant precisa de uma aba de navegador ativa. Se a aba fechar, chamadas nao serao atendidas. No futuro, pode ser migrado para um servidor headless (Puppeteer/Playwright)
+2. **Uma chamada por vez**: O bridge processa uma chamada de cada vez. Chamadas simultaneas entram em fila
+3. **Latencia**: Ha latencia adicional do double-hop WebRTC (Meta -> Browser -> ElevenLabs), estimada em 100-300ms
+4. **Audio context**: O navegador precisa de interacao do usuario para desbloquear AudioContext. A pagina tera um botao "Ativar Auto-Attendant"
+5. **Fallback**: Se o Auto-Attendant nao estiver ativo, chamadas inbound continuam tocando normalmente para agentes humanos via IncomingCallModal
 
-### Pre-requisitos Meta
-- A chamada outbound so funciona se o lead ja deu permissao de chamada (call permission)
-- Nao disponivel em US/Canada/Egito/Vietna/Nigeria
-- O `phone_number_id` ja esta configurado no nina_settings
+### Rollback
+- Alterar `voice_call_channel` para 'pstn' em nina_settings
+- Fechar a aba do Auto-Attendant
+- Sistema volta ao comportamento atual (Iris via Twilio PSTN, chamadas WhatsApp via agente humano)
 
-### Tratamento de erros
-- Lead nao atende: webhook `terminate` com reason (timeout apos ~60s)
-- Lead recusa: webhook `terminate`
-- Permissao negada: erro 138xxx da Meta -- exibir toast informativo
-- Microfone indisponivel: modo listen-only com trilha silenciosa (mesmo padrao do inbound)
