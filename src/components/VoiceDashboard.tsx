@@ -185,6 +185,20 @@ const VoiceDashboard: React.FC = () => {
         <KPICard title="Falhas" value={metrics.failedCount + metrics.noAnswerCount} subtitle={`${metrics.noAnswerCount} sem resp.`} icon={<AlertTriangle className="w-4 h-4 text-white" />} color="bg-red-500/20" />
       </div>
 
+      {/* Auto-Voice on Window Panel */}
+      <div className="bg-white/5 border border-cyan-500/20 rounded-xl p-5">
+        <h3 className="text-sm font-semibold text-cyan-400 mb-4 flex items-center gap-2">
+          <Clock className="w-4 h-4" />
+          Auto-Voice (Abertura de Janela)
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <KPICard title="Disparos Auto" value={metrics.autoWindowTotal} icon={<Phone className="w-4 h-4 text-white" />} color="bg-cyan-500/20" />
+          <KPICard title="Ligações Realizadas" value={metrics.autoWindowCalled} icon={<TrendingUp className="w-4 h-4 text-white" />} color="bg-blue-500/20" />
+          <KPICard title="Atendidas" value={metrics.autoWindowCompleted} icon={<CheckCircle className="w-4 h-4 text-white" />} color="bg-emerald-500/20" />
+          <KPICard title="Taxa Atendimento" value={`${metrics.autoWindowRate.toFixed(0)}%`} subtitle={`${metrics.autoWindowCompleted}/${metrics.autoWindowCalled}`} icon={<Star className="w-4 h-4 text-white" />} color="bg-violet-500/20" />
+        </div>
+      </div>
+
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Status Distribution */}

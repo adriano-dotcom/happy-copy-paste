@@ -109,6 +109,7 @@ serve(async (req: Request) => {
             scheduled_for: new Date().toISOString(),
             attempt_number: 1,
             max_attempts: 3,
+            trigger_source: body.trigger_source || 'manual',
           })
           .select('*, contacts(phone_number, name, call_name)')
           .single();
@@ -126,7 +127,7 @@ serve(async (req: Request) => {
       // Reset and process immediately
       await supabase
         .from('voice_qualifications')
-        .update({ status: 'pending', scheduled_for: new Date().toISOString() })
+        .update({ status: 'pending', scheduled_for: new Date().toISOString(), trigger_source: body.trigger_source || 'manual' })
         .eq('id', qualificationToProcess.id);
 
       if (voiceChannel === 'whatsapp') {
