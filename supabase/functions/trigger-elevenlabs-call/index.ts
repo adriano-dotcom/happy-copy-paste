@@ -59,6 +59,14 @@ serve(async (req: Request) => {
   }
 
   try {
+    // Check voice_call_channel from nina_settings
+    const { data: ninaSettings } = await supabase
+      .from('nina_settings')
+      .select('voice_call_channel')
+      .maybeSingle();
+    
+    const voiceChannel = ninaSettings?.voice_call_channel || 'pstn';
+
     // Check for force mode (manual retry for specific contact)
     let body: any = {};
     try { body = await req.json(); } catch { /* empty body is fine */ }
@@ -121,6 +129,13 @@ serve(async (req: Request) => {
         .update({ status: 'pending', scheduled_for: new Date().toISOString() })
         .eq('id', qualificationToProcess.id);
 
+      if (voiceChannel === 'whatsapp') {
+        const result = await processCallWhatsApp(supabase, qualificationToProcess);
+        return new Response(JSON.stringify(result), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
       const result = await processCall(supabase, qualificationToProcess, elevenlabsApiKey, elevenlabsAgentId, elevenlabsPhoneNumberId);
       return new Response(JSON.stringify(result), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -177,7 +192,9 @@ serve(async (req: Request) => {
 
     const results = [];
     for (const vq of pendingCalls) {
-      const result = await processCall(supabase, vq, elevenlabsApiKey, elevenlabsAgentId, elevenlabsPhoneNumberId);
+      const result = voiceChannel === 'whatsapp'
+        ? await processCallWhatsApp(supabase, vq)
+        : await processCall(supabase, vq, elevenlabsApiKey, elevenlabsAgentId, elevenlabsPhoneNumberId);
       results.push(result);
       // Small delay between calls
       if (pendingCalls.indexOf(vq) < pendingCalls.length - 1) {
@@ -336,6 +353,109 @@ async function processCall(
     }
 
     // Retry in 2 hours
+    const retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    await supabase
+      .from('voice_qualifications')
+      .update({
+        status: 'pending',
+        attempt_number: newAttempt,
+        scheduled_for: retryAt.toISOString(),
+        observations: `Tentativa ${vq.attempt_number} falhou: ${error.message}`,
+      })
+      .eq('id', vq.id);
+    return { id: vq.id, status: 'retry', next_attempt: newAttempt };
+  }
+}
+
+/**
+ * Process a voice qualification via WhatsApp bridge (Auto-Attendant).
+ * Instead of calling ElevenLabs API directly, creates a whatsapp_calls record
+ * with status 'pending_bridge' for the Auto-Attendant browser tab to pick up.
+ */
+async function processCallWhatsApp(supabase: any, vq: any) {
+  const contact = vq.contacts;
+  if (!contact?.phone_number) {
+    console.error(`[ElevenLabs Call] No phone number for VQ ${vq.id}`);
+    await supabase
+      .from('voice_qualifications')
+      .update({ status: 'failed', observations: 'Contato sem número de telefone' })
+      .eq('id', vq.id);
+    return { id: vq.id, status: 'failed', reason: 'no_phone' };
+  }
+
+  // Format phone number
+  let phone = contact.phone_number.replace(/\D/g, '');
+  if (phone.startsWith('55')) phone = phone.slice(2);
+  if (phone.length === 10) {
+    const ddd = phone.slice(0, 2);
+    const number = phone.slice(2);
+    phone = ddd + '9' + number;
+  }
+  phone = '+55' + phone;
+
+  const rawName = contact.name || contact.call_name || 'Cliente';
+  const firstName = rawName.trim().split(/\s+/)[0] || 'Cliente';
+  const leadName = firstName.length < 3
+    ? firstName
+    : firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+
+  console.log(`[ElevenLabs Call] WhatsApp bridge mode — creating pending_bridge for ${leadName} at ${phone} (VQ: ${vq.id})`);
+
+  // Update VQ status
+  await supabase
+    .from('voice_qualifications')
+    .update({ status: 'calling', called_at: new Date().toISOString() })
+    .eq('id', vq.id);
+
+  try {
+    // Create a whatsapp_calls record for Auto-Attendant to pick up
+    const { data: callRecord, error: insertError } = await supabase
+      .from('whatsapp_calls')
+      .insert({
+        contact_id: vq.contact_id,
+        direction: 'outbound',
+        status: 'pending_bridge',
+        to_number: phone,
+        from_number: null, // Will be set by Auto-Attendant
+        metadata: {
+          vq_id: vq.id,
+          lead_name: leadName,
+          bridge_mode: true,
+        },
+      })
+      .select('id')
+      .single();
+
+    if (insertError) throw insertError;
+
+    console.log(`[ElevenLabs Call] ✅ WhatsApp bridge record created: ${callRecord.id} for VQ ${vq.id}`);
+
+    // Update VQ with reference
+    await supabase
+      .from('voice_qualifications')
+      .update({
+        call_sid: callRecord.id, // Store whatsapp_calls.id as reference
+        observations: `Aguardando Auto-Attendant bridge (call: ${callRecord.id})`,
+      })
+      .eq('id', vq.id);
+
+    return { id: vq.id, status: 'pending_bridge', call_id: callRecord.id };
+
+  } catch (error) {
+    console.error(`[ElevenLabs Call] ❌ Error creating WhatsApp bridge:`, error.message);
+
+    const newAttempt = vq.attempt_number + 1;
+    if (newAttempt > vq.max_attempts) {
+      await supabase
+        .from('voice_qualifications')
+        .update({
+          status: 'failed',
+          observations: `Falha após ${vq.max_attempts} tentativas: ${error.message}`,
+        })
+        .eq('id', vq.id);
+      return { id: vq.id, status: 'failed', reason: 'max_attempts' };
+    }
+
     const retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
     await supabase
       .from('voice_qualifications')

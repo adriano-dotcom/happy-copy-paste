@@ -20,6 +20,7 @@ const Settings = React.lazy(() => import('./components/Settings'));
 const Team = React.lazy(() => import('./components/Team'));
 const Functions = React.lazy(() => import('./components/Functions'));
 const MeetingRoom = React.lazy(() => import('./components/MeetingRoom'));
+const AutoAttendant = React.lazy(() => import('./pages/AutoAttendant'));
 
 // Loading fallback para lazy routes
 const RouteLoader: React.FC = () => (
@@ -95,6 +96,15 @@ const App: React.FC = () => {
               <Suspense fallback={<RouteLoader />}>
                 <MeetingRoom />
               </Suspense>
+            } />
+
+            {/* Auto-Attendant: WhatsApp ↔ ElevenLabs Bridge */}
+            <Route path="/auto-attendant" element={
+              <ProtectedRoute>
+                <Suspense fallback={<RouteLoader />}>
+                  <AutoAttendant />
+                </Suspense>
+              </ProtectedRoute>
             } />
 
             {/* Rotas Internas (Com Sidebar) - Protected */}
