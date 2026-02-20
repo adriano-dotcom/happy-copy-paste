@@ -118,6 +118,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioMonitorRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const acceptStartRef = useRef<number>(0);
+  const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ICE candidate counters
   const iceCandidateCountRef = useRef<Record<string, number>>({ host: 0, srflx: 0, relay: 0, prflx: 0, unknown: 0 });
@@ -154,6 +155,10 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
 
 
   const cleanup = useCallback(() => {
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+      statsIntervalRef.current = null;
+    }
     if (audioMonitorRef.current) {
       clearInterval(audioMonitorRef.current);
       audioMonitorRef.current = null;
@@ -493,6 +498,20 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ call, onDi
       console.log(`[WebRTC][${ts()}] ✓ pre_accept + connection + accept completed in ${totalElapsed}ms`);
 
       setLocalStatus('answered');
+
+      // Start periodic WebRTC stats logging every 5s
+      if (peerConnectionRef.current) {
+        const pc = peerConnectionRef.current;
+        statsIntervalRef.current = setInterval(() => {
+          if (pc.connectionState === 'closed') {
+            clearInterval(statsIntervalRef.current!);
+            statsIntervalRef.current = null;
+            return;
+          }
+          logPeerStats(pc);
+        }, 5000);
+      }
+
       clearTimeout(totalTimeoutId);
     } catch (error: any) {
       console.error(`[WebRTC][${ts()}] ✗ Error accepting call:`, error);
