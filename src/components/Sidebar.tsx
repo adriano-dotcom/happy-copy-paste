@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LayoutDashboard, MessageSquare, Users, Settings as SettingsIcon, LogOut, ShieldCheck, Calendar, Kanban, Code2, Megaphone, Target, Headphones } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Users, Settings as SettingsIcon, LogOut, ShieldCheck, Calendar, Kanban, Code2, Megaphone, Target, Headphones, Phone } from 'lucide-react';
 import { useLocation, Link } from 'react-router-dom';
 import { Sidebar, SidebarBody, SidebarLink, useSidebar } from '@/components/ui/sidebar';
 import { motion } from 'framer-motion';
@@ -7,6 +7,7 @@ import jacometoLogo from '@/assets/jacometo-logo.png';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useAuth } from '@/hooks/useAuth';
 import { useUnreadMessages } from '@/contexts/UnreadMessagesContext';
+import { useAutoAttendantFlag } from '@/hooks/useAutoAttendantFlag';
 
 const allMenuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, adminOnly: false },
@@ -171,6 +172,7 @@ const SidebarContent = () => {
   const { isAdmin, loading: roleLoading } = useUserRole();
   const { user, signOut } = useAuth();
   const { pendingLeadsCount, unreadMessagesCount } = useUnreadMessages();
+  const { isActive: autoAttendantActive, toggle: toggleAutoAttendant } = useAutoAttendantFlag();
 
   // Filter menu items based on user role
   const menuItems = allMenuItems.filter(item => !item.adminOnly || isAdmin);
@@ -216,6 +218,45 @@ const SidebarContent = () => {
 
         {/* Preview de mensagens não lidas */}
         <UnreadPreviewPanel />
+
+        {/* Auto-Attendant Toggle */}
+        {isAdmin && (
+          <div className="mt-4 pt-4">
+            <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mb-4" />
+            <button
+              onClick={toggleAutoAttendant}
+              className={`w-full flex items-center gap-3 p-2.5 rounded-xl border transition-all duration-300 ${
+                autoAttendantActive
+                  ? 'bg-gradient-to-r from-green-500/10 to-transparent border-green-500/20'
+                  : 'bg-white/[0.02] border-white/[0.03] hover:bg-white/[0.04]'
+              }`}
+            >
+              <div className={`relative w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                autoAttendantActive
+                  ? 'bg-gradient-to-tr from-green-800 to-slate-800 ring-2 ring-green-500/30'
+                  : 'bg-gradient-to-tr from-slate-800 to-slate-900 ring-2 ring-white/10'
+              }`}>
+                <Phone className={`w-4 h-4 ${autoAttendantActive ? 'text-green-400' : 'text-slate-400'}`} />
+                {autoAttendantActive && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse ring-2 ring-slate-950" />
+                )}
+              </div>
+              <motion.div
+                initial={false}
+                animate={{ display: open ? 'block' : 'none', opacity: open ? 1 : 0 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 text-left overflow-hidden"
+              >
+                <p className={`text-sm font-medium whitespace-nowrap ${autoAttendantActive ? 'text-green-300' : 'text-slate-400'}`}>
+                  {autoAttendantActive ? 'Iris Ativa' : 'Iris Desligada'}
+                </p>
+                <p className="text-[10px] text-slate-500 whitespace-nowrap">
+                  Auto-Attendant
+                </p>
+              </motion.div>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* User Footer */}
