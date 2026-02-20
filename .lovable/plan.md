@@ -1,71 +1,41 @@
 
+# Fix: Modal Discreto quando Auto-Attendant esta Ativo
 
-# Fix: Auto-Attendant - Chamada Automática, Navegação e Encerramento
+## Problema
+Quando o Auto-Attendant esta ativo e a Iris atende as chamadas automaticamente, o modal grande de chamada (`IncomingCallModal`) ainda aparece para os operadores humanos nas outras paginas (`/chat`, `/dashboard`, etc.), bloqueando a tela inteira.
 
-## Problemas Identificados
+O codigo de supressao ja existe no `useIncomingWhatsAppCall`, mas pode haver uma corrida de tempo (race condition) entre o INSERT da chamada e a consulta ao flag `auto_attendant_active`. Alem disso, mesmo que funcione, o usuario quer poder **monitorar** as chamadas sendo atendidas pela Iris sem ser bloqueado pelo modal.
 
-### 1. Modal de chamada aparece para outros operadores
-Quando o auto-attendant esta ativo na aba `/auto-attendant`, chamadas inbound ainda disparam o `IncomingCallModal` em todas as outras abas/usuarios. Nao existe comunicacao entre o auto-attendant e o hook `useIncomingWhatsAppCall` para suprimir o modal.
+## Solucao
 
-### 2. Navegar para fora de `/auto-attendant` derruba a conexao
-O componente `AutoAttendant` e desmontado ao trocar de pagina, mas nao existe cleanup adequado que:
-- Encerre a sessao ElevenLabs
-- Termine a chamada no Meta (via `whatsapp-call-terminate`)
-- Atualize o status no banco
+Substituir a logica binaria (mostrar ou nao o modal) por uma logica de 3 estados:
+1. **Auto-attendant desligado**: Modal completo (comportamento atual)
+2. **Auto-attendant ligado**: Banner discreto no topo da tela, sem bloquear a interface
+3. **Auto-attendant ligado + chamada ja tratada**: Banner desaparece apos alguns segundos
 
-### 3. Agente continua falando apos desligamento
-Quando o telefone desliga, o `onconnectionstatechange` detecta `disconnected/failed`, mas:
-- O `elevenLabs.endSession()` e chamado, porem o estado do hook nao reseta o attendant
-- A funcao `resetForNext()` existe no hook mas **nunca e exposta nem chamada**
-- `processingRef.current` fica `true` para sempre, travando a fila
+### Etapa 1: Hook retorna flag de supressao em vez de esconder silenciosamente
 
----
+No `useIncomingWhatsAppCall.ts`:
+- Em vez de `return` silencioso quando `auto_attendant_active === true`, retornar a chamada com um flag `suppressedByAutoAttendant: true`
+- Isso permite que o componente pai decida como exibir (modal cheio vs banner discreto)
 
-## Plano de Implementacao
+### Etapa 2: Criar componente `AutoAttendantCallBanner`
 
-### Etapa 1: Suprimir modal quando auto-attendant esta ativo
+Componente pequeno e discreto que aparece quando `suppressedByAutoAttendant === true`:
+- Barra fina no topo da tela (nao bloqueia interacao)
+- Mostra: nome do contato, numero, indicador "Iris atendendo..."
+- Desaparece automaticamente quando a chamada muda de status (answered, ended, etc.)
+- Animacao suave de entrada/saida
 
-Usar a coluna `status` da chamada no banco para sinalizar que o auto-attendant ja aceitou a chamada. Quando o auto-attendant faz o `pre_accept`, o status muda de `ringing` para algo diferente, e o `useIncomingWhatsAppCall` ja ignora. O problema e que entre o INSERT (ringing) e o pre_accept, o modal aparece por alguns segundos.
+### Etapa 3: Atualizar `AppLayout` no `App.tsx`
 
-**Solucao**: Usar um flag no banco (`nina_settings.auto_attendant_active = true`) que o hook `useIncomingWhatsAppCall` consulta para suprimir o modal quando o auto-attendant esta ligado.
+- Renderizar o `AutoAttendantCallBanner` quando a chamada esta suprimida
+- Manter o `IncomingCallModal` apenas para chamadas nao suprimidas
+- Logica: se `suppressedByAutoAttendant` -> banner; senao -> modal completo
 
-- No `useWhatsAppAutoAttendant.activate()`: setar `nina_settings.auto_attendant_active = true`
-- No `useWhatsAppAutoAttendant.deactivate()`: setar `false`
-- No `useIncomingWhatsAppCall`: antes de mostrar modal, checar esse flag; se true, ignorar
+### Etapa 4: Garantir que o flag e setado antes da primeira chamada
 
-### Etapa 2: Expor `resetForNext` e corrigir ciclo de vida
-
-No hook `useWhatsAppAutoAttendant`:
-- Expor `resetForNext` e `setState` no retorno do hook
-- A pagina `AutoAttendant` chama `resetForNext()` quando a chamada termina (seja por cleanup, desconexao, ou fim do ElevenLabs)
-
-### Etapa 3: Cleanup robusto na navegacao
-
-No componente `AutoAttendant`:
-- Adicionar `useEffect` de unmount que chama:
-  1. `elevenLabs.endSession()`
-  2. `supabase.functions.invoke('whatsapp-call-terminate', { body: { call_id } })` 
-  3. `cleanup()` (fecha WebRTC e Audio Bridge)
-  4. `attendant.deactivate()`
-- Adicionar listener `beforeunload` para capturar fechamento/refresh da aba
-- Usar `useRef` para guardar o `currentCall.id` atual (evita stale closure)
-
-### Etapa 4: Encerramento bidirecional confiavel
-
-Quando o telefone desliga (Meta WebRTC `disconnected/failed`):
-1. Chamar `elevenLabs.endSession()` (ja faz)
-2. Chamar `whatsapp-call-terminate` para atualizar o banco (FALTA)
-3. Chamar `attendant.resetForNext()` para liberar a fila (FALTA)
-
-Quando o ElevenLabs encerra (agente termina conversa):
-1. Detectar via `onDisconnect` do `useConversation`
-2. Chamar `whatsapp-call-terminate` para desligar o Meta
-3. Fechar WebRTC e Audio Bridge
-4. Chamar `attendant.resetForNext()`
-
-### Etapa 5: Registrar na timeline do contato
-
-Ao final da chamada (em qualquer cenario), garantir que o `whatsapp-call-terminate` atualiza `ended_at` e `duration_seconds` corretamente (ja faz) para aparecer na timeline.
+No `useWhatsAppAutoAttendant.activate()`, o `await` no update do banco ja esta correto, mas adicionar um pequeno delay (200ms) entre setar o flag e comecar a escutar chamadas para garantir que a propagacao realtime nao perca o timing.
 
 ---
 
@@ -73,22 +43,21 @@ Ao final da chamada (em qualquer cenario), garantir que o `whatsapp-call-termina
 
 ### Arquivos modificados:
 
-1. **`src/hooks/useWhatsAppAutoAttendant.ts`**
-   - Expor `resetForNext` e `setState` no retorno
-   - Adicionar `activate`/`deactivate` que seta flag no banco (`nina_settings`)
+1. **`src/hooks/useIncomingWhatsAppCall.ts`**
+   - Adicionar campo `suppressedByAutoAttendant` no estado retornado
+   - Quando `auto_attendant_active === true`: setar a chamada com flag de supressao em vez de ignorar completamente
+   - Nao tocar ringtone quando suprimida
 
-2. **`src/hooks/useIncomingWhatsAppCall.ts`**
-   - Checar `nina_settings.auto_attendant_active` antes de mostrar modal
-   - Se `true`, logar e ignorar chamada inbound
+2. **`src/components/AutoAttendantCallBanner.tsx`** (novo)
+   - Banner discreto fixo no topo
+   - Mostra icone de robo/IA + nome do contato + "Iris esta atendendo"
+   - Barra de progresso animada
+   - Auto-dismiss apos a chamada sair de `ringing`
+   - Estilo: bg-cyan-900/80, texto pequeno, sem bloqueio de cliques
 
-3. **`src/pages/AutoAttendant.tsx`**
-   - Usar ref para `currentCall.id` (evitar stale closure)
-   - Adicionar `useEffect` de unmount com cleanup completo
-   - Adicionar `beforeunload` listener
-   - No `onconnectionstatechange`: chamar terminate + resetForNext
-   - Monitorar `elevenLabs.status` para detectar `ended` e encerrar Meta
-   - Adicionar `useEffect` que observa `elevenLabs.status === 'ended'` para fechar o ciclo
+3. **`src/App.tsx`**
+   - Importar e renderizar `AutoAttendantCallBanner` dentro do `AppLayout`
+   - Condicional: se chamada suprimida, mostrar banner; se nao, mostrar modal
 
-4. **Migracao SQL**
-   - Adicionar coluna `auto_attendant_active boolean default false` em `nina_settings`
-
+4. **`src/hooks/useWhatsAppAutoAttendant.ts`**
+   - Nenhuma mudanca estrutural, apenas garantir que `activate()` aguarda o update do banco antes de escutar chamadas
