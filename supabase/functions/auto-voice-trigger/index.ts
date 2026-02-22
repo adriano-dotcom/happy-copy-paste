@@ -29,7 +29,52 @@ serve(async (req: Request) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
   try {
-    // Check business hours first
+    // ===== PHASE 1: Process scheduled auto-window VQs =====
+    // These are VQs created by nina-orchestrator with a delay (scheduled_for in the future)
+    const { data: scheduledVqs, error: schedError } = await supabase
+      .from('voice_qualifications')
+      .select('id, contact_id')
+      .eq('status', 'scheduled')
+      .eq('trigger_source', 'auto_window')
+      .lte('scheduled_for', new Date().toISOString())
+      .limit(10);
+
+    if (schedError) {
+      console.error('[Auto Voice] Error fetching scheduled VQs:', schedError);
+    }
+
+    const scheduledResults = [];
+    if (scheduledVqs && scheduledVqs.length > 0) {
+      console.log(`[Auto Voice] Found ${scheduledVqs.length} scheduled auto-window VQs ready to trigger`);
+
+      for (const vq of scheduledVqs) {
+        try {
+          // Mark as pending to avoid re-processing
+          await supabase
+            .from('voice_qualifications')
+            .update({ status: 'pending' })
+            .eq('id', vq.id);
+
+          // Trigger the call
+          const { error: invokeError } = await supabase.functions.invoke('trigger-elevenlabs-call', {
+            body: { contact_id: vq.contact_id, force: true, trigger_source: 'auto_window' },
+          });
+
+          if (invokeError) {
+            console.error(`[Auto Voice] Error invoking trigger for scheduled VQ ${vq.id}:`, invokeError);
+            scheduledResults.push({ vq_id: vq.id, contact_id: vq.contact_id, status: 'error' });
+          } else {
+            console.log(`[Auto Voice] Triggered scheduled VQ ${vq.id} for contact ${vq.contact_id}`);
+            scheduledResults.push({ vq_id: vq.id, contact_id: vq.contact_id, status: 'triggered' });
+          }
+        } catch (err) {
+          console.error(`[Auto Voice] Error processing scheduled VQ ${vq.id}:`, err.message);
+          scheduledResults.push({ vq_id: vq.id, contact_id: vq.contact_id, status: 'error', error: err.message });
+        }
+      }
+    }
+
+    // ===== PHASE 2: Original flow — check business hours and find inactive leads =====
     const spNow = getNowInSP();
     if (!isBusinessHours(spNow)) {
       console.log(`[Auto Voice] Outside business hours (SP: ${spNow.toLocaleString('pt-BR')}). Skipping.`);

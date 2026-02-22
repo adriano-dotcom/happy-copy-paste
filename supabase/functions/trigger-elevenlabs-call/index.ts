@@ -74,11 +74,12 @@ serve(async (req: Request) => {
     if (body.contact_id && body.force) {
       console.log(`[ElevenLabs Call] Force mode for contact: ${body.contact_id}`);
       
-      // Find the latest voice qualification for this contact
+      // Find the latest voice qualification for this contact (prefer pending/scheduled ones)
       const { data: vq } = await supabase
         .from('voice_qualifications')
         .select('*, contacts(phone_number, name, call_name)')
         .eq('contact_id', body.contact_id)
+        .in('status', ['pending', 'scheduled'])
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -86,48 +87,70 @@ serve(async (req: Request) => {
       let qualificationToProcess = vq;
 
       if (!qualificationToProcess) {
-        // No existing VQ — create one on the fly
-        console.log(`[ElevenLabs Call] No existing VQ, creating new one for contact ${body.contact_id}`);
-        
-        const { data: contact } = await supabase
-          .from('contacts')
-          .select('id, phone_number, name, call_name')
-          .eq('id', body.contact_id)
-          .single();
-
-        if (!contact) {
-          return new Response(JSON.stringify({ error: 'Contact not found' }), {
-            status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-
-        const { data: newVq, error: insertError } = await supabase
+        // Try any recent VQ (including completed/failed) to avoid orphans
+        const { data: anyVq } = await supabase
           .from('voice_qualifications')
-          .insert({
-            contact_id: body.contact_id,
-            status: 'pending',
-            scheduled_for: new Date().toISOString(),
-            attempt_number: 1,
-            max_attempts: 3,
-            trigger_source: body.trigger_source || 'manual',
-          })
           .select('*, contacts(phone_number, name, call_name)')
-          .single();
+          .eq('contact_id', body.contact_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-        if (insertError) {
-          console.error('[ElevenLabs Call] Error creating VQ:', insertError);
-          return new Response(JSON.stringify({ error: 'Failed to create voice qualification' }), {
-            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
+        if (anyVq && ['pending', 'scheduled'].includes(anyVq.status)) {
+          qualificationToProcess = anyVq;
+        } else if (!anyVq) {
+          // No existing VQ at all — create one on the fly
+          console.log(`[ElevenLabs Call] No existing VQ, creating new one for contact ${body.contact_id}`);
+          
+          const { data: contact } = await supabase
+            .from('contacts')
+            .select('id, phone_number, name, call_name')
+            .eq('id', body.contact_id)
+            .single();
+
+          if (!contact) {
+            return new Response(JSON.stringify({ error: 'Contact not found' }), {
+              status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          const { data: newVq, error: insertError } = await supabase
+            .from('voice_qualifications')
+            .insert({
+              contact_id: body.contact_id,
+              status: 'pending',
+              scheduled_for: new Date().toISOString(),
+              attempt_number: 1,
+              max_attempts: 3,
+              trigger_source: body.trigger_source || 'manual',
+            })
+            .select('*, contacts(phone_number, name, call_name)')
+            .single();
+
+          if (insertError) {
+            console.error('[ElevenLabs Call] Error creating VQ:', insertError);
+            return new Response(JSON.stringify({ error: 'Failed to create voice qualification' }), {
+              status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          qualificationToProcess = newVq;
+        } else {
+          // Reuse existing VQ (e.g. from orchestrator's scheduled insert)
+          qualificationToProcess = anyVq;
+          console.log(`[ElevenLabs Call] Reusing existing VQ ${anyVq.id} (status: ${anyVq.status}) for contact ${body.contact_id}`);
         }
-
-        qualificationToProcess = newVq;
+      } else {
+        console.log(`[ElevenLabs Call] Reusing pending/scheduled VQ ${vq.id} for contact ${body.contact_id}`);
       }
 
-      // Reset and process immediately
+      // Reset and process immediately — preserve trigger_source if already set by orchestrator
+      const triggerSource = qualificationToProcess.trigger_source !== 'manual' 
+        ? qualificationToProcess.trigger_source 
+        : (body.trigger_source || 'manual');
       await supabase
         .from('voice_qualifications')
-        .update({ status: 'pending', scheduled_for: new Date().toISOString(), trigger_source: body.trigger_source || 'manual' })
+        .update({ status: 'pending', scheduled_for: new Date().toISOString(), trigger_source: triggerSource })
         .eq('id', qualificationToProcess.id);
 
       if (voiceChannel === 'whatsapp') {

@@ -3285,26 +3285,23 @@ async function processQueueItem(
       
       if (!recentVq) {
         const delaySeconds = settings?.auto_voice_delay_seconds || 0;
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        
-        const triggerCall = () => {
-          fetch(`${supabaseUrl}/functions/v1/trigger-elevenlabs-call`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${supabaseServiceKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ contact_id: conversation.contact_id, force: true, trigger_source: 'auto_window' })
-          }).catch(err => console.error('[Nina] Auto-voice trigger error:', err));
-        };
-        
-        if (delaySeconds > 0) {
-          setTimeout(triggerCall, delaySeconds * 1000);
-          console.log(`[Nina] Auto-voice: scheduled call for contact ${conversation.contact_id} in ${delaySeconds}s`);
+        const scheduledFor = new Date(Date.now() + delaySeconds * 1000).toISOString();
+
+        const { error: insertErr } = await supabase
+          .from('voice_qualifications')
+          .insert({
+            contact_id: conversation.contact_id,
+            status: 'scheduled',
+            scheduled_for: scheduledFor,
+            attempt_number: 1,
+            max_attempts: 3,
+            trigger_source: 'auto_window',
+          });
+
+        if (insertErr) {
+          console.error('[Nina] Auto-voice: failed to schedule VQ:', insertErr);
         } else {
-          triggerCall();
-          console.log(`[Nina] Auto-voice: triggered call for contact ${conversation.contact_id}`);
+          console.log(`[Nina] Auto-voice: scheduled VQ for contact ${conversation.contact_id} at ${scheduledFor} (delay: ${delaySeconds}s)`);
         }
       } else {
         console.log(`[Nina] Auto-voice: skipped, VQ exists for contact ${conversation.contact_id}`);
