@@ -268,6 +268,16 @@ const Contacts: React.FC = () => {
     
     let filtered = baseContacts;
     
+    // Excluir arquivados por padrão (só mostra se buscar ou filtrar por "archived")
+    if (!searchTerm && chatStatusFilter !== 'archived') {
+      filtered = filtered.filter(c => {
+        const ext = c as ExtendedContact;
+        return ext.conversationActive === null || 
+               ext.conversationActive === undefined || 
+               ext.conversationActive === true;
+      });
+    }
+    
     // Filtrar por status selecionados
     if (selectedStatuses.length > 0) {
       filtered = filtered.filter(contact => selectedStatuses.includes(contact.status));
