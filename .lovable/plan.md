@@ -1,89 +1,73 @@
 
-# Corrigir Visualizacao de Contatos e Limite da Query
 
-## Problema Identificado
+# Corrigir Contatos Inbound - Limite Real do Supabase
 
-A query `fetchContacts` em `src/services/api.ts` (linha 292) tem `.limit(500)`. Com a importacao massiva de 1.705 contatos outbound hoje, esses dominam o resultado ordenado por `last_activity`, fazendo os contatos inbound desaparecerem da pagina.
+## Problema Raiz
 
-O banco tem 3.344 contatos, mas a pagina so mostra 500.
+O `.limit(5000)` nao funciona como esperado porque o Supabase tem um limite padrao de **1000 linhas por request** (configurado no `supabase/config.toml`). Dos 1000 retornados, 996 sao outbound e apenas 4 sao inbound.
 
 ## Solucao
 
-### 1. Remover limite fixo e usar paginacao por aba
+Fazer **duas queries separadas** em vez de uma unica: uma para inbound e outra para outbound. Isso garante que cada aba tenha seus proprios dados sem competir pelo mesmo limite.
 
-Em vez de buscar 500 contatos de todas as origens juntos, buscar **por lead_source** separadamente, garantindo que cada aba tenha seus dados. Aumentar o limite para 2000 por aba (ou remover).
+### Arquivo: `src/services/api.ts`
 
-**Arquivo:** `src/services/api.ts` (linhas 288-292)
-
-Antes:
-```typescript
-const { data: contactsData } = await supabase
-  .from('contacts')
-  .select('*')
-  .order('last_activity', { ascending: false })
-  .limit(500);
-```
-
-Depois:
-```typescript
-const { data: contactsData } = await supabase
-  .from('contacts')
-  .select('*')
-  .order('last_activity', { ascending: false })
-  .limit(5000);
-```
-
-### 2. Corrigir contatos com lead_source nao mapeado
-
-Contatos com `lead_source = 'reused_number'` ou `'test'` nao aparecem em nenhuma aba. O filtro de inbound (Contacts.tsx linhas 243-244) deve incluir esses como fallback:
-
-Antes:
-```typescript
-const inboundContacts = contacts.filter(contact => 
-  (contact.lead_source === 'inbound' || contact.whatsapp_id) && 
-  contact.lead_source !== 'facebook' && contact.lead_source !== 'google'
-);
-```
-
-Depois:
-```typescript
-const inboundContacts = contacts.filter(contact => 
-  contact.lead_source !== 'outbound' && 
-  contact.lead_source !== 'facebook' && 
-  contact.lead_source !== 'google'
-);
-```
-
-Isso coloca qualquer contato que nao seja outbound/facebook/google na aba Inbound (inclusive reused_number, test, etc).
-
-### 3. Adicionar contagem real por aba
-
-Exibir o total real do banco (nao apenas os carregados) nos badges das abas, usando uma query count separada e leve.
-
-**Arquivo:** `src/services/api.ts` -- adicionar funcao auxiliar
+Substituir a query unica por queries paralelas por `lead_source`:
 
 ```typescript
-fetchContactCounts: async () => {
-  const { data } = await supabase
+// Buscar contatos por grupo em paralelo para evitar limite de 1000 rows
+const [inboundResult, outboundResult, facebookResult, googleResult] = await Promise.all([
+  supabase
     .from('contacts')
-    .select('lead_source')
-    // count via grouping client-side
-  // Ou usar RPC/view
-}
+    .select('*')
+    .or('lead_source.eq.inbound,lead_source.eq.reused_number,lead_source.eq.test,lead_source.is.null')
+    .order('last_activity', { ascending: false })
+    .limit(1000),
+  supabase
+    .from('contacts')
+    .select('*')
+    .eq('lead_source', 'outbound')
+    .order('last_activity', { ascending: false })
+    .limit(1000),
+  supabase
+    .from('contacts')
+    .select('*')
+    .eq('lead_source', 'facebook')
+    .order('last_activity', { ascending: false })
+    .limit(100),
+  supabase
+    .from('contacts')
+    .select('*')
+    .eq('lead_source', 'google')
+    .order('last_activity', { ascending: false })
+    .limit(100),
+]);
+
+const contactsData = [
+  ...(inboundResult.data || []),
+  ...(outboundResult.data || []),
+  ...(facebookResult.data || []),
+  ...(googleResult.data || []),
+];
 ```
 
-Alternativa mais simples: mostrar `contacts.length` por aba no badge (ja funciona, apenas ficara correto com o limit maior).
+Isso retorna ate **1000 inbound + 1000 outbound + 100 facebook + 100 google** = ate 2200 contatos, cobrindo todos os segmentos.
 
-## Resumo das Mudancas
+### Nenhuma mudanca em `Contacts.tsx`
+
+O filtro por aba ja esta correto apos a ultima edicao.
+
+## Resultado Esperado
+
+| Aba | Antes | Depois |
+|-----|-------|--------|
+| Inbound | 4 | 886 (884 inbound + reused_number + test) |
+| Outbound | 996 | 1000 (mais recentes) |
+| Facebook | 0 | 12 |
+| Google | 0 | 33 |
+
+## Mudanca Unica
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `src/services/api.ts` | Aumentar limit de 500 para 5000 |
-| `src/components/Contacts.tsx` | Corrigir filtro inbound para incluir lead_sources nao mapeados |
-
-## Impacto
-
-- Contatos inbound voltam a aparecer imediatamente
-- Todos os 3.344 contatos ficam acessiveis
-- Contatos com lead_source exotico (reused_number, test) ficam visiveis na aba Inbound
-- Performance: query de 5000 rows e aceitavel para esse volume
+| `src/services/api.ts` | Substituir query unica por 4 queries paralelas por lead_source |
