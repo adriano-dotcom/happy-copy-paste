@@ -1,43 +1,51 @@
 
 
-# Corrigir Contatos Inbound - Limite Real do Supabase
+# Mostrar Todos os Contatos (3.347)
 
-## Problema Raiz
+## Problema
 
-O `.limit(5000)` nao funciona como esperado porque o Supabase tem um limite padrao de **1000 linhas por request** (configurado no `supabase/config.toml`). Dos 1000 retornados, 996 sao outbound e apenas 4 sao inbound.
+A query atual busca no maximo 1.000 outbound, mas existem 2.413 no banco. Resultado: 1.413 contatos outbound importados nao aparecem na pagina.
+
+| lead_source | No banco | Carregados | Faltando |
+|-------------|----------|------------|----------|
+| outbound | 2.413 | 1.000 | 1.413 |
+| inbound | 887 | 887 | 0 |
+| facebook | 12 | 12 | 0 |
+| google | 33 | 33 | 0 |
+| outros | 2 | 2 | 0 |
+| **Total** | **3.347** | **1.934** | **1.413** |
 
 ## Solucao
 
-Fazer **duas queries separadas** em vez de uma unica: uma para inbound e outra para outbound. Isso garante que cada aba tenha seus proprios dados sem competir pelo mesmo limite.
+Fazer multiplas queries paginadas para outbound (que ultrapassa 1.000) e manter as demais como estao.
 
 ### Arquivo: `src/services/api.ts`
 
-Substituir a query unica por queries paralelas por `lead_source`:
+Substituir a query unica de outbound por 3 queries de 1.000 cada (cobrindo ate 3.000 outbound), e manter inbound/facebook/google iguais:
 
 ```typescript
-// Buscar contatos por grupo em paralelo para evitar limite de 1000 rows
-const [inboundResult, outboundResult, facebookResult, googleResult] = await Promise.all([
-  supabase
-    .from('contacts')
-    .select('*')
+const [inboundResult, outbound1, outbound2, outbound3, facebookResult, googleResult] = await Promise.all([
+  supabase.from('contacts').select('*')
     .or('lead_source.eq.inbound,lead_source.eq.reused_number,lead_source.eq.test,lead_source.is.null')
     .order('last_activity', { ascending: false })
     .limit(1000),
-  supabase
-    .from('contacts')
-    .select('*')
+  supabase.from('contacts').select('*')
     .eq('lead_source', 'outbound')
     .order('last_activity', { ascending: false })
-    .limit(1000),
-  supabase
-    .from('contacts')
-    .select('*')
+    .range(0, 999),
+  supabase.from('contacts').select('*')
+    .eq('lead_source', 'outbound')
+    .order('last_activity', { ascending: false })
+    .range(1000, 1999),
+  supabase.from('contacts').select('*')
+    .eq('lead_source', 'outbound')
+    .order('last_activity', { ascending: false })
+    .range(2000, 2999),
+  supabase.from('contacts').select('*')
     .eq('lead_source', 'facebook')
     .order('last_activity', { ascending: false })
     .limit(100),
-  supabase
-    .from('contacts')
-    .select('*')
+  supabase.from('contacts').select('*')
     .eq('lead_source', 'google')
     .order('last_activity', { ascending: false })
     .limit(100),
@@ -45,29 +53,26 @@ const [inboundResult, outboundResult, facebookResult, googleResult] = await Prom
 
 const contactsData = [
   ...(inboundResult.data || []),
-  ...(outboundResult.data || []),
+  ...(outbound1.data || []),
+  ...(outbound2.data || []),
+  ...(outbound3.data || []),
   ...(facebookResult.data || []),
   ...(googleResult.data || []),
 ];
 ```
 
-Isso retorna ate **1000 inbound + 1000 outbound + 100 facebook + 100 google** = ate 2200 contatos, cobrindo todos os segmentos.
+Isso garante ate **1.000 inbound + 3.000 outbound + 100 facebook + 100 google = 4.200 contatos**, cobrindo todos os 3.347 atuais com margem de crescimento.
 
 ### Nenhuma mudanca em `Contacts.tsx`
 
-O filtro por aba ja esta correto apos a ultima edicao.
+Os filtros por aba ja estao corretos.
 
 ## Resultado Esperado
 
-| Aba | Antes | Depois |
-|-----|-------|--------|
-| Inbound | 4 | 886 (884 inbound + reused_number + test) |
-| Outbound | 996 | 1000 (mais recentes) |
-| Facebook | 0 | 12 |
-| Google | 0 | 33 |
+Todos os 3.347 contatos visiveis na pagina, incluindo os importados e os que receberam templates.
 
-## Mudanca Unica
+## Arquivo modificado
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `src/services/api.ts` | Substituir query unica por 4 queries paralelas por lead_source |
+| `src/services/api.ts` | Paginar query outbound em 3 blocos de 1.000 |
