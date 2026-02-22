@@ -1,78 +1,49 @@
 
 
-# Mostrar Todos os Contatos (3.347)
+# Excluir Contatos Arquivados da Query Padrao
 
-## Problema
+## Situacao Atual
 
-A query atual busca no maximo 1.000 outbound, mas existem 2.413 no banco. Resultado: 1.413 contatos outbound importados nao aparecem na pagina.
-
-| lead_source | No banco | Carregados | Faltando |
-|-------------|----------|------------|----------|
-| outbound | 2.413 | 1.000 | 1.413 |
-| inbound | 887 | 887 | 0 |
-| facebook | 12 | 12 | 0 |
-| google | 33 | 33 | 0 |
-| outros | 2 | 2 | 0 |
-| **Total** | **3.347** | **1.934** | **1.413** |
+Dos 3.347 contatos no banco, **1.477 tem conversa arquivada** (`is_active = false`). Esses contatos estao sendo carregados junto com todos os outros, ocupando espaco nas queries e deixando as abas poluidas.
 
 ## Solucao
 
-Fazer multiplas queries paginadas para outbound (que ultrapassa 1.000) e manter as demais como estao.
+Adicionar filtro `.eq('is_active', true)` nas queries de conversations em `src/services/api.ts`, e ajustar `Contacts.tsx` para so incluir arquivados quando o usuario buscar ou filtrar explicitamente.
 
-### Arquivo: `src/services/api.ts`
+### 1. `src/services/api.ts` - Excluir contatos com conversa arquivada
 
-Substituir a query unica de outbound por 3 queries de 1.000 cada (cobrindo ate 3.000 outbound), e manter inbound/facebook/google iguais:
+Nas 6 queries paralelas de `fetchContacts`, adicionar `.eq('is_blocked', false)` para excluir bloqueados. Alem disso, na query de conversations (linha ~363-368), filtrar apenas conversas ativas por padrao.
+
+Porem, a abordagem mais simples e **filtrar no lado do cliente**: apos montar os dados, remover contatos cujo `conversationActive === false`, exceto quando ha busca ativa ou filtro de "Arquivado" selecionado.
+
+### 2. `src/components/Contacts.tsx` - Filtrar arquivados por padrao
+
+Na logica de filtragem (por volta da linha 320), adicionar exclusao de contatos com `conversationActive === false` **por padrao**, a menos que:
+- O usuario tenha digitado algo no campo de busca (`searchTerm` nao vazio), ou
+- O filtro de status de chat esteja em "Arquivado" (`chatStatusFilter === 'archived'`)
 
 ```typescript
-const [inboundResult, outbound1, outbound2, outbound3, facebookResult, googleResult] = await Promise.all([
-  supabase.from('contacts').select('*')
-    .or('lead_source.eq.inbound,lead_source.eq.reused_number,lead_source.eq.test,lead_source.is.null')
-    .order('last_activity', { ascending: false })
-    .limit(1000),
-  supabase.from('contacts').select('*')
-    .eq('lead_source', 'outbound')
-    .order('last_activity', { ascending: false })
-    .range(0, 999),
-  supabase.from('contacts').select('*')
-    .eq('lead_source', 'outbound')
-    .order('last_activity', { ascending: false })
-    .range(1000, 1999),
-  supabase.from('contacts').select('*')
-    .eq('lead_source', 'outbound')
-    .order('last_activity', { ascending: false })
-    .range(2000, 2999),
-  supabase.from('contacts').select('*')
-    .eq('lead_source', 'facebook')
-    .order('last_activity', { ascending: false })
-    .limit(100),
-  supabase.from('contacts').select('*')
-    .eq('lead_source', 'google')
-    .order('last_activity', { ascending: false })
-    .limit(100),
-]);
-
-const contactsData = [
-  ...(inboundResult.data || []),
-  ...(outbound1.data || []),
-  ...(outbound2.data || []),
-  ...(outbound3.data || []),
-  ...(facebookResult.data || []),
-  ...(googleResult.data || []),
-];
+// Antes dos filtros existentes, excluir arquivados por padrao
+if (!searchTerm && chatStatusFilter !== 'archived') {
+  filtered = filtered.filter(c => {
+    const ext = c as ExtendedContact;
+    // Manter se nao tem conversa ou se conversa esta ativa
+    return ext.conversationActive === null || 
+           ext.conversationActive === undefined || 
+           ext.conversationActive === true;
+  });
+}
 ```
-
-Isso garante ate **1.000 inbound + 3.000 outbound + 100 facebook + 100 google = 4.200 contatos**, cobrindo todos os 3.347 atuais com margem de crescimento.
-
-### Nenhuma mudanca em `Contacts.tsx`
-
-Os filtros por aba ja estao corretos.
 
 ## Resultado Esperado
 
-Todos os 3.347 contatos visiveis na pagina, incluindo os importados e os que receberam templates.
+- Por padrao: apenas contatos ativos ou sem conversa aparecem nas abas
+- Ao selecionar filtro "Arquivado": mostra contatos arquivados
+- Ao pesquisar por nome/telefone: busca em TODOS os contatos (inclusive arquivados)
 
 ## Arquivo modificado
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `src/services/api.ts` | Paginar query outbound em 3 blocos de 1.000 |
+| `src/components/Contacts.tsx` | Excluir arquivados do filtro padrao, manter ao buscar/filtrar |
+
