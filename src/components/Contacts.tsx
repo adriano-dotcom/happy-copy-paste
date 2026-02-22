@@ -272,6 +272,8 @@ const Contacts: React.FC = () => {
     if (!searchTerm && chatStatusFilter !== 'archived') {
       filtered = filtered.filter(c => {
         const ext = c as ExtendedContact;
+        // Sempre mostrar contatos com template enviado, mesmo arquivados
+        if (ext.hasTemplateSent) return true;
         return ext.conversationActive === null || 
                ext.conversationActive === undefined || 
                ext.conversationActive === true;
