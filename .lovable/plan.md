@@ -1,49 +1,61 @@
 
 
-# Excluir Contatos Arquivados da Query Padrao
+# Corrigir Filtro "Arquivado" nos Contatos
 
-## Situacao Atual
+## Problema
 
-Dos 3.347 contatos no banco, **1.477 tem conversa arquivada** (`is_active = false`). Esses contatos estao sendo carregados junto com todos os outros, ocupando espaco nas queries e deixando as abas poluidas.
+A query de conversations em `src/services/api.ts` (linha 363-367) busca conversas com `.in('contact_id', contactIds)`, mas o resultado esta limitado a 1.000 linhas pelo Supabase. Existem **1.529 conversas arquivadas** e **118 ativas** no banco (1.647 total). Como apenas 1.000 sao retornadas, muitos contatos ficam sem dados de conversa (`conversationActive = null`), e ao clicar em "Arquivado" nada aparece porque o filtro busca `conversationActive === false`.
 
 ## Solucao
 
-Adicionar filtro `.eq('is_active', true)` nas queries de conversations em `src/services/api.ts`, e ajustar `Contacts.tsx` para so incluir arquivados quando o usuario buscar ou filtrar explicitamente.
+Paginar a query de conversations da mesma forma que ja foi feito para os contatos outbound -- usando `.range()` em blocos paralelos.
 
-### 1. `src/services/api.ts` - Excluir contatos com conversa arquivada
+### Arquivo: `src/services/api.ts`
 
-Nas 6 queries paralelas de `fetchContacts`, adicionar `.eq('is_blocked', false)` para excluir bloqueados. Alem disso, na query de conversations (linha ~363-368), filtrar apenas conversas ativas por padrao.
-
-Porem, a abordagem mais simples e **filtrar no lado do cliente**: apos montar os dados, remover contatos cujo `conversationActive === false`, exceto quando ha busca ativa ou filtro de "Arquivado" selecionado.
-
-### 2. `src/components/Contacts.tsx` - Filtrar arquivados por padrao
-
-Na logica de filtragem (por volta da linha 320), adicionar exclusao de contatos com `conversationActive === false` **por padrao**, a menos que:
-- O usuario tenha digitado algo no campo de busca (`searchTerm` nao vazio), ou
-- O filtro de status de chat esteja em "Arquivado" (`chatStatusFilter === 'archived'`)
+Na funcao `fetchContacts`, substituir a query unica de conversations por 2 queries paginadas em paralelo:
 
 ```typescript
-// Antes dos filtros existentes, excluir arquivados por padrao
-if (!searchTerm && chatStatusFilter !== 'archived') {
-  filtered = filtered.filter(c => {
-    const ext = c as ExtendedContact;
-    // Manter se nao tem conversa ou se conversa esta ativa
-    return ext.conversationActive === null || 
-           ext.conversationActive === undefined || 
-           ext.conversationActive === true;
-  });
-}
+// Antes (limitado a 1000):
+const conversationsResult = await supabase
+  .from('conversations')
+  .select('id, contact_id, is_active, status, updated_at')
+  .in('contact_id', contactIds)
+  .order('updated_at', { ascending: false });
+
+// Depois (2 blocos de 1000):
+const [convResult1, convResult2] = await Promise.all([
+  supabase
+    .from('conversations')
+    .select('id, contact_id, is_active, status, updated_at')
+    .in('contact_id', contactIds)
+    .order('updated_at', { ascending: false })
+    .range(0, 999),
+  supabase
+    .from('conversations')
+    .select('id, contact_id, is_active, status, updated_at')
+    .in('contact_id', contactIds)
+    .order('updated_at', { ascending: false })
+    .range(1000, 1999),
+]);
+
+const conversationsData = [
+  ...(convResult1.data || []),
+  ...(convResult2.data || []),
+];
 ```
+
+A mesma paginacao sera aplicada a query de deals (que tambem pode ser afetada pelo limite).
+
+O restante do codigo (`conversationsByContact` map, filtros em `Contacts.tsx`) permanece inalterado -- com os dados corretos de `is_active`, o filtro "Arquivado" passara a funcionar.
 
 ## Resultado Esperado
 
-- Por padrao: apenas contatos ativos ou sem conversa aparecem nas abas
-- Ao selecionar filtro "Arquivado": mostra contatos arquivados
-- Ao pesquisar por nome/telefone: busca em TODOS os contatos (inclusive arquivados)
+- Filtro "Arquivado" mostra os ~1.477 contatos com conversa arquivada
+- Filtro "Ativo no chat" mostra os ~118 contatos com conversa ativa
+- Comportamento padrao (sem filtro) continua escondendo arquivados
 
 ## Arquivo modificado
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `src/components/Contacts.tsx` | Excluir arquivados do filtro padrao, manter ao buscar/filtrar |
-
+| `src/services/api.ts` | Paginar query de conversations em 2 blocos de 1.000 |
