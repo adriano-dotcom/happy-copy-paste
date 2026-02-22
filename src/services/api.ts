@@ -289,7 +289,7 @@ export const api = {
       .from('contacts')
       .select('*')
       .order('last_activity', { ascending: false })
-      .limit(500);
+      .limit(5000);
 
     if (contactsError) {
       console.error('[API] Error fetching contacts:', contactsError);
