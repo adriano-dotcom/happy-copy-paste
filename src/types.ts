@@ -85,7 +85,7 @@ export interface Contact {
   email: string;
   company?: string;
   cnpj?: string;
-  status: 'new' | 'lead' | 'qualified' | 'customer' | 'churned';
+  status: 'new' | 'prospecting' | 'lead' | 'qualified' | 'customer' | 'churned';
   lastContact: string;
   lead_source?: 'inbound' | 'outbound' | 'facebook' | 'google';
 }
