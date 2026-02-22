@@ -286,7 +286,7 @@ export const api = {
   fetchContacts: async (): Promise<Contact[]> => {
     // Fetch contacts
     // Buscar contatos por grupo em paralelo para evitar limite de 1000 rows do Supabase
-    const [inboundResult, outboundResult, facebookResult, googleResult] = await Promise.all([
+    const [inboundResult, outbound1, outbound2, outbound3, facebookResult, googleResult] = await Promise.all([
       supabase
         .from('contacts')
         .select('*')
@@ -298,7 +298,19 @@ export const api = {
         .select('*')
         .eq('lead_source', 'outbound')
         .order('last_activity', { ascending: false })
-        .limit(1000),
+        .range(0, 999),
+      supabase
+        .from('contacts')
+        .select('*')
+        .eq('lead_source', 'outbound')
+        .order('last_activity', { ascending: false })
+        .range(1000, 1999),
+      supabase
+        .from('contacts')
+        .select('*')
+        .eq('lead_source', 'outbound')
+        .order('last_activity', { ascending: false })
+        .range(2000, 2999),
       supabase
         .from('contacts')
         .select('*')
@@ -313,7 +325,7 @@ export const api = {
         .limit(100),
     ]);
 
-    const contactsError = inboundResult.error || outboundResult.error || facebookResult.error || googleResult.error;
+    const contactsError = inboundResult.error || outbound1.error || outbound2.error || outbound3.error || facebookResult.error || googleResult.error;
     if (contactsError) {
       console.error('[API] Error fetching contacts:', contactsError);
       return MOCK_CONTACTS;
@@ -321,7 +333,9 @@ export const api = {
 
     const contactsData = [
       ...(inboundResult.data || []),
-      ...(outboundResult.data || []),
+      ...(outbound1.data || []),
+      ...(outbound2.data || []),
+      ...(outbound3.data || []),
       ...(facebookResult.data || []),
       ...(googleResult.data || []),
     ];
