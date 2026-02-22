@@ -1,61 +1,48 @@
 
-
-# Corrigir Filtro "Arquivado" nos Contatos
+# Mostrar Contatos com Template Enviado (Mesmo Arquivados)
 
 ## Problema
 
-A query de conversations em `src/services/api.ts` (linha 363-367) busca conversas com `.in('contact_id', contactIds)`, mas o resultado esta limitado a 1.000 linhas pelo Supabase. Existem **1.529 conversas arquivadas** e **118 ativas** no banco (1.647 total). Como apenas 1.000 sao retornadas, muitos contatos ficam sem dados de conversa (`conversationActive = null`), e ao clicar em "Arquivado" nada aparece porque o filtro busca `conversationActive === false`.
+Dos 634 contatos outbound que receberam template WhatsApp, **613 tem conversa arquivada** (`is_active = false`). O filtro implementado anteriormente exclui arquivados da visualizacao padrao, o que esconde esses contatos -- dando a impressao de que o envio nao foi registrado.
+
+| Status | Contatos com template |
+|--------|----------------------|
+| Conversa ativa | 21 (visiveis) |
+| Conversa arquivada | 613 (escondidos) |
+| **Total** | **634** |
 
 ## Solucao
 
-Paginar a query de conversations da mesma forma que ja foi feito para os contatos outbound -- usando `.range()` em blocos paralelos.
+Alterar o filtro de exclusao de arquivados em `src/components/Contacts.tsx` (linha 272-279) para **manter visivel** qualquer contato que tenha `hasTemplateSent === true`, mesmo que a conversa esteja arquivada.
 
-### Arquivo: `src/services/api.ts`
+### Arquivo: `src/components/Contacts.tsx`
 
-Na funcao `fetchContacts`, substituir a query unica de conversations por 2 queries paginadas em paralelo:
+Na linha 272-279, ajustar a condicao para:
 
 ```typescript
-// Antes (limitado a 1000):
-const conversationsResult = await supabase
-  .from('conversations')
-  .select('id, contact_id, is_active, status, updated_at')
-  .in('contact_id', contactIds)
-  .order('updated_at', { ascending: false });
-
-// Depois (2 blocos de 1000):
-const [convResult1, convResult2] = await Promise.all([
-  supabase
-    .from('conversations')
-    .select('id, contact_id, is_active, status, updated_at')
-    .in('contact_id', contactIds)
-    .order('updated_at', { ascending: false })
-    .range(0, 999),
-  supabase
-    .from('conversations')
-    .select('id, contact_id, is_active, status, updated_at')
-    .in('contact_id', contactIds)
-    .order('updated_at', { ascending: false })
-    .range(1000, 1999),
-]);
-
-const conversationsData = [
-  ...(convResult1.data || []),
-  ...(convResult2.data || []),
-];
+// Excluir arquivados por padrao, MAS manter contatos que receberam template
+if (!searchTerm && chatStatusFilter !== 'archived') {
+  filtered = filtered.filter(c => {
+    const ext = c as ExtendedContact;
+    // Sempre mostrar contatos com template enviado
+    if (ext.hasTemplateSent) return true;
+    // Manter se nao tem conversa ou se conversa esta ativa
+    return ext.conversationActive === null || 
+           ext.conversationActive === undefined || 
+           ext.conversationActive === true;
+  });
+}
 ```
-
-A mesma paginacao sera aplicada a query de deals (que tambem pode ser afetada pelo limite).
-
-O restante do codigo (`conversationsByContact` map, filtros em `Contacts.tsx`) permanece inalterado -- com os dados corretos de `is_active`, o filtro "Arquivado" passara a funcionar.
 
 ## Resultado Esperado
 
-- Filtro "Arquivado" mostra os ~1.477 contatos com conversa arquivada
-- Filtro "Ativo no chat" mostra os ~118 contatos com conversa ativa
-- Comportamento padrao (sem filtro) continua escondendo arquivados
+- Todos os 634 contatos outbound com template enviado aparecem na aba "Outbound" com o badge de template
+- Contatos arquivados SEM template continuam escondidos por padrao
+- Filtro "Arquivado" continua funcionando normalmente
+- Busca por nome/telefone continua buscando em todos
 
 ## Arquivo modificado
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `src/services/api.ts` | Paginar query de conversations em 2 blocos de 1.000 |
+| `src/components/Contacts.tsx` | Adicionar excecao para `hasTemplateSent` no filtro de arquivados |
