@@ -346,7 +346,7 @@ export const api = {
 
     // Fetch deals with owner and pipeline info
     const contactIds = contactsData.map(c => c.id);
-    const [dealsResult, conversationsResult] = await Promise.all([
+    const [dealsResult1, dealsResult2, convResult1, convResult2] = await Promise.all([
       supabase
         .from('deals')
         .select(`
@@ -359,16 +359,38 @@ export const api = {
           pipelines(id, name, slug, icon, color)
         `)
         .in('contact_id', contactIds)
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .range(0, 999),
+      supabase
+        .from('deals')
+        .select(`
+          id,
+          contact_id,
+          owner_id,
+          pipeline_id,
+          created_at,
+          team_members!deals_owner_id_fkey(id, name),
+          pipelines(id, name, slug, icon, color)
+        `)
+        .in('contact_id', contactIds)
+        .order('created_at', { ascending: false })
+        .range(1000, 1999),
       supabase
         .from('conversations')
         .select('id, contact_id, is_active, status, updated_at')
         .in('contact_id', contactIds)
         .order('updated_at', { ascending: false })
+        .range(0, 999),
+      supabase
+        .from('conversations')
+        .select('id, contact_id, is_active, status, updated_at')
+        .in('contact_id', contactIds)
+        .order('updated_at', { ascending: false })
+        .range(1000, 1999),
     ]);
 
-    const dealsData = dealsResult.data;
-    const conversationsData = conversationsResult.data;
+    const dealsData = [...(dealsResult1.data || []), ...(dealsResult2.data || [])];
+    const conversationsData = [...(convResult1.data || []), ...(convResult2.data || [])];
 
     // Create a map of contact_id to deal info (most recent deal per contact)
     const dealsByContact = new Map<string, any>();
