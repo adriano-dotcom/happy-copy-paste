@@ -1,27 +1,31 @@
 
-# Adicionar Status "Em Prospecção" nos Contatos
+# Atualizar Status do Contato para "Em Prospecção" ao Enviar Template
 
 ## Mudanca
 
-Adicionar a opcao **"Em Prospecção"** na lista de status do contato, entre "Novo Lead" e "Em Qualificação".
+No bloco `if (is_prospecting)` da edge function `send-whatsapp-template`, adicionar um `UPDATE` na tabela `contacts` para mudar o `lead_status` de `'new'` para `'prospecting'`.
 
-### Arquivo: `src/components/Contacts.tsx`
+### Arquivo: `supabase/functions/send-whatsapp-template/index.ts`
 
-Na linha 26-31, adicionar o novo status ao array `statusOptions`:
+Dentro do bloco de prospeccao (apos a linha 288, onde atualiza a conversa), adicionar:
 
 ```typescript
-const statusOptions = [
-  { value: 'new', label: 'Novo Lead', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
-  { value: 'prospecting', label: 'Em Prospecção', color: 'bg-orange-500/10 text-orange-400 border-orange-500/20' },
-  { value: 'lead', label: 'Em Qualificação', color: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' },
-  { value: 'qualified', label: 'Qualificado', color: 'bg-green-500/10 text-green-400 border-green-500/20' },
-  { value: 'customer', label: 'Cliente Ativo', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-  { value: 'churned', label: 'Perdido', color: 'bg-slate-800 text-slate-400 border-slate-700' }
-];
+// Update contact status to 'prospecting'
+await supabase
+  .from('contacts')
+  .update({ lead_status: 'prospecting' })
+  .eq('id', contact_id)
+  .eq('lead_status', 'new'); // Only update if still 'new'
 ```
 
-Nenhuma outra alteracao necessaria -- o dropdown de status ja renderiza dinamicamente a partir do array `statusOptions`, e a funcao `getStatusLabel` tambem ja usa o array.
+A condicao `.eq('lead_status', 'new')` garante que contatos ja qualificados ou em outro estagio nao sejam regredidos.
+
+## Resultado Esperado
+
+- Ao enviar template de prospecao, o contato muda automaticamente de "Novo Lead" para "Em Prospecção"
+- Contatos que ja estao em estagios mais avancados nao sao afetados
+- O badge de status na lista de contatos reflete a mudanca imediatamente
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `src/components/Contacts.tsx` | Adicionar `prospecting` / "Em Prospecção" ao array `statusOptions` |
+| `supabase/functions/send-whatsapp-template/index.ts` | Adicionar update de `lead_status` para `'prospecting'` no bloco `is_prospecting` |
