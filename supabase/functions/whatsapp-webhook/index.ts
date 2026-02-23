@@ -479,7 +479,7 @@ serve(async (req) => {
                     context_data: {
                       phone_number_id: phoneNumberId,
                       contact_name: hotPathContact.name || hotPathContact.call_name,
-                      message_type: message.type === 'interactive' ? 'text' : message.type,
+                      message_type: message.type === 'interactive' ? 'text' : message.type === 'contacts' ? 'text' : message.type,
                       original_type: message.type,
                       debounce_scheduled_at: new Date().toISOString(),
                       hot_path: true,
@@ -1160,6 +1160,30 @@ async function processIncomingMessageWithBackground(
         }
         break;
       // ===== END INTERACTIVE BUTTON REPLY SUPPORT =====
+      
+      // ===== CONTACT CARD (vCard) SUPPORT =====
+      case 'contacts': {
+        messageType = 'text';
+        const contactCards = message.contacts || [];
+        if (contactCards.length > 0) {
+          const parts = contactCards.map((c: any) => {
+            const name = c.name?.formatted_name || 'Sem nome';
+            const phone = c.phones?.[0]?.phone || '';
+            const email = c.emails?.[0]?.email || '';
+            const org = c.org?.company || '';
+            let line = `👤 ${name}`;
+            if (phone) line += `\n📞 ${phone}`;
+            if (email) line += `\n📧 ${email}`;
+            if (org) line += `\n🏢 ${org}`;
+            return line;
+          });
+          content = parts.join('\n\n');
+        } else {
+          content = '[cartão de contato]';
+        }
+        break;
+      }
+      // ===== END CONTACT CARD SUPPORT =====
       
       default:
         content = `[${message.type}]`;
