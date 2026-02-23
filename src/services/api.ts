@@ -413,29 +413,37 @@ export const api = {
     const contactTemplateMap = new Map<string, string>();
     
     if (conversationIds.length > 0) {
-      // Query template messages with metadata to get template_name
-      // PERFORMANCE: limit to 1 per conversation (most recent), max 1000 rows
-      const { data: templateMessages } = await supabase
-        .from('messages')
-        .select('conversation_id, metadata')
-        .in('conversation_id', conversationIds)
-        .eq('from_type', 'nina')
-        .contains('metadata', { is_template: true })
-        .order('sent_at', { ascending: false })
-        .limit(1000); // PERFORMANCE FIX: evita retornar todos os templates históricos
-      
-      if (templateMessages && templateMessages.length > 0) {
-        // Build map of conversation_id → template_name (most recent first)
+      // Batch conversation IDs to avoid URL length limits (max ~300 per batch)
+      const BATCH_SIZE = 300;
+      const templateBatches: string[][] = [];
+      for (let i = 0; i < conversationIds.length; i += BATCH_SIZE) {
+        templateBatches.push(conversationIds.slice(i, i + BATCH_SIZE));
+      }
+
+      const templateResults = await Promise.all(
+        templateBatches.map(batch =>
+          supabase
+            .from('messages')
+            .select('conversation_id, metadata')
+            .in('conversation_id', batch)
+            .eq('from_type', 'nina')
+            .contains('metadata', { is_template: true })
+            .order('sent_at', { ascending: false })
+            .limit(500)
+        )
+      );
+
+      const allTemplateMessages = templateResults.flatMap(r => r.data || []);
+
+      if (allTemplateMessages.length > 0) {
         const convToTemplate = new Map<string, string>();
-        templateMessages.forEach(m => {
+        allTemplateMessages.forEach(m => {
           const meta = m.metadata as Record<string, any> | null;
-          // Only add if not exists (first found = most recent due to ordering)
           if (meta?.template_name && !convToTemplate.has(m.conversation_id)) {
             convToTemplate.set(m.conversation_id, meta.template_name);
           }
         });
-        
-        // Map back to contact IDs
+
         (conversationsData || []).forEach(conv => {
           const templateName = convToTemplate.get(conv.id);
           if (templateName) {
