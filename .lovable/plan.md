@@ -1,80 +1,51 @@
 
 
-# Exibir Cartão de Contato (vCard) Enviado pelo WhatsApp
+# Remover Mensagem Pre-preenchida do Link WhatsApp
 
 ## Problema
 
-Quando um lead envia um cartão de contato pelo WhatsApp, o webhook recebe o payload com tipo `contacts`, mas nao existe um `case 'contacts'` no `switch (message.type)`. O codigo cai no `default`, salvando apenas `[contacts]` como texto e **descartando todas as informacoes do contato** (nome, telefone, email, empresa).
-
-## Estrutura do Payload WhatsApp (tipo contacts)
-
-```text
-message.contacts = [
-  {
-    name: { formatted_name: "João Silva", first_name: "João", last_name: "Silva" },
-    phones: [{ phone: "+5511999999999", type: "CELL" }],
-    emails: [{ email: "joao@empresa.com", type: "WORK" }],
-    org: { company: "Empresa X" }
-  }
-]
-```
+Quando o operador clica no link do WhatsApp para contatar um lead, o link inclui o parametro `?text=Olá RONALDO! Tudo bem?`. Isso faz com que o WhatsApp abra com essa mensagem ja digitada no campo, e o operador acaba enviando essa mensagem ALEM do template que ja foi enviado pelo sistema -- resultando em duas mensagens para o contato.
 
 ## Solucao
 
-### 1. Backend: `supabase/functions/whatsapp-webhook/index.ts`
+Remover o parametro `?text=...` dos links `wa.me`, para que o WhatsApp abra a conversa sem mensagem pre-preenchida.
 
-Adicionar `case 'contacts':` no switch (entre `interactive` e `default`):
+### Arquivo 1: `src/components/ContactDetailsDrawer.tsx` (linha 49-52)
 
+**Antes:**
 ```typescript
-case 'contacts': {
-  messageType = 'text';
-  const contactCards = message.contacts || [];
-  if (contactCards.length > 0) {
-    const parts = contactCards.map((c: any) => {
-      const name = c.name?.formatted_name || 'Sem nome';
-      const phone = c.phones?.[0]?.phone || '';
-      const email = c.emails?.[0]?.email || '';
-      const org = c.org?.company || '';
-      let line = `👤 ${name}`;
-      if (phone) line += `\n📞 ${phone}`;
-      if (email) line += `\n📧 ${email}`;
-      if (org) line += `\n🏢 ${org}`;
-      return line;
-    });
-    content = parts.join('\n\n');
-  } else {
-    content = '[cartão de contato]';
-  }
-  break;
-}
+const cleanPhone = phone.replace(/\D/g, '');
+const firstName = name?.split(' ')[0] || '';
+const message = encodeURIComponent(`Olá ${firstName}! Tudo bem?`.trim());
+return `https://wa.me/${cleanPhone}?text=${message}`;
 ```
 
-Isso extrai nome, telefone, email e empresa do vCard e salva como texto formatado legivel, que sera exibido normalmente no chat. Tambem inclui os dados brutos no `metadata.raw` (ja feito pelo codigo existente).
-
-### 2. Tambem tratar no hot path (linha ~482)
-
-Adicionar `contacts` ao mapeamento de tipo:
-
+**Depois:**
 ```typescript
-message_type: message.type === 'interactive' ? 'text' : 
-              message.type === 'contacts' ? 'text' : message.type,
+const cleanPhone = phone.replace(/\D/g, '');
+return `https://wa.me/${cleanPhone}`;
+```
+
+### Arquivo 2: `src/components/ChatInterface.tsx` (linha 2865)
+
+**Antes:**
+```typescript
+href={`https://wa.me/${activeChat.contactPhone.replace(/\D/g, '')}?text=${encodeURIComponent(...)}`}
+```
+
+**Depois:**
+```typescript
+href={`https://wa.me/${activeChat.contactPhone.replace(/\D/g, '')}`}
 ```
 
 ## Resultado Esperado
 
-- Ao receber um cartao de contato, o chat exibira:
-  ```
-  👤 João Silva
-  📞 +5511999999999
-  📧 joao@empresa.com
-  🏢 Empresa X
-  ```
-- Os dados ficam visiveis e legíveis para o operador
-- A Nina tambem consegue processar o conteudo se a conversa estiver em modo automatico
-
-## Arquivos Alterados
+- Ao clicar no link do WhatsApp, abre a conversa sem mensagem pre-preenchida
+- O operador nao envia mais mensagem duplicada acidentalmente
+- O template ja enviado pelo sistema continua sendo a unica mensagem recebida pelo lead
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `supabase/functions/whatsapp-webhook/index.ts` | Adicionar `case 'contacts'` no switch + ajustar hot path type mapping |
+| `src/components/ContactDetailsDrawer.tsx` | Remover `?text=...` do link wa.me |
+| `src/components/ChatInterface.tsx` | Remover `?text=...` do link wa.me |
 
