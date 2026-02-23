@@ -287,6 +287,14 @@ serve(async (req) => {
           })
           .eq('id', conversation_id);
 
+        // Update contact status to 'prospecting' (only if still 'new')
+        await supabase
+          .from('contacts')
+          .update({ lead_status: 'prospecting' })
+          .eq('id', contact_id)
+          .eq('lead_status', 'new');
+        console.log('Updated contact lead_status to prospecting (if was new)');
+
         // Check if deal exists for this contact, if not create one
         const { data: existingDeal } = await supabase
           .from('deals')
