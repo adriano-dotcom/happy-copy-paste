@@ -1714,6 +1714,23 @@ const ChatInterface: React.FC = () => {
       );
     }
 
+    // Fallback for old contact card messages saved before webhook fix
+    if (msg.content === '[contacts]' && msg.metadata?.raw?.contacts) {
+      const contactCards = msg.metadata.raw.contacts as any[];
+      const parts = contactCards.map((c: any) => {
+        const name = c.name?.formatted_name || 'Sem nome';
+        const phone = c.phones?.[0]?.phone || c.phones?.[0]?.wa_id || '';
+        const email = c.emails?.[0]?.email || '';
+        const org = c.org?.company || '';
+        let lines = [`👤 ${name}`];
+        if (phone) lines.push(`📞 ${phone}`);
+        if (email) lines.push(`📧 ${email}`);
+        if (org) lines.push(`🏢 ${org}`);
+        return lines.join('\n');
+      });
+      return <p className="leading-relaxed whitespace-pre-wrap">{parts.join('\n\n')}</p>;
+    }
+
     return <p className="leading-relaxed whitespace-pre-wrap">{msg.content}</p>;
   };
 
