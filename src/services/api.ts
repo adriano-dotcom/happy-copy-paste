@@ -344,53 +344,45 @@ export const api = {
       return MOCK_CONTACTS;
     }
 
-    // Fetch deals with owner and pipeline info
+    // Fetch deals with owner and pipeline info - batched to avoid URL length limits
     const contactIds = contactsData.map(c => c.id);
-    const [dealsResult1, dealsResult2, convResult1, convResult2] = await Promise.all([
-      supabase
-        .from('deals')
-        .select(`
-          id,
-          contact_id,
-          owner_id,
-          pipeline_id,
-          created_at,
-          team_members!deals_owner_id_fkey(id, name),
-          pipelines(id, name, slug, icon, color)
-        `)
-        .in('contact_id', contactIds)
-        .order('created_at', { ascending: false })
-        .range(0, 999),
-      supabase
-        .from('deals')
-        .select(`
-          id,
-          contact_id,
-          owner_id,
-          pipeline_id,
-          created_at,
-          team_members!deals_owner_id_fkey(id, name),
-          pipelines(id, name, slug, icon, color)
-        `)
-        .in('contact_id', contactIds)
-        .order('created_at', { ascending: false })
-        .range(1000, 1999),
-      supabase
-        .from('conversations')
-        .select('id, contact_id, is_active, status, updated_at')
-        .in('contact_id', contactIds)
-        .order('updated_at', { ascending: false })
-        .range(0, 999),
-      supabase
-        .from('conversations')
-        .select('id, contact_id, is_active, status, updated_at')
-        .in('contact_id', contactIds)
-        .order('updated_at', { ascending: false })
-        .range(1000, 1999),
-    ]);
+    const BATCH_SIZE = 300;
+    const contactBatches: string[][] = [];
+    for (let i = 0; i < contactIds.length; i += BATCH_SIZE) {
+      contactBatches.push(contactIds.slice(i, i + BATCH_SIZE));
+    }
 
-    const dealsData = [...(dealsResult1.data || []), ...(dealsResult2.data || [])];
-    const conversationsData = [...(convResult1.data || []), ...(convResult2.data || [])];
+    // Fetch deals in batches
+    const dealsResults = await Promise.all(
+      contactBatches.map(batch =>
+        supabase
+          .from('deals')
+          .select(`
+            id,
+            contact_id,
+            owner_id,
+            pipeline_id,
+            created_at,
+            team_members!deals_owner_id_fkey(id, name),
+            pipelines(id, name, slug, icon, color)
+          `)
+          .in('contact_id', batch)
+          .order('created_at', { ascending: false })
+      )
+    );
+    const dealsData = dealsResults.flatMap(r => r.data || []);
+
+    // Fetch conversations in batches
+    const convResults = await Promise.all(
+      contactBatches.map(batch =>
+        supabase
+          .from('conversations')
+          .select('id, contact_id, is_active, status, updated_at')
+          .in('contact_id', batch)
+          .order('updated_at', { ascending: false })
+      )
+    );
+    const conversationsData = convResults.flatMap(r => r.data || []);
 
     // Create a map of contact_id to deal info (most recent deal per contact)
     const dealsByContact = new Map<string, any>();
