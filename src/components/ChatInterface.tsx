@@ -2862,7 +2862,7 @@ const ChatInterface: React.FC = () => {
                     </div>
                     {activeChat.contactPhone && (
                       <a
-                        href={`https://wa.me/${activeChat.contactPhone.replace(/\D/g, '')}?text=${encodeURIComponent(`Olá ${activeChat.contactName?.split(' ')[0] || ''}! Tudo bem?`.trim())}`}
+                        href={`https://wa.me/${activeChat.contactPhone.replace(/\D/g, '')}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="w-8 h-8 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 hover:border-emerald-400/50 flex items-center justify-center transition-all"
