@@ -1,51 +1,43 @@
 
-
-# Remover Mensagem Pre-preenchida do Link WhatsApp
+# Corrigir Exibicao de Cartoes de Contato Antigos no Chat
 
 ## Problema
 
-Quando o operador clica no link do WhatsApp para contatar um lead, o link inclui o parametro `?text=Olá RONALDO! Tudo bem?`. Isso faz com que o WhatsApp abra com essa mensagem ja digitada no campo, e o operador acaba enviando essa mensagem ALEM do template que ja foi enviado pelo sistema -- resultando em duas mensagens para o contato.
+A correcao no webhook foi aplicada corretamente e funcionara para **novas** mensagens de cartao de contato. Porem, a mensagem da CAMILA que aparece como `[contacts]` foi salva **antes** do deploy da correcao. Os dados do contato (Nego Firma, +55 43 9639-0014) estao preservados no campo `metadata.raw.contacts`, mas o `content` ficou salvo como `[contacts]`.
 
 ## Solucao
 
-Remover o parametro `?text=...` dos links `wa.me`, para que o WhatsApp abra a conversa sem mensagem pre-preenchida.
+Adicionar um fallback no `renderMessageContent` (ChatInterface.tsx) para detectar mensagens com conteudo `[contacts]` e extrair as informacoes do `metadata.raw.contacts`, exibindo-as formatadas.
 
-### Arquivo 1: `src/components/ContactDetailsDrawer.tsx` (linha 49-52)
+### Arquivo: `src/components/ChatInterface.tsx` (antes da linha 1717)
 
-**Antes:**
+Inserir tratamento antes do return final de texto:
+
 ```typescript
-const cleanPhone = phone.replace(/\D/g, '');
-const firstName = name?.split(' ')[0] || '';
-const message = encodeURIComponent(`Olá ${firstName}! Tudo bem?`.trim());
-return `https://wa.me/${cleanPhone}?text=${message}`;
-```
-
-**Depois:**
-```typescript
-const cleanPhone = phone.replace(/\D/g, '');
-return `https://wa.me/${cleanPhone}`;
-```
-
-### Arquivo 2: `src/components/ChatInterface.tsx` (linha 2865)
-
-**Antes:**
-```typescript
-href={`https://wa.me/${activeChat.contactPhone.replace(/\D/g, '')}?text=${encodeURIComponent(...)}`}
-```
-
-**Depois:**
-```typescript
-href={`https://wa.me/${activeChat.contactPhone.replace(/\D/g, '')}`}
+// Fallback for old contact card messages saved before webhook fix
+if (msg.content === '[contacts]' && msg.metadata?.raw?.contacts) {
+  const contactCards = msg.metadata.raw.contacts as any[];
+  const parts = contactCards.map((c: any) => {
+    const name = c.name?.formatted_name || 'Sem nome';
+    const phone = c.phones?.[0]?.phone || c.phones?.[0]?.wa_id || '';
+    const email = c.emails?.[0]?.email || '';
+    const org = c.org?.company || '';
+    let lines = [`👤 ${name}`];
+    if (phone) lines.push(`📞 ${phone}`);
+    if (email) lines.push(`📧 ${email}`);
+    if (org) lines.push(`🏢 ${org}`);
+    return lines.join('\n');
+  });
+  return <p className="leading-relaxed whitespace-pre-wrap">{parts.join('\n\n')}</p>;
+}
 ```
 
 ## Resultado Esperado
 
-- Ao clicar no link do WhatsApp, abre a conversa sem mensagem pre-preenchida
-- O operador nao envia mais mensagem duplicada acidentalmente
-- O template ja enviado pelo sistema continua sendo a unica mensagem recebida pelo lead
+- Mensagens antigas com `[contacts]` serao renderizadas com os dados reais do contato (nome, telefone, email, empresa) extraidos do metadata
+- Novas mensagens ja serao salvas corretamente pelo webhook
+- Nenhuma mensagem aparecera mais como `[contacts]` no chat
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `src/components/ContactDetailsDrawer.tsx` | Remover `?text=...` do link wa.me |
-| `src/components/ChatInterface.tsx` | Remover `?text=...` do link wa.me |
-
+| `src/components/ChatInterface.tsx` | Fallback de renderizacao para mensagens antigas de contato |
