@@ -29,6 +29,50 @@ serve(async (req: Request) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
   try {
+    // ===== PHASE 0: Cleanup stuck VQs =====
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const { data: stuckVqs } = await supabase
+      .from('voice_qualifications')
+      .select('id, attempt_number, max_attempts, called_at')
+      .eq('status', 'calling')
+      .lt('called_at', thirtyMinAgo);
+
+    for (const stuck of stuckVqs || []) {
+      const newAttempt = (stuck.attempt_number || 1) + 1;
+      if (newAttempt > (stuck.max_attempts || 3)) {
+        await supabase.from('voice_qualifications').update({
+          status: 'not_contacted',
+          completed_at: new Date().toISOString(),
+          observations: 'Ligacao travada - sem resposta do ElevenLabs apos 30min'
+        }).eq('id', stuck.id);
+      } else {
+        const retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+        await supabase.from('voice_qualifications').update({
+          status: 'pending',
+          attempt_number: newAttempt,
+          scheduled_for: retryAt.toISOString(),
+          observations: `Tentativa ${stuck.attempt_number}: travada, reagendada`
+        }).eq('id', stuck.id);
+      }
+      console.log(`[Auto Voice] Cleaned up stuck VQ ${stuck.id}`);
+    }
+
+    // Also clean up VQs stuck in 'ended' without completed_at
+    const { data: endedStuck } = await supabase
+      .from('voice_qualifications')
+      .select('id')
+      .eq('status', 'ended')
+      .is('completed_at', null);
+
+    for (const e of endedStuck || []) {
+      await supabase.from('voice_qualifications').update({
+        status: 'cancelled',
+        completed_at: new Date().toISOString(),
+        observations: 'Encerrada automaticamente - status ended sem finalizacao'
+      }).eq('id', e.id);
+      console.log(`[Auto Voice] Cleaned up ended VQ ${e.id}`);
+    }
+
     // ===== PHASE 1: Process scheduled auto-window VQs =====
     // These are VQs created by nina-orchestrator with a delay (scheduled_for in the future)
     const { data: scheduledVqs, error: schedError } = await supabase
