@@ -233,9 +233,23 @@ export const OutboundCallModal: React.FC<OutboundCallModalProps> = ({
           const errorCode = data?.error_code;
           console.error(`[WebRTC][${ts()}] Initiate error:`, errorMsg);
 
-          // Handle specific Meta error codes
+          // Handle specific Meta error codes - send permission request message
           if (errorCode === 138021 || errorCode === 138000 || errorCode === 138006) {
-            toast.error('O lead não habilitou chamadas WhatsApp. É necessário que ele tenha permitido receber ligações.');
+            toast.error('O lead não habilitou chamadas WhatsApp. Enviando mensagem pedindo autorização...');
+            // Send a WhatsApp message asking the lead to enable calls
+            try {
+              await supabase.functions.invoke('whatsapp-sender', {
+                body: {
+                  to: contact.phone,
+                  message: '📞 Tentamos ligar para você pelo WhatsApp, mas as chamadas não estão habilitadas.\n\nPara ativar, acesse:\n*Configurações > Privacidade > Chamadas* e permita chamadas de empresas.\n\nAssim poderemos conversar por voz! 😊',
+                  conversation_id: conversationId,
+                  contact_id: contact.id,
+                },
+              });
+              toast.success('Mensagem de solicitação de permissão enviada ao lead.');
+            } catch (msgErr) {
+              console.error('Failed to send call permission request:', msgErr);
+            }
           } else {
             toast.error(`Erro ao iniciar chamada: ${errorMsg}`);
           }
