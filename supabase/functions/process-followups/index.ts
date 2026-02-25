@@ -592,6 +592,78 @@ function detectExistingInsuranceFromMessages(messages: Array<{ content: string |
   return hasInsurance;
 }
 
+// NOVO: Detectar encerramento mútuo de conversa (despedida bilateral)
+// Quando AMBOS os lados se despedem, a conversa deve ser pausada e follow-ups devem parar
+function detectConversationClosure(messages: Array<{ content: string | null; from_type: string; sent_at: string }>): boolean {
+  if (!messages || messages.length < 2) return false;
+
+  // Patterns de despedida do CLIENTE (user)
+  const USER_CLOSURE_PATTERNS = [
+    /obrigad[oa]/i,
+    /obgd[oa]/i,
+    /valeu/i,
+    /at[ée] logo/i,
+    /at[ée] mais/i,
+    /at[ée] breve/i,
+    /bom dia.*abra[çc]o/i,
+    /um abra[çc]o/i,
+    /abra[çc]o/i,
+    /um [óo]timo dia/i,
+    /boa viagem/i,
+    /bom trabalho/i,
+    /tchau/i,
+    /falou/i,
+    /flw/i,
+    /beleza.*obrigad/i,
+    /entendi/i,
+    /ok.*obrigad/i,
+    /tudo certo/i,
+    /^\[reaction\]/i,
+  ];
+
+  // Patterns de despedida do AGENTE (nina/human)
+  const AGENT_CLOSURE_PATTERNS = [
+    /at[ée] logo/i,
+    /at[ée] mais/i,
+    /at[ée] breve/i,
+    /boa viagem/i,
+    /bom trabalho/i,
+    /ficamos no aguardo/i,
+    /fico [àa] disposi[çc][ãa]o/i,
+    /[ée] s[óo] chamar/i,
+    /qualquer d[úu]vida/i,
+    /um abra[çc]o/i,
+    /abra[çc]o/i,
+    /obrigad[oa]/i,
+    /foi um prazer/i,
+    /desejo.*sucesso/i,
+    /conte com a gente/i,
+    /conte conosco/i,
+    /estamos [àa] disposi[çc][ãa]o/i,
+  ];
+
+  // Mensagens são ordenadas desc (mais recente primeiro)
+  // Pegar as últimas 4 mensagens para detectar despedida bilateral
+  const recentMsgs = messages.slice(0, 4);
+
+  const userClosureMsg = recentMsgs.find(m => 
+    m.from_type === 'user' && m.content && 
+    USER_CLOSURE_PATTERNS.some(p => p.test(m.content!))
+  );
+
+  const agentClosureMsg = recentMsgs.find(m => 
+    m.from_type !== 'user' && m.content && 
+    AGENT_CLOSURE_PATTERNS.some(p => p.test(m.content!))
+  );
+
+  if (userClosureMsg && agentClosureMsg) {
+    console.log(`[process-followups] 🤝 Mutual closure detected! User: "${userClosureMsg.content?.substring(0, 50)}" | Agent: "${agentClosureMsg.content?.substring(0, 50)}"`);
+    return true;
+  }
+
+  return false;
+}
+
 // NOVO: Detectar soft rejection (desinteresse leve) a partir do histórico de mensagens
 function detectSoftRejectionFromMessages(messages: Array<{ content: string | null; from_type: string }>): boolean {
   const userMessages = messages
@@ -1222,6 +1294,28 @@ serve(async (req) => {
         const hasCallbackConfirmation = CALLBACK_CONFIRMATION_PATTERNS.some(p => lastAgentMessage.includes(p));
         if (hasCallbackConfirmation) {
           console.log(`[process-followups] Last agent message indicates callback confirmation, skipping followup for ${conv.id}`);
+          skipped++;
+          continue;
+        }
+        
+        // NOVO: Detectar encerramento mútuo de conversa (despedida bilateral)
+        // Se ambos se despediram, pausar conversa e parar follow-ups definitivamente
+        const hasConversationClosure = detectConversationClosure(recentMessages || []);
+        if (hasConversationClosure) {
+          console.log(`[process-followups] 🤝 Conversation closure detected for ${conv.id} - pausing and stopping followups`);
+          
+          // Atualizar conversa: pausar e marcar followup_stopped
+          const existingNinaContext = (conv.nina_context || {}) as Record<string, any>;
+          await supabase.from('conversations').update({
+            status: 'paused',
+            nina_context: {
+              ...existingNinaContext,
+              followup_stopped: true,
+              followup_stopped_reason: 'conversation_closure_detected',
+              followup_stopped_at: new Date().toISOString(),
+            }
+          }).eq('id', conv.id);
+          
           skipped++;
           continue;
         }
