@@ -87,6 +87,16 @@ Deno.serve(async (req) => {
     if (!metaResponse.ok) {
       const errorCode = metaBody?.error?.code;
       const errorMsg = metaBody?.error?.message || 'Unknown Meta API error';
+      const isPermissionError = [138006, 138021, 138000].includes(Number(errorCode));
+
+      if (isPermissionError) {
+        console.warn(`Meta permission rule ${errorCode}: ${errorMsg}`);
+        return new Response(
+          JSON.stringify({ success: false, error: errorMsg, error_code: errorCode, meta_error: metaBody?.error }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       console.error(`Meta API error ${errorCode}: ${errorMsg}`);
       return new Response(
         JSON.stringify({ error: errorMsg, error_code: errorCode, meta_error: metaBody?.error }),

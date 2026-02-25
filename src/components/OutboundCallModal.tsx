@@ -364,7 +364,9 @@ export const OutboundCallModal: React.FC<OutboundCallModalProps> = ({
 
         if (error || !data?.success) {
           const { errorCode, errorMsg } = await extractInvokeErrorDetails(error, data);
-          console.error(`[WebRTC][${ts()}] Initiate error (code=${errorCode}):`, errorMsg);
+          const isExpectedPermissionError = errorCode != null && META_PERMISSION_CODES.includes(errorCode);
+          const logFn = isExpectedPermissionError ? console.warn : console.error;
+          logFn(`[WebRTC][${ts()}] Initiate error (code=${errorCode}):`, errorMsg);
 
           await handleCallPermissionError(errorCode, errorMsg, conversationId, contact);
 
