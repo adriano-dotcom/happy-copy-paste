@@ -1,97 +1,51 @@
 
-# Encerrar Ligacoes Travadas e Prevenir Travamentos Futuros
 
-## Situacao Atual
+# Validar conversation_id na Resposta do ElevenLabs
 
-Encontrei 2 ligacoes travadas na Iris:
+## Problema
 
-| Contato | Status | Desde | Conversation ID |
-|---------|--------|-------|-----------------|
-| Carla | `calling` | 21/Feb (3 dias) | Nenhum |
-| Luiz Felipe | `ended` | 17/Feb (7 dias) | Nenhum |
+Nas linhas 349-359 de `trigger-elevenlabs-call/index.ts`, apos receber resposta 200 da API do ElevenLabs, o codigo salva `data.conversation_id || null` e considera a chamada como iniciada — mesmo que `conversation_id` seja `undefined` ou vazio. Isso causa VQs travadas em `calling` sem forma de rastrear a chamada.
 
-Ambas nao possuem `elevenlabs_conversation_id`, indicando que a chamada nunca conectou ao ElevenLabs ou o webhook de retorno nunca foi recebido.
+## Solucao
 
-## Causa Raiz
+Adicionar validacao explicita: se a resposta nao contem `conversation_id`, tratar como erro e acionar o fluxo de retry.
 
-O fluxo `trigger-elevenlabs-call` muda o status para `calling` na linha 283, mas se a API do ElevenLabs falhar silenciosamente (retorna 200 mas nao inicia a chamada) ou se o webhook `elevenlabs-post-call-webhook` nunca for chamado, o status fica travado indefinidamente.
+### Arquivo: `supabase/functions/trigger-elevenlabs-call/index.ts`
 
-## Plano de Acao
+**Substituir linhas 349-362** (bloco apos `response.ok` check):
 
-### Passo 1: Encerrar as Ligacoes Travadas (Imediato)
+```typescript
+let data;
+try { data = JSON.parse(responseText); } catch { data = {}; }
 
-Criar uma edge function temporaria `cleanup-stuck-vqs` que:
-- Busca VQs com status `calling` ou `ended` sem `completed_at`
-- Atualiza para `cancelled` com observacao explicativa
-
-### Passo 2: Adicionar Timeout Automatico no `auto-voice-trigger`
-
-No `auto-voice-trigger/index.ts`, adicionar logica para detectar e cancelar VQs travadas:
-- Se status = `calling` e `called_at` foi ha mais de 30 minutos, marcar como `failed` e agendar retry
-- Se status = `calling` e `called_at` foi ha mais de 2 horas, marcar como `not_contacted`
-
-Isso garante que nenhuma ligacao fique travada no futuro.
-
-### Arquivo: `supabase/functions/auto-voice-trigger/index.ts`
-
-Adicionar no inicio da funcao, antes do processamento normal:
-
-```text
-// Cleanup stuck VQs (calling for > 30 min without completion)
-const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-const { data: stuckVqs } = await supabase
-  .from('voice_qualifications')
-  .select('id, attempt_number, max_attempts, called_at')
-  .eq('status', 'calling')
-  .lt('called_at', thirtyMinAgo);
-
-for (const stuck of stuckVqs || []) {
-  const newAttempt = (stuck.attempt_number || 1) + 1;
-  if (newAttempt > (stuck.max_attempts || 3)) {
-    await supabase.from('voice_qualifications').update({
-      status: 'not_contacted',
-      completed_at: new Date().toISOString(),
-      observations: 'Ligacao travada - sem resposta do ElevenLabs apos 30min'
-    }).eq('id', stuck.id);
-  } else {
-    const retryAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-    await supabase.from('voice_qualifications').update({
-      status: 'pending',
-      attempt_number: newAttempt,
-      scheduled_for: retryAt.toISOString(),
-      observations: `Tentativa ${stuck.attempt_number}: travada, reagendada`
-    }).eq('id', stuck.id);
-  }
-  console.log(`[Auto Voice] Cleaned up stuck VQ ${stuck.id}`);
+// Validate that ElevenLabs returned a conversation_id
+if (!data.conversation_id) {
+  console.error(`[ElevenLabs Call] ⚠️ API returned 200 but no conversation_id. Response:`, responseText);
+  throw new Error('ElevenLabs API returned success but no conversation_id — call may not have been initiated');
 }
+
+await supabase
+  .from('voice_qualifications')
+  .update({
+    elevenlabs_conversation_id: data.conversation_id,
+    call_sid: data.callSid || data.call_sid || null,
+    elevenlabs_agent_id: agentId,
+  })
+  .eq('id', vq.id);
+
+console.log(`[ElevenLabs Call] ✅ Call initiated for ${leadName} (conv: ${data.conversation_id})`);
+return { id: vq.id, status: 'calling', conversation_id: data.conversation_id };
 ```
 
-### Passo 3: Encerrar as 2 VQs Atuais
-
-Dentro da mesma logica acima, as 2 VQs travadas (Carla e Luiz Felipe) serao automaticamente detectadas e encerradas no proximo ciclo do cron.
-
-Adicionalmente, vou incluir limpeza de VQs com status `ended` sem `completed_at`:
-
-```text
-// Also clean up VQs stuck in 'ended' without completed_at
-const { data: endedStuck } = await supabase
-  .from('voice_qualifications')
-  .select('id')
-  .eq('status', 'ended')
-  .is('completed_at', null);
-
-for (const e of endedStuck || []) {
-  await supabase.from('voice_qualifications').update({
-    status: 'cancelled',
-    completed_at: new Date().toISOString(),
-    observations: 'Encerrada automaticamente - status ended sem finalizacao'
-  }).eq('id', e.id);
-  console.log(`[Auto Voice] Cleaned up ended VQ ${e.id}`);
-}
-```
+A mudanca principal e o bloco `if (!data.conversation_id)` que faz `throw`, redirecionando para o `catch` existente que ja cuida de retry e max_attempts.
 
 ## Resultado Esperado
 
-- As 2 ligacoes travadas serao canceladas automaticamente no proximo ciclo
-- Futuras ligacoes que travarem serao detectadas e tratadas em ate 30 minutos
-- VQs em status `ended` sem finalizacao tambem serao limpas automaticamente
+- Se ElevenLabs retornar 200 mas sem `conversation_id`, a VQ volta para `pending` com retry em 2h (ou `failed` se esgotou tentativas)
+- O status `calling` so e mantido quando ha um `conversation_id` valido para rastrear
+- Combinado com o cleanup automatico do `auto-voice-trigger`, elimina o risco de VQs travadas
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `supabase/functions/trigger-elevenlabs-call/index.ts` | Validacao de `conversation_id` antes de confirmar chamada |
+
