@@ -360,7 +360,11 @@ serve(async (req) => {
                 });
 
               if (insertError) {
-                console.error('[Webhook] 📞 Error inserting call:', insertError);
+                if (insertError.code === '23505') {
+                  console.log(`[Webhook] 📞 Duplicate call ${callId} ignored (idempotent)`);
+                } else {
+                  console.error('[Webhook] 📞 Error inserting call:', insertError);
+                }
               } else {
                 console.log(`[Webhook] 📞 Call ${callId} created with status=ringing`);
               }
