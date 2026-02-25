@@ -45,9 +45,17 @@ interface ContactDetailsDrawerProps {
   onContactUpdate?: (updatedContact: ContactData) => void;
 }
 
-const getWhatsAppLink = (phone: string) => {
+const normalizeFirstName = (name: string | undefined | null): string => {
+  if (!name?.trim()) return '';
+  const first = name.trim().split(/\s+/)[0];
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+};
+
+const getWhatsAppLink = (phone: string, name?: string | null) => {
   const cleanPhone = phone.replace(/\D/g, '');
-  return `https://wa.me/${cleanPhone}`;
+  const firstName = normalizeFirstName(name);
+  const greeting = firstName ? `Olá ${firstName}, tudo bem?` : 'Olá, tudo bem?';
+  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(greeting)}`;
 };
 
 const formatCNPJ = (cnpj: string | undefined) => {
@@ -296,7 +304,7 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
                 </div>
                 {contact.phone && (
                   <a
-                    href={getWhatsAppLink(contact.phone)}
+                    href={getWhatsAppLink(contact.phone, contact.name)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-green-500/20 border border-emerald-500/30 hover:from-emerald-500/30 hover:to-green-500/30 hover:border-emerald-400/50 transition-all group/whatsapp"
