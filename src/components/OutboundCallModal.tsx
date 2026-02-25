@@ -323,7 +323,39 @@ export const OutboundCallModal: React.FC<OutboundCallModalProps> = ({
 
       } catch (err: any) {
         console.error(`[WebRTC][${ts()}] Outbound call error:`, err);
-        toast.error('Erro ao iniciar chamada: ' + err.message);
+
+        // Extract Meta error code from Supabase error context (non-2xx responses)
+        let errorCode: number | undefined;
+        let errorMsg = err.message || 'Erro desconhecido';
+        try {
+          const ctx = err?.context;
+          if (ctx && typeof ctx.json === 'function') {
+            const body = await ctx.json();
+            errorCode = body?.error_code;
+            errorMsg = body?.error || errorMsg;
+            console.log(`[WebRTC][${ts()}] Extracted error from context: code=${errorCode}, msg=${errorMsg}`);
+          }
+        } catch { /* fallback to generic message */ }
+
+        if (errorCode === 138021 || errorCode === 138000 || errorCode === 138006) {
+          toast.error('O lead não habilitou chamadas WhatsApp. Enviando mensagem pedindo autorização...');
+          try {
+            await supabase.functions.invoke('whatsapp-sender', {
+              body: {
+                to: contact.phone,
+                message: '📞 Tentamos ligar para você pelo WhatsApp, mas as chamadas não estão habilitadas.\n\nPara ativar, acesse:\n*Configurações > Privacidade > Chamadas* e permita chamadas de empresas.\n\nAssim poderemos conversar por voz! 😊',
+                conversation_id: conversationId,
+                contact_id: contact.id,
+              },
+            });
+            toast.success('Mensagem de solicitação de permissão enviada ao lead.');
+          } catch (msgErr) {
+            console.error('Failed to send call permission request:', msgErr);
+          }
+        } else {
+          toast.error(`Erro ao iniciar chamada: ${errorMsg}`);
+        }
+
         cleanup();
         onClose();
       }
