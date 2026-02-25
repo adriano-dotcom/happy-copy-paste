@@ -1,136 +1,146 @@
 
-# Investigação profunda — resultado
+Diagnóstico aprofundado (com evidência objetiva)
 
-## O que foi confirmado (com evidência)
+1) O problema principal agora não é mais CAS/duplicidade de accept.
+- O fluxo de pre_accept/accept está ocorrendo com CAS e chegou em `answered`.
+- Logs mostram:
+  - `pre_accept claimed — ElevenLabs gate opened`
+  - `Sending accept...`
+  - `Inbound call ... accepted and bridged!`
+  - chamada foi para `answered` no banco.
 
-1. **A chamada não está duplicada no banco por `whatsapp_call_id` (neste incidente específico).**  
-   - Consulta de duplicidade em `whatsapp_calls` (últimos 3 dias) retornou **0 duplicados**.
+2) O sintoma “agente atendendo no navegador e não na ligação WhatsApp” bate com falha de roteamento de áudio de saída.
+- No código atual:
+  - `AudioBridge` tem rota de volta (`setElevenLabsOutput`) pronta.
+  - Mas `AutoAttendantEngine` nunca chama `setElevenLabsOutput`.
+  - Também não existe `replaceTrack` no sender WebRTC para trocar o track silencioso pelo áudio da Iris.
+- Evidência de log:
+  - aparece `Meta → ElevenLabs path connected`
+  - não aparece `ElevenLabs → Meta path connected`
 
-2. **O problema está no orquestrador concorrente (múltiplas instâncias processando a MESMA chamada).**  
-   - Logs do backend de `whatsapp-call-accept` mostram, para a mesma call:
-     - `already being processed by another request, skipping` (mais de uma vez)
-     - **2x `Sending accept` no mesmo segundo**, com SDPs de tamanhos diferentes (1552 e 1557)
-     - **2x `accept response: 200`**
-   - Isso prova que **duas execuções paralelas** seguiram para `accept`.
+3) Resultado prático dessa lacuna:
+- A Iris fala localmente no browser (saída padrão do SDK), mas o lado WhatsApp recebe track silencioso.
+- O cliente na chamada ouve silêncio, a conversa degrada e “cai”.
+- Isso explica exatamente o relato: “atende no navegador, não na ligação”.
 
-3. **Falha lógica crítica atual:** quando `pre_accept` retorna `skipped`, o frontend **não aborta** e continua para `accept`.  
-   - Resultado: mesmo com CAS no `pre_accept`, uma instância perdedora ainda tenta aceitar/bridgar a chamada.
+4) Há um endurecimento adicional necessário:
+- `useElevenLabsBridge` restaura `getUserMedia` logo após `startSession`.
+- Se o SDK fizer reacquire de input, pode voltar para mic do navegador.
+- Mesmo não sendo a única causa, isso aumenta risco de “capturar browser em vez da call”.
 
-4. **Outra falha de orquestração:** `ontrack` pode iniciar ElevenLabs antes de confirmar posse da chamada (`pre_accept` vencedor).  
-   - Isso permite sessão “fantasma”/duplicada em disputa.
+Plano de implementação (correção definitiva)
 
-## Causa raiz consolidada
-
-- O sistema já tem CAS no `pre_accept`, mas **falta CAS no `accept` + falta validação de `skipped` no frontend + falta gate de início do ElevenLabs**.
-- Com isso, quando há competição (outra aba/dispositivo/usuário), a chamada entra em estado de corrida e cai.
-
----
-
-# Plano de correção (implementação)
-
-## 1) Corrigir handshake no frontend (bloquear instância perdedora)
-**Arquivo:** `src/components/AutoAttendantEngine.tsx`
-
-### Mudanças
-- Tratar retorno de `whatsapp-call-accept` em `pre_accept`:
-  - Se `data.skipped === true` (ou `success !== true`) => **abortar fluxo local imediatamente** (sem enviar `accept`).
-- Tratar retorno de `accept`:
-  - Só seguir para `bridged` se `accept` retornar sucesso real (não skipped).
-- Adicionar guard de sessão de áudio:
-  - `canStartElevenLabsRef` (só `true` após `pre_accept` vencedor).
-  - `elevenLabsStartedRef` (garantia one-shot por call).
-- `ontrack` deve:
-  - armazenar stream remota, mas **não iniciar ElevenLabs** até `pre_accept` confirmado.
-- Instância perdedora:
-  - faz cleanup local + `resetForNext()`  
-  - **não** chama `whatsapp-call-terminate` (para não derrubar a instância vencedora).
-
-## 2) Tornar `accept` idempotente no backend (CAS real)
-**Arquivo:** `supabase/functions/whatsapp-call-accept/index.ts`
-
-### Mudanças
-- Novo CAS na etapa `accept`:
-  - Transição atômica: `pre_accepting -> accepting`
-  - Se não conseguiu claim, retornar `{ success: true, step: 'accept', skipped: true }` sem chamar Meta.
-- Apenas quem conseguiu CAS no `accept` chama Meta `action: 'accept'`.
-- Após sucesso Meta:
-  - atualizar para `answered`.
-- Em falha Meta:
-  - retornar estado consistente (ex.: voltar para `pre_accepting` ou marcar erro controlado), sem deixar fluxo ambíguo.
-
-## 3) Fortalecer idempotência de ingestão de chamada (hardening)
-**Arquivos:**
-- `supabase/migrations/*` (nova migration)
-- `supabase/functions/whatsapp-webhook/index.ts`
-
-### Mudanças
-- Adicionar unicidade para `whatsapp_call_id` (quando não nulo) em `whatsapp_calls`.
-- No webhook:
-  - tratar erro de duplicidade (23505) como evento idempotente (log + ignore), evitando segunda criação da mesma call em cenários de retry.
-
-## 4) Melhorar observabilidade para fechar diagnóstico de concorrência
-**Arquivos:**
+Escopo de arquivos
+- `src/hooks/useElevenLabsBridge.ts`
+- `src/components/AudioBridge.tsx`
 - `src/components/AutoAttendantEngine.tsx`
-- `supabase/functions/whatsapp-call-accept/index.ts`
-- `supabase/functions/whatsapp-call-terminate/index.ts`
+- (opcional hardening multiaba) `src/hooks/useWhatsAppAutoAttendant.ts`
 
-### Mudanças
-- Incluir nos logs:
-  - `call.id` (interno)
-  - `whatsapp_call_id`
-  - `step` (`pre_accept`, `accept`, `terminate`)
-  - resultado (`claimed`, `skipped`, `error`)
-- Isso permite confirmar rapidamente se houve corrida entre instâncias.
+Fase 1 — Consertar ponte de áudio bidirecional (crítico)
+1. Em `useElevenLabsBridge`, capturar áudio bruto da Iris via callback `onAudio` do SDK.
+2. Decodificar chunks base64 PCM para buffer de áudio e enfileirar com clock contínuo (jitter-safe).
+3. Expor um `MediaStream` de saída da Iris (ex.: `agentOutputStream`) para consumo do engine.
+4. Em `AutoAttendantEngine`, quando sessão ElevenLabs conectar:
+   - ligar `bridge.setElevenLabsOutput(agentOutputStream)`;
+   - pegar o track de saída resultante;
+   - fazer `sender.replaceTrack(trackDaIris)` no peer connection com a Meta.
+5. Manter track silencioso apenas como placeholder até a Iris conectar.
 
----
+Fase 2 — Garantir que entrada da Iris continue sendo a chamada WhatsApp
+1. Ajustar `useElevenLabsBridge` para “pin” do input stream da chamada durante toda a sessão ativa.
+2. Só restaurar `navigator.mediaDevices.getUserMedia` no `endSession`/cleanup final.
+3. Adicionar guardas para impedir fallback para mic local durante call ativa.
 
-# Fluxo alvo após correção
+Fase 3 — Evitar percepção “falando no navegador”
+1. Definir monitor local da Iris como:
+   - padrão: desligado (volume local 0) para operação headless;
+   - opcional: modo monitor (se desejarem escuta local).
+2. Evitar que áudio local do navegador seja confundido com áudio da chamada.
+
+Fase 4 — Hardening de concorrência entre abas (recomendado)
+1. Adicionar lock de “tab líder” (heartbeat com TTL) para que só 1 aba opere engine por vez.
+2. Manter CAS backend como defesa adicional.
+3. Evita pre_accept concorrente desnecessário e SDP inválido por aba secundária.
+
+Fluxo alvo após correção
 
 ```text
-Meta connect webhook
-  -> whatsapp_calls (ringing)
+WhatsApp caller audio (Meta remote track)
+  -> AudioBridge Meta→Iris
+  -> ElevenLabs input (mic virtual)
 
-Engine A e Engine B recebem evento
-  -> ambos montam WebRTC, mas:
-     - só inicia ElevenLabs depois de pre_accept confirmado
-
-pre_accept:
-  A: claim OK (ringing -> pre_accepting)
-  B: skipped
-
-B aborta localmente (não envia accept, não termina call)
-
-accept:
-  A: claim OK (pre_accepting -> accepting) -> Meta accept -> answered
-  B: se tentar, CAS falha -> skipped
-
-Somente 1 agente permanece ativo
+ElevenLabs output chunks (onAudio)
+  -> decoder + scheduler
+  -> MediaStream de saída da Iris
+  -> AudioBridge Iris→Meta
+  -> RTCRtpSender.replaceTrack(...)
+  -> caller ouve Iris na ligação WhatsApp
 ```
 
----
+Plano de validação (E2E obrigatório)
 
-# Plano de validação (E2E obrigatório)
+1) Teste fim a fim principal (obrigatório)
+- Receber ligação real no WhatsApp.
+- Confirmar simultaneamente:
+  - cliente ouve a Iris na ligação;
+  - Iris ouve o cliente (transcrição com conteúdo, não “...” repetido);
+  - navegador não é a “origem principal” de atendimento.
 
-1. **Teste principal (fim a fim):** receber 1 ligação WhatsApp com duas sessões abertas (ex.: duas abas) e confirmar:
-   - apenas 1 `accept` efetivo
-   - apenas 1 sessão ElevenLabs conectada
-   - chamada não cai por concorrência
-2. **Teste de corrida:** disparar chamadas consecutivas e validar ausência de `accept` duplicado.
-3. **Teste de retry webhook:** reenviar evento `connect` igual e confirmar que não cria nova linha.
-4. **Teste de encerramento:** instância perdedora não derruba chamada da vencedora.
-5. **Teste de regressão:** inbound normal continua conectando e encerrando corretamente.
+2) Teste de estabilidade
+- Manter chamada por 2–3 minutos.
+- Validar que não cai por silêncio indevido.
+- Verificar transição `answered -> ended` com causa coerente.
 
----
+3) Teste com 2 abas abertas
+- Confirmar que apenas aba líder processa mídia.
+- Sem pre_accept/accept redundante, sem “duas agentes”.
 
-# Detalhes técnicos (seu time dev)
+4) Teste de encerramento
+- Encerrar pelo cliente e pelo sistema.
+- Garantir cleanup sem sessões órfãs da Iris.
 
-- O CAS atual em `pre_accept` isolado é insuficiente porque:
-  - frontend não interpreta `skipped`;
-  - `accept` ainda é executado por concorrentes;
-  - `ontrack` pode disparar AI antes da posse.
-- A combinação necessária para resolver de vez:
-  1) CAS + interpretação correta no frontend  
-  2) CAS também no `accept`  
-  3) gate de start do ElevenLabs pós-claim  
-  4) idempotência de ingestão no webhook  
-- Isso elimina o cenário “duas agentes atendendo” e a queda por corrida.
+5) Teste de regressão
+- Outbound e inbound continuam funcionando.
+- Banner/estado visual continuam corretos.
+
+Detalhes técnicos (time dev)
+
+- `useElevenLabsBridge`:
+  - adicionar refs: `outputAudioContextRef`, `outputDestinationRef`, `nextPlaybackTimeRef`, `outputFormatRef`.
+  - `onConversationMetadata` para ler `agent_output_audio_format` (sample rate).
+  - `onAudio(base64)`:
+    - base64 -> ArrayBuffer -> PCM16 -> Float32;
+    - criar `AudioBufferSourceNode`;
+    - agendar em `nextPlaybackTimeRef` (nunca em `currentTime` direto sem fila).
+  - expor:
+    - `getAgentOutputStream(): MediaStream | null`
+    - `bindInputStream(stream)` / `unbindInputStream()` (ou equivalente).
+
+- `AutoAttendantEngine`:
+  - após `elevenLabs.status === connected`, se houver `pcRef` e `bridgeRef`:
+    - `const metaOut = bridge.setElevenLabsOutput(elevenLabs.getAgentOutputStream())`
+    - `pc.getSenders().find(audio).replaceTrack(metaOut.getAudioTracks()[0])`
+  - log explícito:
+    - `ElevenLabs->Meta connected`
+    - `replaceTrack success/fail`
+    - níveis de entrada/saída.
+
+- `AudioBridge`:
+  - manter ganho/analyser das duas pernas.
+  - garantir `disconnect()` encerrando nodes/tracks para não vazar.
+
+Risco e mitigação
+
+- Risco: áudio picotado por scheduler de chunks.
+  - Mitigação: buffer mínimo (ex. 100–200ms) e clock monotônico (`nextPlaybackTimeRef`).
+- Risco: sample rate incorreto.
+  - Mitigação: usar formato de `onConversationMetadata`.
+- Risco: regressão de concorrência multiaba.
+  - Mitigação: lock líder + CAS já existente.
+
+Resultado esperado
+
+- A Iris deixa de “falar só no navegador”.
+- A voz da Iris passa a sair na chamada WhatsApp.
+- A ligação deixa de cair por silêncio/fluxo quebrado.
+- Operação fica estável mesmo com múltiplas abas/sessões abertas.
