@@ -2879,7 +2879,13 @@ const ChatInterface: React.FC = () => {
                     </div>
                     {activeChat.contactPhone && (
                       <a
-                        href={`https://wa.me/${activeChat.contactPhone.replace(/\D/g, '')}`}
+href={(() => {
+                          const cleanPhone = activeChat.contactPhone.replace(/\D/g, '');
+                          const rawName = activeChat.contactName?.trim().split(/\s+/)[0] || '';
+                          const firstName = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase() : '';
+                          const greeting = firstName ? `Olá ${firstName}, tudo bem?` : 'Olá, tudo bem?';
+                          return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(greeting)}`;
+                        })()}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="w-8 h-8 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 hover:border-emerald-400/50 flex items-center justify-center transition-all"
