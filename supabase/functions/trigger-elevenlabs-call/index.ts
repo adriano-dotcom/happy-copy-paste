@@ -349,10 +349,16 @@ async function processCall(
     let data;
     try { data = JSON.parse(responseText); } catch { data = {}; }
 
+    // Validate that ElevenLabs returned a conversation_id
+    if (!data.conversation_id) {
+      console.error(`[ElevenLabs Call] ⚠️ API returned 200 but no conversation_id. Response:`, responseText);
+      throw new Error('ElevenLabs API returned success but no conversation_id — call may not have been initiated');
+    }
+
     await supabase
       .from('voice_qualifications')
       .update({
-        elevenlabs_conversation_id: data.conversation_id || null,
+        elevenlabs_conversation_id: data.conversation_id,
         call_sid: data.callSid || data.call_sid || null,
         elevenlabs_agent_id: agentId,
       })
