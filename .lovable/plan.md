@@ -1,34 +1,69 @@
 
 
-# Adicionar texto pré-preenchido no link do WhatsApp
+# Corrigir IA usando nome completo em CAIXA ALTA nas mensagens
 
-## Contexto
-A screenshot mostra o drawer de detalhes do contato (DADOS DE CONTATO) com o botão do WhatsApp ao lado do telefone. Atualmente o link abre `wa.me/{telefone}` sem nenhuma mensagem. O pedido é incluir "Olá {primeiro nome}, tudo bem?" como texto pré-preenchido.
+## Problema identificado
+A screenshot mostra a IA (agente) enviando mensagens com o nome completo em CAIXA ALTA: "LEONARDO FELIPE RIBEIRO SANCHES, qual tipo de seguro você está buscando?". Apesar de já existir:
+- Função `normalizeContactName()` que extrai primeiro nome em Title Case
+- Regra no prompt proibindo nome completo e caixa alta
 
-## Locais afetados
+O problema persiste porque:
+1. **O histórico de conversa (`conversationHistory`)** é enviado ao modelo AI com as mensagens anteriores que já contêm o nome completo em CAPS
+2. O AI vê o padrão nos próprios exemplos anteriores e repete
+3. A regra no prompt não é suficiente para sobrescrever o padrão visual do histórico
 
-Existem 2 lugares onde links `wa.me` são gerados com base no contato:
+## Solução: Sanitizar histórico + reforçar prompt
 
-1. **`src/components/ContactDetailsDrawer.tsx`** (linha 48-51) — função `getWhatsAppLink(phone)` usada no botão do drawer
-2. **`src/components/ChatInterface.tsx`** (linha 2882) — link inline no painel de chat
+### Arquivo: `supabase/functions/nina-orchestrator/index.ts`
 
-## Alterações
+**Alteração 1 — Sanitizar conversationHistory (linhas ~5613-5619)**
+- Ao construir o `conversationHistory`, substituir ocorrências do nome completo (ex: "LEONARDO FELIPE RIBEIRO SANCHES") pelo primeiro nome normalizado (ex: "Leonardo") nas mensagens do tipo `assistant`
+- Criar função `sanitizeNameInHistory(content, contact)` que:
+  - Obtém o nome completo do contato (`contact.name`)
+  - Calcula o primeiro nome normalizado via `normalizeContactName()`
+  - Faz `content.replace(nomeCompleto, primeiroNome)` (case-insensitive)
+  - Também substitui variações em CAIXA ALTA do primeiro nome (ex: "LEONARDO" → "Leonardo")
 
-### 1. `ContactDetailsDrawer.tsx`
-- Alterar `getWhatsAppLink` para aceitar `phone` + `name`
-- Extrair primeiro nome com inicial maiúscula (padrão `normalizeFirstName` já usado no projeto)
-- Gerar URL: `https://wa.me/{phone}?text=Olá {primeiroNome}, tudo bem?` (com `encodeURIComponent`)
-- Atualizar a chamada da função para passar o `contact.name`
-
-### 2. `ChatInterface.tsx`
-- Aplicar a mesma lógica no link do WhatsApp inline, usando `activeChat.contactName` para extrair o primeiro nome
+**Alteração 2 — Reforçar prompt (linhas ~7857-7861)**
+- Adicionar ao bloco de regras do nome:
+  - `- O nome do lead é: ${normalizeContactName(contact.name)}. Use EXATAMENTE este nome, sem variações.`
+  - Mover a regra de nome para ANTES das outras regras (posição mais proeminente no prompt)
 
 ### Detalhes técnicos
-- Normalização do nome: `name.trim().split(/\s+/)[0]` → Title Case (primeira letra maiúscula, resto minúsculo)
-- Fallback quando nome é vazio/null: usar apenas "Olá, tudo bem?" (sem nome)
-- Encoding: `encodeURIComponent("Olá PrimeiroNome, tudo bem?")`
+
+```typescript
+// Nova função helper
+function sanitizeNameInHistory(content: string, contact: any): string {
+  if (!content || !contact?.name) return content;
+  const fullName = contact.name.trim();
+  const normalized = normalizeContactName(contact.name);
+  if (fullName === normalized) return content;
+  
+  // Replace full name (case-insensitive)
+  let sanitized = content.replace(new RegExp(escapeRegex(fullName), 'gi'), normalized);
+  
+  // Replace CAPS first name (ex: "LEONARDO" → "Leonardo")
+  const firstName = fullName.split(/\s+/)[0];
+  if (firstName && firstName === firstName.toUpperCase() && firstName.length > 2) {
+    sanitized = sanitized.replace(new RegExp(`\\b${escapeRegex(firstName)}\\b`, 'g'), normalized);
+  }
+  
+  return sanitized;
+}
+```
+
+Aplicada ao build do `conversationHistory`:
+```typescript
+const conversationHistory = (recentMessages || [])
+  .reverse()
+  .map((msg: any) => ({
+    role: msg.from_type === 'user' ? 'user' : 'assistant',
+    content: sanitizeNameInHistory(msg.content || '[media]', conversation.contact)
+  }));
+```
 
 ### Escopo
-- 2 arquivos frontend alterados
-- Sem mudanças de banco ou backend
+- 1 arquivo backend alterado: `nina-orchestrator/index.ts`
+- Sem mudanças de schema ou frontend
+- Risco: baixo — apenas sanitização textual no histórico enviado ao modelo
 
