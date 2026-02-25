@@ -166,11 +166,16 @@ const AutoAttendantEngine: React.FC = () => {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Watch ElevenLabs status
+  // Watch ElevenLabs status — detect ended AND orphan connections
   useEffect(() => {
     if (elevenLabs.status === 'ended' && currentCallIdRef.current && !terminatingRef.current) {
       addLog('ElevenLabs session ended — terminating Meta call');
       terminateCall('elevenlabs_ended');
+    }
+    // Orphan detection: ElevenLabs connected but call already terminating/gone
+    if (elevenLabs.status === 'connected' && (terminatingRef.current || !currentCallIdRef.current)) {
+      addLog('Orphan ElevenLabs session detected (connected after cleanup) — forcing endSession');
+      elevenLabs.endSession();
     }
   }, [elevenLabs.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -280,11 +285,13 @@ const AutoAttendantEngine: React.FC = () => {
         silentStream.getTracks().forEach(track => pc.addTrack(track, silentStream));
 
         pc.ontrack = (event) => {
-          if (event.track.kind === 'audio' && !cancelled) {
+          if (event.track.kind === 'audio' && !cancelled && !terminatingRef.current) {
             addLog('Got remote audio track from Meta');
             const { elevenLabsMicStream } = bridge.connect(event.streams[0]);
             levelIntervalRef.current = setInterval(() => {}, 200);
             startElevenLabsSession(call, elevenLabsMicStream);
+          } else if (terminatingRef.current) {
+            addLog('ontrack fired but call is terminating — skipping ElevenLabs start');
           }
         };
 
@@ -309,7 +316,10 @@ const AutoAttendantEngine: React.FC = () => {
           });
         }
 
-        if (cancelled) return;
+        if (cancelled || terminatingRef.current) {
+          addLog('Cancelled/terminating before pre_accept — aborting');
+          return;
+        }
         const fullSdp = fixSdpForMeta(pc.localDescription?.sdp || '');
 
         addLog('Sending pre_accept...');
@@ -332,10 +342,20 @@ const AutoAttendantEngine: React.FC = () => {
           });
         }
 
+        if (cancelled || terminatingRef.current) {
+          addLog('Cancelled/terminating before accept — aborting');
+          return;
+        }
+
         addLog('Sending accept...');
         await supabase.functions.invoke('whatsapp-call-accept', {
           body: { call_id: call.id, sdp_answer: fullSdp, action: 'accept' },
         });
+
+        if (cancelled || terminatingRef.current) {
+          addLog('Cancelled/terminating after accept — not bridging');
+          return;
+        }
 
         attendant.setState('bridged');
         addLog('Inbound call accepted and bridged!');
@@ -360,11 +380,13 @@ const AutoAttendantEngine: React.FC = () => {
         silentStream.getTracks().forEach(track => pc.addTrack(track, silentStream));
 
         pc.ontrack = (event) => {
-          if (event.track.kind === 'audio' && !cancelled) {
+          if (event.track.kind === 'audio' && !cancelled && !terminatingRef.current) {
             addLog('Got remote audio track from lead (outbound)');
             const { elevenLabsMicStream } = bridge.connect(event.streams[0]);
             levelIntervalRef.current = setInterval(() => {}, 200);
             startElevenLabsSession(call, elevenLabsMicStream);
+          } else if (terminatingRef.current) {
+            addLog('ontrack (outbound) fired but call is terminating — skipping');
           }
         };
 
@@ -387,7 +409,7 @@ const AutoAttendantEngine: React.FC = () => {
           });
         }
 
-        if (cancelled) return;
+        if (cancelled || terminatingRef.current) return;
         const fullSdp = fixSdpForMetaOutbound(pc.localDescription?.sdp || '');
 
         addLog('Sending outbound offer...');
