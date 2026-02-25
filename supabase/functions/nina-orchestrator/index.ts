@@ -2150,7 +2150,7 @@ async function generateRenewalEmail(
   renewalDate: string
 ): Promise<{ subject: string; body_html: string } | null> {
   try {
-    const contactName = contact?.name || contact?.call_name || 'Cliente';
+    const contactName = normalizeContactName(contact?.call_name || contact?.name);
     const companyName = contact?.company || 'sua empresa';
     const formattedDate = new Date(renewalDate).toLocaleDateString('pt-BR', {
       day: '2-digit',
@@ -5899,7 +5899,7 @@ Qual desses te interessa?`;
     if (vehicleHandoffCheck.readyForHandoff) {
       console.log('[Nina] 🚗 Atlas vehicle lead ready for handoff!');
       
-      const contactName = updatedContact?.call_name || updatedContact?.name || 'Cliente';
+      const contactName = normalizeContactName(updatedContact?.call_name || updatedContact?.name);
       const contactPhone = updatedContact?.phone_number || '-';
       const contactEmail = updatedContact?.email || '-';
       
@@ -7563,7 +7563,7 @@ function processPromptTemplate(prompt: string, contact: any): string {
     'data': dateFormatter.format(now),
     'hora': timeFormatter.format(now),
     'dia_semana': weekdayFormatter.format(now),
-    'cliente_nome': contact?.name || contact?.call_name || 'Cliente',
+    'cliente_nome': normalizeContactName(contact?.call_name || contact?.name),
     'cliente_telefone': contact?.phone_number || '',
   };
   
