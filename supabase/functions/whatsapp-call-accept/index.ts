@@ -157,6 +157,32 @@ Deno.serve(async (req) => {
         });
       }
 
+      // CAS: only proceed if call is still 'ringing'
+      if (call.status !== 'ringing') {
+        console.log(`Call ${call_id} already ${call.status}, skipping pre_accept`);
+        return new Response(JSON.stringify({ success: true, step: 'pre_accept', skipped: true }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Atomically claim the call with compare-and-swap
+      const { data: claimed } = await supabase
+        .from('whatsapp_calls')
+        .update({ status: 'pre_accepting' })
+        .eq('id', call_id)
+        .eq('status', 'ringing')
+        .select('id')
+        .maybeSingle();
+
+      if (!claimed) {
+        console.log(`Call ${call_id} already being processed by another request, skipping`);
+        return new Response(JSON.stringify({ success: true, step: 'pre_accept', skipped: true }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       console.log(`Sending pre_accept for call ${whatsappCallId}`);
       const preAcceptRes = await fetch(metaUrl, {
         method: 'POST',
@@ -179,6 +205,12 @@ Deno.serve(async (req) => {
       console.log(`pre_accept response: ${preAcceptRes.status} ${preAcceptBody}`);
 
       if (!preAcceptRes.ok) {
+        // Revert status on failure so call can be retried
+        await supabase
+          .from('whatsapp_calls')
+          .update({ status: 'ringing' })
+          .eq('id', call_id);
+
         return new Response(JSON.stringify({ error: 'pre_accept failed', details: preAcceptBody }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
