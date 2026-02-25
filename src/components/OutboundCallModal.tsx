@@ -229,9 +229,21 @@ export const OutboundCallModal: React.FC<OutboundCallModalProps> = ({
         });
 
         if (error || !data?.success) {
-          const errorMsg = data?.error || error?.message || 'Failed to initiate call';
-          const errorCode = data?.error_code;
-          console.error(`[WebRTC][${ts()}] Initiate error:`, errorMsg);
+          let errorMsg = data?.error || error?.message || 'Failed to initiate call';
+          let errorCode = data?.error_code;
+          
+          // Extract error details from FunctionsHttpError context (Response object)
+          if (!errorCode && error?.context) {
+            try {
+              const ctx = error.context;
+              if (typeof ctx.json === 'function') {
+                const body = await ctx.json();
+                errorCode = body?.error_code;
+                errorMsg = body?.error || errorMsg;
+              }
+            } catch { /* fallback to generic */ }
+          }
+          console.error(`[WebRTC][${ts()}] Initiate error (code=${errorCode}):`, errorMsg);
 
           // Handle specific Meta error codes - send permission request message
           if (errorCode === 138021 || errorCode === 138000 || errorCode === 138006) {
