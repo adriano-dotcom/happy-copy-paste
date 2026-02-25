@@ -1,51 +1,71 @@
 
 
-# Validar conversation_id na Resposta do ElevenLabs
+# Corrigir Duplo pre_accept no Auto-Attendant
 
 ## Problema
 
-Nas linhas 349-359 de `trigger-elevenlabs-call/index.ts`, apos receber resposta 200 da API do ElevenLabs, o codigo salva `data.conversation_id || null` e considera a chamada como iniciada — mesmo que `conversation_id` seja `undefined` ou vazio. Isso causa VQs travadas em `calling` sem forma de rastrear a chamada.
+O `AutoAttendantEngine` está disparando `pre_accept` duas vezes para a mesma chamada. Os logs mostram 2 boots simultâneos do `whatsapp-call-accept` com `pre_accept`, sendo que o segundo falha com erro 138008 (SDP invalido). Isso corrompe a sessão e a Meta encerra a chamada em 2 segundos.
 
-## Solucao
+## Investigacao Necessaria
 
-Adicionar validacao explicita: se a resposta nao contem `conversation_id`, tratar como erro e acionar o fluxo de retry.
+Preciso verificar o `AutoAttendantEngine.tsx` para entender por que está chamando `pre_accept` duas vezes. Provavelmente há:
+1. Dois event listeners disparando para o mesmo evento
+2. Falta de guard/lock para evitar chamadas duplicadas
+3. O componente renderizando duas vezes (StrictMode do React)
 
-### Arquivo: `supabase/functions/trigger-elevenlabs-call/index.ts`
+## Solucao Proposta
 
-**Substituir linhas 349-362** (bloco apos `response.ok` check):
+### Arquivo: `src/components/AutoAttendantEngine.tsx`
+
+Adicionar um **lock de processamento** (via ref) para garantir que apenas um `pre_accept` seja enviado por chamada:
 
 ```typescript
-let data;
-try { data = JSON.parse(responseText); } catch { data = {}; }
+const processingCallRef = useRef<string | null>(null);
 
-// Validate that ElevenLabs returned a conversation_id
-if (!data.conversation_id) {
-  console.error(`[ElevenLabs Call] ⚠️ API returned 200 but no conversation_id. Response:`, responseText);
-  throw new Error('ElevenLabs API returned success but no conversation_id — call may not have been initiated');
+// Antes de processar uma chamada inbound:
+if (processingCallRef.current === callId) {
+  console.log('[AutoAttendantEngine] Already processing call, skipping duplicate');
+  return;
 }
-
-await supabase
-  .from('voice_qualifications')
-  .update({
-    elevenlabs_conversation_id: data.conversation_id,
-    call_sid: data.callSid || data.call_sid || null,
-    elevenlabs_agent_id: agentId,
-  })
-  .eq('id', vq.id);
-
-console.log(`[ElevenLabs Call] ✅ Call initiated for ${leadName} (conv: ${data.conversation_id})`);
-return { id: vq.id, status: 'calling', conversation_id: data.conversation_id };
+processingCallRef.current = callId;
 ```
 
-A mudanca principal e o bloco `if (!data.conversation_id)` que faz `throw`, redirecionando para o `catch` existente que ja cuida de retry e max_attempts.
+### Arquivo: `supabase/functions/whatsapp-call-accept/index.ts`
+
+Adicionar **idempotência server-side** como segunda camada de proteção:
+- Antes de enviar `pre_accept` à Meta, verificar o status atual da chamada no banco
+- Se já está `answered` ou se já recebeu um `pre_accept`, retornar sucesso sem reenviar
+
+```typescript
+// No início do handler de pre_accept:
+if (call.status !== 'ringing') {
+  console.log(`Call ${call_id} already ${call.status}, skipping pre_accept`);
+  return Response({ success: true, step: 'pre_accept', skipped: true });
+}
+
+// Marcar como "pre_accepting" no banco para evitar race condition
+const { data: updated, error: lockError } = await supabase
+  .from('whatsapp_calls')
+  .update({ status: 'pre_accepting' })
+  .eq('id', call_id)
+  .eq('status', 'ringing')  // CAS: só atualiza se ainda está ringing
+  .select('id')
+  .single();
+
+if (!updated) {
+  console.log(`Call ${call_id} already being processed, skipping`);
+  return Response({ success: true, step: 'pre_accept', skipped: true });
+}
+```
 
 ## Resultado Esperado
 
-- Se ElevenLabs retornar 200 mas sem `conversation_id`, a VQ volta para `pending` com retry em 2h (ou `failed` se esgotou tentativas)
-- O status `calling` so e mantido quando ha um `conversation_id` valido para rastrear
-- Combinado com o cleanup automatico do `auto-voice-trigger`, elimina o risco de VQs travadas
+- Cada chamada inbound recebe exatamente 1 `pre_accept` + 1 `accept`
+- Chamadas duplicadas são bloqueadas tanto no frontend (ref lock) quanto no backend (CAS no banco)
+- A sessão WebRTC com a Meta não é corrompida por SDPs conflitantes
 
-| Arquivo | Mudanca |
+| Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/trigger-elevenlabs-call/index.ts` | Validacao de `conversation_id` antes de confirmar chamada |
+| `src/components/AutoAttendantEngine.tsx` | Lock de processamento por callId |
+| `supabase/functions/whatsapp-call-accept/index.ts` | Idempotência com CAS (compare-and-swap) no status |
 
