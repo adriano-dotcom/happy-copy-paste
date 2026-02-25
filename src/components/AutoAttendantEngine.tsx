@@ -52,6 +52,7 @@ const AutoAttendantEngine: React.FC = () => {
   const canStartElevenLabsRef = useRef(false);
   const elevenLabsStartedRef = useRef(false);
   const pendingRemoteStreamRef = useRef<MediaStream | null>(null);
+  const casLostRef = useRef(false);
 
   // Keep currentCallIdRef in sync
   useEffect(() => {
@@ -83,10 +84,16 @@ const AutoAttendantEngine: React.FC = () => {
     canStartElevenLabsRef.current = false;
     elevenLabsStartedRef.current = false;
     pendingRemoteStreamRef.current = null;
+    // Note: casLostRef is NOT reset here — it's reset when a new call starts processing
   }, []);
 
   const terminateCall = useCallback(async (reason: string) => {
     if (terminatingRef.current) return;
+    // If this instance lost the CAS race, never call terminate (would kill the winner's call)
+    if (casLostRef.current) {
+      console.log(`[AutoAttendantEngine] terminateCall(${reason}) blocked — casLostRef=true, this instance lost CAS`);
+      return;
+    }
     terminatingRef.current = true;
     const callId = currentCallIdRef.current;
     addLog(`terminateCall (${reason}) — callId: ${callId}`);
@@ -149,6 +156,7 @@ const AutoAttendantEngine: React.FC = () => {
   // beforeunload + unmount cleanup
   useEffect(() => {
     const handleBeforeUnload = () => {
+      if (casLostRef.current) return; // Don't terminate if we lost CAS
       const callId = currentCallIdRef.current;
       if (callId) {
         const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-call-terminate`;
@@ -162,6 +170,7 @@ const AutoAttendantEngine: React.FC = () => {
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (casLostRef.current) return; // Don't terminate if we lost CAS
       const callId = currentCallIdRef.current;
       elevenLabs.endSession();
       cleanup();
@@ -275,6 +284,7 @@ const AutoAttendantEngine: React.FC = () => {
       return;
     }
     processingCallRef.current = call.id;
+    casLostRef.current = false;
 
     let cancelled = false;
 
@@ -345,6 +355,7 @@ const AutoAttendantEngine: React.FC = () => {
         // Check if this instance lost the CAS race
         if (preData?.skipped) {
           addLog(`pre_accept skipped (another instance won CAS) — aborting locally without terminating`);
+          casLostRef.current = true;
           cleanup();
           attendant.resetForNext();
           terminatingRef.current = false;
@@ -393,6 +404,7 @@ const AutoAttendantEngine: React.FC = () => {
         // Check if accept was skipped (another instance somehow got there)
         if (acceptData?.skipped) {
           addLog(`accept skipped (CAS lost) — aborting locally`);
+          casLostRef.current = true;
           cleanup();
           attendant.resetForNext();
           terminatingRef.current = false;
