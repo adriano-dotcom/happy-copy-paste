@@ -234,8 +234,8 @@ export const OutboundCallModal: React.FC<OutboundCallModalProps> = ({
           console.error(`[WebRTC][${ts()}] Initiate error:`, errorMsg);
 
           // Handle specific Meta error codes
-          if (errorCode === 138021 || errorCode === 138000) {
-            toast.error('O lead não habilitou chamadas WhatsApp. Envie uma mensagem primeiro.');
+          if (errorCode === 138021 || errorCode === 138000 || errorCode === 138006) {
+            toast.error('O lead não habilitou chamadas WhatsApp. É necessário que ele tenha permitido receber ligações.');
           } else {
             toast.error(`Erro ao iniciar chamada: ${errorMsg}`);
           }
