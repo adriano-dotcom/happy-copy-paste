@@ -54,6 +54,8 @@ const AutoAttendantEngine: React.FC = () => {
   const pendingRemoteStreamRef = useRef<MediaStream | null>(null);
   const casLostRef = useRef(false);
   const elOutputWiredRef = useRef(false);
+  const acceptSucceededRef = useRef(false);
+  const elConnectedRef = useRef(false);
 
   // Keep currentCallIdRef in sync
   useEffect(() => {
@@ -86,6 +88,8 @@ const AutoAttendantEngine: React.FC = () => {
     elevenLabsStartedRef.current = false;
     pendingRemoteStreamRef.current = null;
     elOutputWiredRef.current = false;
+    acceptSucceededRef.current = false;
+    elConnectedRef.current = false;
   }, []);
 
   const terminateCall = useCallback(async (reason: string) => {
@@ -112,7 +116,7 @@ const AutoAttendantEngine: React.FC = () => {
     terminatingRef.current = false;
   }, [elevenLabs, cleanup, attendant, addLog]);
 
-  // ── Wire ElevenLabs output → Meta WebRTC sender ──
+  // ── Wire ElevenLabs output → Meta WebRTC sender (with retry) ──
   const wireElevenLabsOutputToMeta = useCallback(() => {
     if (elOutputWiredRef.current) return;
     const pc = pcRef.current;
@@ -142,7 +146,7 @@ const AutoAttendantEngine: React.FC = () => {
       sender.replaceTrack(agentTrack)
         .then(() => {
           elOutputWiredRef.current = true;
-          addLog('✅ ElevenLabs→Meta replaceTrack SUCCESS — caller will hear Iris');
+          addLog(`✅ ElevenLabs→Meta replaceTrack SUCCESS (chunks so far: ${elevenLabs.getAudioChunkCount()}) — caller will hear Iris`);
         })
         .catch(err => {
           addLog(`❌ ElevenLabs→Meta replaceTrack FAILED: ${err}`);
@@ -151,6 +155,28 @@ const AutoAttendantEngine: React.FC = () => {
       addLog('wireELOutput: no audio sender found on PeerConnection');
     }
   }, [elevenLabs, addLog]);
+
+  // Retry loop: try to wire every 200ms for up to 5s
+  const wireWithRetry = useCallback(async () => {
+    addLog('wireWithRetry: starting polling loop (25 × 200ms)');
+    for (let attempt = 0; attempt < 25; attempt++) {
+      if (elOutputWiredRef.current || terminatingRef.current) return;
+      wireElevenLabsOutputToMeta();
+      if (elOutputWiredRef.current) return;
+      await new Promise(r => setTimeout(r, 200));
+    }
+    if (!elOutputWiredRef.current) {
+      addLog(`⚠️ CRITICAL: Failed to wire ElevenLabs output after 5s — chunks received: ${elevenLabs.getAudioChunkCount()}`);
+    }
+  }, [wireElevenLabsOutputToMeta, elevenLabs, addLog]);
+
+  // Called when BOTH conditions are met: accept succeeded AND ElevenLabs connected
+  const tryWireIfReady = useCallback(() => {
+    if (acceptSucceededRef.current && elConnectedRef.current && !elOutputWiredRef.current) {
+      addLog('Both accept 200 OK and ElevenLabs connected — starting wireWithRetry');
+      wireWithRetry();
+    }
+  }, [wireWithRetry, addLog]);
 
   // Activate on mount, unlock audio automatically
   useEffect(() => {
@@ -220,13 +246,12 @@ const AutoAttendantEngine: React.FC = () => {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Watch ElevenLabs status — wire output when connected, detect ended
+  // Watch ElevenLabs status — gate wiring on accept success
   useEffect(() => {
     if (elevenLabs.status === 'connected' && currentCallIdRef.current && !terminatingRef.current) {
-      // ElevenLabs just connected — wire output to Meta
-      addLog('ElevenLabs connected — wiring output to Meta');
-      // Small delay to let the output pipeline initialize
-      setTimeout(() => wireElevenLabsOutputToMeta(), 500);
+      addLog('ElevenLabs connected — checking if accept already succeeded');
+      elConnectedRef.current = true;
+      tryWireIfReady(); // Will only wire if acceptSucceededRef is also true
     }
     if (elevenLabs.status === 'ended' && currentCallIdRef.current && !terminatingRef.current) {
       addLog('ElevenLabs session ended — terminating Meta call');
@@ -453,6 +478,11 @@ const AutoAttendantEngine: React.FC = () => {
           addLog('Cancelled/terminating after accept — not bridging');
           return;
         }
+
+        // ── CRITICAL: Only now media should flow (per Meta docs) ──
+        acceptSucceededRef.current = true;
+        addLog('accept 200 OK — media gate opened');
+        tryWireIfReady(); // Will wire if ElevenLabs is already connected
 
         attendant.setState('bridged');
         addLog(`Inbound call ${call.id} accepted and bridged!`);

@@ -14,9 +14,14 @@ interface UseElevenLabsBridgeReturn {
   error: string | null;
   /** MediaStream carrying the agent's decoded PCM output audio */
   getAgentOutputStream: () => MediaStream | null;
+  /** Number of audio chunks received from ElevenLabs */
+  getAudioChunkCount: () => number;
 }
 
-// Decode base64 to ArrayBuffer
+// ── Audio helpers ──
+
+const WEBRTC_SAMPLE_RATE = 48000; // Native WebRTC/OPUS rate
+
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const binaryString = atob(base64);
   const bytes = new Uint8Array(binaryString.length);
@@ -26,7 +31,6 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-// Convert PCM16 LE to Float32
 function pcm16ToFloat32(pcm16: ArrayBuffer): Float32Array {
   const int16 = new Int16Array(pcm16);
   const float32 = new Float32Array(int16.length);
@@ -44,25 +48,29 @@ export function useElevenLabsBridge(): UseElevenLabsBridgeReturn {
   const outputCtxRef = useRef<AudioContext | null>(null);
   const outputDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const nextPlaybackRef = useRef<number>(0);
-  const outputSampleRateRef = useRef<number>(16000); // default, updated by metadata
+  const agentSampleRateRef = useRef<number>(16000); // ElevenLabs native rate (from metadata)
+
+  // Diagnostics
+  const audioChunkCountRef = useRef<number>(0);
+  const audioChunkBytesRef = useRef<number>(0);
+  const chunkWarningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // getUserMedia pinning
   const originalGetUserMediaRef = useRef<typeof navigator.mediaDevices.getUserMedia | null>(null);
   const sessionActiveRef = useRef(false);
 
-  // Initialize output audio context + destination
+  // Initialize output audio context at 48kHz for WebRTC compatibility
   const ensureOutputPipeline = useCallback(() => {
     if (!outputCtxRef.current || outputCtxRef.current.state === 'closed') {
-      const ctx = new AudioContext({ sampleRate: outputSampleRateRef.current });
+      const ctx = new AudioContext({ sampleRate: WEBRTC_SAMPLE_RATE });
       outputCtxRef.current = ctx;
       outputDestRef.current = ctx.createMediaStreamDestination();
       nextPlaybackRef.current = 0;
-      console.log(`[ElevenLabsBridge] Output pipeline created (sampleRate=${ctx.sampleRate})`);
+      console.log(`[ElevenLabsBridge] Output pipeline created (sampleRate=${ctx.sampleRate}, WebRTC-native)`);
     }
     return { ctx: outputCtxRef.current!, dest: outputDestRef.current! };
   }, []);
 
-  // Cleanup output pipeline
   const teardownOutputPipeline = useCallback(() => {
     if (outputCtxRef.current && outputCtxRef.current.state !== 'closed') {
       outputCtxRef.current.close().catch(() => {});
@@ -70,9 +78,14 @@ export function useElevenLabsBridge(): UseElevenLabsBridgeReturn {
     outputCtxRef.current = null;
     outputDestRef.current = null;
     nextPlaybackRef.current = 0;
+    audioChunkCountRef.current = 0;
+    audioChunkBytesRef.current = 0;
+    if (chunkWarningTimerRef.current) {
+      clearTimeout(chunkWarningTimerRef.current);
+      chunkWarningTimerRef.current = null;
+    }
   }, []);
 
-  // Restore getUserMedia
   const restoreGetUserMedia = useCallback(() => {
     if (originalGetUserMediaRef.current) {
       navigator.mediaDevices.getUserMedia = originalGetUserMediaRef.current;
@@ -86,6 +99,17 @@ export function useElevenLabsBridge(): UseElevenLabsBridgeReturn {
     onConnect: () => {
       console.log('[ElevenLabsBridge] Connected to agent');
       setStatus('connected');
+
+      // Start warning timer: if no audio chunks after 5s, warn about config
+      chunkWarningTimerRef.current = setTimeout(() => {
+        if (audioChunkCountRef.current === 0) {
+          console.warn(
+            '[ElevenLabsBridge] ⚠️ WARNING: No audio chunks received after 5s — ' +
+            'is the "audio" client event enabled in ElevenLabs agent config? ' +
+            '(Settings > Client Events > audio)'
+          );
+        }
+      }, 5000);
     },
     onDisconnect: () => {
       console.log('[ElevenLabsBridge] Disconnected from agent');
@@ -104,11 +128,10 @@ export function useElevenLabsBridge(): UseElevenLabsBridgeReturn {
         const meta = message as any;
         const format = meta?.conversation_initiation_metadata_event?.agent_output_audio_format;
         if (format) {
-          // Format is like "pcm_16000" or "pcm_24000"
           const match = String(format).match(/(\d+)/);
           if (match) {
-            outputSampleRateRef.current = parseInt(match[1], 10);
-            console.log(`[ElevenLabsBridge] Agent output format: ${format}, sampleRate=${outputSampleRateRef.current}`);
+            agentSampleRateRef.current = parseInt(match[1], 10);
+            console.log(`[ElevenLabsBridge] Agent output format: ${format}, agentSampleRate=${agentSampleRateRef.current}`);
           }
         }
       }
@@ -119,11 +142,24 @@ export function useElevenLabsBridge(): UseElevenLabsBridgeReturn {
         const base64 = audioMsg?.audio_event?.audio_base_64;
         if (base64) {
           try {
+            audioChunkCountRef.current++;
+            audioChunkBytesRef.current += base64.length;
+
+            // Log every 10 chunks for diagnostics
+            if (audioChunkCountRef.current % 10 === 0) {
+              console.log(
+                `[ElevenLabsBridge] Audio chunks received: ${audioChunkCountRef.current}, ` +
+                `total base64 bytes: ${audioChunkBytesRef.current}`
+              );
+            }
+
             const { ctx, dest } = ensureOutputPipeline();
             const pcmBuffer = base64ToArrayBuffer(base64);
             const float32 = pcm16ToFloat32(pcmBuffer);
 
-            const audioBuffer = ctx.createBuffer(1, float32.length, outputSampleRateRef.current);
+            // Create buffer at agent's native sample rate — Web Audio API
+            // automatically resamples when playing into a 48kHz context
+            const audioBuffer = ctx.createBuffer(1, float32.length, agentSampleRateRef.current);
             audioBuffer.getChannelData(0).set(float32);
 
             const source = ctx.createBufferSource();
@@ -148,6 +184,8 @@ export function useElevenLabsBridge(): UseElevenLabsBridgeReturn {
       setStatus('connecting');
       setError(null);
       sessionActiveRef.current = true;
+      audioChunkCountRef.current = 0;
+      audioChunkBytesRef.current = 0;
 
       // Initialize output pipeline before session
       ensureOutputPipeline();
@@ -206,6 +244,10 @@ export function useElevenLabsBridge(): UseElevenLabsBridgeReturn {
     return outputDestRef.current?.stream ?? null;
   }, []);
 
+  const getAudioChunkCount = useCallback((): number => {
+    return audioChunkCountRef.current;
+  }, []);
+
   return {
     status,
     isSpeaking: conversation.isSpeaking,
@@ -213,5 +255,6 @@ export function useElevenLabsBridge(): UseElevenLabsBridgeReturn {
     endSession,
     error,
     getAgentOutputStream,
+    getAudioChunkCount,
   };
 }
