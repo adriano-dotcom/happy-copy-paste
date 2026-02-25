@@ -251,6 +251,39 @@ function normalizeContactName(name: string | null): string {
 }
 // ===== END CONTACT NAME NORMALIZATION =====
 
+// ===== SANITIZE NAME IN CONVERSATION HISTORY =====
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function sanitizeNameInHistory(content: string, contact: any): string {
+  if (!content || !contact?.name) return content;
+  const fullName = (contact.call_name || contact.name || '').trim();
+  const originalName = (contact.name || '').trim();
+  const normalized = normalizeContactName(contact.call_name || contact.name);
+  
+  let sanitized = content;
+  
+  // Replace full original name (case-insensitive) — e.g. "LEONARDO FELIPE RIBEIRO SANCHES" → "Leonardo"
+  if (originalName && originalName !== normalized) {
+    sanitized = sanitized.replace(new RegExp(escapeRegex(originalName), 'gi'), normalized);
+  }
+  
+  // Replace call_name full if different
+  if (fullName && fullName !== originalName && fullName !== normalized) {
+    sanitized = sanitized.replace(new RegExp(escapeRegex(fullName), 'gi'), normalized);
+  }
+  
+  // Replace CAPS first name (e.g. "LEONARDO" → "Leonardo")
+  const firstName = originalName.split(/\s+/)[0];
+  if (firstName && firstName === firstName.toUpperCase() && firstName.length > 2) {
+    sanitized = sanitized.replace(new RegExp(`\\b${escapeRegex(firstName)}\\b`, 'g'), normalized);
+  }
+  
+  return sanitized;
+}
+// ===== END SANITIZE NAME IN CONVERSATION HISTORY =====
+
 // ===== TIMEZONE UTILITY =====
 const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
 function toBRT(date: Date | string): string {
@@ -5610,12 +5643,12 @@ Qual desses te interessa?`;
   }
   // ===== END RETURNING LEAD DETECTION =====
 
-  // Build conversation history for AI
+  // Build conversation history for AI (sanitize names to prevent CAPS/full name repetition)
   const conversationHistory = (recentMessages || [])
     .reverse()
     .map((msg: any) => ({
       role: msg.from_type === 'user' ? 'user' : 'assistant',
-      content: msg.content || '[media]'
+      content: sanitizeNameInHistory(msg.content || '[media]', conversation.contact)
     }));
 
   // Get client memory
@@ -7854,10 +7887,12 @@ Se detectar que era interesse em emprego antes e agora é seguro:
 ERRADO: "Entendi, alimentos. Quais estados atende?"
 CORRETO: "Quais estados atende?"
 
-### REGRA DE USO DO NOME (OBRIGATÓRIO):
-- SEMPRE use APENAS o PRIMEIRO NOME do lead, com inicial maiúscula
+### ⚠️ REGRA CRÍTICA DE USO DO NOME (OBRIGATÓRIO — PRIORIDADE MÁXIMA):
+- O nome do lead é: {{cliente_nome}}. Use EXATAMENTE este nome, sem variações.
+- SEMPRE use APENAS o PRIMEIRO NOME do lead, com inicial maiúscula (Title Case)
 - NUNCA use o nome completo (ex: "Felipe Lazzari") — use apenas "Felipe"
-- NUNCA use nome em CAIXA ALTA (ex: "FELIPE") — use "Felipe"
+- NUNCA use nome em CAIXA ALTA (ex: "FELIPE", "LEONARDO") — use "Felipe", "Leonardo"
+- NUNCA repita o padrão de nome que aparece no histórico se estiver em CAPS ou completo
 - A variável {{cliente_nome}} já contém o primeiro nome formatado — use-a diretamente
 
 ### REGRA VERIFICAR ANTES DE PERGUNTAR (OBRIGATÓRIO):
