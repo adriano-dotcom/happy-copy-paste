@@ -49,6 +49,9 @@ const AutoAttendantEngine: React.FC = () => {
   const currentCallIdRef = useRef<string | null>(null);
   const terminatingRef = useRef(false);
   const processingCallRef = useRef<string | null>(null);
+  const canStartElevenLabsRef = useRef(false);
+  const elevenLabsStartedRef = useRef(false);
+  const pendingRemoteStreamRef = useRef<MediaStream | null>(null);
 
   // Keep currentCallIdRef in sync
   useEffect(() => {
@@ -77,6 +80,9 @@ const AutoAttendantEngine: React.FC = () => {
       bridgeRef.current = null;
     }
     processingCallRef.current = null;
+    canStartElevenLabsRef.current = false;
+    elevenLabsStartedRef.current = false;
+    pendingRemoteStreamRef.current = null;
   }, []);
 
   const terminateCall = useCallback(async (reason: string) => {
@@ -285,13 +291,21 @@ const AutoAttendantEngine: React.FC = () => {
         silentStream.getTracks().forEach(track => pc.addTrack(track, silentStream));
 
         pc.ontrack = (event) => {
-          if (event.track.kind === 'audio' && !cancelled && !terminatingRef.current) {
-            addLog('Got remote audio track from Meta');
-            const { elevenLabsMicStream } = bridge.connect(event.streams[0]);
-            levelIntervalRef.current = setInterval(() => {}, 200);
+          if (event.track.kind !== 'audio' || cancelled || terminatingRef.current) {
+            if (terminatingRef.current) addLog('ontrack fired but call is terminating — skipping');
+            return;
+          }
+          addLog('Got remote audio track from Meta');
+          const { elevenLabsMicStream } = bridge.connect(event.streams[0]);
+          levelIntervalRef.current = setInterval(() => {}, 200);
+          // Store stream but only start ElevenLabs if pre_accept was won
+          pendingRemoteStreamRef.current = elevenLabsMicStream;
+          if (canStartElevenLabsRef.current && !elevenLabsStartedRef.current) {
+            elevenLabsStartedRef.current = true;
+            addLog('pre_accept already won — starting ElevenLabs from ontrack');
             startElevenLabsSession(call, elevenLabsMicStream);
-          } else if (terminatingRef.current) {
-            addLog('ontrack fired but call is terminating — skipping ElevenLabs start');
+          } else {
+            addLog('Storing remote stream — waiting for pre_accept claim before starting ElevenLabs');
           }
         };
 
@@ -322,11 +336,31 @@ const AutoAttendantEngine: React.FC = () => {
         }
         const fullSdp = fixSdpForMeta(pc.localDescription?.sdp || '');
 
-        addLog('Sending pre_accept...');
-        const { error: preErr } = await supabase.functions.invoke('whatsapp-call-accept', {
+        addLog(`Sending pre_accept for call ${call.id}...`);
+        const { data: preData, error: preErr } = await supabase.functions.invoke('whatsapp-call-accept', {
           body: { call_id: call.id, sdp_answer: fullSdp, action: 'pre_accept' },
         });
         if (preErr) throw preErr;
+
+        // Check if this instance lost the CAS race
+        if (preData?.skipped) {
+          addLog(`pre_accept skipped (another instance won CAS) — aborting locally without terminating`);
+          cleanup();
+          attendant.resetForNext();
+          terminatingRef.current = false;
+          return;
+        }
+
+        // This instance won the pre_accept CAS — enable ElevenLabs gate
+        canStartElevenLabsRef.current = true;
+        addLog('pre_accept claimed — ElevenLabs gate opened');
+
+        // If ontrack already fired and stored the stream, start ElevenLabs now
+        if (pendingRemoteStreamRef.current && !elevenLabsStartedRef.current) {
+          elevenLabsStartedRef.current = true;
+          addLog('Remote stream was waiting — starting ElevenLabs now');
+          startElevenLabsSession(call, pendingRemoteStreamRef.current);
+        }
 
         if (pc.connectionState !== 'connected') {
           await new Promise<void>((resolve) => {
@@ -347,10 +381,23 @@ const AutoAttendantEngine: React.FC = () => {
           return;
         }
 
-        addLog('Sending accept...');
-        await supabase.functions.invoke('whatsapp-call-accept', {
+        addLog(`Sending accept for call ${call.id}...`);
+        const { data: acceptData, error: acceptErr } = await supabase.functions.invoke('whatsapp-call-accept', {
           body: { call_id: call.id, sdp_answer: fullSdp, action: 'accept' },
         });
+
+        if (acceptErr) {
+          addLog(`Accept error: ${acceptErr.message} — non-fatal, continuing`);
+        }
+
+        // Check if accept was skipped (another instance somehow got there)
+        if (acceptData?.skipped) {
+          addLog(`accept skipped (CAS lost) — aborting locally`);
+          cleanup();
+          attendant.resetForNext();
+          terminatingRef.current = false;
+          return;
+        }
 
         if (cancelled || terminatingRef.current) {
           addLog('Cancelled/terminating after accept — not bridging');
@@ -358,7 +405,7 @@ const AutoAttendantEngine: React.FC = () => {
         }
 
         attendant.setState('bridged');
-        addLog('Inbound call accepted and bridged!');
+        addLog(`Inbound call ${call.id} accepted and bridged!`);
       } catch (err: any) {
         addLog(`Error processing inbound: ${err.message}`);
         cleanup();
@@ -380,13 +427,16 @@ const AutoAttendantEngine: React.FC = () => {
         silentStream.getTracks().forEach(track => pc.addTrack(track, silentStream));
 
         pc.ontrack = (event) => {
-          if (event.track.kind === 'audio' && !cancelled && !terminatingRef.current) {
-            addLog('Got remote audio track from lead (outbound)');
-            const { elevenLabsMicStream } = bridge.connect(event.streams[0]);
-            levelIntervalRef.current = setInterval(() => {}, 200);
+          if (event.track.kind !== 'audio' || cancelled || terminatingRef.current) {
+            if (terminatingRef.current) addLog('ontrack (outbound) fired but call is terminating — skipping');
+            return;
+          }
+          addLog('Got remote audio track from lead (outbound)');
+          const { elevenLabsMicStream } = bridge.connect(event.streams[0]);
+          levelIntervalRef.current = setInterval(() => {}, 200);
+          if (!elevenLabsStartedRef.current) {
+            elevenLabsStartedRef.current = true;
             startElevenLabsSession(call, elevenLabsMicStream);
-          } else if (terminatingRef.current) {
-            addLog('ontrack (outbound) fired but call is terminating — skipping');
           }
         };
 
