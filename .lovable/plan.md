@@ -1,28 +1,60 @@
 
 
-# Plano: Adicionar regra explícita de uso do primeiro nome no prompt do Atlas
+# Investigacao: Erro "Edge Function returned a non-2xx status code"
 
 ## Problema
-Mesmo com `normalizeContactName()` tratando a variável `{{cliente_nome}}`, o modelo de IA pode decidir usar o nome completo do lead se ele aparecer em outros contextos (histórico, qualificação, etc). Uma instrução explícita no prompt reforça o comportamento correto.
 
-## Alteração
+A screenshot mostra o toast: **"Erro ao iniciar chamada: Edge Function returned a non-2xx status code"**. Isso acontece porque quando a Edge Function `whatsapp-call-initiate` retorna HTTP 400 (erro de permissao 138006), o `supabase.functions.invoke()` lanca uma **excecao** em vez de retornar os dados normalmente.
 
-**Arquivo**: `supabase/functions/nina-orchestrator/index.ts`
+O fluxo atual:
+1. `supabase.functions.invoke()` recebe HTTP 400
+2. O SDK lanca um erro com mensagem generica "Edge Function returned a non-2xx status code"
+3. O codigo cai no `catch` (linha 324), que mostra a mensagem generica
+4. Nunca chega no `if (errorCode === 138006)` (linha 237) onde esta o tratamento correto
 
-**Local**: Bloco "REGRAS CRÍTICAS DE COMUNICAÇÃO" (linha ~7847), logo após a regra ANTI-ECO.
+## Causa raiz
 
-**Adicionar nova regra** entre a regra ANTI-ECO e a regra VERIFICAR ANTES DE PERGUNTAR:
+O `supabase.functions.invoke()` coloca o body da resposta no campo `error.context` quando o status nao e 2xx. O codigo atual nao extrai o `error_code` do contexto do erro no bloco `catch`.
 
-```text
-### REGRA DE USO DO NOME (OBRIGATÓRIO):
-- SEMPRE use APENAS o PRIMEIRO NOME do lead, com inicial maiúscula
-- NUNCA use o nome completo (ex: "Felipe Lazzari") — use apenas "Felipe"
-- NUNCA use nome em CAIXA ALTA (ex: "FELIPE") — use "Felipe"
-- A variável {{cliente_nome}} já contém o primeiro nome formatado — use-a diretamente
+## Correcao
+
+**Arquivo**: `src/components/OutboundCallModal.tsx`
+
+**Bloco catch** (linhas 324-328): Extrair o `error_code` do corpo da resposta de erro e aplicar a mesma logica de tratamento do erro 138006 (enviar mensagem pedindo permissao).
+
+```typescript
+} catch (err: any) {
+  console.error(`[WebRTC][${ts()}] Outbound call error:`, err);
+  
+  // Try to extract Meta error code from the response context
+  let errorCode: number | undefined;
+  let errorMsg = err.message || 'Erro desconhecido';
+  try {
+    const ctx = err?.context;
+    if (ctx && typeof ctx.json === 'function') {
+      const body = await ctx.json();
+      errorCode = body?.error_code;
+      errorMsg = body?.error || errorMsg;
+    }
+  } catch {}
+
+  if (errorCode === 138021 || errorCode === 138000 || errorCode === 138006) {
+    toast.error('O lead não habilitou chamadas WhatsApp. Enviando mensagem...');
+    try {
+      await supabase.functions.invoke('whatsapp-sender', { body: { ... } });
+      toast.success('Mensagem de solicitação de permissão enviada.');
+    } catch {}
+  } else {
+    toast.error(`Erro ao iniciar chamada: ${errorMsg}`);
+  }
+  
+  cleanup();
+  onClose();
+}
 ```
 
 ## Escopo
-- **1 arquivo** alterado
-- **4 linhas** inseridas
-- Zero risco de regressão
+- **1 arquivo** alterado: `src/components/OutboundCallModal.tsx`
+- **1 bloco** modificado: `catch` (linhas 324-328)
+- Mantém a lógica existente do bloco `if` (linhas 231-255) intacta como fallback
 
