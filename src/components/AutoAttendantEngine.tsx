@@ -48,6 +48,7 @@ const AutoAttendantEngine: React.FC = () => {
   const levelIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentCallIdRef = useRef<string | null>(null);
   const terminatingRef = useRef(false);
+  const processingCallRef = useRef<string | null>(null);
 
   // Keep currentCallIdRef in sync
   useEffect(() => {
@@ -75,6 +76,7 @@ const AutoAttendantEngine: React.FC = () => {
       bridgeRef.current.disconnect();
       bridgeRef.current = null;
     }
+    processingCallRef.current = null;
   }, []);
 
   const terminateCall = useCallback(async (reason: string) => {
@@ -255,6 +257,13 @@ const AutoAttendantEngine: React.FC = () => {
   useEffect(() => {
     const call = attendant.currentCall;
     if (!call || !audioUnlocked) return;
+
+    // Guard: prevent duplicate processing of the same call (e.g. React StrictMode double-mount)
+    if (processingCallRef.current === call.id) {
+      addLog(`Already processing call ${call.id}, skipping duplicate`);
+      return;
+    }
+    processingCallRef.current = call.id;
 
     let cancelled = false;
 
