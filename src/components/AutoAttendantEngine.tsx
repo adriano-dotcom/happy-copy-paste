@@ -548,7 +548,30 @@ const AutoAttendantEngine: React.FC = () => {
         });
 
         if (error || !data?.success) {
-          throw new Error(data?.error || error?.message || 'Failed to initiate outbound call');
+          // Extract specific error code for better diagnostics
+          let errorCode: number | undefined = data?.error_code;
+          let errorMsg = data?.error || error?.message || 'Failed to initiate outbound call';
+          if (!errorCode && error?.context) {
+            try {
+              const ctx = error.context;
+              if (typeof ctx.json === 'function') {
+                const body = await ctx.json();
+                errorCode = body?.error_code != null ? Number(body.error_code) : undefined;
+                errorMsg = body?.error || errorMsg;
+              }
+            } catch {
+              try {
+                if (typeof error.context.text === 'function') {
+                  const raw = await error.context.text();
+                  const parsed = JSON.parse(raw);
+                  errorCode = parsed?.error_code != null ? Number(parsed.error_code) : undefined;
+                  errorMsg = parsed?.error || errorMsg;
+                }
+              } catch { /* exhausted */ }
+            }
+          }
+          addLog(`Outbound initiate failed: code=${errorCode}, msg=${errorMsg}`);
+          throw new Error(errorMsg);
         }
 
         const channel = supabase

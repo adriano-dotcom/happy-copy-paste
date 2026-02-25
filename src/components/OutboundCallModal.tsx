@@ -47,6 +47,140 @@ function fixSdpForMeta(sdp: string): string {
   }).join('\r\n');
 }
 
+// ── Robust error extraction from supabase.functions.invoke ──
+
+const META_PERMISSION_CODES = [138006, 138021, 138000];
+
+async function extractInvokeErrorDetails(
+  error: any,
+  data: any
+): Promise<{ errorCode: number | undefined; errorMsg: string }> {
+  let errorCode: number | undefined = data?.error_code;
+  let errorMsg: string = data?.error || error?.message || 'Erro desconhecido';
+
+  // Normalize errorCode to number
+  if (errorCode != null) {
+    errorCode = Number(errorCode);
+    if (isNaN(errorCode)) errorCode = undefined;
+  }
+
+  // If we already have an errorCode, return early
+  if (errorCode != null) {
+    return { errorCode, errorMsg };
+  }
+
+  // Try extracting from error.context (Response object from FunctionsHttpError)
+  if (error?.context) {
+    try {
+      const ctx = error.context;
+      if (typeof ctx.json === 'function') {
+        const body = await ctx.json();
+        errorCode = body?.error_code != null ? Number(body.error_code) : undefined;
+        errorMsg = body?.error || errorMsg;
+      } else if (typeof ctx === 'object') {
+        errorCode = ctx.error_code != null ? Number(ctx.error_code) : undefined;
+        errorMsg = ctx.error || errorMsg;
+      }
+    } catch {
+      // json() can only be consumed once; try text() as fallback
+      try {
+        const ctx = error.context;
+        if (typeof ctx.text === 'function') {
+          const raw = await ctx.text();
+          const parsed = JSON.parse(raw);
+          errorCode = parsed?.error_code != null ? Number(parsed.error_code) : undefined;
+          errorMsg = parsed?.error || errorMsg;
+        }
+      } catch { /* exhausted */ }
+    }
+  }
+
+  // Fallback: parse JSON embedded in error.message
+  if (errorCode == null && error?.message) {
+    try {
+      const jsonMatch = error.message.match(/\{[\s\S]*"error_code"[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        errorCode = parsed.error_code != null ? Number(parsed.error_code) : undefined;
+        errorMsg = parsed.error || errorMsg;
+      }
+    } catch { /* not parseable */ }
+  }
+
+  if (errorCode != null && isNaN(errorCode)) errorCode = undefined;
+  return { errorCode, errorMsg };
+}
+
+const PERMISSION_MSG = '📞 Tentamos ligar para você pelo WhatsApp, mas as chamadas não estão habilitadas.\n\nPara ativar, acesse:\n*Configurações > Privacidade > Chamadas* e permita chamadas de empresas.\n\nAssim poderemos conversar por voz! 😊';
+
+async function handleCallPermissionError(
+  errorCode: number | undefined,
+  errorMsg: string,
+  conversationId: string | undefined,
+  contact: { id: string; phone: string }
+) {
+  if (errorCode != null && META_PERMISSION_CODES.includes(errorCode)) {
+    toast.error('O lead não habilitou chamadas WhatsApp. Enviando mensagem pedindo autorização...');
+
+    if (!conversationId) {
+      toast.warning('Não foi possível enviar mensagem automática (conversa não encontrada).');
+      return;
+    }
+
+    try {
+      // Use the standard queue flow: insert into messages + send_queue, then trigger sender
+      const { data: conv } = await supabase
+        .from('conversations')
+        .select('contact_id')
+        .eq('id', conversationId)
+        .single();
+
+      if (!conv) throw new Error('Conversa não encontrada');
+
+      const { data: msgData, error: msgErr } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: conversationId,
+          content: PERMISSION_MSG,
+          type: 'text',
+          from_type: 'human',
+          status: 'processing',
+          sent_at: new Date().toISOString(),
+          metadata: {},
+        })
+        .select('id')
+        .single();
+
+      if (msgErr || !msgData) throw msgErr || new Error('Falha ao criar mensagem');
+
+      const { error: queueErr } = await supabase
+        .from('send_queue')
+        .insert({
+          conversation_id: conversationId,
+          contact_id: conv.contact_id,
+          content: PERMISSION_MSG,
+          from_type: 'human',
+          message_type: 'text',
+          priority: 2,
+          message_id: msgData.id,
+        });
+
+      if (queueErr) throw queueErr;
+
+      // Trigger sender
+      await supabase.functions.invoke('whatsapp-sender').catch(() => {});
+
+      toast.success('Mensagem de solicitação de permissão enviada ao lead.');
+    } catch (msgErr) {
+      console.error('Failed to send call permission request via queue:', msgErr);
+      toast.error('Não foi possível enviar a mensagem de solicitação de permissão.');
+    }
+  } else {
+    toast.error(`Erro ao iniciar chamada: ${errorMsg}`);
+  }
+}
+
+
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -229,42 +363,10 @@ export const OutboundCallModal: React.FC<OutboundCallModalProps> = ({
         });
 
         if (error || !data?.success) {
-          let errorMsg = data?.error || error?.message || 'Failed to initiate call';
-          let errorCode = data?.error_code;
-          
-          // Extract error details from FunctionsHttpError context (Response object)
-          if (!errorCode && error?.context) {
-            try {
-              const ctx = error.context;
-              if (typeof ctx.json === 'function') {
-                const body = await ctx.json();
-                errorCode = body?.error_code;
-                errorMsg = body?.error || errorMsg;
-              }
-            } catch { /* fallback to generic */ }
-          }
+          const { errorCode, errorMsg } = await extractInvokeErrorDetails(error, data);
           console.error(`[WebRTC][${ts()}] Initiate error (code=${errorCode}):`, errorMsg);
 
-          // Handle specific Meta error codes - send permission request message
-          if (errorCode === 138021 || errorCode === 138000 || errorCode === 138006) {
-            toast.error('O lead não habilitou chamadas WhatsApp. Enviando mensagem pedindo autorização...');
-            // Send a WhatsApp message asking the lead to enable calls
-            try {
-              await supabase.functions.invoke('whatsapp-sender', {
-                body: {
-                  to: contact.phone,
-                  message: '📞 Tentamos ligar para você pelo WhatsApp, mas as chamadas não estão habilitadas.\n\nPara ativar, acesse:\n*Configurações > Privacidade > Chamadas* e permita chamadas de empresas.\n\nAssim poderemos conversar por voz! 😊',
-                  conversation_id: conversationId,
-                  contact_id: contact.id,
-                },
-              });
-              toast.success('Mensagem de solicitação de permissão enviada ao lead.');
-            } catch (msgErr) {
-              console.error('Failed to send call permission request:', msgErr);
-            }
-          } else {
-            toast.error(`Erro ao iniciar chamada: ${errorMsg}`);
-          }
+          await handleCallPermissionError(errorCode, errorMsg, conversationId, contact);
 
           cleanup();
           onClose();
@@ -336,37 +438,10 @@ export const OutboundCallModal: React.FC<OutboundCallModalProps> = ({
       } catch (err: any) {
         console.error(`[WebRTC][${ts()}] Outbound call error:`, err);
 
-        // Extract Meta error code from Supabase error context (non-2xx responses)
-        let errorCode: number | undefined;
-        let errorMsg = err.message || 'Erro desconhecido';
-        try {
-          const ctx = err?.context;
-          if (ctx && typeof ctx.json === 'function') {
-            const body = await ctx.json();
-            errorCode = body?.error_code;
-            errorMsg = body?.error || errorMsg;
-            console.log(`[WebRTC][${ts()}] Extracted error from context: code=${errorCode}, msg=${errorMsg}`);
-          }
-        } catch { /* fallback to generic message */ }
+        const { errorCode, errorMsg } = await extractInvokeErrorDetails(err, null);
+        console.log(`[WebRTC][${ts()}] Extracted error: code=${errorCode}, msg=${errorMsg}`);
 
-        if (errorCode === 138021 || errorCode === 138000 || errorCode === 138006) {
-          toast.error('O lead não habilitou chamadas WhatsApp. Enviando mensagem pedindo autorização...');
-          try {
-            await supabase.functions.invoke('whatsapp-sender', {
-              body: {
-                to: contact.phone,
-                message: '📞 Tentamos ligar para você pelo WhatsApp, mas as chamadas não estão habilitadas.\n\nPara ativar, acesse:\n*Configurações > Privacidade > Chamadas* e permita chamadas de empresas.\n\nAssim poderemos conversar por voz! 😊',
-                conversation_id: conversationId,
-                contact_id: contact.id,
-              },
-            });
-            toast.success('Mensagem de solicitação de permissão enviada ao lead.');
-          } catch (msgErr) {
-            console.error('Failed to send call permission request:', msgErr);
-          }
-        } else {
-          toast.error(`Erro ao iniciar chamada: ${errorMsg}`);
-        }
+        await handleCallPermissionError(errorCode, errorMsg, conversationId, contact);
 
         cleanup();
         onClose();
