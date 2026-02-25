@@ -1,146 +1,157 @@
 
-Diagnóstico aprofundado (com evidência objetiva)
 
-1) O problema principal agora não é mais CAS/duplicidade de accept.
-- O fluxo de pre_accept/accept está ocorrendo com CAS e chegou em `answered`.
-- Logs mostram:
-  - `pre_accept claimed — ElevenLabs gate opened`
-  - `Sending accept...`
-  - `Inbound call ... accepted and bridged!`
-  - chamada foi para `answered` no banco.
+# Estudo da API de Chamadas Meta WhatsApp vs. implementacao atual
 
-2) O sintoma “agente atendendo no navegador e não na ligação WhatsApp” bate com falha de roteamento de áudio de saída.
-- No código atual:
-  - `AudioBridge` tem rota de volta (`setElevenLabsOutput`) pronta.
-  - Mas `AutoAttendantEngine` nunca chama `setElevenLabsOutput`.
-  - Também não existe `replaceTrack` no sender WebRTC para trocar o track silencioso pelo áudio da Iris.
-- Evidência de log:
-  - aparece `Meta → ElevenLabs path connected`
-  - não aparece `ElevenLabs → Meta path connected`
+## Descobertas da documentacao Meta
 
-3) Resultado prático dessa lacuna:
-- A Iris fala localmente no browser (saída padrão do SDK), mas o lado WhatsApp recebe track silencioso.
-- O cliente na chamada ouve silêncio, a conversa degrada e “cai”.
-- Isso explica exatamente o relato: “atende no navegador, não na ligação”.
+A documentacao oficial (https://developers.facebook.com/documentation/business-messaging/whatsapp/calling/) confirma o fluxo WebRTC que ja implementamos, com um detalhe critico sobre timing de midia:
 
-4) Há um endurecimento adicional necessário:
-- `useElevenLabsBridge` restaura `getUserMedia` logo após `startSession`.
-- Se o SDK fizer reacquire de input, pode voltar para mic do navegador.
-- Mesmo não sendo a única causa, isso aumenta risco de “capturar browser em vez da call”.
-
-Plano de implementação (correção definitiva)
-
-Escopo de arquivos
-- `src/hooks/useElevenLabsBridge.ts`
-- `src/components/AudioBridge.tsx`
-- `src/components/AutoAttendantEngine.tsx`
-- (opcional hardening multiaba) `src/hooks/useWhatsAppAutoAttendant.ts`
-
-Fase 1 — Consertar ponte de áudio bidirecional (crítico)
-1. Em `useElevenLabsBridge`, capturar áudio bruto da Iris via callback `onAudio` do SDK.
-2. Decodificar chunks base64 PCM para buffer de áudio e enfileirar com clock contínuo (jitter-safe).
-3. Expor um `MediaStream` de saída da Iris (ex.: `agentOutputStream`) para consumo do engine.
-4. Em `AutoAttendantEngine`, quando sessão ElevenLabs conectar:
-   - ligar `bridge.setElevenLabsOutput(agentOutputStream)`;
-   - pegar o track de saída resultante;
-   - fazer `sender.replaceTrack(trackDaIris)` no peer connection com a Meta.
-5. Manter track silencioso apenas como placeholder até a Iris conectar.
-
-Fase 2 — Garantir que entrada da Iris continue sendo a chamada WhatsApp
-1. Ajustar `useElevenLabsBridge` para “pin” do input stream da chamada durante toda a sessão ativa.
-2. Só restaurar `navigator.mediaDevices.getUserMedia` no `endSession`/cleanup final.
-3. Adicionar guardas para impedir fallback para mic local durante call ativa.
-
-Fase 3 — Evitar percepção “falando no navegador”
-1. Definir monitor local da Iris como:
-   - padrão: desligado (volume local 0) para operação headless;
-   - opcional: modo monitor (se desejarem escuta local).
-2. Evitar que áudio local do navegador seja confundido com áudio da chamada.
-
-Fase 4 — Hardening de concorrência entre abas (recomendado)
-1. Adicionar lock de “tab líder” (heartbeat com TTL) para que só 1 aba opere engine por vez.
-2. Manter CAS backend como defesa adicional.
-3. Evita pre_accept concorrente desnecessário e SDP inválido por aba secundária.
-
-Fluxo alvo após correção
+### Fluxo correto segundo Meta
 
 ```text
-WhatsApp caller audio (Meta remote track)
-  -> AudioBridge Meta→Iris
-  -> ElevenLabs input (mic virtual)
-
-ElevenLabs output chunks (onAudio)
-  -> decoder + scheduler
-  -> MediaStream de saída da Iris
-  -> AudioBridge Iris→Meta
-  -> RTCRtpSender.replaceTrack(...)
-  -> caller ouve Iris na ligação WhatsApp
+1. Webhook "connect" chega com SDP Offer
+2. Business envia pre_accept com SDP Answer
+   -> Conexao WebRTC se estabelece (ICE+DTLS+SRTP)
+   -> MAS midia NAO deve fluir ainda
+3. Business envia accept com SDP Answer
+   -> Esperar 200 OK
+   -> SO DEPOIS do 200 OK a midia deve comecar a fluir
+4. terminate quando encerrar
 ```
 
-Plano de validação (E2E obrigatório)
+Citacao direta da Meta:
+> "make sure to flow the call media only after you receive a 200 OK response back [from accept]. If call media flows too early, the caller will miss the first few words. If call media flows too late, callers will hear silence."
 
-1) Teste fim a fim principal (obrigatório)
-- Receber ligação real no WhatsApp.
-- Confirmar simultaneamente:
-  - cliente ouve a Iris na ligação;
-  - Iris ouve o cliente (transcrição com conteúdo, não “...” repetido);
-  - navegador não é a “origem principal” de atendimento.
+### Protocolo de midia
+- Media: WebRTC (ICE + DTLS + SRTP)
+- Audio codec: OPUS
+- SDP: RFC 8866 compliant
+- O SDP do accept DEVE ser igual ao do pre_accept (senao erro 138008)
 
-2) Teste de estabilidade
-- Manter chamada por 2–3 minutos.
-- Validar que não cai por silêncio indevido.
-- Verificar transição `answered -> ended` com causa coerente.
+## Diagnostico: o que esta errado no sistema atual
 
-3) Teste com 2 abas abertas
-- Confirmar que apenas aba líder processa mídia.
-- Sem pre_accept/accept redundante, sem “duas agentes”.
+### Problema 1 -- Evento `audio` do ElevenLabs pode nao estar habilitado
 
-4) Teste de encerramento
-- Encerrar pelo cliente e pelo sistema.
-- Garantir cleanup sem sessões órfãs da Iris.
+O pipeline atual depende de capturar chunks PCM via `onMessage` com `message.type === 'audio'`. A documentacao do ElevenLabs diz explicitamente:
 
-5) Teste de regressão
-- Outbound e inbound continuam funcionando.
-- Banner/estado visual continuam corretos.
+> "audio: Base64 encoded audio for playback (WebSocket only, not sent over WebRTC)"
+> "These must be individually enabled in the ElevenLabs web UI"
 
-Detalhes técnicos (time dev)
+Se o evento `audio` **nao estiver habilitado** na configuracao do agente ElevenLabs, o `onMessage` nunca recebe chunks, o `outputDestRef.stream` fica silencioso para sempre, e o `replaceTrack` injeta uma track sem audio no WebRTC. O caller ouve silencio.
 
-- `useElevenLabsBridge`:
-  - adicionar refs: `outputAudioContextRef`, `outputDestinationRef`, `nextPlaybackTimeRef`, `outputFormatRef`.
-  - `onConversationMetadata` para ler `agent_output_audio_format` (sample rate).
-  - `onAudio(base64)`:
-    - base64 -> ArrayBuffer -> PCM16 -> Float32;
-    - criar `AudioBufferSourceNode`;
-    - agendar em `nextPlaybackTimeRef` (nunca em `currentTime` direto sem fila).
-  - expor:
-    - `getAgentOutputStream(): MediaStream | null`
-    - `bindInputStream(stream)` / `unbindInputStream()` (ou equivalente).
+**Acao**: Verificar no painel ElevenLabs se o evento `audio` esta habilitado. Se nao estiver, habilitar. Adicionalmente, implementar logging diagnostico para confirmar se chunks estao chegando.
 
-- `AutoAttendantEngine`:
-  - após `elevenLabs.status === connected`, se houver `pcRef` e `bridgeRef`:
-    - `const metaOut = bridge.setElevenLabsOutput(elevenLabs.getAgentOutputStream())`
-    - `pc.getSenders().find(audio).replaceTrack(metaOut.getAudioTracks()[0])`
-  - log explícito:
-    - `ElevenLabs->Meta connected`
-    - `replaceTrack success/fail`
-    - níveis de entrada/saída.
+### Problema 2 -- Sample rate incompativel
 
-- `AudioBridge`:
-  - manter ganho/analyser das duas pernas.
-  - garantir `disconnect()` encerrando nodes/tracks para não vazar.
+O `outputCtxRef` e criado com `sampleRate: 16000` (ou o valor que o metadata do agente retornar). Porem, o WebRTC do navegador opera tipicamente em 48000Hz com codec OPUS. A Meta espera OPUS.
 
-Risco e mitigação
+Quando o `AudioContext` de 16000Hz produz uma `MediaStream` e essa stream e passada para `replaceTrack`, o WebRTC encoder (OPUS) precisa resampling. Nem todos os navegadores fazem isso automaticamente quando os contextos tem sample rates diferentes.
 
-- Risco: áudio picotado por scheduler de chunks.
-  - Mitigação: buffer mínimo (ex. 100–200ms) e clock monotônico (`nextPlaybackTimeRef`).
-- Risco: sample rate incorreto.
-  - Mitigação: usar formato de `onConversationMetadata`.
-- Risco: regressão de concorrência multiaba.
-  - Mitigação: lock líder + CAS já existente.
+**Acao**: Criar o output pipeline com sample rate nativo (48000Hz) e fazer o resampling internamente no decode dos chunks PCM.
 
-Resultado esperado
+### Problema 3 -- Timing do `wireElevenLabsOutputToMeta`
 
-- A Iris deixa de “falar só no navegador”.
-- A voz da Iris passa a sair na chamada WhatsApp.
-- A ligação deixa de cair por silêncio/fluxo quebrado.
-- Operação fica estável mesmo com múltiplas abas/sessões abertas.
+Atualmente, a funcao `wireElevenLabsOutputToMeta` e chamada com `setTimeout(..., 500)` apos `elevenLabs.status === 'connected'`. Mas:
+- `getAgentOutputStream()` pode nao ter audio ainda (nenhum chunk decodificado)
+- Se falhar (stream null ou track null), nao ha retry
+- O log mostra "no agent output stream yet" e desiste
+
+**Acao**: Implementar retry com polling (ex: tentar a cada 200ms por ate 5s) ate que a stream esteja disponivel e tenha tracks.
+
+### Problema 4 -- Midia fluindo antes do `accept` 200 OK
+
+Segundo a Meta, midia so deve fluir apos o `accept` retornar 200. No codigo atual:
+1. `pre_accept` retorna sucesso
+2. ElevenLabs session inicia (pode comecar a enviar audio)
+3. `wireElevenLabsOutputToMeta` pode trocar o track antes do `accept`
+4. `accept` e enviado depois
+
+Embora o track inicial seja silencioso (o que evita o pior caso), a troca para o track da Iris pode acontecer antes do `accept` 200 OK. Isso pode causar comportamento imprevisivel.
+
+**Acao**: So chamar `wireElevenLabsOutputToMeta` apos confirmacao de que `accept` retornou com sucesso (nao apenas apos ElevenLabs conectar).
+
+## Plano de implementacao
+
+### Fase 1 -- Diagnostico (sem mudanca funcional)
+
+**Arquivo**: `src/hooks/useElevenLabsBridge.ts`
+
+- Adicionar contador de chunks recebidos no `onMessage` handler
+- Log a cada 10 chunks: `[ElevenLabsBridge] Audio chunks received: N, total bytes: M`
+- Log se NENHUM chunk chegou apos 5s de sessao: `[ElevenLabsBridge] WARNING: No audio chunks received after 5s — is 'audio' event enabled in ElevenLabs agent config?`
+- Expor `getAudioChunkCount()` para o Engine monitorar
+
+### Fase 2 -- Corrigir sample rate do output pipeline
+
+**Arquivo**: `src/hooks/useElevenLabsBridge.ts`
+
+- Criar o `AudioContext` do output com `sampleRate: 48000` (nativo WebRTC/OPUS)
+- No decode dos chunks, fazer resampling de `outputSampleRateRef.current` (16000) para 48000 ao criar o `AudioBuffer`:
+  ```typescript
+  // Resample: create buffer at agent's rate, then use OfflineAudioContext to resample
+  // OR: create buffer at 48000 and stretch samples
+  ```
+- Alternativa mais simples: criar o AudioBuffer com o sample rate do AudioContext e deixar o `createBuffer` com o sample rate correto do chunk -- o Web Audio API faz resampling automatico quando sample rates diferem entre buffer e contexto
+
+### Fase 3 -- Mover `wireElevenLabsOutputToMeta` para apos `accept` 200 OK
+
+**Arquivo**: `src/components/AutoAttendantEngine.tsx`
+
+Mudancas no `processInbound`:
+1. Adicionar ref `acceptSucceededRef` (boolean)
+2. Apos `accept` retornar sem `skipped`:
+   - Setar `acceptSucceededRef.current = true`
+   - Se ElevenLabs ja estiver connected, chamar `wireElevenLabsOutputToMeta()`
+3. No watcher de `elevenLabs.status === 'connected'`:
+   - So chamar `wireElevenLabsOutputToMeta` se `acceptSucceededRef.current === true`
+   - Se `accept` ainda nao retornou, armazenar flag para wire depois
+
+Sequencia alvo:
+```text
+pre_accept -> OK
+  -> ElevenLabs session inicia (comeca a decodificar chunks)
+  -> WebRTC conecta (track silencioso)
+accept -> 200 OK
+  -> wireElevenLabsOutputToMeta() -> replaceTrack
+  -> caller ouve Iris
+```
+
+### Fase 4 -- Retry robusto no `wireElevenLabsOutputToMeta`
+
+**Arquivo**: `src/components/AutoAttendantEngine.tsx`
+
+- Substituir o `setTimeout(..., 500)` por loop de retry:
+  ```typescript
+  const wireWithRetry = async () => {
+    for (let attempt = 0; attempt < 25; attempt++) { // 25 * 200ms = 5s
+      wireElevenLabsOutputToMeta();
+      if (elOutputWiredRef.current) return;
+      await new Promise(r => setTimeout(r, 200));
+    }
+    addLog('CRITICAL: Failed to wire ElevenLabs output after 5s');
+  };
+  ```
+- Log explicito em cada tentativa com razao de falha
+
+### Fase 5 -- Alerta se `audio` event nao esta habilitado
+
+**Arquivo**: `src/hooks/useElevenLabsBridge.ts`
+
+- Apos 3 segundos de sessao `connected`, se nenhum chunk de audio chegou:
+  - Log warning critico
+  - Opcionalmente, expor flag `audioEventsActive: boolean` para o Engine reagir
+
+## Checklist de configuracao ElevenLabs (acao manual obrigatoria)
+
+Antes de testar, verificar no painel do agente ElevenLabs:
+1. O evento `audio` esta habilitado nas configuracoes de "Client Events"?
+2. O formato de saida esta configurado (pcm_16000 ou similar)?
+3. O agente esta usando WebSocket (signedUrl) e nao WebRTC?
+
+## Validacao
+
+1. **Teste de chunks**: Apos Fase 1, verificar nos logs se chunks estao chegando
+2. **Teste de audio E2E**: Apos Fases 2-4, ligar e confirmar que o caller ouve Iris
+3. **Teste de timing**: Confirmar que `replaceTrack` so ocorre apos `accept` 200
+4. **Teste de estabilidade**: Chamada de 2-3 minutos sem corte
+
