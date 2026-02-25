@@ -53,6 +53,7 @@ const AutoAttendantEngine: React.FC = () => {
   const elevenLabsStartedRef = useRef(false);
   const pendingRemoteStreamRef = useRef<MediaStream | null>(null);
   const casLostRef = useRef(false);
+  const elOutputWiredRef = useRef(false);
 
   // Keep currentCallIdRef in sync
   useEffect(() => {
@@ -84,12 +85,11 @@ const AutoAttendantEngine: React.FC = () => {
     canStartElevenLabsRef.current = false;
     elevenLabsStartedRef.current = false;
     pendingRemoteStreamRef.current = null;
-    // Note: casLostRef is NOT reset here — it's reset when a new call starts processing
+    elOutputWiredRef.current = false;
   }, []);
 
   const terminateCall = useCallback(async (reason: string) => {
     if (terminatingRef.current) return;
-    // If this instance lost the CAS race, never call terminate (would kill the winner's call)
     if (casLostRef.current) {
       console.log(`[AutoAttendantEngine] terminateCall(${reason}) blocked — casLostRef=true, this instance lost CAS`);
       return;
@@ -111,6 +111,46 @@ const AutoAttendantEngine: React.FC = () => {
     attendant.resetForNext();
     terminatingRef.current = false;
   }, [elevenLabs, cleanup, attendant, addLog]);
+
+  // ── Wire ElevenLabs output → Meta WebRTC sender ──
+  const wireElevenLabsOutputToMeta = useCallback(() => {
+    if (elOutputWiredRef.current) return;
+    const pc = pcRef.current;
+    const bridge = bridgeRef.current;
+    if (!pc || !bridge) {
+      addLog('wireELOutput: no pc or bridge yet');
+      return;
+    }
+
+    const agentStream = elevenLabs.getAgentOutputStream();
+    if (!agentStream) {
+      addLog('wireELOutput: no agent output stream yet');
+      return;
+    }
+
+    // Route agent output through AudioBridge → get track for Meta
+    const metaOutStream = bridge.setElevenLabsOutput(agentStream);
+    const agentTrack = metaOutStream.getAudioTracks()[0];
+    if (!agentTrack) {
+      addLog('wireELOutput: no audio track in meta output stream');
+      return;
+    }
+
+    // Replace the silent placeholder track on the WebRTC sender
+    const sender = pc.getSenders().find(s => s.track?.kind === 'audio' || (!s.track && true));
+    if (sender) {
+      sender.replaceTrack(agentTrack)
+        .then(() => {
+          elOutputWiredRef.current = true;
+          addLog('✅ ElevenLabs→Meta replaceTrack SUCCESS — caller will hear Iris');
+        })
+        .catch(err => {
+          addLog(`❌ ElevenLabs→Meta replaceTrack FAILED: ${err}`);
+        });
+    } else {
+      addLog('wireELOutput: no audio sender found on PeerConnection');
+    }
+  }, [elevenLabs, addLog]);
 
   // Activate on mount, unlock audio automatically
   useEffect(() => {
@@ -134,7 +174,6 @@ const AutoAttendantEngine: React.FC = () => {
       attendant.activate();
     };
 
-    // Try unlock on first user interaction if auto-unlock fails
     const handleInteraction = () => {
       if (!audioUnlocked) {
         unlockAndActivate();
@@ -156,7 +195,7 @@ const AutoAttendantEngine: React.FC = () => {
   // beforeunload + unmount cleanup
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (casLostRef.current) return; // Don't terminate if we lost CAS
+      if (casLostRef.current) return;
       const callId = currentCallIdRef.current;
       if (callId) {
         const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-call-terminate`;
@@ -170,7 +209,7 @@ const AutoAttendantEngine: React.FC = () => {
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      if (casLostRef.current) return; // Don't terminate if we lost CAS
+      if (casLostRef.current) return;
       const callId = currentCallIdRef.current;
       elevenLabs.endSession();
       cleanup();
@@ -181,13 +220,18 @@ const AutoAttendantEngine: React.FC = () => {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Watch ElevenLabs status — detect ended AND orphan connections
+  // Watch ElevenLabs status — wire output when connected, detect ended
   useEffect(() => {
+    if (elevenLabs.status === 'connected' && currentCallIdRef.current && !terminatingRef.current) {
+      // ElevenLabs just connected — wire output to Meta
+      addLog('ElevenLabs connected — wiring output to Meta');
+      // Small delay to let the output pipeline initialize
+      setTimeout(() => wireElevenLabsOutputToMeta(), 500);
+    }
     if (elevenLabs.status === 'ended' && currentCallIdRef.current && !terminatingRef.current) {
       addLog('ElevenLabs session ended — terminating Meta call');
       terminateCall('elevenlabs_ended');
     }
-    // Orphan detection: ElevenLabs connected but call already terminating/gone
     if (elevenLabs.status === 'connected' && (terminatingRef.current || !currentCallIdRef.current)) {
       addLog('Orphan ElevenLabs session detected (connected after cleanup) — forcing endSession');
       elevenLabs.endSession();
@@ -278,7 +322,6 @@ const AutoAttendantEngine: React.FC = () => {
     const call = attendant.currentCall;
     if (!call || !audioUnlocked) return;
 
-    // Guard: prevent duplicate processing of the same call (e.g. React StrictMode double-mount)
     if (processingCallRef.current === call.id) {
       addLog(`Already processing call ${call.id}, skipping duplicate`);
       return;
@@ -308,7 +351,6 @@ const AutoAttendantEngine: React.FC = () => {
           addLog('Got remote audio track from Meta');
           const { elevenLabsMicStream } = bridge.connect(event.streams[0]);
           levelIntervalRef.current = setInterval(() => {}, 200);
-          // Store stream but only start ElevenLabs if pre_accept was won
           pendingRemoteStreamRef.current = elevenLabsMicStream;
           if (canStartElevenLabsRef.current && !elevenLabsStartedRef.current) {
             elevenLabsStartedRef.current = true;
@@ -352,7 +394,6 @@ const AutoAttendantEngine: React.FC = () => {
         });
         if (preErr) throw preErr;
 
-        // Check if this instance lost the CAS race
         if (preData?.skipped) {
           addLog(`pre_accept skipped (another instance won CAS) — aborting locally without terminating`);
           casLostRef.current = true;
@@ -362,11 +403,9 @@ const AutoAttendantEngine: React.FC = () => {
           return;
         }
 
-        // This instance won the pre_accept CAS — enable ElevenLabs gate
         canStartElevenLabsRef.current = true;
         addLog('pre_accept claimed — ElevenLabs gate opened');
 
-        // If ontrack already fired and stored the stream, start ElevenLabs now
         if (pendingRemoteStreamRef.current && !elevenLabsStartedRef.current) {
           elevenLabsStartedRef.current = true;
           addLog('Remote stream was waiting — starting ElevenLabs now');
@@ -401,7 +440,6 @@ const AutoAttendantEngine: React.FC = () => {
           addLog(`Accept error: ${acceptErr.message} — non-fatal, continuing`);
         }
 
-        // Check if accept was skipped (another instance somehow got there)
         if (acceptData?.skipped) {
           addLog(`accept skipped (CAS lost) — aborting locally`);
           casLostRef.current = true;
