@@ -34,6 +34,8 @@ interface InsuranceStatus {
 
 interface GenerateMessageRequest {
   contact_name: string;
+  contact_name_original?: string; // nome original (pode estar em CAPS/completo)
+  contact_call_name?: string; // call_name original
   contact_company?: string;
   agent_name?: string;
   agent_specialty?: string;
@@ -46,8 +48,8 @@ interface GenerateMessageRequest {
   last_message_sent?: string;
   is_qualified?: boolean;
   detected_product?: DetectedProduct;
-  answered_qualifications?: AnsweredQualifications; // tópicos já respondidos
-  insurance_status?: InsuranceStatus; // status de seguro existente
+  answered_qualifications?: AnsweredQualifications;
+  insurance_status?: InsuranceStatus;
 }
 
 // Terms forbidden for unqualified leads (they imply a quote is ready when it's not)
@@ -173,6 +175,12 @@ Esta é uma tentativa CURTA e DIRETA:
 - Vá direto ao ponto: "{nome}, vocês já têm seguro hoje?"
 - NÃO ofereça ligação ainda, só faça a pergunta
 - Tom casual mas profissional
+
+⚠️ REGRA CRÍTICA: LEIA o contexto da conversa abaixo com ATENÇÃO.
+- Se o agente JÁ FEZ uma pergunta sobre algum assunto, NÃO repita essa mesma pergunta.
+- Se o agente já perguntou sobre seguro de carga/veículo/frota, NÃO pergunte de novo.
+- Avance para o PRÓXIMO tópico de qualificação que ainda NÃO foi abordado.
+
 Exemplos:
 - "{nome}, vocês já trabalham com alguma seguradora?"
 - "{nome}, qual tipo de seguro vocês mais precisam?"
@@ -753,22 +761,24 @@ function escapeRegex(str: string): string {
 }
 
 // Sanitizar nome completo / CAPS no texto final
-function sanitizeNameInOutput(text: string, originalName: string | null): string {
-  if (!text || !originalName) return text;
-  const normalized = normalizeContactName(originalName);
+function sanitizeNameInOutput(text: string, originalName: string | null, callName?: string | null): string {
+  if (!text) return text;
+  const normalized = normalizeContactName(originalName || callName || null);
   if (normalized === 'Cliente') return text;
   
   let result = text;
   
   // Substituir nome completo (qualquer caixa) pelo primeiro nome normalizado
-  if (originalName.trim().includes(' ')) {
-    result = result.replace(new RegExp(escapeRegex(originalName.trim()), 'gi'), normalized);
-  }
-  
-  // Substituir primeiro nome em CAPS pela versão Title Case
-  const rawFirst = originalName.trim().split(/\s+/)[0];
-  if (rawFirst && rawFirst.length > 2 && rawFirst === rawFirst.toUpperCase()) {
-    result = result.replace(new RegExp(`\\b${escapeRegex(rawFirst)}\\b`, 'g'), normalized);
+  const namesToCheck = [originalName, callName].filter(Boolean) as string[];
+  for (const name of namesToCheck) {
+    if (name.trim().includes(' ')) {
+      result = result.replace(new RegExp(escapeRegex(name.trim()), 'gi'), normalized);
+    }
+    // Substituir primeiro nome em CAPS pela versão Title Case
+    const rawFirst = name.trim().split(/\s+/)[0];
+    if (rawFirst && rawFirst.length > 2 && rawFirst === rawFirst.toUpperCase()) {
+      result = result.replace(new RegExp(`\\b${escapeRegex(rawFirst)}\\b`, 'g'), normalized);
+    }
   }
   
   return result;
@@ -870,10 +880,12 @@ serve(async (req) => {
     const body: GenerateMessageRequest = await req.json();
     const { 
       contact_name, 
+      contact_name_original,
+      contact_call_name,
       contact_company, 
       agent_name, 
       agent_specialty,
-      agent_slug, // Slug do agente para temas de anti-repetição
+      agent_slug,
       prompt_type, 
       hours_waiting,
       attempt_number,
@@ -883,7 +895,7 @@ serve(async (req) => {
       is_qualified = true,
       detected_product = null,
       answered_qualifications = null,
-      insurance_status = null // NOVO: status de seguro existente
+      insurance_status = null
     } = body;
     
     console.log(`[generate-followup-message] Agent slug: ${agent_slug || 'not specified (using iris default)'}`)
@@ -1171,7 +1183,7 @@ ${retryAlternatives.length > 0 ? `Use uma dessas alternativas: ${retryAlternativ
     generatedMessage = sanitizeMessageForUnqualifiedLead(generatedMessage, is_qualified, normalizedContactName, last_message_sent, detected_product, answered_qualifications || undefined, effectivePromptType);
 
     // Sanitizar nome completo/CAPS no texto final antes de retornar
-    generatedMessage = sanitizeNameInOutput(generatedMessage, contact_name);
+    generatedMessage = sanitizeNameInOutput(generatedMessage, contact_name_original || contact_name, contact_call_name);
 
     console.log(`[generate-followup-message] Generated: "${generatedMessage.substring(0, 50)}..."`);
 
