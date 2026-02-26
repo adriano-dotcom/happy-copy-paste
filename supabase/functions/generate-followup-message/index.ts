@@ -735,15 +735,43 @@ function filterUnansweredQuestions(
   });
 }
 
-// Normalizar nome para evitar MAIÚSCULAS (ex: "REINALDO" -> "Reinaldo")
+// Normalizar nome: extrair PRIMEIRO NOME em Title Case
 function normalizeContactName(name: string | null): string {
   if (!name) return 'Cliente';
   
-  // Se está todo em maiúsculas, converter para Title Case
-  if (name === name.toUpperCase() && name.length > 2) {
-    return name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  // Extrair somente primeiro nome
+  const firstName = name.trim().split(/\s+/)[0];
+  if (!firstName || firstName.length < 2) return 'Cliente';
+  
+  // Converter para Title Case
+  return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+}
+
+// Escape special regex characters
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Sanitizar nome completo / CAPS no texto final
+function sanitizeNameInOutput(text: string, originalName: string | null): string {
+  if (!text || !originalName) return text;
+  const normalized = normalizeContactName(originalName);
+  if (normalized === 'Cliente') return text;
+  
+  let result = text;
+  
+  // Substituir nome completo (qualquer caixa) pelo primeiro nome normalizado
+  if (originalName.trim().includes(' ')) {
+    result = result.replace(new RegExp(escapeRegex(originalName.trim()), 'gi'), normalized);
   }
-  return name;
+  
+  // Substituir primeiro nome em CAPS pela versão Title Case
+  const rawFirst = originalName.trim().split(/\s+/)[0];
+  if (rawFirst && rawFirst.length > 2 && rawFirst === rawFirst.toUpperCase()) {
+    result = result.replace(new RegExp(`\\b${escapeRegex(rawFirst)}\\b`, 'g'), normalized);
+  }
+  
+  return result;
 }
 
 // Get a fallback message that's different from the last one, using product-specific messages
@@ -922,6 +950,11 @@ ESTRATÉGIA DE VARIAÇÃO OBRIGATÓRIA:
 
     const systemPrompt = `Você é ${agent_name || 'um assistente de vendas'} ${agent_specialty ? `especializado em ${agent_specialty}` : ''}.
 Sua missão é gerar UMA mensagem de follow-up curta e natural para WhatsApp.
+
+⚠️ REGRA DE NOME (PRIORIDADE MÁXIMA):
+- O nome do cliente é EXATAMENTE: "${normalizedContactName}"
+- Use SOMENTE "${normalizedContactName}" — NUNCA nome completo, NUNCA em CAIXA ALTA
+- Se o nome original era "LEONARDO FELIPE RIBEIRO SANCHES", use apenas "Leonardo"
 
 REGRAS OBRIGATÓRIAS:
 1. Máximo 2-3 frases curtas
@@ -1137,6 +1170,9 @@ ${retryAlternatives.length > 0 ? `Use uma dessas alternativas: ${retryAlternativ
     // Sanitize message for unqualified leads - prevent forbidden terms
     generatedMessage = sanitizeMessageForUnqualifiedLead(generatedMessage, is_qualified, normalizedContactName, last_message_sent, detected_product, answered_qualifications || undefined, effectivePromptType);
 
+    // Sanitizar nome completo/CAPS no texto final antes de retornar
+    generatedMessage = sanitizeNameInOutput(generatedMessage, contact_name);
+
     console.log(`[generate-followup-message] Generated: "${generatedMessage.substring(0, 50)}..."`);
 
     return new Response(JSON.stringify({ 
@@ -1162,7 +1198,7 @@ ${retryAlternatives.length > 0 ? `Use uma dessas alternativas: ${retryAlternativ
       product = body.detected_product || null;
     } catch {}
     
-    const fallbackMessage = getVariedFallback(contactName, lastMessage, product);
+    const fallbackMessage = sanitizeNameInOutput(getVariedFallback(contactName, lastMessage, product), contactName);
     
     return new Response(JSON.stringify({ 
       message: fallbackMessage,
