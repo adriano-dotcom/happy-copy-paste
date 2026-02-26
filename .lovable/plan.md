@@ -1,48 +1,51 @@
 
-Objetivo: impedir que follow-ups saiam com nome completo e/ou em CAPS, sempre usando apenas primeiro nome em Title Case.
 
-1) Confirmar origem do problema no fluxo de follow-up
-- Validar no código que a mensagem vem de `process-followups` (fallback) e não do orquestrador principal.
-- Manter referência do caso real já identificado: mensagem padrão de fallback iniciando com `NOME COMPLETO, ...`.
+# Corrigir follow-up fora de contexto e nome em CAPS para prospecção
 
-2) Padronizar normalização de nome no `process-followups`
-- Atualizar `normalizeContactName()` para:
-  - usar `call_name || name`
-  - extrair somente primeiro nome
-  - retornar Title Case
-- Aplicar essa normalização em:
-  - `replaceVariables()`
-  - `getVariedFallback()`
-  - payload enviado para `generate-followup-message`
-  - fallback local quando IA falhar
-  - variáveis de template (`contact.name` e `contact.call_name`).
+## Problemas identificados na screenshot
 
-3) Blindar saída final antes de enfileirar envio
-- Adicionar helper de sanitização de nome em `process-followups` para o texto final (`messageContent`):
-  - substituir ocorrência de nome completo (qualquer caixa) pelo primeiro nome normalizado
-  - substituir primeiro nome em CAPS pela versão Title Case
-- Rodar essa sanitização imediatamente antes do insert na `send_queue`.
+1. **Mensagem fora de contexto**: O agente já perguntou "a empresa tem seguro dos veículos (frota) e seguro de carga (RCTR-C) hoje?" às 09:57. O follow-up às 13:00 pergunta "é pra proteger veículo, carga ou os dois?" — pergunta básica redundante que ignora o que já foi conversado.
 
-4) Padronizar normalização no `generate-followup-message`
-- Atualizar `normalizeContactName()` para primeiro nome + Title Case (mesmo padrão).
-- Reforçar regra no prompt para usar exatamente esse nome.
-- Sanitizar `generatedMessage` antes do retorno (mesma lógica de substituição de full name/CAPS).
+2. **Nome completo em CAPS**: "MARINA DE LOURDES GOMES" aparece no follow-up, apesar das correções anteriores.
 
-5) Melhorar fallback quando resposta da IA vier não-2xx
-- Em `generateAIMessage()` de `process-followups`, ao receber non-2xx:
-  - tentar ler `data.message` do body de erro (quando existir)
-  - usar esse texto sanitizado antes de cair no fallback local.
-- Isso reduz volume de mensagens genéricas e mantém consistência de nome.
+## Causa raiz
 
-6) Validação pós-implementação
-- Testar uma conversa com contato em CAPS e nome completo.
-- Forçar cenário de fallback (erro de geração) e validar que ainda sai só primeiro nome.
-- Conferir no banco (mensagens/followup_logs) que novas saídas não iniciam com `NOME COMPLETO,`.
-- Validar fim-a-fim no fluxo real de follow-up.
+**Contexto insuficiente**: A função `analyzeConversationHistory` (process-followups, linha 807-815) gera um `conversationContext` muito raso — apenas `Última resposta do cliente: "Sim"`. Não inclui as mensagens do agente, então a IA não sabe que a pergunta sobre tipos de seguro já foi feita.
 
-Detalhes técnicos
-- Arquivos:  
-  - `supabase/functions/process-followups/index.ts`  
-  - `supabase/functions/generate-followup-message/index.ts`
-- Sem alteração de schema, sem migração de banco.
-- Escopo: apenas lógica de geração/sanitização de texto de follow-up.
+**Prompt `direct_question` genérico**: Para prospecção attempt 1, usa-se `direct_question` que pede "UMA pergunta objetiva de qualificação" sem saber o que já foi perguntado. O fallback genérico inclui literalmente `"É pra proteger veículo, carga ou os dois?"`.
+
+**Sanitização parcial no `generate-followup-message`**: A função `sanitizeNameInOutput` recebe só `contact_name` (1 param), não recebe `call_name`. Além disso, o `process-followups` envia `contact_name` já normalizado via `normalizeContactName()`, então a sanitização no retorno não tem o nome original para comparar/substituir.
+
+## Solução
+
+### Arquivo: `supabase/functions/process-followups/index.ts`
+
+**Alteração 1 — Enriquecer `conversationContext` com últimas mensagens do agente**
+- Na função `analyzeConversationHistory` (linhas 806-815), incluir as últimas 2-3 mensagens do agente (não apenas do usuário) no contexto
+- Formato: incluir um resumo das mensagens recentes de ambos os lados para que a IA saiba o que já foi perguntado
+
+```
+conversationContext = `Últimas mensagens da conversa:\n` + 
+  messages.slice(0, 5).reverse().map(m => 
+    `${m.from_type === 'user' ? 'Cliente' : 'Agente'}: "${m.content?.substring(0,120)}"`
+  ).join('\n');
+```
+
+**Alteração 2 — Passar nome original (não normalizado) no payload para generate-followup-message**
+- Na chamada `generateAIMessage` (linha 462-463), além de enviar `contact_name` normalizado, enviar também `contact_name_original` e `contact_call_name` para que a sanitização no lado do `generate-followup-message` funcione corretamente
+
+### Arquivo: `supabase/functions/generate-followup-message/index.ts`
+
+**Alteração 1 — Receber e usar nome original para sanitização**
+- Aceitar `contact_name_original` e `contact_call_name` no request body
+- Atualizar `sanitizeNameInOutput` para usar o nome original (com CAPS/completo) como base de busca
+
+**Alteração 2 — Prompt `direct_question` deve usar o contexto da conversa**
+- Reforçar no prompt que a IA DEVE ler o contexto e NÃO repetir perguntas que o agente já fez
+- Adicionar instrução: "Se o agente já perguntou sobre tipos de seguro, NÃO pergunte de novo"
+
+### Detalhes técnicos
+- 2 arquivos backend: `process-followups/index.ts`, `generate-followup-message/index.ts`
+- Sem alteração de schema
+- Risco: baixo — enriquecimento de contexto e sanitização
+
