@@ -96,22 +96,51 @@ function getWindowMinutesRemaining(windowStart: string | null): number {
   return minutesRemaining;
 }
 
-// Normalizar nome para evitar MAIÚSCULAS (ex: "REINALDO" -> "Reinaldo")
-function normalizeContactName(name: string | null): string {
-  if (!name) return 'Cliente';
+// Normalizar nome: extrair PRIMEIRO NOME em Title Case
+function normalizeContactName(name: string | null, callName?: string | null): string {
+  const raw = callName || name;
+  if (!raw) return 'Cliente';
   
-  // Se está todo em maiúsculas, converter para Title Case
-  if (name === name.toUpperCase() && name.length > 2) {
-    return name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  // Extrair somente primeiro nome
+  const firstName = raw.trim().split(/\s+/)[0];
+  if (!firstName || firstName.length < 2) return 'Cliente';
+  
+  // Converter para Title Case
+  return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+}
+
+// Escape special regex characters
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Sanitizar nome completo / CAPS no texto final antes de enfileirar
+function sanitizeNameInOutput(text: string, fullName: string | null, callName: string | null): string {
+  if (!text) return text;
+  const normalized = normalizeContactName(fullName, callName);
+  if (normalized === 'Cliente') return text;
+  
+  let result = text;
+  
+  // Substituir nome completo (qualquer caixa) pelo primeiro nome normalizado
+  if (fullName && fullName.trim().includes(' ')) {
+    result = result.replace(new RegExp(escapeRegex(fullName.trim()), 'gi'), normalized);
   }
-  return name;
+  
+  // Substituir primeiro nome em CAPS pela versão Title Case
+  const rawFirst = (callName || fullName || '').trim().split(/\s+/)[0];
+  if (rawFirst && rawFirst.length > 2 && rawFirst === rawFirst.toUpperCase()) {
+    result = result.replace(new RegExp(`\\b${escapeRegex(rawFirst)}\\b`, 'g'), normalized);
+  }
+  
+  return result;
 }
 
 // Replace variables in message template
 // ANTI-REPETIÇÃO: Remove nome após 1ª tentativa para evitar repetição
 function replaceVariables(message: string, conv: EligibleConversation, attemptNumber: number = 1): string {
-  const name = normalizeContactName(conv.contact_name || conv.contact_call_name);
-  const callName = normalizeContactName(conv.contact_call_name || conv.contact_name);
+  const name = normalizeContactName(conv.contact_name, conv.contact_call_name);
+  const callName = normalizeContactName(conv.contact_call_name, conv.contact_name);
   const company = conv.contact_company || '';
   
   let result = message
@@ -301,7 +330,7 @@ function getVariedFallback(
   themesAsked?: FollowupThemesAsked,
   attemptNumber: number = 1
 ): { message: string; tema: string } {
-  const name = contactName || 'Cliente';
+  const name = normalizeContactName(contactName);
   
   // Se lead já tem seguro, usar mensagens específicas de renovação
   const productKey = hasExistingInsurance ? 'has_insurance' : (detectedProduct || 'generico');
@@ -431,7 +460,7 @@ async function generateAIMessage(
         'Authorization': `Bearer ${supabaseServiceKey}`,
       },
       body: JSON.stringify({
-        contact_name: conv.contact_name || conv.contact_call_name || 'Cliente',
+        contact_name: normalizeContactName(conv.contact_name, conv.contact_call_name),
         contact_company: conv.contact_company,
         agent_name: agentName,
         agent_specialty: agentSpecialty,
@@ -451,20 +480,28 @@ async function generateAIMessage(
 
     if (!response.ok) {
       console.error('[process-followups] AI message generation failed:', response.status);
-      const fallbackResult = getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasInsurance);
+      // Tentar ler data.message do body de erro (quando existir)
+      try {
+        const errData = await response.json();
+        if (errData?.message) {
+          console.log('[process-followups] Using message from error response body');
+          return sanitizeNameInOutput(errData.message, conv.contact_name, conv.contact_call_name);
+        }
+      } catch {}
+      const fallbackResult = getVariedFallback(normalizeContactName(conv.contact_name, conv.contact_call_name), lastMessageSent, detectedProduct, hasInsurance);
       return fallbackResult.message;
     }
 
     const data = await response.json();
     if (!data.message) {
-      const fallbackResult = getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasInsurance);
+      const fallbackResult = getVariedFallback(normalizeContactName(conv.contact_name, conv.contact_call_name), lastMessageSent, detectedProduct, hasInsurance);
       return fallbackResult.message;
     }
-    return data.message;
+    return sanitizeNameInOutput(data.message, conv.contact_name, conv.contact_call_name);
   } catch (error) {
     console.error('[process-followups] Error generating AI message:', error);
     const hasInsuranceErr = insuranceStatus?.has_vehicle_insurance || insuranceStatus?.has_cargo_insurance || false;
-    const fallbackResult = getVariedFallback(conv.contact_name || conv.contact_call_name || 'Cliente', lastMessageSent, detectedProduct, hasInsuranceErr);
+    const fallbackResult = getVariedFallback(normalizeContactName(conv.contact_name, conv.contact_call_name), lastMessageSent, detectedProduct, hasInsuranceErr);
     return fallbackResult.message;
   }
 }
@@ -1673,6 +1710,9 @@ serve(async (req) => {
               continue;
             }
             
+            // Sanitizar nome completo/CAPS no texto final
+            messageContent = sanitizeNameInOutput(messageContent, conv.contact_name, conv.contact_call_name);
+            
             console.log(`[process-followups] ✅ Sending message (attempt ${attemptNumber}) to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
             console.log(`[process-followups] 📝 Anti-repetition check PASSED - message is unique`);
 
@@ -2063,6 +2103,9 @@ async function processWindowExpiringAutomation(
       if (!messageContent.includes('jacometoseguros.com.br')) {
         messageContent = `${messageContent}\n\n${siteLink}`;
       }
+      
+      // Sanitizar nome completo/CAPS no texto final
+      messageContent = sanitizeNameInOutput(messageContent, conv.contact_name, conv.contact_call_name);
       
       console.log(`[process-followups] Sending window expiring message to ${conv.id}: "${messageContent.substring(0, 50)}..."`);
 
