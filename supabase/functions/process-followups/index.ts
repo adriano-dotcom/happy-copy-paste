@@ -461,6 +461,8 @@ async function generateAIMessage(
       },
       body: JSON.stringify({
         contact_name: normalizeContactName(conv.contact_name, conv.contact_call_name),
+        contact_name_original: conv.contact_name, // nome original para sanitização
+        contact_call_name: conv.contact_call_name, // call_name original para sanitização
         contact_company: conv.contact_company,
         agent_name: agentName,
         agent_specialty: agentSpecialty,
@@ -474,7 +476,7 @@ async function generateAIMessage(
         is_qualified: isQualified,
         detected_product: detectedProduct,
         answered_qualifications: answeredQualifications,
-        insurance_status: insuranceStatus, // NOVO: passar status de seguro
+        insurance_status: insuranceStatus,
       }),
     });
 
@@ -803,14 +805,19 @@ function analyzeConversationHistory(messages: Array<{ content: string | null; fr
     }
   }
   
-  // Build context summary
+  // Build context summary — incluir últimas mensagens de AMBOS os lados
   let conversationContext = '';
   if (!hasUserResponse && isLastFromNina) {
     conversationContext = `IMPORTANTE: Cliente NÃO respondeu nenhuma mensagem ainda. Última mensagem da Nina: "${lastNinaMessage?.substring(0, 100)}..."`;
-  } else if (hasUserResponse) {
-    const lastUserMessage = messages.find(m => m.from_type === 'user');
-    if (lastUserMessage?.content) {
-      conversationContext = `Última resposta do cliente: "${lastUserMessage.content.substring(0, 100)}"`;
+  } else {
+    // Incluir últimas 5 mensagens (agente + cliente) para contexto completo
+    const recentMessages = messages.slice(0, 5).reverse();
+    if (recentMessages.length > 0) {
+      conversationContext = `Últimas mensagens da conversa:\n` +
+        recentMessages.map(m => {
+          const role = m.from_type === 'user' ? 'Cliente' : 'Agente';
+          return `${role}: "${m.content?.substring(0, 120) || '(sem conteúdo)'}"`;
+        }).join('\n');
     }
   }
   
