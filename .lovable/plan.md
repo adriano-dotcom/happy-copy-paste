@@ -1,69 +1,48 @@
 
+Objetivo: impedir que follow-ups saiam com nome completo e/ou em CAPS, sempre usando apenas primeiro nome em Title Case.
 
-# Corrigir IA usando nome completo em CAIXA ALTA nas mensagens
+1) Confirmar origem do problema no fluxo de follow-up
+- Validar no código que a mensagem vem de `process-followups` (fallback) e não do orquestrador principal.
+- Manter referência do caso real já identificado: mensagem padrão de fallback iniciando com `NOME COMPLETO, ...`.
 
-## Problema identificado
-A screenshot mostra a IA (agente) enviando mensagens com o nome completo em CAIXA ALTA: "LEONARDO FELIPE RIBEIRO SANCHES, qual tipo de seguro você está buscando?". Apesar de já existir:
-- Função `normalizeContactName()` que extrai primeiro nome em Title Case
-- Regra no prompt proibindo nome completo e caixa alta
+2) Padronizar normalização de nome no `process-followups`
+- Atualizar `normalizeContactName()` para:
+  - usar `call_name || name`
+  - extrair somente primeiro nome
+  - retornar Title Case
+- Aplicar essa normalização em:
+  - `replaceVariables()`
+  - `getVariedFallback()`
+  - payload enviado para `generate-followup-message`
+  - fallback local quando IA falhar
+  - variáveis de template (`contact.name` e `contact.call_name`).
 
-O problema persiste porque:
-1. **O histórico de conversa (`conversationHistory`)** é enviado ao modelo AI com as mensagens anteriores que já contêm o nome completo em CAPS
-2. O AI vê o padrão nos próprios exemplos anteriores e repete
-3. A regra no prompt não é suficiente para sobrescrever o padrão visual do histórico
+3) Blindar saída final antes de enfileirar envio
+- Adicionar helper de sanitização de nome em `process-followups` para o texto final (`messageContent`):
+  - substituir ocorrência de nome completo (qualquer caixa) pelo primeiro nome normalizado
+  - substituir primeiro nome em CAPS pela versão Title Case
+- Rodar essa sanitização imediatamente antes do insert na `send_queue`.
 
-## Solução: Sanitizar histórico + reforçar prompt
+4) Padronizar normalização no `generate-followup-message`
+- Atualizar `normalizeContactName()` para primeiro nome + Title Case (mesmo padrão).
+- Reforçar regra no prompt para usar exatamente esse nome.
+- Sanitizar `generatedMessage` antes do retorno (mesma lógica de substituição de full name/CAPS).
 
-### Arquivo: `supabase/functions/nina-orchestrator/index.ts`
+5) Melhorar fallback quando resposta da IA vier não-2xx
+- Em `generateAIMessage()` de `process-followups`, ao receber non-2xx:
+  - tentar ler `data.message` do body de erro (quando existir)
+  - usar esse texto sanitizado antes de cair no fallback local.
+- Isso reduz volume de mensagens genéricas e mantém consistência de nome.
 
-**Alteração 1 — Sanitizar conversationHistory (linhas ~5613-5619)**
-- Ao construir o `conversationHistory`, substituir ocorrências do nome completo (ex: "LEONARDO FELIPE RIBEIRO SANCHES") pelo primeiro nome normalizado (ex: "Leonardo") nas mensagens do tipo `assistant`
-- Criar função `sanitizeNameInHistory(content, contact)` que:
-  - Obtém o nome completo do contato (`contact.name`)
-  - Calcula o primeiro nome normalizado via `normalizeContactName()`
-  - Faz `content.replace(nomeCompleto, primeiroNome)` (case-insensitive)
-  - Também substitui variações em CAIXA ALTA do primeiro nome (ex: "LEONARDO" → "Leonardo")
+6) Validação pós-implementação
+- Testar uma conversa com contato em CAPS e nome completo.
+- Forçar cenário de fallback (erro de geração) e validar que ainda sai só primeiro nome.
+- Conferir no banco (mensagens/followup_logs) que novas saídas não iniciam com `NOME COMPLETO,`.
+- Validar fim-a-fim no fluxo real de follow-up.
 
-**Alteração 2 — Reforçar prompt (linhas ~7857-7861)**
-- Adicionar ao bloco de regras do nome:
-  - `- O nome do lead é: ${normalizeContactName(contact.name)}. Use EXATAMENTE este nome, sem variações.`
-  - Mover a regra de nome para ANTES das outras regras (posição mais proeminente no prompt)
-
-### Detalhes técnicos
-
-```typescript
-// Nova função helper
-function sanitizeNameInHistory(content: string, contact: any): string {
-  if (!content || !contact?.name) return content;
-  const fullName = contact.name.trim();
-  const normalized = normalizeContactName(contact.name);
-  if (fullName === normalized) return content;
-  
-  // Replace full name (case-insensitive)
-  let sanitized = content.replace(new RegExp(escapeRegex(fullName), 'gi'), normalized);
-  
-  // Replace CAPS first name (ex: "LEONARDO" → "Leonardo")
-  const firstName = fullName.split(/\s+/)[0];
-  if (firstName && firstName === firstName.toUpperCase() && firstName.length > 2) {
-    sanitized = sanitized.replace(new RegExp(`\\b${escapeRegex(firstName)}\\b`, 'g'), normalized);
-  }
-  
-  return sanitized;
-}
-```
-
-Aplicada ao build do `conversationHistory`:
-```typescript
-const conversationHistory = (recentMessages || [])
-  .reverse()
-  .map((msg: any) => ({
-    role: msg.from_type === 'user' ? 'user' : 'assistant',
-    content: sanitizeNameInHistory(msg.content || '[media]', conversation.contact)
-  }));
-```
-
-### Escopo
-- 1 arquivo backend alterado: `nina-orchestrator/index.ts`
-- Sem mudanças de schema ou frontend
-- Risco: baixo — apenas sanitização textual no histórico enviado ao modelo
-
+Detalhes técnicos
+- Arquivos:  
+  - `supabase/functions/process-followups/index.ts`  
+  - `supabase/functions/generate-followup-message/index.ts`
+- Sem alteração de schema, sem migração de banco.
+- Escopo: apenas lógica de geração/sanitização de texto de follow-up.
