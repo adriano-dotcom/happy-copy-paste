@@ -223,12 +223,27 @@ serve(async (req) => {
           // Get contact details
           const { data: contact } = await supabase
             .from('contacts')
-            .select('phone_number, name, whatsapp_id')
+            .select('phone_number, name, whatsapp_id, is_blocked, blocked_reason')
             .eq('id', campaignContact.contact_id)
             .single();
 
           if (!contact) {
             throw new Error('Contact not found');
+          }
+
+          // Skip blocked contacts (no WhatsApp on number)
+          if (contact.is_blocked) {
+            console.log(`[Campaign] Skipping blocked contact ${campaignContact.contact_id}: ${contact.blocked_reason}`);
+            await supabase
+              .from('campaign_contacts')
+              .update({ status: 'skipped', error_message: contact.blocked_reason || 'contact_blocked' })
+              .eq('id', campaignContact.id);
+            await supabase.rpc('update_campaign_counters', {
+              p_campaign_id: campaign.id,
+              p_skipped: 1
+            });
+            totalProcessed++;
+            continue;
           }
 
           const phoneNumber = contact.phone_number.replace(/\D/g, '');
