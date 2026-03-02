@@ -1,51 +1,48 @@
 
 
-# Corrigir follow-up fora de contexto e nome em CAPS para prospecção
+# Corrigir mensagens de prospecção cortadas (truncadas pelo modelo AI)
 
-## Problemas identificados na screenshot
-
-1. **Mensagem fora de contexto**: O agente já perguntou "a empresa tem seguro dos veículos (frota) e seguro de carga (RCTR-C) hoje?" às 09:57. O follow-up às 13:00 pergunta "é pra proteger veículo, carga ou os dois?" — pergunta básica redundante que ignora o que já foi conversado.
-
-2. **Nome completo em CAPS**: "MARINA DE LOURDES GOMES" aparece no follow-up, apesar das correções anteriores.
+## Problema
+A mensagem do Atlas foi cortada no meio da palavra: "...a empresa tem seguro dos veículos (fro" — armazenada no banco com apenas 80 caracteres. O modelo `google/gemini-3-pro-preview` retornou uma resposta truncada (total 181 chars, muito abaixo do `max_tokens=1000`). O `breakMessageIntoChunks` dividiu corretamente em 2 chunks, mas o chunk 2 já veio cortado do modelo.
 
 ## Causa raiz
-
-**Contexto insuficiente**: A função `analyzeConversationHistory` (process-followups, linha 807-815) gera um `conversationContext` muito raso — apenas `Última resposta do cliente: "Sim"`. Não inclui as mensagens do agente, então a IA não sabe que a pergunta sobre tipos de seguro já foi feita.
-
-**Prompt `direct_question` genérico**: Para prospecção attempt 1, usa-se `direct_question` que pede "UMA pergunta objetiva de qualificação" sem saber o que já foi perguntado. O fallback genérico inclui literalmente `"É pra proteger veículo, carga ou os dois?"`.
-
-**Sanitização parcial no `generate-followup-message`**: A função `sanitizeNameInOutput` recebe só `contact_name` (1 param), não recebe `call_name`. Além disso, o `process-followups` envia `contact_name` já normalizado via `normalizeContactName()`, então a sanitização no retorno não tem o nome original para comparar/substituir.
+O modelo `google/gemini-3-pro-preview` (preview) está retornando respostas incompletas esporadicamente — o `finish_reason` provavelmente é `stop` mas o conteúdo termina no meio de uma palavra.
 
 ## Solução
 
-### Arquivo: `supabase/functions/process-followups/index.ts`
+### Arquivo: `supabase/functions/nina-orchestrator/index.ts`
 
-**Alteração 1 — Enriquecer `conversationContext` com últimas mensagens do agente**
-- Na função `analyzeConversationHistory` (linhas 806-815), incluir as últimas 2-3 mensagens do agente (não apenas do usuário) no contexto
-- Formato: incluir um resumo das mensagens recentes de ambos os lados para que a IA saiba o que já foi perguntado
+**Alteração 1 — Detectar resposta truncada e fazer retry**
+- Após receber `aiContent` do modelo (linhas ~7090-7100), adicionar validação:
+  - Se a resposta termina sem pontuação final (`.`, `!`, `?`, `)`, `"`) e tem menos de 200 chars → considerar truncada
+  - Log warning e retry com modelo estável (`google/gemini-2.5-flash`)
+  - Se retry também truncar, usar fallback hardcoded de prospecção
 
-```
-conversationContext = `Últimas mensagens da conversa:\n` + 
-  messages.slice(0, 5).reverse().map(m => 
-    `${m.from_type === 'user' ? 'Cliente' : 'Agente'}: "${m.content?.substring(0,120)}"`
-  ).join('\n');
-```
-
-**Alteração 2 — Passar nome original (não normalizado) no payload para generate-followup-message**
-- Na chamada `generateAIMessage` (linha 462-463), além de enviar `contact_name` normalizado, enviar também `contact_name_original` e `contact_call_name` para que a sanitização no lado do `generate-followup-message` funcione corretamente
-
-### Arquivo: `supabase/functions/generate-followup-message/index.ts`
-
-**Alteração 1 — Receber e usar nome original para sanitização**
-- Aceitar `contact_name_original` e `contact_call_name` no request body
-- Atualizar `sanitizeNameInOutput` para usar o nome original (com CAPS/completo) como base de busca
-
-**Alteração 2 — Prompt `direct_question` deve usar o contexto da conversa**
-- Reforçar no prompt que a IA DEVE ler o contexto e NÃO repetir perguntas que o agente já fez
-- Adicionar instrução: "Se o agente já perguntou sobre tipos de seguro, NÃO pergunte de novo"
+**Alteração 2 — Validar cada chunk antes de enfileirar**
+- Na função `queueTextResponse`, antes de inserir cada chunk na `send_queue`:
+  - Se o chunk termina no meio de uma palavra (sem pontuação, última palavra cortada), não enviar esse chunk isolado
+  - Se o chunk está truncado E é o último chunk, concatenar com o anterior ou descartar
 
 ### Detalhes técnicos
-- 2 arquivos backend: `process-followups/index.ts`, `generate-followup-message/index.ts`
+
+```typescript
+// Após receber aiContent (linha ~7091):
+if (aiContent) {
+  const trimmed = aiContent.trim();
+  const lastChar = trimmed[trimmed.length - 1];
+  const endsWithPunctuation = /[.!?)"'\]]$/.test(trimmed);
+  const endsAbruptly = !endsWithPunctuation && trimmed.length > 20;
+  
+  if (endsAbruptly) {
+    console.warn(`[Nina] ⚠️ AI response appears TRUNCATED: ends with "${trimmed.slice(-20)}" (no punctuation)`);
+    // Retry with stable model
+    const retryResponse = await fetch(LOVABLE_AI_URL, { ... model: 'google/gemini-2.5-flash' });
+    // Use retry if valid, else fallback
+  }
+}
+```
+
+- 1 arquivo: `nina-orchestrator/index.ts`
 - Sem alteração de schema
-- Risco: baixo — enriquecimento de contexto e sanitização
+- Risco: baixo — apenas adiciona validação pós-resposta da IA
 
