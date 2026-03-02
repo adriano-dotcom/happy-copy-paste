@@ -7198,6 +7198,77 @@ MÍNIMO 2 PARÁGRAFOS. PROIBIDO resposta menor que 50 caracteres.`;
       }
     }
     // ===== END PROSPECTING RESPONSE MINIMUM LENGTH VALIDATION =====
+
+    // ===== TRUNCATED RESPONSE DETECTION =====
+    // Detect if AI response was cut mid-word (common with preview models)
+    if (aiContent) {
+      const trimmedContent = aiContent.trim();
+      const endsWithPunctuation = /[.!?)"'\]…]$/.test(trimmedContent);
+      const endsAbruptly = !endsWithPunctuation && trimmedContent.length > 20;
+      
+      if (endsAbruptly) {
+        console.warn(`[Nina] ⚠️ AI response appears TRUNCATED (${trimmedContent.length} chars): ends with "...${trimmedContent.slice(-30)}"`);
+        console.warn(`[Nina] 🔄 Retrying with stable model google/gemini-2.5-flash...`);
+        
+        try {
+          const retryTruncResponse = await fetch(LOVABLE_AI_URL, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${lovableApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'google/gemini-2.5-flash',
+              messages: [
+                { role: 'system', content: processedPrompt },
+                ...conversationHistory
+              ],
+              temperature: aiSettings.temperature || 0.8,
+              max_tokens: 1500
+            })
+          });
+          
+          if (retryTruncResponse.ok) {
+            const retryTruncData = await retryTruncResponse.json();
+            const retryTruncContent = retryTruncData.choices?.[0]?.message?.content;
+            
+            if (retryTruncContent) {
+              const retryTrimmed = retryTruncContent.trim();
+              const retryEndsOk = /[.!?)"'\]…]$/.test(retryTrimmed);
+              
+              if (retryEndsOk || retryTrimmed.length > trimmedContent.length) {
+                console.log(`[Nina] ✅ Truncation retry successful (${retryTrimmed.length} chars, ends properly: ${retryEndsOk})`);
+                aiContent = retryTruncContent;
+              } else {
+                console.warn(`[Nina] ⚠️ Retry also truncated, using fallback`);
+              }
+            }
+          } else {
+            console.error(`[Nina] ❌ Truncation retry failed: ${retryTruncResponse.status}`);
+          }
+        } catch (retryErr) {
+          console.error('[Nina] ❌ Truncation retry error:', retryErr);
+        }
+        
+        // Final check: if still truncated after retry, use contextual fallback for prospecting
+        const finalTrimmed = aiContent.trim();
+        const stillTruncated = !/[.!?)"'\]…]$/.test(finalTrimmed) && finalTrimmed.length > 20;
+        
+        if (stillTruncated && conversationMetadata?.origin === 'prospeccao') {
+          console.warn('[Nina] ⚠️ Still truncated after retry, using hardcoded prospecting fallback');
+          const contactName = normalizeContactName(conversation.contact?.call_name || conversation.contact?.name);
+          const fallbacks = [
+            `${contactName !== 'Cliente' ? contactName + ', a' : 'A'} empresa tem seguro dos veículos (frota) e seguro de carga (RCTR-C) hoje? São duas proteções diferentes e essenciais para transportadoras.`,
+            `${contactName !== 'Cliente' ? contactName + ', q' : 'Q'}uantos veículos tem na frota? Dependendo do tamanho, consigo condições especiais para a operação.`,
+            `${contactName !== 'Cliente' ? contactName + ', v' : 'V'}ocês já tiveram algum sinistro com a frota ou carga recentemente? Isso me ajuda a entender melhor a necessidade.`
+          ];
+          const hash = conversation.id.charCodeAt(0) % fallbacks.length;
+          aiContent = fallbacks[hash];
+          console.log(`[Nina] Using prospecting fallback #${hash}`);
+        }
+      }
+    }
+    // ===== END TRUNCATED RESPONSE DETECTION =====
     
     // If still no content, use CONTEXTUAL fallback message instead of generic error
     if (!aiContent) {
@@ -7450,9 +7521,36 @@ async function queueTextResponse(
   }
   // ===== END DUPLICATE MESSAGE CHECK =====
 
-  const messageChunks = settings?.message_breaking_enabled 
+  let messageChunks = settings?.message_breaking_enabled 
     ? breakMessageIntoChunks(aiContent)
     : [aiContent];
+
+  // ===== CHUNK TRUNCATION VALIDATION =====
+  // Validate that the last chunk is not truncated (cut mid-word)
+  if (messageChunks.length > 1) {
+    const lastChunk = messageChunks[messageChunks.length - 1].trim();
+    const lastChunkEndsOk = /[.!?)"'\]…]$/.test(lastChunk);
+    
+    if (!lastChunkEndsOk && lastChunk.length > 10) {
+      console.warn(`[Nina] ⚠️ Last chunk appears truncated: "...${lastChunk.slice(-30)}"`);
+      
+      // Merge last chunk into previous one if it's short, or discard if it looks incomplete
+      if (lastChunk.length < 40) {
+        // Short truncated chunk - merge with previous
+        messageChunks[messageChunks.length - 2] += '\n' + lastChunk;
+        messageChunks.pop();
+        console.log('[Nina] Merged truncated last chunk into previous');
+      } else {
+        // Longer but still truncated - try to trim to last complete sentence
+        const lastSentenceEnd = lastChunk.search(/[.!?]\s*(?=[A-ZÀ-Ú]|$)/);
+        if (lastSentenceEnd > 10) {
+          messageChunks[messageChunks.length - 1] = lastChunk.substring(0, lastSentenceEnd + 1);
+          console.log(`[Nina] Trimmed truncated last chunk to ${lastSentenceEnd + 1} chars`);
+        }
+      }
+    }
+  }
+  // ===== END CHUNK TRUNCATION VALIDATION =====
 
   console.log(`[Nina] Sending ${messageChunks.length} text message chunk(s)`);
 
