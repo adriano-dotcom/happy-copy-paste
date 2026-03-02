@@ -595,7 +595,7 @@ async function processStatusUpdates(supabase: any, statuses: any[]) {
             const errorDetails = status.errors[0]?.error_data?.details;
             
             // Handle critical error 131042 (Payment Issue)
-            if (errorCode === 131042) {
+            if (Number(errorCode) === 131042) {
               await handleCriticalPaymentError(supabase, {
                 code: errorCode,
                 title: errorTitle,
@@ -605,7 +605,7 @@ async function processStatusUpdates(supabase: any, statuses: any[]) {
             }
             
             // Handle error 131026 (Message undeliverable — no WhatsApp)
-            if (errorCode === 131026) {
+            if (Number(errorCode) === 131026) {
               console.log(`[Webhook] Error 131026 for message ${status.id} — blocking contact`);
               // Find the contact via the message's conversation
               const { data: msg } = await supabase
