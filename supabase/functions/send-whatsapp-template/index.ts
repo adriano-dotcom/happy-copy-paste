@@ -216,7 +216,7 @@ serve(async (req) => {
       
       // Auto-block contact on error 131026 (number has no WhatsApp)
       const errorCode = waData.error?.code;
-      if (errorCode === 131026) {
+      if (Number(errorCode) === 131026) {
         console.log(`[SendTemplate] Error 131026 — marking contact ${contact_id} as blocked`);
         await supabase
           .from('contacts')
