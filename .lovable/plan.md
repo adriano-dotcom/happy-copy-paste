@@ -1,34 +1,45 @@
 
 
-# Analise do envio WhatsApp
+# Analise do envio WhatsApp via Meta API
 
-## Status: Envio funcionando corretamente
+## Status atual
 
-O mecanismo de envio está operacional. As mensagens que passam pelo pipeline (send_queue → whatsapp-sender → API WhatsApp) são entregues com sucesso. Exemplo: conversa do Athos recebeu texto + botões interativos, ambos com status "delivered".
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
 
-## Problema real: Erro 131026 em massa
+## Causa raiz do auto-blocking não funcionar
 
-Todas as falhas são erro **131026 (Message undeliverable)** — o número do destinatário não tem WhatsApp. Isso é um problema de **qualidade da base de contatos**, não de código.
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
 
-Contatos afetados nas últimas horas: ROCHA TRANSPORTES, CHOFER TRANSPORTES, FOFAO TRANSPORTES, REFRIGERACAO VALENTE, entre outros.
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
-## Melhoria sugerida: Validação pré-envio e skip automático
+## Solução
 
-### Arquivo: `supabase/functions/send-whatsapp-template/index.ts`
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
 
-1. **Registrar erro 131026 no contato** — Quando o template falha com 131026, marcar o contato com `is_blocked: true` e `blocked_reason: 'whatsapp_not_found_131026'` para evitar reenvios futuros
-2. **Skip de contatos bloqueados** — Antes de enviar template de prospecção, verificar se `is_blocked = true` e pular
+### 2. Corrigir comparação de tipo no webhook (segurança)
 
-### Arquivo: `supabase/functions/process-campaign/index.ts` (se aplicável ao fluxo de prospecção em lote)
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
 
-3. **Filtrar contatos sem WhatsApp** — Na query de seleção de contatos para campanha, excluir `is_blocked = true`
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
 
-### Arquivo: `supabase/functions/whatsapp-webhook/index.ts`
+Mesmo tratamento para `errorCode === 131042`.
 
-4. **Capturar 131026 no webhook de status** — Ao receber status "failed" com código 131026, marcar automaticamente o contato como bloqueado
+### 3. Corrigir comparação no send-whatsapp-template
+
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
 
 ### Detalhes técnicos
-- 2-3 arquivos backend
-- Sem migração de banco (campo `is_blocked` já existe na tabela contacts)
-- Risco: baixo — apenas adiciona validação e marcação automática
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 
