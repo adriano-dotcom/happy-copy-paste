@@ -604,6 +604,36 @@ async function processStatusUpdates(supabase: any, statuses: any[]) {
               });
             }
             
+            // Handle error 131026 (Message undeliverable — no WhatsApp)
+            if (errorCode === 131026) {
+              console.log(`[Webhook] Error 131026 for message ${status.id} — blocking contact`);
+              // Find the contact via the message's conversation
+              const { data: msg } = await supabase
+                .from('messages')
+                .select('conversation_id')
+                .eq('whatsapp_message_id', status.id)
+                .maybeSingle();
+              if (msg?.conversation_id) {
+                const { data: conv } = await supabase
+                  .from('conversations')
+                  .select('contact_id')
+                  .eq('id', msg.conversation_id)
+                  .maybeSingle();
+                if (conv?.contact_id) {
+                  await supabase
+                    .from('contacts')
+                    .update({
+                      is_blocked: true,
+                      blocked_reason: 'whatsapp_not_found_131026',
+                      blocked_at: new Date().toISOString()
+                    })
+                    .eq('id', conv.contact_id)
+                    .eq('is_blocked', false);
+                  console.log(`[Webhook] Contact ${conv.contact_id} blocked (131026)`);
+                }
+              }
+            }
+            
             const { data: existingMsg } = await supabase
               .from('messages')
               .select('metadata')

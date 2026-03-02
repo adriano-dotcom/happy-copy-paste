@@ -75,15 +75,24 @@ serve(async (req) => {
       throw new Error('WhatsApp não configurado');
     }
 
-    // Get contact phone number
+    // Get contact phone number and blocked status
     const { data: contact, error: contactError } = await supabase
       .from('contacts')
-      .select('phone_number, name')
+      .select('phone_number, name, is_blocked, blocked_reason')
       .eq('id', contact_id)
       .single();
 
     if (contactError || !contact) {
       throw new Error('Contact not found');
+    }
+
+    // Skip blocked contacts (e.g. no WhatsApp on number)
+    if (contact.is_blocked) {
+      console.log(`[SendTemplate] Skipping blocked contact ${contact_id}: ${contact.blocked_reason}`);
+      return new Response(
+        JSON.stringify({ success: false, skipped: true, reason: contact.blocked_reason || 'contact_blocked' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Compute normalized first name for this contact
@@ -204,6 +213,21 @@ serve(async (req) => {
 
     if (!waResponse.ok) {
       console.error('WhatsApp API error:', waData);
+      
+      // Auto-block contact on error 131026 (number has no WhatsApp)
+      const errorCode = waData.error?.code;
+      if (errorCode === 131026) {
+        console.log(`[SendTemplate] Error 131026 — marking contact ${contact_id} as blocked`);
+        await supabase
+          .from('contacts')
+          .update({
+            is_blocked: true,
+            blocked_reason: 'whatsapp_not_found_131026',
+            blocked_at: new Date().toISOString()
+          })
+          .eq('id', contact_id);
+      }
+      
       throw new Error(waData.error?.message || 'Failed to send template');
     }
 
