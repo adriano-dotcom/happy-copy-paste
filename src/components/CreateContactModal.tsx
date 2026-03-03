@@ -417,7 +417,7 @@ const CreateContactModal: React.FC<CreateContactModalProps> = ({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="phone" className="text-slate-300">
-                  Telefone <span className="text-red-400">*</span>
+                  WhatsApp <span className="text-red-400">*</span>
                 </Label>
                 <div className="relative">
                   <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 z-10" />

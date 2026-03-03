@@ -57,7 +57,7 @@ const MAX_IMPORT_ROWS = 5000;
 const REQUIRED_FIELDS = ['name', 'phone'];
 const FIELD_LABELS: Record<string, string> = {
   name: 'Nome',
-  phone: 'Telefone',
+  phone: 'WhatsApp',
   email: 'Email',
   company: 'Empresa',
   cnpj: 'CNPJ',
@@ -234,7 +234,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
       parsedHeaders.forEach(header => {
         const lowerHeader = header.toLowerCase();
         if (lowerHeader.includes('nome') || lowerHeader === 'name') autoMapping.name = header;
-        if (lowerHeader.includes('telefone') || lowerHeader.includes('phone') || lowerHeader.includes('celular')) autoMapping.phone = header;
+        if (lowerHeader.includes('telefone') || lowerHeader.includes('phone') || lowerHeader.includes('celular') || lowerHeader.includes('whatsapp')) autoMapping.phone = header;
         if (lowerHeader.includes('email') || lowerHeader.includes('e-mail')) autoMapping.email = header;
         if (lowerHeader.includes('empresa') || lowerHeader.includes('company')) autoMapping.company = header;
         if (lowerHeader.includes('cnpj')) autoMapping.cnpj = header;
@@ -246,13 +246,9 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
     reader.readAsText(selectedFile);
   };
 
-  // Normalize phone number to international format (55...)
+  // Return phone as-is (raw from CSV), only trim whitespace
   const normalizePhone = (phone: string | undefined): string => {
-    let normalized = phone?.replace(/\D/g, '') || '';
-    if (normalized && !normalized.startsWith('55')) {
-      normalized = '55' + normalized;
-    }
-    return normalized;
+    return phone?.trim() || '';
   };
 
   // Check which phone numbers already exist in the database
@@ -302,13 +298,11 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
         errors.push('Nome inválido');
       }
 
-      // Check phone - aceita 10-11 dígitos (sem país) ou 12-13 dígitos (com 55)
-      const rawPhone = row[mapping.phone]?.replace(/\D/g, '');
-      const isValidLength = rawPhone && rawPhone.length >= 10 && rawPhone.length <= 13;
-      const hasValidCountryCode = rawPhone && rawPhone.length >= 12 ? rawPhone.startsWith('55') : true;
+      // Check phone - apenas verifica se tem conteúdo (salva exatamente como no arquivo)
+      const rawPhone = row[mapping.phone]?.trim();
       
-      if (!rawPhone || !isValidLength || !hasValidCountryCode) {
-        errors.push('Telefone inválido (use formato: 11999999999 ou 5511999999999)');
+      if (!rawPhone || rawPhone.length < 8) {
+        errors.push('WhatsApp inválido (número muito curto)');
       } else {
         // Normalize and check for duplicates
         const normalizedPhone = normalizePhone(rawPhone);
@@ -358,7 +352,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
 
   const handleProceedToPreview = async () => {
     if (!mapping.name || !mapping.phone) {
-      toast.error('Mapeie os campos obrigatórios (Nome e Telefone)');
+      toast.error('Mapeie os campos obrigatórios (Nome e WhatsApp)');
       return;
     }
 
@@ -368,7 +362,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
       // Normalize all phones from CSV
       const phonesToCheck = rows
         .map(row => normalizePhone(row[mapping.phone]))
-        .filter(phone => phone.length >= 12); // Only valid format phones
+        .filter(phone => phone.length >= 8);
 
       // Check which phones already exist in database
       const existingPhones = await checkExistingPhones(phonesToCheck);
@@ -405,15 +399,12 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
     const selectedCampaign = campaigns.find(c => c.id === selectedCampaignId);
 
     for (const batch of batches) {
-      const contacts = batch.map(row => {
-        // Normalizar telefone para formato internacional (55...)
-        let phoneNumber = row[mapping.phone]?.replace(/\D/g, '') || '';
-        if (phoneNumber && !phoneNumber.startsWith('55')) {
-          phoneNumber = '55' + phoneNumber;
-        }
+    const contacts = batch.map(row => {
+        // Salvar telefone exatamente como está no arquivo
+        const phoneNumber = row[mapping.phone]?.trim() || '';
         
-        // Extrair cidade/estado do DDD
-        const region = getRegionFromPhone(phoneNumber);
+        // Extrair cidade/estado do DDD (tenta com dígitos apenas)
+        const region = getRegionFromPhone(phoneNumber.replace(/\D/g, ''));
         
         return {
           name: row[mapping.name]?.trim(),
@@ -713,7 +704,7 @@ const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                     <thead className="bg-slate-800/50">
                       <tr>
                         <th className="px-3 py-2 text-left text-slate-400">Nome</th>
-                        <th className="px-3 py-2 text-left text-slate-400">Telefone</th>
+                        <th className="px-3 py-2 text-left text-slate-400">WhatsApp</th>
                         <th className="px-3 py-2 text-left text-slate-400">Email</th>
                       </tr>
                     </thead>

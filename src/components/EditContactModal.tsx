@@ -304,7 +304,7 @@ const EditContactModal: React.FC<EditContactModalProps> = ({ open, onOpenChange,
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-slate-300">Telefone</Label>
+                  <Label className="text-slate-300">WhatsApp</Label>
                   <PhoneInput
                     value={formData.phone}
                     onChange={(value) => setFormData(prev => ({ ...prev, phone: value }))}
