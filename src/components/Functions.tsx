@@ -423,7 +423,7 @@ const Functions: React.FC = () => {
             {/* Form */}
             <div className="p-6 space-y-4">
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Telefone</label>
+                <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">WhatsApp</label>
                 <input 
                   type="text" 
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-white focus:ring-1 focus:ring-emerald-500 outline-none placeholder:text-slate-600"

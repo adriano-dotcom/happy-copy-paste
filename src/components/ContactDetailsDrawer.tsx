@@ -299,7 +299,7 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
                   <Phone className="w-4 h-4 text-slate-400 group-hover:text-cyan-400 transition-colors" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <span className="text-xs text-slate-500 block">Telefone</span>
+                  <span className="text-xs text-slate-500 block">WhatsApp</span>
                   <p className="font-medium text-slate-200">{displayPhoneInternational(contact.phone)}</p>
                 </div>
                 {contact.phone && (
