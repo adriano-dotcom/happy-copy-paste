@@ -281,7 +281,7 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
         }
 
         // Send template with proper header and body variables
-        const { error } = await supabase.functions.invoke('send-whatsapp-template', {
+        const { data, error } = await supabase.functions.invoke('send-whatsapp-template', {
           body: {
             contact_id: contact.id,
             conversation_id: conversationId,
@@ -294,6 +294,9 @@ export const BulkSendTemplateModal: React.FC<BulkSendTemplateModalProps> = ({
         });
 
         if (error) throw error;
+        if (data && !data.success) {
+          throw new Error(data.error || 'Erro ao enviar template');
+        }
         
         successCount++;
         setProgress(prev => ({ ...prev, current: prev.current + 1, success: prev.success + 1 }));
