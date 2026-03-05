@@ -672,11 +672,8 @@ const Contacts: React.FC = () => {
             <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-800 font-medium text-xs uppercase tracking-wider">
               <tr>
                 {/* Checkbox Master */}
-                <th className="px-4 py-4 w-12">
-                  <button 
-                    onClick={toggleAllContacts}
-                    className="flex items-center justify-center w-5 h-5 rounded border border-slate-600 hover:border-cyan-500 transition-colors"
-                  >
+                <th className="px-4 py-4 w-12 cursor-pointer select-none" onClick={toggleAllContacts}>
+                  <div className="flex items-center justify-center w-5 h-5 rounded border border-slate-600 hover:border-cyan-500 transition-colors">
                     {allSelected ? (
                       <CheckSquare className="w-4 h-4 text-cyan-400" />
                     ) : someSelected ? (
@@ -684,7 +681,7 @@ const Contacts: React.FC = () => {
                     ) : (
                       <Square className="w-4 h-4 text-slate-500" />
                     )}
-                  </button>
+                  </div>
                 </th>
                 <th className="px-4 py-4">
                   <Popover>
@@ -1119,11 +1116,11 @@ const Contacts: React.FC = () => {
               {contacts.map((contact) => (
                 <tr key={contact.id} className={`hover:bg-slate-800/40 transition-colors group ${selectedContactIds.has(contact.id) ? 'bg-cyan-500/5' : ''}`}>
                   {/* Checkbox */}
-                  <td className="px-4 py-4">
+                  <td className="px-4 py-4 cursor-pointer select-none" onClick={() => toggleContactSelection(contact.id)}>
                     <Checkbox
                       checked={selectedContactIds.has(contact.id)}
                       onCheckedChange={() => toggleContactSelection(contact.id)}
-                      className="border-slate-600 data-[state=checked]:bg-cyan-600 data-[state=checked]:border-cyan-600"
+                      className="h-5 w-5 border-slate-600 data-[state=checked]:bg-cyan-600 data-[state=checked]:border-cyan-600 pointer-events-none"
                     />
                   </td>
                   <td className="px-4 py-4">
