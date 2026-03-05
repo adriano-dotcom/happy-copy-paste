@@ -420,6 +420,14 @@ const Contacts: React.FC = () => {
       });
     }
     
+    // Deduplicate by ID
+    const seen = new Set<string>();
+    filtered = filtered.filter(c => {
+      if (seen.has(c.id)) return false;
+      seen.add(c.id);
+      return true;
+    });
+    
     return filtered;
   };
   
@@ -436,8 +444,14 @@ const Contacts: React.FC = () => {
     });
   };
   
+  // Clear selection when switching tabs
+  React.useEffect(() => {
+    setSelectedContactIds(new Set());
+  }, [activeTab]);
+  
   const toggleAllContacts = () => {
-    if (selectedContactIds.size === filteredContacts.length) {
+    const allSelected = filteredContacts.length > 0 && filteredContacts.every(c => selectedContactIds.has(c.id));
+    if (allSelected) {
       setSelectedContactIds(new Set());
     } else {
       setSelectedContactIds(new Set(filteredContacts.map(c => c.id)));
@@ -631,8 +645,8 @@ const Contacts: React.FC = () => {
     setSelectedStatuses([]);
   };
   const ContactsTable = ({ contacts }: { contacts: ExtendedContact[] }) => {
-    const allSelected = contacts.length > 0 && selectedContactIds.size === contacts.length;
-    const someSelected = selectedContactIds.size > 0 && selectedContactIds.size < contacts.length;
+    const allSelected = contacts.length > 0 && contacts.every(c => selectedContactIds.has(c.id));
+    const someSelected = !allSelected && contacts.some(c => selectedContactIds.has(c.id));
     
     return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/40 backdrop-blur-sm shadow-xl overflow-hidden min-h-[400px]">

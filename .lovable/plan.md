@@ -1,35 +1,45 @@
 
 
-# Corrigir seleção de contatos (checkboxes) na página /contacts
+# Analise do envio WhatsApp via Meta API
 
-## Problemas encontrados
+## Status atual
 
-1. **Contatos duplicados na lista** — O console mostra erro de chave duplicada (`a9bca72a-a224-4722-aef2-3dde78f0cbc9`), indicando que o mesmo contato aparece duas vezes na tabela. Isso quebra o React e faz os checkboxes não responderem corretamente.
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
 
-2. **Lógica de "selecionar todos" incorreta** — `allSelected` compara `selectedContactIds.size` com `contacts.length`, mas `selectedContactIds` pode conter IDs de outras abas, gerando estado inconsistente no checkbox master.
+## Causa raiz do auto-blocking não funcionar
 
-## Mudanças propostas
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
 
-### 1. Deduplicar contatos antes de renderizar (`Contacts.tsx`)
-- Na função `getFilteredContacts()`, adicionar deduplicação por ID usando `Map` ou `filter` com `Set` antes de retornar os resultados.
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
-### 2. Corrigir lógica de seleção no `ContactsTable`
-- `allSelected`: verificar se **todos os IDs da lista atual** estão no `selectedContactIds`, não comparar `.size`.
-- `someSelected`: verificar se **algum ID da lista atual** está no `selectedContactIds`.
-- Código atual (errado):
-  ```typescript
-  const allSelected = contacts.length > 0 && selectedContactIds.size === contacts.length;
-  const someSelected = selectedContactIds.size > 0 && selectedContactIds.size < contacts.length;
-  ```
-- Código correto:
-  ```typescript
-  const allSelected = contacts.length > 0 && contacts.every(c => selectedContactIds.has(c.id));
-  const someSelected = !allSelected && contacts.some(c => selectedContactIds.has(c.id));
-  ```
+## Solução
 
-### 3. Limpar seleção ao trocar de aba
-- Adicionar `useEffect` que limpa `selectedContactIds` quando `activeTab` muda, evitando seleção fantasma entre abas.
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
 
-### Arquivo editado
-- `src/components/Contacts.tsx` (3 pontos de edição)
+### 2. Corrigir comparação de tipo no webhook (segurança)
+
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+
+Mesmo tratamento para `errorCode === 131042`.
+
+### 3. Corrigir comparação no send-whatsapp-template
+
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+
+### Detalhes técnicos
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 
