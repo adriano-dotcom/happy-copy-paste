@@ -163,12 +163,12 @@ export const SendWhatsAppTemplateModal: React.FC<SendWhatsAppTemplateModalProps>
 
       if (error) throw error;
 
-      if (data.success) {
+      if (data?.success) {
         toast.success('Template enviado com sucesso!');
         onSent?.();
         onClose();
       } else {
-        throw new Error(data.error || 'Erro ao enviar template');
+        throw new Error(data?.error || 'Erro ao enviar template');
       }
     } catch (error) {
       console.error('Error sending template:', error);
