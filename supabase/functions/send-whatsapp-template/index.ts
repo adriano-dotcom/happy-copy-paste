@@ -212,7 +212,8 @@ serve(async (req) => {
     const waData = await waResponse.json();
 
     if (!waResponse.ok) {
-      console.error('WhatsApp API error:', waData);
+      console.error('WhatsApp API error:', JSON.stringify(waData));
+      console.error('Payload that failed:', JSON.stringify(payload));
       
       // Auto-block contact on error 131026 (number has no WhatsApp)
       const errorCode = waData.error?.code;
@@ -228,7 +229,19 @@ serve(async (req) => {
           .eq('id', contact_id);
       }
       
-      throw new Error(waData.error?.message || 'Failed to send template');
+      // Return error as 200 so frontend can handle gracefully
+      const errorMessage = waData.error?.message || 'Failed to send template';
+      const errorDetail = waData.error?.error_data?.details || '';
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: errorMessage,
+          error_detail: errorDetail,
+          error_code: errorCode,
+          phone: phoneNumber
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     console.log('WhatsApp API response:', waData);
