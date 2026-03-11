@@ -751,9 +751,12 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
       if (audioMediaId) {
         payload.audio = { id: audioMediaId };
       } else {
-        // Fallback to link if upload fails
-        console.warn('[Sender] Media upload failed, falling back to link');
-        payload.audio = { link: queueItem.media_url };
+        // Audio upload/remux failed - send as text message with note instead of corrupted audio
+        console.warn('[Sender] Audio media upload failed (likely WebM remux failure). Sending as text fallback.');
+        payload.type = 'text';
+        payload.text = { body: queueItem.content || '🎤 [Áudio enviado pelo operador - formato incompatível]' };
+        // Remove audio key if it was set
+        delete payload.audio;
       }
       break;
     }
