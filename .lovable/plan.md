@@ -1,45 +1,37 @@
 
 
-# Analise do envio WhatsApp via Meta API
+# Coletar CNPJ no fluxo de qualificação da Clara (plano empresarial/MEI)
 
-## Status atual
-
-- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
-- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
-- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
-- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
-
-## Causa raiz do auto-blocking não funcionar
-
-O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
-
-1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
-2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
+## Problema
+Quando o cliente responde na pergunta 1 que é "pra empresa com CNPJ" (ou menciona MEI/CNPJ), a Clara segue direto para "quantas pessoas?" sem coletar o número do CNPJ. Essa informação é essencial para cotação de planos empresariais.
 
 ## Solução
 
-### 1. Forçar deploy das edge functions afetadas
-- `whatsapp-webhook`
-- `send-whatsapp-template`
-- `process-campaign`
+Atualizar o `system_prompt` da Clara na tabela `agents` via migration SQL, adicionando uma etapa condicional no fluxo de qualificação:
 
-### 2. Corrigir comparação de tipo no webhook (segurança)
+### Alteração no prompt
+No bloco "Fluxo de Qualificação", após a pergunta 1, inserir uma etapa condicional:
 
-**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
+```
+1. "É pra você/família ou pra empresa com CNPJ?"
+   → Se empresarial/MEI/CNPJ: "Pode me passar o CNPJ da empresa?"
+2. "Quantas pessoas seriam incluídas?"
+3. "Quais as idades?"
+...
+```
 
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+Também adicionar instrução explícita:
+```
+## Regra: Coleta de CNPJ
+- Se o cliente indicar plano EMPRESARIAL, MEI ou mencionar CNPJ, OBRIGATÓRIO coletar o número do CNPJ antes de avançar para a próxima pergunta.
+- Perguntar de forma natural: "Pode me passar o CNPJ da empresa?"
+- Armazenar como qualification_answer campo "cnpj"
+```
 
-Mesmo tratamento para `errorCode === 131042`.
+### Implementação
+- **1 migration SQL** para fazer `UPDATE agents SET system_prompt = ... WHERE slug = 'clara'`
+- O prompt existente será preservado integralmente, apenas adicionando a etapa condicional e a regra de coleta de CNPJ.
 
-### 3. Corrigir comparação no send-whatsapp-template
-
-**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
-
-### Detalhes técnicos
-- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
-- Deploy manual das 3 edge functions
-- Sem migração de banco
-- Risco: nenhum — apenas robustez na comparação de tipo
+### Arquivo afetado
+- Nenhum arquivo de código -- apenas atualização do campo `system_prompt` na tabela `agents` via SQL.
 
