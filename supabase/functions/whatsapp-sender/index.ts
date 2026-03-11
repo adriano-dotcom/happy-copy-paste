@@ -512,12 +512,24 @@ async function uploadMediaToWhatsApp(
     if (mimeType === 'audio/webm' || mimeType === 'audio/webm; codecs=opus') {
       try {
         console.log(`[Sender] Remuxing WebM->OGG (${uint8Array.length} bytes)...`);
-        uint8Array = remuxWebmToOgg(uint8Array);
+        const remuxed = remuxWebmToOgg(uint8Array);
+        
+        // Validate OGG magic bytes - must start with "OggS"
+        const oggMagic = new TextDecoder().decode(remuxed.slice(0, 4));
+        if (oggMagic !== 'OggS') {
+          console.error(`[Sender] Remux produced invalid OGG (magic: "${oggMagic}"), will NOT relabel broken bytes`);
+          // Return null to trigger text fallback instead of sending corrupted audio
+          return null;
+        }
+        
+        uint8Array = remuxed;
         effectiveMimeType = 'audio/ogg';
-        console.log(`[Sender] Remuxed successfully: ${uint8Array.length} bytes OGG`);
+        console.log(`[Sender] Remuxed successfully: ${uint8Array.length} bytes OGG (magic bytes validated)`);
       } catch (remuxError) {
-        console.error('[Sender] Remux failed, falling back to relabel:', remuxError);
-        effectiveMimeType = 'audio/ogg';
+        console.error('[Sender] Remux failed completely, NOT relabeling WebM as OGG:', remuxError);
+        // Do NOT fall back to relabeling - this causes "message unavailable" on WhatsApp
+        // Return null so the caller can handle this gracefully
+        return null;
       }
     }
     
@@ -739,9 +751,12 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
       if (audioMediaId) {
         payload.audio = { id: audioMediaId };
       } else {
-        // Fallback to link if upload fails
-        console.warn('[Sender] Media upload failed, falling back to link');
-        payload.audio = { link: queueItem.media_url };
+        // Audio upload/remux failed - send as text message with note instead of corrupted audio
+        console.warn('[Sender] Audio media upload failed (likely WebM remux failure). Sending as text fallback.');
+        payload.type = 'text';
+        payload.text = { body: queueItem.content || '🎤 [Áudio enviado pelo operador - formato incompatível]' };
+        // Remove audio key if it was set
+        delete payload.audio;
       }
       break;
     }

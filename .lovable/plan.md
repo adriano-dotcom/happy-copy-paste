@@ -1,48 +1,45 @@
 
 
-# Corrigir áudio "indisponível" no WhatsApp ao enviar gravações do painel
+# Analise do envio WhatsApp via Meta API
 
-## Problema
-Quando o operador grava e envia áudio pelo painel, o cliente recebe "mensagem indisponível" no WhatsApp. Os áudios recentes foram gravados como `audio/webm; codecs=opus` (formato do Chrome) e o sistema tenta remuxar para OGG antes de enviar ao WhatsApp.
+## Status atual
 
-O remuxer WebM→OGG customizado (linhas 19-230 do `whatsapp-sender`) é frágil e pode:
-1. Falhar silenciosamente e cair no fallback (linha 519-521) que apenas muda o label de mime para `audio/ogg` sem converter os bytes - WhatsApp aceita o upload mas não consegue reproduzir
-2. Produzir um OGG malformado que o WhatsApp aceita mas não toca
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
+
+## Causa raiz do auto-blocking não funcionar
+
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
+
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
 ## Solução
 
-Substituir o remuxer customizado por **FFmpeg via API** ou, mais pragmaticamente, usar a **API de conversão do ElevenLabs** que já está integrada. Porém a solução mais simples e confiável:
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
 
-### Abordagem: Gravar diretamente em formato nativo WhatsApp (audio/ogg; codecs=opus)
+### 2. Corrigir comparação de tipo no webhook (segurança)
 
-O Chrome **suporta** `audio/ogg; codecs=opus` nativamente no MediaRecorder. O código atual já tenta isso como primeira opção (linha 171), mas se falhar, cai para webm.
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
 
-A verdadeira correção é em **duas frentes**:
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
 
-### 1. Melhorar o fallback do remuxer no `whatsapp-sender` (Edge Function)
-- Quando o remux falhar, em vez de enviar bytes WebM rotulados como OGG (que gera arquivo corrompido), **não fazer fallback de relabel** - manter como `audio/webm` e deixar o WhatsApp rejeitar explicitamente, ou melhor, usar a abordagem de link direto sem upload
-- Adicionar log explícito quando o remux falha para diagnóstico
+Mesmo tratamento para `errorCode === 131042`.
 
-### 2. Usar FFmpeg real via fetch a um serviço de conversão (mais robusto)
-- Alternativa: Usar a API da ElevenLabs (já configurada) para converter WebM→MP3 via Text-to-Speech com input de áudio, ou simplesmente salvar como `.mp3` usando a Web Audio API no frontend
+### 3. Corrigir comparação no send-whatsapp-template
 
-### 3. Solução recomendada (mais simples): Converter no frontend antes do upload
-- No `ChatInterface.tsx`, após gravar o áudio, usar **Web Audio API** para decodificar o WebM e re-encodar como WAV, ou simplesmente enviar para o edge function `simulate-audio-webhook` que já faz transcrição
-- **Melhor ainda**: Forçar o upload com o mime type correto e ajustar o sender para quando o remux falhar, enviar como texto com transcrição em vez de áudio corrompido
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
 
-### Implementação proposta (pragmática)
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
 
-**Arquivo**: `supabase/functions/whatsapp-sender/index.ts`
-
-1. No bloco de remux (linhas 512-522), quando `remuxWebmToOgg()` lançar erro, **não fazer fallback de relabel**. Em vez disso, tentar enviar o webm diretamente como `audio/webm` (que a Graph API v18+ pode aceitar) ou retornar erro claro
-2. Adicionar validação do OGG gerado: verificar se os primeiros bytes são `OggS` (magic bytes do formato OGG) antes de prosseguir com o upload
-3. Se a validação falhar, logar erro detalhado e **converter a mensagem de áudio para texto** usando o transcriber existente, enviando como mensagem de texto em vez de áudio corrompido
-
-**Arquivo**: `src/components/ChatInterface.tsx`
-
-4. Na função `sendAudioMessage`, adicionar um fallback: se o mime type for `audio/webm`, chamar o edge function `simulate-audio-webhook` para transcrever e enviar como texto, ao invés de enviar o webm para a fila de áudio
-
-### Resumo dos arquivos editados
-- `supabase/functions/whatsapp-sender/index.ts` — Validar OGG após remux, não fazer fallback de relabel com bytes corrompidos
-- `src/components/ChatInterface.tsx` — Fallback para transcrição quando formato é webm
+### Detalhes técnicos
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 
