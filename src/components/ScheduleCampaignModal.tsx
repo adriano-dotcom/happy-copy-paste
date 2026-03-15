@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Slider } from './ui/slider';
+import { Badge } from './ui/badge';
 import { CalendarDays, Clock, Send, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -35,7 +36,8 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [selectedDate, setSelectedDate] = useState<Date>();
   const [selectedTime, setSelectedTime] = useState('09:00');
-  const [intervalSeconds, setIntervalSeconds] = useState(60);
+  const [intervalMinSeconds, setIntervalMinSeconds] = useState(30);
+  const [intervalMaxSeconds, setIntervalMaxSeconds] = useState(90);
   const [loading, setLoading] = useState(false);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
   const { createCampaign } = useCampaigns();
@@ -63,6 +65,18 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
 
   const canSubmit = selectedTemplateId && selectedDate && selectedTime && contactIds.length > 0;
 
+  const averageInterval = Math.round((intervalMinSeconds + intervalMaxSeconds) / 2);
+
+  const handleMinChange = (value: number) => {
+    setIntervalMinSeconds(value);
+    if (value > intervalMaxSeconds) setIntervalMaxSeconds(value);
+  };
+
+  const handleMaxChange = (value: number) => {
+    setIntervalMaxSeconds(value);
+    if (value < intervalMinSeconds) setIntervalMinSeconds(value);
+  };
+
   const handleSubmit = async () => {
     if (!canSubmit || !selectedDate) return;
     setLoading(true);
@@ -83,7 +97,7 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
       name: campaignName,
       template_id: selectedTemplateId,
       contact_ids: contactIds,
-      interval_seconds: intervalSeconds,
+      interval_seconds: averageInterval,
       is_prospecting: true,
       scheduled_at: scheduledAt.toISOString(),
     });
@@ -101,7 +115,8 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
     setSelectedTemplateId('');
     setSelectedDate(undefined);
     setSelectedTime('09:00');
-    setIntervalSeconds(60);
+    setIntervalMinSeconds(30);
+    setIntervalMaxSeconds(90);
     onClose();
   };
 
@@ -184,18 +199,48 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
             </div>
           </div>
 
-          {/* Interval */}
-          <div className="space-y-2">
-            <Label>Intervalo entre mensagens: {intervalSeconds}s</Label>
-            <Slider
-              value={[intervalSeconds]}
-              onValueChange={([v]) => setIntervalSeconds(v)}
-              min={30}
-              max={300}
-              step={10}
-            />
+          {/* Interval Range */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-slate-400" />
+                Intervalo entre envios (aleatório)
+              </Label>
+              <Badge variant="secondary" className="bg-slate-700 text-slate-300">
+                {intervalMinSeconds}s - {intervalMaxSeconds}s
+              </Badge>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-400">Mínimo</span>
+                <span className="text-xs text-slate-500">{intervalMinSeconds}s</span>
+              </div>
+              <Slider
+                value={[intervalMinSeconds]}
+                onValueChange={([v]) => handleMinChange(v)}
+                min={30}
+                max={300}
+                step={10}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-400">Máximo</span>
+                <span className="text-xs text-slate-500">{intervalMaxSeconds}s</span>
+              </div>
+              <Slider
+                value={[intervalMaxSeconds]}
+                onValueChange={([v]) => handleMaxChange(v)}
+                min={30}
+                max={300}
+                step={10}
+              />
+            </div>
+
             <p className="text-xs text-slate-500">
-              Tempo estimado: ~{Math.ceil((contactIds.length * intervalSeconds) / 60)} minutos
+              Tempo estimado: ~{Math.ceil((contactIds.length * averageInterval) / 60)} minutos
             </p>
           </div>
         </div>
