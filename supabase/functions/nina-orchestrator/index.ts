@@ -785,10 +785,9 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'indicação de clientes', 'troca de indicação', 'network',
       'joint venture', 'co-branding', 'acordo comercial'
     ],
-    response: 'Olá! Agradecemos o interesse em parceria. No momento, não estamos avaliando novas parcerias comerciais. Desejamos sucesso! 🤝',
+    response: 'Agradecemos o interesse em parceria. No momento, nao estamos avaliando novas parcerias comerciais. Desejamos sucesso!',
     pauseConversation: true,
-    reason: 'Busca parceria - não é lead de seguro',
-    emoji: '🤝'
+    reason: 'Busca parceria - não é lead de seguro'
   },
   {
     key: 'number_owner_changed',
