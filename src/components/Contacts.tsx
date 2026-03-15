@@ -110,6 +110,8 @@ const Contacts: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
   const [activeTab, setActiveTab] = useState<'inbound' | 'outbound' | 'facebook' | 'google'>('inbound');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 100;
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   
   // Bulk selection state
