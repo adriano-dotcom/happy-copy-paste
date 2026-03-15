@@ -8,7 +8,8 @@ import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Slider } from './ui/slider';
 import { Badge } from './ui/badge';
-import { CalendarDays, Clock, Send, Loader2 } from 'lucide-react';
+import { Switch } from './ui/switch';
+import { CalendarDays, Clock, Send, Loader2, Zap } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -38,6 +39,7 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
   const [selectedTime, setSelectedTime] = useState('09:00');
   const [intervalMinSeconds, setIntervalMinSeconds] = useState(30);
   const [intervalMaxSeconds, setIntervalMaxSeconds] = useState(90);
+  const [isProspecting, setIsProspecting] = useState(true);
   const [loading, setLoading] = useState(false);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
   const { createCampaign } = useCampaigns();
@@ -98,7 +100,7 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
       template_id: selectedTemplateId,
       contact_ids: contactIds,
       interval_seconds: averageInterval,
-      is_prospecting: true,
+      is_prospecting: isProspecting,
       scheduled_at: scheduledAt.toISOString(),
     });
 
@@ -117,6 +119,7 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
     setSelectedTime('09:00');
     setIntervalMinSeconds(30);
     setIntervalMaxSeconds(90);
+    setIsProspecting(true);
     onClose();
   };
 
@@ -242,6 +245,18 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
             <p className="text-xs text-slate-500">
               Tempo estimado: ~{Math.ceil((contactIds.length * averageInterval) / 60)} minutos
             </p>
+          </div>
+
+          {/* Prospecting Toggle */}
+          <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+            <div className="flex items-center gap-3">
+              <Zap className="w-5 h-5 text-yellow-400" />
+              <div>
+                <Label className="text-sm font-medium">Prospecção Ativa</Label>
+                <p className="text-xs text-slate-400">Ativar agente Atlas para qualificação</p>
+              </div>
+            </div>
+            <Switch checked={isProspecting} onCheckedChange={setIsProspecting} />
           </div>
         </div>
 
