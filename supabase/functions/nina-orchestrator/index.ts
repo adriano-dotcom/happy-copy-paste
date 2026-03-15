@@ -754,7 +754,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'sou motorista e busco', 'sou motorista procurando',
       'preciso de trabalho como motorista', 'preciso trabalhar como motorista'
     ],
-    response: 'Olá! Agradecemos seu contato. Somos uma corretora especializada em seguros de transporte e carga. No momento, não temos vagas em aberto. Desejamos sucesso na sua busca! 🙏',
+    response: 'Agradecemos seu contato. Somos uma corretora especializada em seguros de transporte e carga. No momento, nao temos vagas em aberto. Desejamos sucesso na sua busca!',
     pauseConversation: true,
     reason: 'Procura de emprego - não é lead de seguro',
     emoji: '💼'
