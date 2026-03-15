@@ -863,7 +863,9 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'não sou eu', 'nao sou eu', 'não é meu', 'nao e meu',
       'sou outra pessoa', 'número antigo', 'numero antigo',
       'esse whatsapp não é', 'esse whatsapp nao e',
-      'esse zap não é', 'esse zap nao e'
+      'esse zap não é', 'esse zap nao e',
+      'nao pertence', 'não pertence',
+      'esse numero nao pertence', 'esse número não pertence'
     ],
     response: 'Entendo, peco desculpas pelo engano. Obrigado por avisar!',
     pauseConversation: true,
