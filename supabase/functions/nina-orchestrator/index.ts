@@ -771,7 +771,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'sou representante', 'vendo sistema', 'vendo software',
       'ofereço meus serviços', 'prestação de serviço'
     ],
-    response: 'Olá! Agradecemos seu contato. No momento, não estamos buscando novos fornecedores ou prestadores de serviço. Caso isso mude, entraremos em contato. Obrigado! 👋',
+    response: 'Agradecemos seu contato. No momento, nao estamos buscando novos fornecedores ou prestadores de servico. Caso isso mude, entraremos em contato. Obrigado!',
     pauseConversation: true,
     reason: 'Fornecedor/prestador de serviço - não é lead de seguro',
     emoji: '🏭'
