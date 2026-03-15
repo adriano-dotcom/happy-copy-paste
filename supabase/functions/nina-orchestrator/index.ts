@@ -4654,7 +4654,7 @@ Qual desses te interessa?`;
       const disqualCategory = detectDisqualificationCategory(message.content);
     
       if (disqualCategory) {
-        console.log(`[Nina] ${disqualCategory.emoji} Disqualification detected: ${disqualCategory.key}`);
+        console.log(`[Nina] Disqualification detected: ${disqualCategory.key}`);
       
       // 1. Adicionar tag e marcar como frio
       const currentTags = conversation.contact?.tags || [];
