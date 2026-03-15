@@ -754,7 +754,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'sou motorista e busco', 'sou motorista procurando',
       'preciso de trabalho como motorista', 'preciso trabalhar como motorista'
     ],
-    response: 'Olá! Agradecemos seu contato. Somos uma corretora especializada em seguros de transporte e carga. No momento, não temos vagas em aberto. Desejamos sucesso na sua busca! 🙏',
+    response: 'Agradecemos seu contato. Somos uma corretora especializada em seguros de transporte e carga. No momento, nao temos vagas em aberto. Desejamos sucesso na sua busca!',
     pauseConversation: true,
     reason: 'Procura de emprego - não é lead de seguro',
     emoji: '💼'
@@ -771,7 +771,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'sou representante', 'vendo sistema', 'vendo software',
       'ofereço meus serviços', 'prestação de serviço'
     ],
-    response: 'Olá! Agradecemos seu contato. No momento, não estamos buscando novos fornecedores ou prestadores de serviço. Caso isso mude, entraremos em contato. Obrigado! 👋',
+    response: 'Agradecemos seu contato. No momento, nao estamos buscando novos fornecedores ou prestadores de servico. Caso isso mude, entraremos em contato. Obrigado!',
     pauseConversation: true,
     reason: 'Fornecedor/prestador de serviço - não é lead de seguro',
     emoji: '🏭'
@@ -785,10 +785,9 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'indicação de clientes', 'troca de indicação', 'network',
       'joint venture', 'co-branding', 'acordo comercial'
     ],
-    response: 'Olá! Agradecemos o interesse em parceria. No momento, não estamos avaliando novas parcerias comerciais. Desejamos sucesso! 🤝',
+    response: 'Agradecemos o interesse em parceria. No momento, nao estamos avaliando novas parcerias comerciais. Desejamos sucesso!',
     pauseConversation: true,
-    reason: 'Busca parceria - não é lead de seguro',
-    emoji: '🤝'
+    reason: 'Busca parceria - não é lead de seguro'
   },
   {
     key: 'number_owner_changed',
@@ -869,7 +868,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'esse whatsapp não é', 'esse whatsapp nao e',
       'esse zap não é', 'esse zap nao e'
     ],
-    response: 'Entendo! Peço desculpas pelo engano. Obrigado por avisar. 🙏',
+    response: 'Entendo, peco desculpas pelo engano. Obrigado por avisar!',
     pauseConversation: true,
     markAsLost: true,
     setIdentityMismatch: true,
