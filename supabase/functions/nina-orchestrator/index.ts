@@ -756,8 +756,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     ],
     response: 'Agradecemos seu contato. Somos uma corretora especializada em seguros de transporte e carga. No momento, nao temos vagas em aberto. Desejamos sucesso na sua busca!',
     pauseConversation: true,
-    reason: 'Procura de emprego - não é lead de seguro',
-    emoji: '💼'
+    reason: 'Procura de emprego - não é lead de seguro'
   },
   {
     key: 'vendor',
@@ -773,8 +772,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     ],
     response: 'Agradecemos seu contato. No momento, nao estamos buscando novos fornecedores ou prestadores de servico. Caso isso mude, entraremos em contato. Obrigado!',
     pauseConversation: true,
-    reason: 'Fornecedor/prestador de serviço - não é lead de seguro',
-    emoji: '🏭'
+    reason: 'Fornecedor/prestador de serviço - não é lead de seguro'
   },
   {
     key: 'partnership',
@@ -820,13 +818,12 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'não trabalha mais', 'nao trabalha mais',
       'esse número era', 'esse numero era'
     ],
-    response: 'Entendi! Obrigado por avisar. Vou atualizar nosso cadastro. 📝\n\nPosso saber seu nome para registrar corretamente?',
+    response: 'Entendi! Obrigado por avisar. Vou atualizar nosso cadastro.\n\nPosso saber seu nome para registrar corretamente?',
     pauseConversation: false, // NÃO pausa - queremos continuar qualificando
     markAsLost: false, // NÃO marca como perdido - é um novo lead potencial
     setIdentityMismatch: false,
     resetContactData: true, // NOVA FLAG - reseta dados do contato
-    reason: 'Número mudou de dono - novo lead',
-    emoji: '🔄'
+    reason: 'Número mudou de dono - novo lead'
   },
   {
     key: 'wrong_number',
@@ -872,8 +869,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     pauseConversation: true,
     markAsLost: true,
     setIdentityMismatch: true,
-    reason: 'Contato errado / pessoa errada',
-    emoji: '❓'
+    reason: 'Contato errado / pessoa errada'
   },
   {
     key: 'spam',
@@ -888,8 +884,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     ],
     response: null, // Não responde spam
     pauseConversation: true,
-    reason: 'Spam/golpe detectado',
-    emoji: '🚫'
+    reason: 'Spam/golpe detectado'
   },
   {
     key: 'freight_seeker',
@@ -955,10 +950,9 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'enviar cargu', 'transportar cargu', 'levar mercadória',
       'preciso enviar cargu', 'preciso levar mercadória'
     ],
-    response: 'Olá! Entendo que você está buscando serviços de frete ou transporte. Nós não realizamos transporte de cargas - somos uma corretora de seguros especializada em proteger mercadorias durante o transporte. Se você já tem o frete contratado e quer garantir a segurança da sua carga, podemos ajudar! Você já tem uma transportadora? 🚛',
+    response: 'Ola! Entendo que voce esta buscando servicos de frete ou transporte. Nos nao realizamos transporte de cargas - somos uma corretora de seguros especializada em proteger mercadorias durante o transporte. Se voce ja tem o frete contratado e quer garantir a seguranca da sua carga, podemos ajudar! Voce ja tem uma transportadora?',
     pauseConversation: false, // NÃO pausar - tentar converter em lead de seguro
-    reason: 'Busca de frete - esclarecer que somos corretora de seguros',
-    emoji: '🚛'
+    reason: 'Busca de frete - esclarecer que somos corretora de seguros'
   }
 ];
 
