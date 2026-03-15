@@ -1,45 +1,62 @@
 
 
-# Analise do envio WhatsApp via Meta API
+# Avaliacao Completa: Agente Iris - Qualificacao Inbound
 
-## Status atual
+## Objetivo
+Rodar uma bateria de testes end-to-end que simulam o fluxo completo de qualificacao inbound da Iris, validando cada etapa critica do pipeline.
 
-- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
-- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
-- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
-- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
+## Testes a executar (7 cenarios)
 
-## Causa raiz do auto-blocking não funcionar
+### Grupo 1: Protecao contra falsos positivos (qualification_protection)
+Ja existe a funcao `runQualificationProtectionTests` no `test-prospecting-flow`. Rodar ela para validar que respostas de qualificacao (subcontratado, agregado, CNPJ, tipo de carga, etc.) **nao** disparam desqualificacao.
 
-O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
+**Execucao:** `{ "run_qualification_tests": true }`
 
-1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
-2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
+### Grupo 2: Fluxo conversacional Iris (4 testes sequenciais)
+Simular uma conversa completa com o agente Iris no pipeline Transporte:
 
-## Solução
+**Teste 2a - Primeiro contato inbound:**
+- Mensagem: `"Boa tarde, vi que voces trabalham com seguro de carga, queria saber mais"`
+- Validar: Status `nina`, agente Iris atribuido, deal criado, resposta sem emojis
 
-### 1. Forçar deploy das edge functions afetadas
-- `whatsapp-webhook`
-- `send-whatsapp-template`
-- `process-campaign`
+**Teste 2b - Resposta de qualificacao (tipo de carga):**
+- Inserir pergunta da Iris antes: `"Que tipo de mercadoria voce geralmente transporta?"`
+- Resposta: `"Graos e fertilizantes, rodo por SP, PR e MT"`
+- Validar: `qualification_answers` extraiu `tipo_carga` e `estados`, sem desqualificacao
 
-### 2. Corrigir comparação de tipo no webhook (segurança)
+**Teste 2c - Resposta com dados numericos:**
+- Inserir pergunta da Iris: `"Quantas viagens faz por mes em media?"`
+- Resposta: `"Umas 15 viagens, valor medio de 120 mil"`
+- Validar: `viagens_mes` e `valor_medio` extraidos corretamente
 
-**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
+**Teste 2d - Desqualificacao legitima durante Iris:**
+- Cleanup e novo contato
+- Mensagem: `"Nao, errou de numero, nao conheco nenhuma jacometo"`
+- Validar: Status `paused`, tag de desqualificacao aplicada, `identity_mismatch: true`
 
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+### Grupo 3: Completude da qualificacao
+**Teste 3 - isQualificationComplete:**
+- Simular conversa com todos os campos obrigatorios preenchidos (CNPJ no contato, tipo_carga, estados, viagens_mes, tipo_frota)
+- Validar: Iris pede email, `awaiting_qualification_email: true`
 
-Mesmo tratamento para `errorCode === 131042`.
+### Grupo 4: Voice qualification trigger
+**Teste 4 - Trigger da ligacao Iris pos-handoff:**
+- Verificar via query se `voice_qualifications` tem registros para contatos com handoff do agente Iris
+- Validar logica de agendamento (5 min delay)
 
-### 3. Corrigir comparação no send-whatsapp-template
+## Implementacao tecnica
 
-**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+Todos os testes serao executados via `test-prospecting-flow` edge function com diferentes payloads. Para testes sequenciais (Grupo 2), usar cleanup entre cada cenario.
 
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+Os testes do Grupo 1 ja existem nativamente na funcao. Os demais serao executados como testes manuais via `curl_edge_functions`.
 
-### Detalhes técnicos
-- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
-- Deploy manual das 3 edge functions
-- Sem migração de banco
-- Risco: nenhum — apenas robustez na comparação de tipo
+## O que validaremos em cada teste
+1. **Status da conversa** (nina/paused/human)
+2. **Tags do contato** (sem tags indevidas)
+3. **nina_context** (qualification_answers, identity_mismatch, awaiting_qualification_email)
+4. **Resposta do agente** (RC3 - sem emojis, coerente)
+5. **Extracao de dados** (campos corretos no qualification_answers)
+
+## Resultado esperado
+Relatorio consolidado com pass/fail para cada cenario, identificando eventuais gaps na logica de qualificacao inbound.
 
