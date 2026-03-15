@@ -818,7 +818,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'não trabalha mais', 'nao trabalha mais',
       'esse número era', 'esse numero era'
     ],
-    response: 'Entendi! Obrigado por avisar. Vou atualizar nosso cadastro. 📝\n\nPosso saber seu nome para registrar corretamente?',
+    response: 'Entendi! Obrigado por avisar. Vou atualizar nosso cadastro.\n\nPosso saber seu nome para registrar corretamente?',
     pauseConversation: false, // NÃO pausa - queremos continuar qualificando
     markAsLost: false, // NÃO marca como perdido - é um novo lead potencial
     setIdentityMismatch: false,
