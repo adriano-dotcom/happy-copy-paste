@@ -119,6 +119,7 @@ const Contacts: React.FC = () => {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
   const [isBulkSendTemplateOpen, setIsBulkSendTemplateOpen] = useState(false);
+  const [isScheduleCampaignOpen, setIsScheduleCampaignOpen] = useState(false);
   const [isBulkCampaignUpdating, setIsBulkCampaignUpdating] = useState(false);
   const [isBulkPipelineUpdating, setIsBulkPipelineUpdating] = useState(false);
   const [isBulkOwnerUpdating, setIsBulkOwnerUpdating] = useState(false);

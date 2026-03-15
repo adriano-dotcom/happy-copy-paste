@@ -49,7 +49,7 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
       .eq('status', 'APPROVED')
       .order('name')
       .then(({ data }) => {
-        setTemplates(data || []);
+        setTemplates((data as any) || []);
         setLoadingTemplates(false);
       });
   }, [isOpen]);
