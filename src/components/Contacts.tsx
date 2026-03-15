@@ -1613,20 +1613,54 @@ const Contacts: React.FC = () => {
         )}
 
         <TabsContent value="inbound" className="mt-0">
-          <ContactsTable contacts={filteredContacts} />
+          <ContactsTable contacts={paginatedContacts} />
         </TabsContent>
 
         <TabsContent value="outbound" className="mt-0">
-          <ContactsTable contacts={filteredContacts} />
+          <ContactsTable contacts={paginatedContacts} />
         </TabsContent>
 
         <TabsContent value="facebook" className="mt-0">
-          <ContactsTable contacts={filteredContacts} />
+          <ContactsTable contacts={paginatedContacts} />
         </TabsContent>
 
         <TabsContent value="google" className="mt-0">
-          <ContactsTable contacts={filteredContacts} />
+          <ContactsTable contacts={paginatedContacts} />
         </TabsContent>
+
+        {/* Pagination Controls */}
+        {filteredContacts.length > PAGE_SIZE && (
+          <div className="flex items-center justify-between mt-4 px-2">
+            <span className="text-sm text-slate-400">
+              Mostrando {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, filteredContacts.length)} de {filteredContacts.length} contatos
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(p => p - 1)}
+                className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-40"
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Anterior
+              </Button>
+              <span className="text-sm text-slate-300 px-2">
+                {currentPage} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(p => p + 1)}
+                className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-40"
+              >
+                Próxima
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
       </Tabs>
 
       {/* Modals */}
