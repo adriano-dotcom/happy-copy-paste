@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, X, CheckSquare, Square, Minus, AlertTriangle, Send, Tag, User, CalendarDays, Archive } from 'lucide-react';
+import { Search, Filter, UserPlus, MessageSquare, Loader2, Mail, Phone, Upload, Building2, Eye, Edit, Trash2, ChevronDown, ChevronLeft, ChevronRight, X, CheckSquare, Square, Minus, AlertTriangle, Send, Tag, User, CalendarDays, Archive } from 'lucide-react';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from './ui/button';
@@ -109,6 +109,8 @@ const Contacts: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
   const [activeTab, setActiveTab] = useState<'inbound' | 'outbound' | 'facebook' | 'google'>('inbound');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 100;
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   
   // Bulk selection state
@@ -1339,7 +1341,24 @@ const Contacts: React.FC = () => {
     </div>
   )};
 
-  const filteredContacts = getFilteredContacts();
+  const filteredContacts = useMemo(() => getFilteredContacts(), [
+    contacts, activeTab, searchTerm, selectedStatuses, cnpjFilter, channelFilter, 
+    dateFilter, letterFilter, campaignFilter, verticalFilter, ownerFilter, 
+    pipelineFilter, createdDateFilter, chatStatusFilter, templateFilter
+  ]);
+
+  // Reset page when filters/tab/search change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchTerm, selectedStatuses, cnpjFilter, channelFilter, 
+      dateFilter, letterFilter, campaignFilter, verticalFilter, ownerFilter, 
+      pipelineFilter, createdDateFilter, chatStatusFilter, templateFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredContacts.length / PAGE_SIZE));
+  const paginatedContacts = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredContacts.slice(start, start + PAGE_SIZE);
+  }, [filteredContacts, currentPage]);
 
   return (
     <div className="p-8 h-full overflow-y-auto bg-slate-950 text-slate-50">
@@ -1593,20 +1612,54 @@ const Contacts: React.FC = () => {
         )}
 
         <TabsContent value="inbound" className="mt-0">
-          <ContactsTable contacts={filteredContacts} />
+          <ContactsTable contacts={paginatedContacts} />
         </TabsContent>
 
         <TabsContent value="outbound" className="mt-0">
-          <ContactsTable contacts={filteredContacts} />
+          <ContactsTable contacts={paginatedContacts} />
         </TabsContent>
 
         <TabsContent value="facebook" className="mt-0">
-          <ContactsTable contacts={filteredContacts} />
+          <ContactsTable contacts={paginatedContacts} />
         </TabsContent>
 
         <TabsContent value="google" className="mt-0">
-          <ContactsTable contacts={filteredContacts} />
+          <ContactsTable contacts={paginatedContacts} />
         </TabsContent>
+
+        {/* Pagination Controls */}
+        {filteredContacts.length > PAGE_SIZE && (
+          <div className="flex items-center justify-between mt-4 px-2">
+            <span className="text-sm text-slate-400">
+              Mostrando {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, filteredContacts.length)} de {filteredContacts.length} contatos
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(p => p - 1)}
+                className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-40"
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Anterior
+              </Button>
+              <span className="text-sm text-slate-300 px-2">
+                {currentPage} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(p => p + 1)}
+                className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-40"
+              >
+                Próxima
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
       </Tabs>
 
       {/* Modals */}

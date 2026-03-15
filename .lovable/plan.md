@@ -1,37 +1,45 @@
 
 
-# Otimizar performance da aba Outbound (2069 contatos) em /contacts
+# Analise do envio WhatsApp via Meta API
 
-## Problema
-A aba Outbound renderiza todos os 2069 contatos simultaneamente no DOM. Isso causa:
-1. **Carregamento lento** — 2069 `<tr>` com checkboxes, dropdowns, ícones Lucide e badges são montados de uma vez
-2. **Seleção lenta** — `toggleAllContacts` cria um Set com 2069 IDs e força re-render de todas as linhas, pois cada `<tr>` depende de `selectedContactIds.has(contact.id)`
+## Status atual
 
-## Solução: Paginação client-side
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
 
-Implementar paginação no componente `Contacts.tsx` para limitar a renderização a **100 contatos por página**.
+## Causa raiz do auto-blocking não funcionar
 
-### Mudanças em `src/components/Contacts.tsx`
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
 
-1. **Adicionar estado de paginação**
-   - `currentPage` (default: 1) e `pageSize` (100)
-   - Resetar página ao trocar aba, filtros ou busca
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
-2. **Fatiar `filteredContacts` antes do render**
-   - `const paginatedContacts = filteredContacts.slice((currentPage - 1) * pageSize, currentPage * pageSize)`
-   - Renderizar apenas `paginatedContacts` no `<tbody>`
+## Solução
 
-3. **Controles de paginação**
-   - Barra inferior com: "Mostrando 1-100 de 2069" + botões Anterior/Próxima
-   - Manter estilo visual existente (slate/cyan)
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
 
-4. **Ajustar "Selecionar Todos"**
-   - `toggleAllContacts` continua operando sobre **todos** os `filteredContacts` (não apenas a página visível), para que o envio em massa funcione com todos os contatos filtrados
-   - A verificação visual (checkbox master) usa `filteredContacts.every(...)` como já faz
+### 2. Corrigir comparação de tipo no webhook (segurança)
 
-5. **Memoizar `getFilteredContacts`**
-   - Envolver com `useMemo` para evitar recálculo a cada re-render causado pela seleção
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
 
-### Arquivo editado
-- `src/components/Contacts.tsx` — adicionar paginação + memoização
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+
+Mesmo tratamento para `errorCode === 131042`.
+
+### 3. Corrigir comparação no send-whatsapp-template
+
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+
+### Detalhes técnicos
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 
