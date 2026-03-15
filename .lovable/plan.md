@@ -1,62 +1,56 @@
 
 
-# Avaliacao Completa: Agente Iris - Qualificacao Inbound
+# Plano: Atualizar System Prompt da Iris para v2.0
 
-## Objetivo
-Rodar uma bateria de testes end-to-end que simulam o fluxo completo de qualificacao inbound da Iris, validando cada etapa critica do pipeline.
+## Diagnóstico do prompt atual
 
-## Testes a executar (7 cenarios)
+O prompt atual tem **328 linhas** com problemas significativos:
+- **10 blocos de "aprendizado aplicado" duplicados** (linhas 286-328) que repetem variações da mesma instrução
+- Regras críticas espalhadas sem hierarquia clara
+- Sem abertura diferenciada por fonte do lead
+- Sem ordem de prioridade nas perguntas de qualificação
+- Sem conceito de handoff parcial
+- Sem validação pré-envio consolidada
+- Sem tratamento de MDF-e sem CT-e
 
-### Grupo 1: Protecao contra falsos positivos (qualification_protection)
-Ja existe a funcao `runQualificationProtectionTests` no `test-prospecting-flow`. Rodar ela para validar que respostas de qualificacao (subcontratado, agregado, CNPJ, tipo de carga, etc.) **nao** disparam desqualificacao.
+## O que o v2.0 traz de novo
 
-**Execucao:** `{ "run_qualification_tests": true }`
+| Mudança | Impacto |
+|---------|---------|
+| Abertura por fonte (Meta/Google/formulário) | Conversa mais contextualizada |
+| Perguntas P1-P11 em blocos por prioridade | Qualificação mais eficiente |
+| Handoff parcial (Bloco 1+2 completos = pode transferir) | Não segura lead desnecessariamente |
+| ANTT como argumento consultivo (uso único) | Evita repetição de argumento regulatório |
+| MDF-e sem CT-e | Cobre edge case de subcontratados |
+| RC1-RC8 numeradas | Hierarquia clara de regras |
+| Validação pré-envio em checklist | Reduz erros de formato |
+| Remoção de blocos redundantes | Prompt mais limpo e focado |
 
-### Grupo 2: Fluxo conversacional Iris (4 testes sequenciais)
-Simular uma conversa completa com o agente Iris no pipeline Transporte:
+## Alteração
 
-**Teste 2a - Primeiro contato inbound:**
-- Mensagem: `"Boa tarde, vi que voces trabalham com seguro de carga, queria saber mais"`
-- Validar: Status `nina`, agente Iris atribuido, deal criado, resposta sem emojis
+**Método:** SQL UPDATE no campo `system_prompt` da tabela `agents` onde `slug = 'iris'`
 
-**Teste 2b - Resposta de qualificacao (tipo de carga):**
-- Inserir pergunta da Iris antes: `"Que tipo de mercadoria voce geralmente transporta?"`
-- Resposta: `"Graos e fertilizantes, rodo por SP, PR e MT"`
-- Validar: `qualification_answers` extraiu `tipo_carga` e `estados`, sem desqualificacao
+**Estrutura do novo prompt** (baseado no documento v2.0, mantendo FAQ e conteúdo técnico útil do atual):
 
-**Teste 2c - Resposta com dados numericos:**
-- Inserir pergunta da Iris: `"Quantas viagens faz por mes em media?"`
-- Resposta: `"Umas 15 viagens, valor medio de 120 mil"`
-- Validar: `viagens_mes` e `valor_medio` extraidos corretamente
+1. **Identidade** — mantém (curto)
+2. **Contexto Operacional** — NOVO: premissa de lead inbound
+3. **Regras Críticas RC1-RC8** — consolidadas e numeradas
+4. **Abertura por Fonte** — NOVO: 4 variações (Meta/Google/formulário/desconhecida)
+5. **Decisão Contratado vs Subcontratado** — reorganizado com MDF-e
+6. **Fluxo de Qualificação P1-P11** — reordenado por prioridade com blocos
+7. **Contexto Regulatório ANTT** — NOVO: instrução de uso único
+8. **Handoff** — NOVO: handoff parcial + template
+9. **Situações Especiais** — consolidado (sem CNPJ, RNTRC no CPF, MDF-e, fora de escopo, áudio, pedido de humano)
+10. **Validação Pré-Envio** — NOVO: checklist de 7 itens
+11. **Produtos** — mantém (RCTR-C, RC-DC, RC-V)
+12. **FAQ** — mantém as perguntas úteis, remove duplicatas
+13. **Regras numéricas** — mantém (140 = 140 mil)
 
-**Teste 2d - Desqualificacao legitima durante Iris:**
-- Cleanup e novo contato
-- Mensagem: `"Nao, errou de numero, nao conheco nenhuma jacometo"`
-- Validar: Status `paused`, tag de desqualificacao aplicada, `identity_mismatch: true`
+**Remove completamente:** os 10 blocos de aprendizado duplicados (linhas 286-328)
 
-### Grupo 3: Completude da qualificacao
-**Teste 3 - isQualificationComplete:**
-- Simular conversa com todos os campos obrigatorios preenchidos (CNPJ no contato, tipo_carga, estados, viagens_mes, tipo_frota)
-- Validar: Iris pede email, `awaiting_qualification_email: true`
-
-### Grupo 4: Voice qualification trigger
-**Teste 4 - Trigger da ligacao Iris pos-handoff:**
-- Verificar via query se `voice_qualifications` tem registros para contatos com handoff do agente Iris
-- Validar logica de agendamento (5 min delay)
-
-## Implementacao tecnica
-
-Todos os testes serao executados via `test-prospecting-flow` edge function com diferentes payloads. Para testes sequenciais (Grupo 2), usar cleanup entre cada cenario.
-
-Os testes do Grupo 1 ja existem nativamente na funcao. Os demais serao executados como testes manuais via `curl_edge_functions`.
-
-## O que validaremos em cada teste
-1. **Status da conversa** (nina/paused/human)
-2. **Tags do contato** (sem tags indevidas)
-3. **nina_context** (qualification_answers, identity_mismatch, awaiting_qualification_email)
-4. **Resposta do agente** (RC3 - sem emojis, coerente)
-5. **Extracao de dados** (campos corretos no qualification_answers)
-
-## Resultado esperado
-Relatorio consolidado com pass/fail para cada cenario, identificando eventuais gaps na logica de qualificacao inbound.
+## Detalhes técnicos
+- 1 arquivo afetado: nenhum (é update no banco via migration tool)
+- 1 migração SQL: UPDATE na tabela `agents`
+- Sem mudança de código no orchestrator
+- Deploy: nenhum necessário (prompt é lido do banco em runtime)
 
