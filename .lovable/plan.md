@@ -1,45 +1,38 @@
 
 
-# Analise do envio WhatsApp via Meta API
+# Resultado do Teste: Atlas com "não solicitei contato"
 
-## Status atual
+## O que aconteceu
+O Atlas recebeu "não solicitei contato, quem é você?" e respondeu:
 
-- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
-- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
-- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
-- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
+> "Entendo! Peço desculpas pelo engano. Obrigado por avisar. 🙏"
 
-## Causa raiz do auto-blocking não funcionar
+O `nina_context` foi atualizado corretamente com `identity_mismatch: true`, `paused_reason: "wrong_number"` e `followup_stopped: true` — o fluxo de desqualificação funcionou.
 
-O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
+## Problemas detectados
 
-1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
-2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
+| # | Problema | Gravidade |
+|---|----------|-----------|
+| 1 | **RC3 violado novamente** — emoji 🙏 na resposta | Alta |
+| 2 | **Contexto poluído** — mensagens de testes anteriores ainda presentes (12 mensagens antigas), o cleanup não está funcionando | Alta |
+| 3 | **RC1 possível violação** — resposta tem ~50 chars, no limite | Baixa |
 
-## Solução
+## Plano de Correção
 
-### 1. Forçar deploy das edge functions afetadas
-- `whatsapp-webhook`
-- `send-whatsapp-template`
-- `process-campaign`
+### 1. Reforço RC3 no prompt do Atlas (migration SQL)
+Adicionar instrução ainda mais explícita no topo das regras críticas:
+- "PROIBIDO usar qualquer emoji ou símbolo Unicode decorativo. Inclui mas não se limita a: 🎯 ✅ ⭐ 🙏 👍 📋 🚀 💡. Se a resposta contiver QUALQUER desses caracteres, ela está ERRADA."
+- Mover RC3 para ser a **primeira** regra crítica listada (priming effect)
 
-### 2. Corrigir comparação de tipo no webhook (segurança)
+### 2. Corrigir cleanup no test-prospecting-flow
+O problema é que o cleanup do teste anterior não está rodando antes do novo teste. A função usa `testPhone = '+5500000000001'` no fluxo principal, mas o cleanup do `cleanupTestConversation` pode estar falhando silenciosamente.
 
-**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
+Correção em `supabase/functions/test-prospecting-flow/index.ts`:
+- Chamar `cleanupTestConversation` no início do fluxo principal (não só no modo `cleanup_only`)
+- Deletar **todas** as mensagens antes de inserir novas
+- Resetar `nina_context` para `null` explicitamente
 
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
-
-Mesmo tratamento para `errorCode === 131042`.
-
-### 3. Corrigir comparação no send-whatsapp-template
-
-**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
-
-### Detalhes técnicos
-- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
-- Deploy manual das 3 edge functions
-- Sem migração de banco
-- Risco: nenhum — apenas robustez na comparação de tipo
+### Arquivos alterados
+- Migration SQL: `UPDATE agents SET system_prompt` (reforço RC3)
+- `supabase/functions/test-prospecting-flow/index.ts` (cleanup robusto)
 
