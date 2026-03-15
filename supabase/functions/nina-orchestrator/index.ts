@@ -772,8 +772,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     ],
     response: 'Agradecemos seu contato. No momento, nao estamos buscando novos fornecedores ou prestadores de servico. Caso isso mude, entraremos em contato. Obrigado!',
     pauseConversation: true,
-    reason: 'Fornecedor/prestador de serviço - não é lead de seguro',
-    emoji: '🏭'
+    reason: 'Fornecedor/prestador de serviço - não é lead de seguro'
   },
   {
     key: 'partnership',
