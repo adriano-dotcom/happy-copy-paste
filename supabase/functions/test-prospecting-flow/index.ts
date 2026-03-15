@@ -165,10 +165,15 @@ async function cleanupTestConversation(supabase: any, phone: string) {
       await supabase.from('messages').delete().eq('conversation_id', conv.id);
       await supabase.from('send_queue').delete().eq('conversation_id', conv.id);
       await supabase.from('nina_processing_queue').delete().eq('conversation_id', conv.id);
+      await supabase.from('conversation_states').delete().eq('conversation_id', conv.id);
       await supabase.from('conversations').update({
         nina_context: null,
-        status: 'nina'
+        status: 'nina',
+        current_agent_id: null,
+        metadata: null,
+        needs_human_review: false
       }).eq('id', conv.id);
+      console.log(`🧹 Reset conversation ${conv.id} (messages, queues, context)`);
     }
 
     await supabase.from('contacts').update({
