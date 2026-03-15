@@ -884,8 +884,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     ],
     response: null, // Não responde spam
     pauseConversation: true,
-    reason: 'Spam/golpe detectado',
-    emoji: '🚫'
+    reason: 'Spam/golpe detectado'
   },
   {
     key: 'freight_seeker',
