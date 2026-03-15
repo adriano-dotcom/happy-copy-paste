@@ -422,62 +422,17 @@ serve(async (req) => {
     const testPhone = '+5500000000001';
     const testName = 'Teste Prospecção';
 
-    // Cleanup protocol
+    // Cleanup protocol — reuse robust cleanup function
     console.log('🧹 Running cleanup protocol...');
+    await cleanupTestConversation(supabase, testPhone);
+    console.log('✅ Cleanup completed');
 
-    // Find test contact
+    // Re-fetch contact after cleanup
     const { data: existingContact } = await supabase
       .from('contacts')
       .select('id')
       .eq('phone_number', testPhone)
       .single();
-
-    if (existingContact) {
-      // Find conversation
-      const { data: conversation } = await supabase
-        .from('conversations')
-        .select('id')
-        .eq('contact_id', existingContact.id)
-        .single();
-
-      if (conversation) {
-        // Delete messages
-        await supabase
-          .from('messages')
-          .delete()
-          .eq('conversation_id', conversation.id);
-
-        // Clear queues
-        await supabase
-          .from('send_queue')
-          .delete()
-          .eq('conversation_id', conversation.id);
-
-        await supabase
-          .from('nina_processing_queue')
-          .delete()
-          .eq('conversation_id', conversation.id);
-
-        // Reset conversation
-        await supabase
-          .from('conversations')
-          .update({
-            nina_context: null,
-            status: 'nina',
-            current_agent_id: null,
-            whatsapp_window_start: new Date().toISOString()
-          })
-          .eq('id', conversation.id);
-
-        // Reset contact memory
-        await supabase
-          .from('contacts')
-          .update({ client_memory: null })
-          .eq('id', existingContact.id);
-
-        console.log('✅ Cleanup completed');
-      }
-    }
 
     if (cleanup_only) {
       return new Response(JSON.stringify({ success: true, message: 'Cleanup completed' }), {
