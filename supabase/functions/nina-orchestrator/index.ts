@@ -823,8 +823,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     markAsLost: false, // NÃO marca como perdido - é um novo lead potencial
     setIdentityMismatch: false,
     resetContactData: true, // NOVA FLAG - reseta dados do contato
-    reason: 'Número mudou de dono - novo lead',
-    emoji: '🔄'
+    reason: 'Número mudou de dono - novo lead'
   },
   {
     key: 'wrong_number',
