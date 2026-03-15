@@ -459,6 +459,25 @@ const Contacts: React.FC = () => {
       setSelectedContactIds(new Set(filteredContacts.map(c => c.id)));
     }
   };
+
+  const selectNextN = (n: number) => {
+    const unselected = filteredContacts.filter(c => !selectedContactIds.has(c.id));
+    if (unselected.length === 0) {
+      toast.info('Todos os contatos filtrados já estão selecionados');
+      return;
+    }
+    const newSet = new Set(selectedContactIds);
+    unselected.slice(0, n).forEach(c => newSet.add(c.id));
+    setSelectedContactIds(newSet);
+    const added = newSet.size - selectedContactIds.size;
+    toast.success(`${added} contato(s) selecionado(s)`);
+  };
+
+  const selectPage = () => {
+    const newSet = new Set(selectedContactIds);
+    paginatedContacts.forEach(c => newSet.add(c.id));
+    setSelectedContactIds(newSet);
+  };
   
   const handleBulkStatusChange = async (newStatus: string) => {
     if (selectedContactIds.size === 0) return;
@@ -673,16 +692,42 @@ const Contacts: React.FC = () => {
           <table className="w-full text-sm text-left">
             <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-800 font-medium text-xs uppercase tracking-wider">
               <tr>
-                {/* Checkbox Master */}
-                <th className="px-4 py-4 w-12 cursor-pointer select-none" onClick={toggleAllContacts}>
-                  <div className="flex items-center justify-center w-5 h-5 rounded border border-slate-600 hover:border-cyan-500 transition-colors">
-                    {allSelected ? (
-                      <CheckSquare className="w-4 h-4 text-cyan-400" />
-                    ) : someSelected ? (
-                      <Minus className="w-4 h-4 text-cyan-400" />
-                    ) : (
-                      <Square className="w-4 h-4 text-slate-500" />
-                    )}
+                {/* Checkbox Master with Batch Selection */}
+                <th className="px-4 py-4 w-16 select-none">
+                  <div className="flex items-center gap-0.5">
+                    <div 
+                      className="flex items-center justify-center w-5 h-5 rounded border border-slate-600 hover:border-cyan-500 transition-colors cursor-pointer"
+                      onClick={toggleAllContacts}
+                    >
+                      {allSelected ? (
+                        <CheckSquare className="w-4 h-4 text-cyan-400" />
+                      ) : someSelected ? (
+                        <Minus className="w-4 h-4 text-cyan-400" />
+                      ) : (
+                        <Square className="w-4 h-4 text-slate-500" />
+                      )}
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="p-0.5 rounded hover:bg-slate-700 transition-colors">
+                          <ChevronDown className="w-3 h-3 text-slate-400" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="bg-slate-900 border-slate-700 min-w-[180px]">
+                        <DropdownMenuItem onClick={() => selectNextN(50)} className="text-slate-200 focus:bg-slate-800 focus:text-cyan-400 cursor-pointer">
+                          Selecionar 50
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={selectPage} className="text-slate-200 focus:bg-slate-800 focus:text-cyan-400 cursor-pointer">
+                          Selecionar página ({paginatedContacts.length})
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={toggleAllContacts} className="text-slate-200 focus:bg-slate-800 focus:text-cyan-400 cursor-pointer">
+                          Selecionar todos ({filteredContacts.length})
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setSelectedContactIds(new Set())} className="text-slate-200 focus:bg-slate-800 focus:text-cyan-400 cursor-pointer">
+                          Limpar seleção
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </th>
                 <th className="px-4 py-4">
