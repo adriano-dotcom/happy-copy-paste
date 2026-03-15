@@ -1,29 +1,45 @@
 
 
-# Corrigir tratamento de objeções e violação RC3 no Atlas
+# Analise do envio WhatsApp via Meta API
 
-## Diagnóstico
-O teste mostrou que o Atlas:
-1. Ignora a objeção "nunca tive problema" e faz handoff direto
-2. Usa emoji 🎯 (viola RC3)
-3. O contexto de qualificação residual de testes anteriores faz o Atlas pular o fluxo
+## Status atual
 
-## Plano de Correção
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
 
-### 1. Reforçar no system_prompt do Atlas (migration SQL)
+## Causa raiz do auto-blocking não funcionar
 
-Adicionar no bloco de regras críticas:
-- **RC3 reforço**: Adicionar exemplos explícitos de violação (🎯, ✅, etc.) e instrução "NUNCA use caracteres Unicode decorativos"
-- **Objeção "nunca tive problema"**: Mover para uma seção de prioridade alta no prompt, antes do bloco de handoff, com instrução explícita: "Se o lead expressar que nunca precisou de seguro, OBRIGATORIAMENTE responda com o argumento regulatório ANTT/Lei 14.599/2023 ANTES de qualquer tentativa de handoff"
-- **Anti-handoff prematuro**: Adicionar regra "NÃO faça handoff se a última mensagem do lead contém uma objeção não respondida"
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
 
-### 2. Melhorar cleanup do test-prospecting-flow (edge function)
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
-No `cleanupTestConversation`, também limpar:
-- `deals` associados ao contato de teste (resetar `lost_reason`, pipeline)
-- Garantir que `client_memory` é efetivamente nulo
+## Solução
 
-### Arquivos alterados
-- Migration SQL para `UPDATE agents SET system_prompt` (Atlas)
-- `supabase/functions/test-prospecting-flow/index.ts` (cleanup mais robusto)
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
+
+### 2. Corrigir comparação de tipo no webhook (segurança)
+
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+
+Mesmo tratamento para `errorCode === 131042`.
+
+### 3. Corrigir comparação no send-whatsapp-template
+
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+
+### Detalhes técnicos
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 
