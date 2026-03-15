@@ -1,45 +1,30 @@
 
 
-# Analise do envio WhatsApp via Meta API
+# Atualizar System Prompt do Atlas para v3.2
 
-## Status atual
+## O que será feito
+Atualizar o campo `system_prompt` do agente Atlas na tabela `agents` com o conteúdo completo do arquivo `atlas_v3.2.txt` enviado.
 
-- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
-- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
-- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
-- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
+## Como
+Executar uma migration SQL que faz `UPDATE` no registro do agente Atlas (identificado por `slug = 'atlas'`) com o novo prompt v3.2 completo.
 
-## Causa raiz do auto-blocking não funcionar
+```sql
+UPDATE public.agents 
+SET system_prompt = '...conteúdo completo do atlas_v3.2.txt...',
+    updated_at = now()
+WHERE slug = 'atlas';
+```
 
-O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
+## Mudanças do v3.2 (changelog)
+- Regra de abertura de alto impacto — primeira frase sempre com gancho regulatório
+- Bloco de argumento regulatório ANTT/Lei 14.599/2023 com regra de uso único
+- Encerramento "warm" para leads receptivos com vencimento 61-120 dias
+- Variável `argumento_antt_usado` no estado para evitar repetição
+- Dado de volume/NF como obrigatório no handoff de carga
+- Objeção "nunca tive problema sem seguro" com resposta ANTT
+- RC1 agora tem exceção para mensagens de encerramento
+- RCTR-C explicado brevemente na primeira menção com leads menos técnicos
 
-1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
-2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
-
-## Solução
-
-### 1. Forçar deploy das edge functions afetadas
-- `whatsapp-webhook`
-- `send-whatsapp-template`
-- `process-campaign`
-
-### 2. Corrigir comparação de tipo no webhook (segurança)
-
-**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
-
-Mesmo tratamento para `errorCode === 131042`.
-
-### 3. Corrigir comparação no send-whatsapp-template
-
-**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
-
-### Detalhes técnicos
-- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
-- Deploy manual das 3 edge functions
-- Sem migração de banco
-- Risco: nenhum — apenas robustez na comparação de tipo
+## Arquivos
+Nenhum arquivo de código será alterado. Apenas uma migration SQL para atualizar o banco de dados.
 
