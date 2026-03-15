@@ -459,6 +459,25 @@ const Contacts: React.FC = () => {
       setSelectedContactIds(new Set(filteredContacts.map(c => c.id)));
     }
   };
+
+  const selectNextN = (n: number) => {
+    const unselected = filteredContacts.filter(c => !selectedContactIds.has(c.id));
+    if (unselected.length === 0) {
+      toast.info('Todos os contatos filtrados já estão selecionados');
+      return;
+    }
+    const newSet = new Set(selectedContactIds);
+    unselected.slice(0, n).forEach(c => newSet.add(c.id));
+    setSelectedContactIds(newSet);
+    const added = newSet.size - selectedContactIds.size;
+    toast.success(`${added} contato(s) selecionado(s)`);
+  };
+
+  const selectPage = () => {
+    const newSet = new Set(selectedContactIds);
+    paginatedContacts.forEach(c => newSet.add(c.id));
+    setSelectedContactIds(newSet);
+  };
   
   const handleBulkStatusChange = async (newStatus: string) => {
     if (selectedContactIds.size === 0) return;
