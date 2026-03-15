@@ -119,6 +119,7 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
     setSelectedTime('09:00');
     setIntervalMinSeconds(30);
     setIntervalMaxSeconds(90);
+    setIsProspecting(true);
     onClose();
   };
 
