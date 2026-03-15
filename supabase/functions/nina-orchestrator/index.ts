@@ -950,10 +950,9 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'enviar cargu', 'transportar cargu', 'levar mercadória',
       'preciso enviar cargu', 'preciso levar mercadória'
     ],
-    response: 'Olá! Entendo que você está buscando serviços de frete ou transporte. Nós não realizamos transporte de cargas - somos uma corretora de seguros especializada em proteger mercadorias durante o transporte. Se você já tem o frete contratado e quer garantir a segurança da sua carga, podemos ajudar! Você já tem uma transportadora? 🚛',
+    response: 'Ola! Entendo que voce esta buscando servicos de frete ou transporte. Nos nao realizamos transporte de cargas - somos uma corretora de seguros especializada em proteger mercadorias durante o transporte. Se voce ja tem o frete contratado e quer garantir a seguranca da sua carga, podemos ajudar! Voce ja tem uma transportadora?',
     pauseConversation: false, // NÃO pausar - tentar converter em lead de seguro
-    reason: 'Busca de frete - esclarecer que somos corretora de seguros',
-    emoji: '🚛'
+    reason: 'Busca de frete - esclarecer que somos corretora de seguros'
   }
 ];
 
