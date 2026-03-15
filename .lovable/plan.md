@@ -1,45 +1,36 @@
 
 
-# Analise do envio WhatsApp via Meta API
+# Adicionar seleção rápida de 50 leads por vez na aba Outbound
 
-## Status atual
-
-- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
-- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
-- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
-- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
-
-## Causa raiz do auto-blocking não funcionar
-
-O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
-
-1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
-2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
+## Problema
+O usuário precisa selecionar leads em lotes de 50 para envio de campanhas WhatsApp, mas hoje só tem "Selecionar Todos" (que pega os 2069+) ou seleção manual um a um.
 
 ## Solução
 
-### 1. Forçar deploy das edge functions afetadas
-- `whatsapp-webhook`
-- `send-whatsapp-template`
-- `process-campaign`
+Adicionar um dropdown no header do checkbox (ao lado do ícone de seleção) com opções de seleção em lote:
 
-### 2. Corrigir comparação de tipo no webhook (segurança)
+- **Selecionar 50 primeiros** — seleciona os próximos 50 contatos não selecionados da lista filtrada
+- **Selecionar página atual** (100) — comportamento atual
+- **Selecionar todos** — comportamento atual
+- **Limpar seleção**
 
-**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
+### Implementação em `src/components/Contacts.tsx`
 
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+1. **Substituir o `onClick={toggleAllContacts}` no `<th>` do checkbox master** por um `DropdownMenu` com as opções acima
 
-Mesmo tratamento para `errorCode === 131042`.
+2. **Nova função `selectNextN(n: number)`**:
+   - Pega os primeiros `n` contatos de `filteredContacts` que ainda NÃO estão em `selectedContactIds`
+   - Adiciona ao Set existente (acumulativo)
+   - Se todos já estiverem selecionados, mostra toast informativo
 
-### 3. Corrigir comparação no send-whatsapp-template
+3. **Opções do dropdown**:
+   - "Selecionar 50" → `selectNextN(50)`
+   - "Selecionar página (100)" → seleciona apenas os `paginatedContacts`
+   - "Selecionar todos ({total})" → `toggleAllContacts()` atual
+   - "Limpar seleção" → `setSelectedContactIds(new Set())`
 
-**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+4. **Visual**: O ícone do checkbox master continua mostrando o estado atual (check/minus/empty). Ao clicar no ícone faz toggle da página, mas um botão `ChevronDown` ao lado abre o dropdown com as opções.
 
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
-
-### Detalhes técnicos
-- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
-- Deploy manual das 3 edge functions
-- Sem migração de banco
-- Risco: nenhum — apenas robustez na comparação de tipo
+### Arquivo editado
+- `src/components/Contacts.tsx`
 
