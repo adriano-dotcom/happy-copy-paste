@@ -136,6 +136,25 @@ async function cleanupTestConversation(supabase: any, phone: string) {
     .single();
 
   if (contact) {
+    // Reset deals associated with test contact
+    const { data: deals } = await supabase
+      .from('deals')
+      .select('id')
+      .eq('contact_id', contact.id);
+
+    if (deals && deals.length > 0) {
+      await supabase
+        .from('deals')
+        .update({
+          lost_reason: null,
+          lost_at: null,
+          won_at: null,
+          notes: null
+        })
+        .eq('contact_id', contact.id);
+      console.log(`🧹 Reset ${deals.length} deals for test contact`);
+    }
+
     const { data: conv } = await supabase
       .from('conversations')
       .select('id')
