@@ -868,7 +868,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'esse whatsapp não é', 'esse whatsapp nao e',
       'esse zap não é', 'esse zap nao e'
     ],
-    response: 'Entendo! Peço desculpas pelo engano. Obrigado por avisar. 🙏',
+    response: 'Entendo, peco desculpas pelo engano. Obrigado por avisar!',
     pauseConversation: true,
     markAsLost: true,
     setIdentityMismatch: true,
