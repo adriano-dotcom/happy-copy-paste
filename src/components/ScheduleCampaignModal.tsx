@@ -100,7 +100,7 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
       template_id: selectedTemplateId,
       contact_ids: contactIds,
       interval_seconds: averageInterval,
-      is_prospecting: true,
+      is_prospecting: isProspecting,
       scheduled_at: scheduledAt.toISOString(),
     });
 
