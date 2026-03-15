@@ -39,6 +39,7 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
   const [selectedTime, setSelectedTime] = useState('09:00');
   const [intervalMinSeconds, setIntervalMinSeconds] = useState(30);
   const [intervalMaxSeconds, setIntervalMaxSeconds] = useState(90);
+  const [isProspecting, setIsProspecting] = useState(true);
   const [loading, setLoading] = useState(false);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
   const { createCampaign } = useCampaigns();
