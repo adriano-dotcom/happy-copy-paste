@@ -246,6 +246,18 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
               Tempo estimado: ~{Math.ceil((contactIds.length * averageInterval) / 60)} minutos
             </p>
           </div>
+
+          {/* Prospecting Toggle */}
+          <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+            <div className="flex items-center gap-3">
+              <Zap className="w-5 h-5 text-yellow-400" />
+              <div>
+                <Label className="text-sm font-medium">Prospecção Ativa</Label>
+                <p className="text-xs text-slate-400">Ativar agente Atlas para qualificação</p>
+              </div>
+            </div>
+            <Switch checked={isProspecting} onCheckedChange={setIsProspecting} />
+          </div>
         </div>
 
         <DialogFooter>
