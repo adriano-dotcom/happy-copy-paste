@@ -1,35 +1,45 @@
 
 
-# Agendar Campanha de Prospecção direto da aba Contatos
+# Analise do envio WhatsApp via Meta API
 
-## Contexto
-A infraestrutura de campanhas já existe e funciona:
-- Tabela `whatsapp_campaigns` com campo `scheduled_at` e status `scheduled`
-- Edge Function `process-campaign` roda a cada minuto via cron e auto-inicia campanhas agendadas
-- Hook `useCampaigns` com `createCampaign` que aceita `scheduled_at`
-- `CreateCampaignModal` existe mas é complexo (inclui seleção de contatos desnecessária aqui)
+## Status atual
 
-O que falta é conectar o fluxo: selecionar contatos → escolher template → agendar data/hora → criar campanha.
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
+
+## Causa raiz do auto-blocking não funcionar
+
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
+
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
 ## Solução
 
-### 1. Criar `ScheduleCampaignModal` (novo componente)
-Modal simplificado que recebe os contatos já selecionados e permite:
-- Escolher template (dropdown com templates aprovados)
-- Preview do template selecionado
-- Definir data e hora do disparo (DatePicker + input de hora)
-- Intervalo entre mensagens (slider, padrão 60s)
-- Nome automático da campanha (ex: "Prospecção 15/03 14:00 - 50 contatos")
-- Botão "Agendar Campanha"
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
 
-Ao confirmar, usa `useCampaigns().createCampaign()` com `scheduled_at` preenchido, criando a campanha com status `scheduled`. O cron existente cuida do resto.
+### 2. Corrigir comparação de tipo no webhook (segurança)
 
-### 2. Adicionar botão "Agendar Campanha" na barra de ações em massa (Contacts.tsx)
-Ao lado do botão "Enviar Template" existente, adicionar um botão com ícone de calendário:
-- `CalendarDays` icon + "Agendar Campanha"
-- Abre o `ScheduleCampaignModal` com os contatos selecionados
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
 
-### Arquivos editados
-- `src/components/ScheduleCampaignModal.tsx` — novo componente
-- `src/components/Contacts.tsx` — botão + import do modal
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+
+Mesmo tratamento para `errorCode === 131042`.
+
+### 3. Corrigir comparação no send-whatsapp-template
+
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+
+### Detalhes técnicos
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 

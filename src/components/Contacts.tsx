@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from './ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { BulkSendTemplateModal } from './BulkSendTemplateModal';
+import { ScheduleCampaignModal } from './ScheduleCampaignModal';
 import { supabase } from '@/integrations/supabase/client';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from './ui/tooltip';
 
@@ -119,6 +120,7 @@ const Contacts: React.FC = () => {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
   const [isBulkSendTemplateOpen, setIsBulkSendTemplateOpen] = useState(false);
+  const [isScheduleCampaignOpen, setIsScheduleCampaignOpen] = useState(false);
   const [isBulkCampaignUpdating, setIsBulkCampaignUpdating] = useState(false);
   const [isBulkPipelineUpdating, setIsBulkPipelineUpdating] = useState(false);
   const [isBulkOwnerUpdating, setIsBulkOwnerUpdating] = useState(false);
@@ -1552,6 +1554,15 @@ const Contacts: React.FC = () => {
                 <Send className="w-4 h-4 mr-1" />
                 Enviar Template
               </Button>
+              <Button
+                variant="ghost" 
+                size="sm"
+                onClick={() => setIsScheduleCampaignOpen(true)}
+                className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+              >
+                <CalendarDays className="w-4 h-4 mr-1" />
+                Agendar Campanha
+              </Button>
               {isAdmin && (
                 <Button 
                   variant="ghost" 
@@ -1806,6 +1817,17 @@ const Contacts: React.FC = () => {
         isOpen={isBulkSendTemplateOpen}
         onClose={() => setIsBulkSendTemplateOpen(false)}
         contacts={contacts.filter(c => selectedContactIds.has(c.id))}
+        onComplete={() => {
+          setSelectedContactIds(new Set());
+          loadContacts();
+        }}
+      />
+
+      {/* Schedule Campaign Modal */}
+      <ScheduleCampaignModal
+        isOpen={isScheduleCampaignOpen}
+        onClose={() => setIsScheduleCampaignOpen(false)}
+        contactIds={Array.from(selectedContactIds)}
         onComplete={() => {
           setSelectedContactIds(new Set());
           loadContacts();
