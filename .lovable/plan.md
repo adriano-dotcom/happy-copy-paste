@@ -1,23 +1,24 @@
 
 
-# Teste Atlas: Mensagem ambígua de identidade
+# Plano: Adicionar keywords "nao pertence" ao wrong_number
 
-## Objetivo
-Rodar o teste via `test-prospecting-flow` com a mensagem `"nao sei se esse numero ainda eh dele"` para verificar se o orchestrator **não** desqualifica indevidamente (falso positivo no `wrong_number`).
+## Contexto
+A lista de keywords do `wrong_number` no `nina-orchestrator/index.ts` (linhas 831-866) não cobre variações com "pertence". Mensagens como "esse número não pertence a ele" passariam para o LLM em vez de serem desqualificadas automaticamente.
 
-## Expectativa
-- A mensagem é **ambígua** — não confirma nem nega identidade de forma clara
-- O orchestrator **não deve** disparar `wrong_number` porque nenhum dos keywords hardcoded (`"errou de numero"`, `"numero errado"`, `"engano"`, etc.) está presente
-- O Atlas deve tratar via LLM e responder normalmente, pedindo esclarecimento
-- Resposta sem emojis (RC3)
+## Alteração
+**Arquivo:** `supabase/functions/nina-orchestrator/index.ts` (linha 866)
 
-## Execução
-1. **Cleanup**: `{ "cleanup_only": true }` no `test-prospecting-flow`
-2. **Teste**: `{ "agent_slug": "atlas", "messages": ["nao sei se esse numero ainda eh dele"] }`
+Adicionar 4 novas keywords ao final da lista `wrong_number`, antes do fechamento do array:
 
-## O que validar nos resultados
-- `status` permanece `nina` (não pausado)
-- Sem tags de desqualificação (`engano`, `numero_errado`, etc.)
-- `nina_context` sem `identity_mismatch: true`
-- Resposta do Atlas coerente e sem emojis
+```
+'nao pertence', 'não pertence',
+'esse numero nao pertence', 'esse número não pertence'
+```
+
+Estas ficam após `'esse zap nao e'` e antes do `]` (linha 867).
+
+## Validação pós-deploy
+- Rodar teste com `"nao sei se esse numero ainda eh dele"` → **não** deve desqualificar (nenhum keyword match)
+- Rodar teste com `"esse numero nao pertence a essa pessoa"` → **deve** desqualificar via `wrong_number`
+- Rodar teste com `"sim, este telefone pertence a mim"` → **não** deve desqualificar (keyword é `nao pertence`, não `pertence` sozinho)
 
