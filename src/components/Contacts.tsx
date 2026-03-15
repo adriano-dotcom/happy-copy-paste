@@ -1554,6 +1554,15 @@ const Contacts: React.FC = () => {
                 <Send className="w-4 h-4 mr-1" />
                 Enviar Template
               </Button>
+              <Button
+                variant="ghost" 
+                size="sm"
+                onClick={() => setIsScheduleCampaignOpen(true)}
+                className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+              >
+                <CalendarDays className="w-4 h-4 mr-1" />
+                Agendar Campanha
+              </Button>
               {isAdmin && (
                 <Button 
                   variant="ghost" 
