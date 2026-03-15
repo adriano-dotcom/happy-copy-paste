@@ -1342,7 +1342,24 @@ const Contacts: React.FC = () => {
     </div>
   )};
 
-  const filteredContacts = getFilteredContacts();
+  const filteredContacts = useMemo(() => getFilteredContacts(), [
+    contacts, activeTab, searchTerm, selectedStatuses, cnpjFilter, channelFilter, 
+    dateFilter, letterFilter, campaignFilter, verticalFilter, ownerFilter, 
+    pipelineFilter, createdDateFilter, chatStatusFilter, templateFilter
+  ]);
+
+  // Reset page when filters/tab/search change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchTerm, selectedStatuses, cnpjFilter, channelFilter, 
+      dateFilter, letterFilter, campaignFilter, verticalFilter, ownerFilter, 
+      pipelineFilter, createdDateFilter, chatStatusFilter, templateFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredContacts.length / PAGE_SIZE));
+  const paginatedContacts = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredContacts.slice(start, start + PAGE_SIZE);
+  }, [filteredContacts, currentPage]);
 
   return (
     <div className="p-8 h-full overflow-y-auto bg-slate-950 text-slate-50">
