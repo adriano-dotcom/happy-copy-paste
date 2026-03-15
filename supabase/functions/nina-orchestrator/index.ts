@@ -756,8 +756,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     ],
     response: 'Agradecemos seu contato. Somos uma corretora especializada em seguros de transporte e carga. No momento, nao temos vagas em aberto. Desejamos sucesso na sua busca!',
     pauseConversation: true,
-    reason: 'Procura de emprego - não é lead de seguro',
-    emoji: '💼'
+    reason: 'Procura de emprego - não é lead de seguro'
   },
   {
     key: 'vendor',
