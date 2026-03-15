@@ -27,7 +27,7 @@ interface WhatsAppTemplate {
   name: string;
   language: string | null;
   status: string | null;
-  components: any[];
+  components: any[] | null;
 }
 
 export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete }: ScheduleCampaignModalProps) {
