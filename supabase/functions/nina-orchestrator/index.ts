@@ -863,7 +863,9 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
       'não sou eu', 'nao sou eu', 'não é meu', 'nao e meu',
       'sou outra pessoa', 'número antigo', 'numero antigo',
       'esse whatsapp não é', 'esse whatsapp nao e',
-      'esse zap não é', 'esse zap nao e'
+      'esse zap não é', 'esse zap nao e',
+      'nao pertence', 'não pertence',
+      'esse numero nao pertence', 'esse número não pertence'
     ],
     response: 'Entendo, peco desculpas pelo engano. Obrigado por avisar!',
     pauseConversation: true,
@@ -1665,7 +1667,9 @@ function isProspectingRejection(messageContent: string): boolean {
     'já falei que não sou', 'ja falei que nao sou',
     'já te disse que não', 'ja te disse que nao',
     'está insistindo', 'esta insistindo',
-    'insistindo em falar', 'insistindo em ligar'
+    'insistindo em falar', 'insistindo em ligar',
+    'nao pertence', 'não pertence',
+    'esse numero nao pertence', 'esse número não pertence'
   ];
   
   // Detectar padrão "não sou [nome]" via regex
