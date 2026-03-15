@@ -1,45 +1,23 @@
 
 
-# Analise do envio WhatsApp via Meta API
+# Teste Atlas: Mensagem ambígua de identidade
 
-## Status atual
+## Objetivo
+Rodar o teste via `test-prospecting-flow` com a mensagem `"nao sei se esse numero ainda eh dele"` para verificar se o orchestrator **não** desqualifica indevidamente (falso positivo no `wrong_number`).
 
-- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
-- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
-- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
-- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
+## Expectativa
+- A mensagem é **ambígua** — não confirma nem nega identidade de forma clara
+- O orchestrator **não deve** disparar `wrong_number` porque nenhum dos keywords hardcoded (`"errou de numero"`, `"numero errado"`, `"engano"`, etc.) está presente
+- O Atlas deve tratar via LLM e responder normalmente, pedindo esclarecimento
+- Resposta sem emojis (RC3)
 
-## Causa raiz do auto-blocking não funcionar
+## Execução
+1. **Cleanup**: `{ "cleanup_only": true }` no `test-prospecting-flow`
+2. **Teste**: `{ "agent_slug": "atlas", "messages": ["nao sei se esse numero ainda eh dele"] }`
 
-O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
-
-1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
-2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
-
-## Solução
-
-### 1. Forçar deploy das edge functions afetadas
-- `whatsapp-webhook`
-- `send-whatsapp-template`
-- `process-campaign`
-
-### 2. Corrigir comparação de tipo no webhook (segurança)
-
-**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
-
-Mesmo tratamento para `errorCode === 131042`.
-
-### 3. Corrigir comparação no send-whatsapp-template
-
-**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
-
-### Detalhes técnicos
-- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
-- Deploy manual das 3 edge functions
-- Sem migração de banco
-- Risco: nenhum — apenas robustez na comparação de tipo
+## O que validar nos resultados
+- `status` permanece `nina` (não pausado)
+- Sem tags de desqualificação (`engano`, `numero_errado`, etc.)
+- `nina_context` sem `identity_mismatch: true`
+- Resposta do Atlas coerente e sem emojis
 
