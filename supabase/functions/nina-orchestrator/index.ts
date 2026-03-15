@@ -869,8 +869,7 @@ const DISQUALIFICATION_CATEGORIES: DisqualificationCategory[] = [
     pauseConversation: true,
     markAsLost: true,
     setIdentityMismatch: true,
-    reason: 'Contato errado / pessoa errada',
-    emoji: '❓'
+    reason: 'Contato errado / pessoa errada'
   },
   {
     key: 'spam',
