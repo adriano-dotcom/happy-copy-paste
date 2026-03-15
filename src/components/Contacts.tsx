@@ -1823,6 +1823,17 @@ const Contacts: React.FC = () => {
         }}
       />
 
+      {/* Schedule Campaign Modal */}
+      <ScheduleCampaignModal
+        isOpen={isScheduleCampaignOpen}
+        onClose={() => setIsScheduleCampaignOpen(false)}
+        contactIds={Array.from(selectedContactIds)}
+        onComplete={() => {
+          setSelectedContactIds(new Set());
+          loadContacts();
+        }}
+      />
+
       {/* Prospecting Email Modal */}
       {prospectingContact && (
         <ProspectingEmailModal
