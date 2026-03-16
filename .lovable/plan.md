@@ -1,37 +1,39 @@
 
 
-# Verificação: Indicador de Progresso em Tempo Real - Campanhas
+# Adicionar função de Alterar Senha
 
-## Status: Tudo funcionando corretamente
+## Situação atual
+- Não existe nenhuma funcionalidade de reset/alteração de senha no sistema
+- Não há rota `/reset-password` nem chamada a `resetPasswordForEmail` ou `updateUser({ password })`
+- A página de Auth (`src/pages/Auth.tsx`) já possui validação de senha (8+ chars, uppercase, number, special)
 
-Após revisar o código completo, os três componentes do sistema de progresso em tempo real estão implementados e integrados:
+## Plano
 
-### 1. Realtime habilitado no banco
-A tabela `whatsapp_campaigns` está adicionada à publicação `supabase_realtime`, permitindo que mudanças nos contadores sejam propagadas automaticamente ao frontend.
+### 1. Adicionar botão "Alterar Senha" na página /team (ou perfil do usuário logado)
+- Na tela de Team, adicionar um botão no header ou ao lado do nome do usuário logado para "Alterar minha senha"
+- Ao clicar, abre um modal com campos: senha atual (para confirmação), nova senha, confirmar nova senha
+- Reutilizar a validação de senha que já existe em `Auth.tsx`
+- Chamar `supabase.auth.updateUser({ password: novaSenha })` (funciona para o usuário autenticado)
 
-### 2. Frontend com atualização em tempo real (`CampaignManager.tsx`)
-- **Realtime via Supabase channel** (`useCampaigns.ts`, linhas 196-212): Subscription ativa em `postgres_changes` na tabela `whatsapp_campaigns` — qualquer UPDATE nos contadores dispara `fetchCampaigns()`.
-- **Polling de segurança** (linhas 64-73): Quando há campanha `running`, um `setInterval` de 5s recarrega os dados como fallback.
-- **Barra de progresso segmentada** (linhas 139-148 e 324-334): Mostra verde (enviadas), vermelho (falhas) e amarelo (ignoradas) proporcionalmente.
-- **Banner ativo** (linhas 115-158): Campanhas em execução exibem um banner com ping animado, contagem `X/Y enviados`, ETA calculado, e contagem de respostas.
-- **Contadores detalhados** (linhas 338-362): Enviadas, entregues (com %), falhas, ignoradas e respostas.
+### 2. Adicionar "Esqueci minha senha" na tela de login
+- Adicionar link "Esqueci minha senha" na aba de Login em `Auth.tsx`
+- Ao clicar, exibe campo de email e chama `supabase.auth.resetPasswordForEmail(email, { redirectTo: origin + '/reset-password' })`
 
-### 3. Webhook sincroniza falhas (`whatsapp-webhook/index.ts`)
-- Quando o WhatsApp reporta `status: failed`, o webhook busca `campaign_id` no metadata da mensagem e chama `update_campaign_counters` com `p_sent: -1, p_failed: 1`.
-- Isso atualiza a tabela `whatsapp_campaigns`, que por sua vez dispara o realtime para o frontend.
+### 3. Criar página `/reset-password`
+- Nova página `src/pages/ResetPassword.tsx`
+- Detecta token `type=recovery` na URL
+- Exibe formulário para definir nova senha (com validação)
+- Chama `supabase.auth.updateUser({ password })` para aplicar
 
-### Fluxo completo
-```text
-process-campaign → envia msg → sent_count++ → realtime → UI atualiza
-                                                         ↓
-whatsapp webhook → status:failed → update_campaign_counters → realtime → UI atualiza
-                 → status:delivered → campaign_contacts.delivered_at → realtime → UI atualiza
-```
+### 4. Registrar rota no App.tsx
+- Adicionar rota pública `/reset-password` apontando para `ResetPassword.tsx`
 
-## Conclusão
-Não há correções necessárias. O indicador de progresso em tempo real está funcional:
-- Contadores de envio, falha e skip se atualizam em tempo real
-- A barra de progresso reflete visualmente cada categoria
-- O ETA é recalculado dinamicamente
-- Falhas reportadas pelo webhook são sincronizadas de volta aos contadores da campanha
+## Arquivos
+
+| Arquivo | Mudança |
+|---------|---------|
+| `src/pages/Auth.tsx` | Adicionar link "Esqueci minha senha" + fluxo de envio de email |
+| `src/pages/ResetPassword.tsx` | **Novo** - página de redefinição de senha |
+| `src/components/Team.tsx` | Adicionar botão/modal "Alterar minha senha" para usuário logado |
+| `src/App.tsx` | Adicionar rota `/reset-password` |
 
