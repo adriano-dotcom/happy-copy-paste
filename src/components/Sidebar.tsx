@@ -169,7 +169,7 @@ const SidebarContent = () => {
   const location = useLocation();
   const currentPath = location.pathname.substring(1) || 'dashboard';
   const { open } = useSidebar();
-  const { isAdmin, loading: roleLoading } = useUserRole();
+  const { isAdmin, isAdminOrManager, loading: roleLoading } = useUserRole();
   const { user, signOut } = useAuth();
   const { pendingLeadsCount, unreadMessagesCount } = useUnreadMessages();
   const { isActive: autoAttendantActive, toggle: toggleAutoAttendant } = useAutoAttendantFlag();
