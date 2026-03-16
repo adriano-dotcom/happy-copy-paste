@@ -153,6 +153,8 @@ const Dashboard: React.FC = () => {
   const [excludedConversationsCount, setExcludedConversationsCount] = useState<number>(0);
   const [iaDistributionStats, setIADistributionStats] = useState<IADistributionStats[]>([]);
   const [agentDistributionConfig, setAgentDistributionConfig] = useState<AgentDistributionConfig[]>([]);
+  const [pipedriveByAgent, setPipedriveByAgent] = useState<PipedriveByAgent[]>([]);
+  const [conversionByPipeline, setConversionByPipeline] = useState<ConversionByPipeline[]>([]);
 
   const fetchSystemMetrics = async () => {
     try {
