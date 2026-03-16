@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Mail } from 'lucide-react';
+import { Mail, KeyRound } from 'lucide-react';
 import { UserPlus, Search, MoreVertical, Loader2, X, Check, ChevronDown, Edit2, Shield, Users, Briefcase, Settings } from 'lucide-react';
 import { Button } from './Button';
 import { api } from '../services/api';
 import { TeamMember, type Team as TeamType, type TeamFunction } from '../types';
 import { supabase } from '@/integrations/supabase/client';
 import TeamConfigModal from './TeamConfigModal';
+import ChangePasswordModal from './ChangePasswordModal';
 import { toast } from 'sonner';
 
 const Team: React.FC = () => {
