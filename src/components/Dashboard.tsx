@@ -657,7 +657,9 @@ const Dashboard: React.FC = () => {
         .eq('is_active', true);
 
       // Fetch conversations to map contact -> agent
-      const contactIds = [...new Set(syncedDeals?.map(d => d.contact_id).filter(Boolean) || [])];
+      const contactIds = [...new Set(
+        (syncedDeals?.map(d => d.contact_id).filter((id): id is string => id !== null)) || []
+      )];
       
       let conversationAgentMap: Record<string, string> = {};
       if (contactIds.length > 0) {
