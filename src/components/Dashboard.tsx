@@ -119,6 +119,21 @@ interface TemplateMetrics {
   periodCost: number;
 }
 
+interface PipedriveByAgent {
+  agentId: string;
+  agentName: string;
+  total: number;
+  periodCount: number;
+}
+
+interface ConversionByPipeline {
+  pipelineId: string;
+  pipelineName: string;
+  totalDeals: number;
+  wonDeals: number;
+  conversionRate: number;
+}
+
 const TEMPLATE_COST_BRL = 0.41; // Custo por mensagem de template Meta
 
 const Dashboard: React.FC = () => {
