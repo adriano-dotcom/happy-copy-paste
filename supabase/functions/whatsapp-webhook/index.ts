@@ -664,6 +664,37 @@ async function processStatusUpdates(supabase: any, statuses: any[]) {
               .update({ [updateField]: new Date().toISOString() })
               .eq('whatsapp_message_id', status.id);
           }
+          
+          // Sync failures back to campaign counters
+          if (newStatus === 'failed') {
+            const { data: failedMsg } = await supabase
+              .from('messages')
+              .select('metadata')
+              .eq('whatsapp_message_id', status.id)
+              .maybeSingle();
+            
+            const campaignId = failedMsg?.metadata?.campaign_id;
+            if (campaignId) {
+              console.log(`[Webhook] Syncing failure to campaign ${campaignId} for message ${status.id}`);
+              // Update campaign_contacts status
+              await supabase
+                .from('campaign_contacts')
+                .update({ 
+                  status: 'failed', 
+                  error_message: status.errors?.[0]?.message || 'WhatsApp delivery failed',
+                  error_code: String(status.errors?.[0]?.code || '')
+                })
+                .eq('whatsapp_message_id', status.id)
+                .eq('status', 'sent');
+              
+              // Adjust campaign counters: decrement sent, increment failed
+              await supabase.rpc('update_campaign_counters', {
+                p_campaign_id: campaignId,
+                p_sent: -1,
+                p_failed: 1
+              });
+            }
+          }
         }
       }
     } catch (error) {

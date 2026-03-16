@@ -1,37 +1,45 @@
 
 
-# Diagnóstico: Problemas Identificados na Campanha
+# Analise do envio WhatsApp via Meta API
 
-## Problemas encontrados
+## Status atual
 
-### 1. Mensagens no chat com `{{1}}` não substituído
-As mensagens salvas no banco mostram `_Pode confirmar se este WhatsApp é do responsável pela empresa {{1}}?_` — a variável `{{1}}` não foi substituída no conteúdo gravado.
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
 
-**Causa raiz**: No `process-campaign/index.ts` (linha 407), o código faz:
-```
-const bodyVars = templateVars.body_vars || [];
-```
-Mas `template_variables` está vazio `{}`, então `body_vars` não existe. O template usa variáveis no BODY (via `body_1`, `body_2`...) que são corretamente enviadas para a API do WhatsApp (linhas 311-322, usando `contact.name` como fallback), mas na hora de gravar a mensagem no banco, tenta usar `templateVars.body_vars` que não existe.
+## Causa raiz do auto-blocking não funcionar
 
-**Correção**: Na seção de criação da mensagem (linhas 404-410), substituir as variáveis usando a mesma lógica do envio (linhas 311-322), ou seja, usar os valores reais que foram enviados à API.
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
 
-### 2. Contadores de falha da campanha não atualizados pelo webhook
-A campanha mostra `sent_count: 26, failed_count: 0`, mas várias mensagens têm `status: failed` com erro 131026 no metadata. Isso acontece porque:
-- O `process-campaign` envia com sucesso (recebe 200 da API) e marca como `sent`
-- Depois, o webhook do WhatsApp reporta erro 131026 e atualiza o `messages.status` para `failed`, mas **não atualiza** `campaign_contacts` nem os contadores da campanha
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
-**Correção**: No `whatsapp-webhook/index.ts`, quando receber um status de falha para uma mensagem que tem `campaign_id` no metadata, atualizar o `campaign_contacts` e chamar `update_campaign_counters` para decrementar `sent` e incrementar `failed`.
+## Solução
 
-### 3. Mensagens aparecem no chat mas com conteúdo errado
-As mensagens **estão** sendo gravadas e **aparecem** no chat, mas mostram `{{1}}` em vez do nome real. O problema não é de visibilidade, é de conteúdo.
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
 
-## Plano de implementação
+### 2. Corrigir comparação de tipo no webhook (segurança)
 
-| # | Arquivo | Mudança |
-|---|---------|---------|
-| 1 | `supabase/functions/process-campaign/index.ts` | Corrigir substituição de variáveis no conteúdo da mensagem (linhas 404-410): usar os mesmos valores computados para bodyParams/headerParams |
-| 2 | `supabase/functions/whatsapp-webhook/index.ts` | Ao processar status de falha (131026 etc.), verificar se a mensagem tem `campaign_id` no metadata e atualizar `campaign_contacts` + contadores |
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
 
-## Sem mudanças no banco de dados
-Não são necessárias migrações. Os dados existentes com `{{1}}` ficarão como estão (mensagens já enviadas), mas todas as novas mensagens terão o conteúdo correto.
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+
+Mesmo tratamento para `errorCode === 131042`.
+
+### 3. Corrigir comparação no send-whatsapp-template
+
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+
+### Detalhes técnicos
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 
