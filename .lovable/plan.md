@@ -1,39 +1,43 @@
 
 
-# Plano: Rodar teste completo da Iris Inbound com prompt v2.0
+# Plano: Campanha agendada visivel na agenda + prevencao de duplicidade
 
-## Objetivo
-Executar os testes existentes e novos cenarios para validar que o prompt v2.0 da Iris funciona corretamente com o nina-orchestrator.
+## Problema
+1. Quando uma campanha e agendada via ScheduleCampaignModal, nao aparece na view de Agendamentos (Scheduling) — a equipe nao tem visibilidade do disparo.
+2. Nao ha verificacao se um contato ja esta em outra campanha ativa/agendada antes de ser incluido em uma nova.
 
-## Testes a executar
+## Solucao
 
-### Grupo 1: Qualification Protection (existente)
-Chamar `test-prospecting-flow` com `{ "test_type": "qualification_protection" }` para validar que as 15 respostas de qualificacao nao disparam desqualificacao.
+### 1. Criar appointment automaticamente ao agendar campanha
 
-### Grupo 2: Fluxo conversacional Iris (via test-prospecting-flow)
+No `ScheduleCampaignModal.handleSubmit`, apos criar a campanha com sucesso, inserir um registro na tabela `appointments` com:
+- `title`: nome da campanha (ex: "Campanha: Prospeccao 16/03 11:00 - 50 contatos")
+- `date`: data do agendamento
+- `time`: horario do agendamento
+- `type`: "campaign" (novo tipo)
+- `description`: template usado + quantidade de contatos
+- `duration`: tempo estimado baseado no intervalo medio x quantidade
 
-**Teste 2a - Primeiro contato inbound:**
-- `{ "agent_slug": "iris", "messages": ["Boa tarde, vi que voces trabalham com seguro de carga, queria saber mais"] }`
-- Validar: status `nina`, resposta sem emojis, tom profissional do v2.0
+Tambem adicionar o tipo "campaign" ao `getEventTypeColor` no Scheduling.tsx com uma cor distinta (ex: amarelo/amber).
 
-**Teste 2b - Extracao de dados (tipo_carga + estados):**
-- `{ "agent_slug": "iris", "messages": ["Boa tarde, preciso de seguro", "Graos e fertilizantes, rodo por SP, PR e MT"] }`
-- Validar: `qualification_answers` com `tipo_carga` e `estados`
+### 2. Prevencao de duplicidade no ScheduleCampaignModal
 
-**Teste 2c - Dados numericos (viagens + valor):**
-- `{ "agent_slug": "iris", "messages": ["Boa tarde, preciso de cotacao", "Umas 15 viagens, valor medio de 120 mil"] }`
-- Validar: `viagens_mes` e `valor_medio` extraidos
+Antes de criar a campanha, consultar `campaign_contacts` para verificar quais dos `contactIds` selecionados ja estao em campanhas com status `pending`, `queued`, `scheduled` ou `running`. Mostrar alerta ao usuario com a contagem de duplicados e opcao de:
+- Prosseguir sem os duplicados (remover da lista)
+- Prosseguir mesmo assim (incluir todos)
 
-**Teste 2d - Desqualificacao legitima:**
-- `{ "agent_slug": "iris", "messages": ["Nao, errou de numero, nao conheco nenhuma jacometo"] }`
-- Validar: status `paused`, desqualificacao aplicada
+### 3. Prevencao de duplicidade no process-campaign (backend)
 
-### Grupo 3: Verificacao de formato RC3
-- Apos cada teste, verificar que a resposta da Iris nao contem emojis (regex `[\u{1F600}-\u{1F64F}]`)
+No Edge Function `process-campaign`, antes de enviar para cada contato, verificar se o mesmo `phone_number` ja recebeu o mesmo `template` nas ultimas 24h (via tabela `messages` ou `campaign_contacts`). Se sim, marcar como `skipped`.
 
-## Implementacao
-Todos os testes serao executados via `curl_edge_functions` chamando `test-prospecting-flow`. Entre cada teste, chamar cleanup. Ao final, consolidar um relatorio pass/fail.
+## Arquivos a alterar
 
-## Resultado esperado
-Relatorio com status de cada cenario, identificando regressoes ou melhorias do prompt v2.0 vs comportamento anterior.
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/components/ScheduleCampaignModal.tsx` | Criar appointment + verificar duplicados |
+| `src/components/Scheduling.tsx` | Adicionar cor para tipo "campaign" |
+| `supabase/functions/process-campaign/index.ts` | Skip de contatos duplicados no envio |
+
+## Migracao SQL
+Nenhuma necessaria — a tabela `appointments` ja aceita `type` como text, e a logica de duplicidade usa tabelas existentes.
 
