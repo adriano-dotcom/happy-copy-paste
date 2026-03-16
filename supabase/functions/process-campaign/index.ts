@@ -314,7 +314,7 @@ serve(async (req) => {
             if (bodyMatches.length > 0) {
               const bodyParams = bodyMatches.map((_, i) => {
                 // Body vars: normalize defensively (only if value matches full contact name)
-                const rawValue = templateVars[`body_${i + 1}`] || contact.name || 'Cliente';
+              const rawValue = templateVars[`body_${i + 1}`] || contact.company || contact.name || 'Cliente';
                 const varValue = normalizeIfName(rawValue);
                 return { type: 'text', text: varValue };
               });
