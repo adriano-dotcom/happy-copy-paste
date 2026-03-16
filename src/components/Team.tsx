@@ -495,6 +495,12 @@ const Team: React.FC = () => {
         onClose={() => setShowConfigModal(false)} 
         onUpdate={loadAllData}
       />
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal 
+        open={showChangePassword} 
+        onClose={() => setShowChangePassword(false)} 
+      />
     </div>
   );
 };
