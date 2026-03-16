@@ -321,11 +321,16 @@ export const CampaignManager: React.FC<CampaignManagerProps> = ({
                         </span>
                         <span>{progress}%</span>
                       </div>
-                      <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-primary transition-all duration-500"
-                          style={{ width: `${progress}%` }}
-                        />
+                      <div className="h-2 bg-secondary rounded-full overflow-hidden flex">
+                        {campaign.sent_count > 0 && (
+                          <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${(campaign.sent_count / campaign.total_contacts) * 100}%` }} />
+                        )}
+                        {campaign.failed_count > 0 && (
+                          <div className="h-full bg-destructive transition-all duration-500" style={{ width: `${(campaign.failed_count / campaign.total_contacts) * 100}%` }} />
+                        )}
+                        {campaign.skipped_count > 0 && (
+                          <div className="h-full bg-amber-500 transition-all duration-500" style={{ width: `${(campaign.skipped_count / campaign.total_contacts) * 100}%` }} />
+                        )}
                       </div>
                     </div>
 
@@ -339,10 +344,21 @@ export const CampaignManager: React.FC<CampaignManagerProps> = ({
                         <Send className="w-3 h-3" />
                         <span>{campaign.delivered_count} entregues ({getDeliveryRate(campaign)}%)</span>
                       </div>
-                      <div className="flex items-center gap-1 text-red-500">
+                      <div className="flex items-center gap-1 text-destructive">
                         <XCircle className="w-3 h-3" />
                         <span>{campaign.failed_count} falhas</span>
                       </div>
+                      {campaign.skipped_count > 0 && (
+                        <div className="flex items-center gap-1 text-amber-500">
+                          <AlertTriangle className="w-3 h-3" />
+                          <span>{campaign.skipped_count} ignoradas</span>
+                        </div>
+                      )}
+                      {campaign.replied_count > 0 && (
+                        <div className="flex items-center gap-1 text-emerald-400">
+                          <span>💬 {campaign.replied_count} respostas</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Error message if any */}
