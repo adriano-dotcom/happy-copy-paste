@@ -1,26 +1,33 @@
 
-# Diagnóstico: Campanha já aparece na agenda
 
-## Situação atual
+# Plan: Enhanced Real-time Progress Indicator for Campaigns
 
-Após investigar o código e o banco de dados, **a funcionalidade já está implementada e funcionando**:
+## Current State
 
-1. **Dados no banco**: Confirmei que o appointment da campanha foi criado com sucesso:
-   - Título: "📢 Campanha: Prospecção 16/03 11:05 - 50 contatos"
-   - Data: 2026-03-16, Horário: 11:05
-   - Tipo: `campaign`, Status: `scheduled`
-   - Descrição: Template, contatos, intervalo e prospecção
+The `CampaignManager.tsx` component **already has** a progress bar, percentage display, and real-time updates (5s polling + realtime subscription). The basic functionality exists but can be improved for better visibility.
 
-2. **Código correto**: 
-   - `ScheduleCampaignModal.tsx` já insere o appointment automaticamente ao agendar
-   - `Scheduling.tsx` já tem a cor amber/amarelo para tipo `campaign`
-   - `src/types.ts` e `src/services/api.ts` já incluem o tipo `campaign`
-   - Realtime subscription está ativa para atualizar automaticamente
+## Enhancements
 
-## O que pode estar acontecendo
+### 1. Add animated pulse indicator for running campaigns
+- Show a pulsing green dot next to "Executando" status
+- Add estimated time remaining based on average send rate
 
-Você está na página `/contacts`. Basta navegar para a **Agenda** (menu lateral) e verificar o mês/dia correto (16/03). O evento deve aparecer em amarelo/amber com o título da campanha.
+### 2. Add a summary banner for active campaigns
+- At the top of the CampaignManager, show a compact banner when any campaign is running
+- Display: campaign name, animated progress bar, live counter "23/50 enviados", ETA
+- Use `replied_count` to also show engagement rate in real-time
 
-## Nenhuma alteração de código necessária
+### 3. Improve the existing progress bar
+- Add color segments: green for sent, red for failed, yellow for skipped
+- Show skipped count alongside sent/failed
+- Add a "pulsing" animation on the progress bar edge while running
 
-Tudo já está implementado. Se ao navegar para a agenda o evento não aparecer, me avise com um screenshot da tela da agenda para investigar mais.
+## Files to Change
+
+| File | Change |
+|------|--------|
+| `src/components/campaigns/CampaignManager.tsx` | Add active campaign banner, segmented progress bar, ETA calculation, pulse animation |
+
+## No database or migration changes needed
+The data is already available via the existing `whatsapp_campaigns` table and realtime subscription.
+
