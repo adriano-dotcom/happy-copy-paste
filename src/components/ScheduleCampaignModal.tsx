@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Slider } from './ui/slider';
 import { Badge } from './ui/badge';
 import { Switch } from './ui/switch';
-import { CalendarDays, Clock, Send, Loader2, Zap } from 'lucide-react';
+import { CalendarDays, Clock, Send, Loader2, Zap, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -42,6 +42,10 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
   const [isProspecting, setIsProspecting] = useState(true);
   const [loading, setLoading] = useState(false);
   const [loadingTemplates, setLoadingTemplates] = useState(true);
+  const [duplicateIds, setDuplicateIds] = useState<string[]>([]);
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+  const [duplicatesChecked, setDuplicatesChecked] = useState(false);
+  const [excludeDuplicates, setExcludeDuplicates] = useState(true);
   const { createCampaign } = useCampaigns();
 
   useEffect(() => {
@@ -56,7 +60,36 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
         setTemplates((data as any) || []);
         setLoadingTemplates(false);
       });
-  }, [isOpen]);
+
+    // Check duplicates
+    checkDuplicates();
+  }, [isOpen, contactIds]);
+
+  const checkDuplicates = async () => {
+    if (contactIds.length === 0) return;
+    setCheckingDuplicates(true);
+    try {
+      const { data } = await supabase
+        .from('campaign_contacts')
+        .select('contact_id, whatsapp_campaigns!campaign_contacts_campaign_id_fkey(status)')
+        .in('contact_id', contactIds)
+        .in('status', ['pending', 'queued']);
+
+      const activeDuplicates = (data || [])
+        .filter((cc: any) => {
+          const campaignStatus = cc.whatsapp_campaigns?.status;
+          return ['scheduled', 'running'].includes(campaignStatus);
+        })
+        .map((cc: any) => cc.contact_id as string);
+
+      setDuplicateIds([...new Set(activeDuplicates)]);
+      setDuplicatesChecked(true);
+    } catch (err) {
+      console.error('Error checking duplicates:', err);
+    } finally {
+      setCheckingDuplicates(false);
+    }
+  };
 
   const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
 
@@ -65,7 +98,11 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
     .map((c: any) => c.text)
     .join('\n') || '';
 
-  const canSubmit = selectedTemplateId && selectedDate && selectedTime && contactIds.length > 0;
+  const effectiveContactIds = excludeDuplicates
+    ? contactIds.filter(id => !duplicateIds.includes(id))
+    : contactIds;
+
+  const canSubmit = selectedTemplateId && selectedDate && selectedTime && effectiveContactIds.length > 0;
 
   const averageInterval = Math.round((intervalMinSeconds + intervalMaxSeconds) / 2);
 
@@ -93,24 +130,42 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
       return;
     }
 
-    const campaignName = `Prospecção ${format(scheduledAt, "dd/MM HH:mm")} - ${contactIds.length} contatos`;
+    const campaignName = `Prospecção ${format(scheduledAt, "dd/MM HH:mm")} - ${effectiveContactIds.length} contatos`;
 
     const result = await createCampaign({
       name: campaignName,
       template_id: selectedTemplateId,
-      contact_ids: contactIds,
+      contact_ids: effectiveContactIds,
       interval_seconds: averageInterval,
       is_prospecting: isProspecting,
       scheduled_at: scheduledAt.toISOString(),
     });
 
-    setLoading(false);
-
     if (result) {
+      // Create appointment for agenda visibility
+      const estimatedDuration = Math.ceil((effectiveContactIds.length * averageInterval) / 60);
+      const templateName = selectedTemplate?.name || 'Template';
+
+      try {
+        await supabase.from('appointments').insert({
+          title: `📢 Campanha: ${campaignName}`,
+          date: format(scheduledAt, 'yyyy-MM-dd'),
+          time: selectedTime,
+          duration: Math.max(estimatedDuration, 15),
+          type: 'campaign' as any,
+          description: `Template: ${templateName}\nContatos: ${effectiveContactIds.length}\nIntervalo: ${intervalMinSeconds}s - ${intervalMaxSeconds}s\nProspecção: ${isProspecting ? 'Sim' : 'Não'}`,
+          status: 'scheduled',
+        });
+      } catch (err) {
+        console.error('Error creating campaign appointment:', err);
+      }
+
       toast.success(`Campanha agendada para ${format(scheduledAt, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`);
       resetAndClose();
       onComplete?.();
     }
+
+    setLoading(false);
   };
 
   const resetAndClose = () => {
@@ -120,6 +175,9 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
     setIntervalMinSeconds(30);
     setIntervalMaxSeconds(90);
     setIsProspecting(true);
+    setDuplicateIds([]);
+    setDuplicatesChecked(false);
+    setExcludeDuplicates(true);
     onClose();
   };
 
@@ -132,11 +190,35 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
             Agendar Campanha
           </DialogTitle>
           <DialogDescription className="text-slate-400">
-            {contactIds.length} contato{contactIds.length !== 1 ? 's' : ''} selecionado{contactIds.length !== 1 ? 's' : ''}
+            {effectiveContactIds.length} contato{effectiveContactIds.length !== 1 ? 's' : ''} selecionado{effectiveContactIds.length !== 1 ? 's' : ''}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* Duplicate Warning */}
+          {duplicatesChecked && duplicateIds.length > 0 && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+                <div className="text-sm">
+                  <p className="text-amber-300 font-medium">
+                    {duplicateIds.length} contato{duplicateIds.length !== 1 ? 's' : ''} já {duplicateIds.length !== 1 ? 'estão' : 'está'} em campanhas ativas
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Switch
+                      checked={excludeDuplicates}
+                      onCheckedChange={setExcludeDuplicates}
+                      className="data-[state=checked]:bg-amber-500"
+                    />
+                    <span className="text-xs text-slate-400">
+                      {excludeDuplicates ? 'Excluindo duplicados' : 'Incluindo todos'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Template Selection */}
           <div className="space-y-2">
             <Label>Template WhatsApp</Label>
@@ -243,7 +325,7 @@ export function ScheduleCampaignModal({ isOpen, onClose, contactIds, onComplete 
             </div>
 
             <p className="text-xs text-slate-500">
-              Tempo estimado: ~{Math.ceil((contactIds.length * averageInterval) / 60)} minutos
+              Tempo estimado: ~{Math.ceil((effectiveContactIds.length * averageInterval) / 60)} minutos
             </p>
           </div>
 

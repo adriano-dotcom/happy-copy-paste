@@ -188,6 +188,7 @@ const Scheduling: React.FC = () => {
         case 'meeting': return 'bg-violet-500/10 text-violet-300 border-violet-500/20 hover:bg-violet-500/20';
         case 'support': return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20 hover:bg-emerald-500/20';
         case 'followup': return 'bg-orange-500/10 text-orange-300 border-orange-500/20 hover:bg-orange-500/20';
+        case 'campaign': return 'bg-amber-500/10 text-amber-300 border-amber-500/20 hover:bg-amber-500/20';
         default: return 'bg-slate-700 text-slate-300 border-slate-600';
     }
   };
