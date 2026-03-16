@@ -404,10 +404,18 @@ serve(async (req) => {
           // Create message record
           if (conversationId) {
             let messageContent = bodyComponent?.text || `[Template: ${template.name}]`;
-            const bodyVars = templateVars.body_vars || [];
-            bodyVars.forEach((v: string, i: number) => {
-              messageContent = messageContent.replace(`{{${i + 1}}}`, v);
-            });
+            // Replace body variables using the same values sent to the API
+            if (bodyComponent?.text) {
+              const bodyMatches = [...bodyComponent.text.matchAll(/\{\{(\d+)\}\}/g)];
+              bodyMatches.forEach((_, i) => {
+                const rawValue = templateVars[`body_${i + 1}`] || contact.name || 'Cliente';
+                const fullName = (contact.name || '').trim();
+                const varValue = (fullName && rawValue.trim().toLowerCase() === fullName.toLowerCase())
+                  ? normalizeFirstName(contact.name)
+                  : rawValue;
+                messageContent = messageContent.replace(`{{${i + 1}}}`, varValue);
+              });
+            }
 
             await supabase.from('messages').insert({
               conversation_id: conversationId,
