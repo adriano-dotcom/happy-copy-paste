@@ -10,17 +10,17 @@ import { useUnreadMessages } from '@/contexts/UnreadMessagesContext';
 import { useAutoAttendantFlag } from '@/hooks/useAutoAttendantFlag';
 
 const allMenuItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, adminOnly: false },
-  { id: 'kanban', label: 'Pipeline', icon: Kanban, adminOnly: false },
-  { id: 'chat', label: 'Chat Ao Vivo', icon: MessageSquare, adminOnly: false },
-  { id: 'contacts', label: 'Contatos', icon: Users, adminOnly: false },
-  { id: 'scheduling', label: 'Agendamentos', icon: Calendar, adminOnly: false },
-  { id: 'campaigns', label: 'Campanhas', icon: Target, adminOnly: true },
-  { id: 'prospecting', label: 'Prospecção', icon: Megaphone, adminOnly: true },
-  { id: 'voice-dashboard', label: 'Ligações IA', icon: Headphones, adminOnly: true },
-  { id: 'team', label: 'Equipe', icon: ShieldCheck, adminOnly: true },
-  { id: 'functions', label: 'Funções', icon: Code2, adminOnly: true },
-  { id: 'settings', label: 'Configurações', icon: SettingsIcon, adminOnly: true },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, access: 'all' as const },
+  { id: 'kanban', label: 'Pipeline', icon: Kanban, access: 'all' as const },
+  { id: 'chat', label: 'Chat Ao Vivo', icon: MessageSquare, access: 'all' as const },
+  { id: 'contacts', label: 'Contatos', icon: Users, access: 'all' as const },
+  { id: 'scheduling', label: 'Agendamentos', icon: Calendar, access: 'all' as const },
+  { id: 'campaigns', label: 'Campanhas', icon: Target, access: 'manager' as const },
+  { id: 'prospecting', label: 'Prospecção', icon: Megaphone, access: 'manager' as const },
+  { id: 'voice-dashboard', label: 'Ligações IA', icon: Headphones, access: 'manager' as const },
+  { id: 'team', label: 'Equipe', icon: ShieldCheck, access: 'admin' as const },
+  { id: 'functions', label: 'Funções', icon: Code2, access: 'admin' as const },
+  { id: 'settings', label: 'Configurações', icon: SettingsIcon, access: 'admin' as const },
 ];
 
 const Logo = () => {
@@ -169,13 +169,18 @@ const SidebarContent = () => {
   const location = useLocation();
   const currentPath = location.pathname.substring(1) || 'dashboard';
   const { open } = useSidebar();
-  const { isAdmin, loading: roleLoading } = useUserRole();
+  const { isAdmin, isAdminOrManager, loading: roleLoading } = useUserRole();
   const { user, signOut } = useAuth();
   const { pendingLeadsCount, unreadMessagesCount } = useUnreadMessages();
   const { isActive: autoAttendantActive, toggle: toggleAutoAttendant } = useAutoAttendantFlag();
 
   // Filter menu items based on user role
-  const menuItems = allMenuItems.filter(item => !item.adminOnly || isAdmin);
+  const menuItems = allMenuItems.filter(item => {
+    if (item.access === 'all') return true;
+    if (item.access === 'manager') return isAdminOrManager;
+    if (item.access === 'admin') return isAdmin;
+    return false;
+  });
 
   const links = menuItems.map(item => ({
     id: item.id,

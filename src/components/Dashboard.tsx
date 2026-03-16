@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, DollarSign, MessageSquare, Users, Loader2, TrendingUp, TrendingDown, ArrowUpRight, Bot, Phone, Briefcase, Layers, Zap, MessageCircle, Clock, PhoneCall, PhoneOff, PhoneMissed, Timer, AlertTriangle, Info, BarChart3 } from 'lucide-react';
+import { Activity, DollarSign, MessageSquare, Users, Loader2, TrendingUp, TrendingDown, ArrowUpRight, Bot, Phone, Briefcase, Layers, Zap, MessageCircle, Clock, PhoneCall, PhoneOff, PhoneMissed, Timer, AlertTriangle, Info, BarChart3, ExternalLink, Trophy } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, BarChart, Bar } from 'recharts';
 import { StatMetric } from '../types';
 import { api } from '../services/api';
@@ -119,6 +119,21 @@ interface TemplateMetrics {
   periodCost: number;
 }
 
+interface PipedriveByAgent {
+  agentId: string;
+  agentName: string;
+  total: number;
+  periodCount: number;
+}
+
+interface ConversionByPipeline {
+  pipelineId: string;
+  pipelineName: string;
+  totalDeals: number;
+  wonDeals: number;
+  conversionRate: number;
+}
+
 const TEMPLATE_COST_BRL = 0.41; // Custo por mensagem de template Meta
 
 const Dashboard: React.FC = () => {
@@ -138,6 +153,8 @@ const Dashboard: React.FC = () => {
   const [excludedConversationsCount, setExcludedConversationsCount] = useState<number>(0);
   const [iaDistributionStats, setIADistributionStats] = useState<IADistributionStats[]>([]);
   const [agentDistributionConfig, setAgentDistributionConfig] = useState<AgentDistributionConfig[]>([]);
+  const [pipedriveByAgent, setPipedriveByAgent] = useState<PipedriveByAgent[]>([]);
+  const [conversionByPipeline, setConversionByPipeline] = useState<ConversionByPipeline[]>([]);
 
   const fetchSystemMetrics = async () => {
     try {
@@ -622,6 +639,114 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const fetchPipedriveMetrics = async () => {
+    try {
+      const days = periodDays[period];
+      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      // Fetch deals synced to Pipedrive (have pipedrive_deal_id)
+      const { data: syncedDeals } = await supabase
+        .from('deals')
+        .select('id, owner_id, created_at, contact_id, pipedrive_deal_id')
+        .not('pipedrive_deal_id', 'is', null);
+
+      // Fetch agents
+      const { data: agents } = await supabase
+        .from('agents')
+        .select('id, name')
+        .eq('is_active', true);
+
+      // Fetch conversations to map contact -> agent
+      const contactIds = [...new Set(
+        (syncedDeals?.map(d => d.contact_id).filter((id): id is string => id !== null)) || []
+      )];
+      
+      let conversationAgentMap: Record<string, string> = {};
+      if (contactIds.length > 0) {
+        // Fetch in batches of 100
+        for (let i = 0; i < contactIds.length; i += 100) {
+          const batch = contactIds.slice(i, i + 100);
+          const { data: convs } = await supabase
+            .from('conversations')
+            .select('contact_id, current_agent_id')
+            .in('contact_id', batch)
+            .not('current_agent_id', 'is', null);
+          convs?.forEach(c => {
+            if (c.contact_id && c.current_agent_id) {
+              conversationAgentMap[c.contact_id] = c.current_agent_id;
+            }
+          });
+        }
+      }
+
+      // Group by agent
+      const agentMap: Record<string, { total: number; periodCount: number }> = {};
+      syncedDeals?.forEach(deal => {
+        const agentId = deal.contact_id ? conversationAgentMap[deal.contact_id] : null;
+        const key = agentId || 'unknown';
+        if (!agentMap[key]) agentMap[key] = { total: 0, periodCount: 0 };
+        agentMap[key].total++;
+        if (new Date(deal.created_at!) >= new Date(startDate)) {
+          agentMap[key].periodCount++;
+        }
+      });
+
+      const stats: PipedriveByAgent[] = Object.entries(agentMap)
+        .map(([agentId, counts]) => {
+          const agent = agents?.find(a => a.id === agentId);
+          return {
+            agentId,
+            agentName: agent?.name || 'Sem agente',
+            total: counts.total,
+            periodCount: counts.periodCount,
+          };
+        })
+        .sort((a, b) => b.total - a.total);
+
+      setPipedriveByAgent(stats);
+    } catch (error) {
+      console.error('Erro ao carregar métricas Pipedrive:', error);
+    }
+  };
+
+  const fetchConversionMetrics = async () => {
+    try {
+      // Fetch all deals grouped by pipeline
+      const { data: deals } = await supabase
+        .from('deals')
+        .select('id, pipeline_id, won_at, pipelines(name)');
+
+      if (!deals) {
+        setConversionByPipeline([]);
+        return;
+      }
+
+      const pipelineMap: Record<string, { name: string; total: number; won: number }> = {};
+      deals.forEach(deal => {
+        const pid = deal.pipeline_id || 'unknown';
+        if (!pipelineMap[pid]) {
+          pipelineMap[pid] = { name: (deal.pipelines as any)?.name || 'Sem pipeline', total: 0, won: 0 };
+        }
+        pipelineMap[pid].total++;
+        if (deal.won_at) pipelineMap[pid].won++;
+      });
+
+      const stats: ConversionByPipeline[] = Object.entries(pipelineMap)
+        .map(([pipelineId, data]) => ({
+          pipelineId,
+          pipelineName: data.name,
+          totalDeals: data.total,
+          wonDeals: data.won,
+          conversionRate: data.total > 0 ? Math.round((data.won / data.total) * 100) : 0,
+        }))
+        .sort((a, b) => b.conversionRate - a.conversionRate);
+
+      setConversionByPipeline(stats);
+    } catch (error) {
+      console.error('Erro ao carregar métricas de conversão:', error);
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -636,7 +761,9 @@ const Dashboard: React.FC = () => {
           fetchAgentStats(),
           fetchSellerLeadStats(),
           fetchIADistributionStats(),
-          fetchTemplateMetrics()
+          fetchTemplateMetrics(),
+          fetchPipedriveMetrics(),
+          fetchConversionMetrics()
         ]);
         setMetrics(metricsData);
         setChartData(chartDataResponse);
@@ -1010,7 +1137,112 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* IA Distribution Stats Section */}
+      {/* Leads enviados ao Pipedrive por Agente */}
+      {pipedriveByAgent.length > 0 && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-blue-700/50 to-transparent"></div>
+            <h3 className="text-lg font-semibold text-slate-300 flex items-center gap-2">
+              <ExternalLink className="w-5 h-5 text-blue-400" />
+              Leads Enviados ao Pipedrive
+            </h3>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-blue-700/50 to-transparent"></div>
+          </div>
+
+          <div className="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-slate-800/50 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <ExternalLink className="w-5 h-5 text-blue-400" />
+                <h4 className="text-base font-semibold text-white">Total Sincronizado</h4>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-white">
+                  {pipedriveByAgent.reduce((s, a) => s + a.total, 0)}
+                </p>
+                <p className="text-xs text-slate-500">
+                  +{pipedriveByAgent.reduce((s, a) => s + a.periodCount, 0)} no período
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+              {pipedriveByAgent.map((agent, index) => {
+                const colorSchemes = [
+                  { bg: 'from-blue-500/20 to-blue-500/5', border: 'border-blue-500/30', accent: 'text-blue-400', bar: 'bg-blue-500' },
+                  { bg: 'from-sky-500/20 to-sky-500/5', border: 'border-sky-500/30', accent: 'text-sky-400', bar: 'bg-sky-500' },
+                  { bg: 'from-indigo-500/20 to-indigo-500/5', border: 'border-indigo-500/30', accent: 'text-indigo-400', bar: 'bg-indigo-500' },
+                  { bg: 'from-teal-500/20 to-teal-500/5', border: 'border-teal-500/30', accent: 'text-teal-400', bar: 'bg-teal-500' },
+                ];
+                const colors = colorSchemes[index % colorSchemes.length];
+                const maxTotal = Math.max(...pipedriveByAgent.map(a => a.total));
+                const barWidth = maxTotal > 0 ? Math.round((agent.total / maxTotal) * 100) : 0;
+
+                return (
+                  <div key={agent.agentId} className={`rounded-lg border ${colors.border} bg-gradient-to-br ${colors.bg} p-4`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-white truncate">{agent.agentName}</span>
+                    </div>
+                    <div className="flex items-baseline gap-2 mb-2">
+                      <span className="text-2xl font-bold text-white">{agent.total}</span>
+                      <span className="text-xs text-slate-400">deals</span>
+                      {agent.periodCount > 0 && (
+                        <span className="text-xs text-emerald-400">+{agent.periodCount}</span>
+                      )}
+                    </div>
+                    <div className="w-full bg-slate-700/50 rounded-full h-1.5">
+                      <div className={`h-1.5 rounded-full transition-all ${colors.bar}`} style={{ width: `${barWidth}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Taxa de Conversão por Pipeline */}
+      {conversionByPipeline.length > 0 && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-emerald-700/50 to-transparent"></div>
+            <h3 className="text-lg font-semibold text-slate-300 flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-emerald-400" />
+              Taxa de Conversão por Pipeline
+            </h3>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-emerald-700/50 to-transparent"></div>
+          </div>
+
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
+            {conversionByPipeline.map((pipeline, index) => {
+              const colorSchemes = [
+                { border: 'border-emerald-500/20', bg: 'from-emerald-500/10 to-emerald-500/5', text: 'text-emerald-400', bar: 'bg-emerald-500' },
+                { border: 'border-teal-500/20', bg: 'from-teal-500/10 to-teal-500/5', text: 'text-teal-400', bar: 'bg-teal-500' },
+                { border: 'border-green-500/20', bg: 'from-green-500/10 to-green-500/5', text: 'text-green-400', bar: 'bg-green-500' },
+              ];
+              const colors = colorSchemes[index % colorSchemes.length];
+              
+              return (
+                <div key={pipeline.pipelineId} className={`rounded-xl border ${colors.border} bg-gradient-to-br ${colors.bg} p-4`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Trophy className={`w-4 h-4 ${colors.text}`} />
+                    <span className="text-sm font-medium text-white truncate">{pipeline.pipelineName}</span>
+                  </div>
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <span className={`text-3xl font-bold ${colors.text}`}>{pipeline.conversionRate}%</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mb-3">
+                    {pipeline.wonDeals} ganhos de {pipeline.totalDeals} total
+                  </p>
+                  <div className="w-full bg-slate-700/50 rounded-full h-2">
+                    <div className={`h-2 rounded-full transition-all ${colors.bar}`} style={{ width: `${pipeline.conversionRate}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {iaDistributionStats.length > 0 && (
         <div className="space-y-6">
           <div className="flex items-center gap-3">

@@ -143,14 +143,14 @@ const App: React.FC = () => {
               <Route path="/contacts" element={<Contacts />} />
               <Route path="/scheduling" element={<Scheduling />} />
               <Route path="/team" element={
-                <AdminRoute>
+                <AdminRoute adminOnly>
                   <Suspense fallback={<RouteLoader />}>
                     <Team />
                   </Suspense>
                 </AdminRoute>
               } />
               <Route path="/functions" element={
-                <AdminRoute>
+                <AdminRoute adminOnly>
                   <Suspense fallback={<RouteLoader />}>
                     <Functions />
                   </Suspense>
@@ -178,7 +178,7 @@ const App: React.FC = () => {
                 </AdminRoute>
               } />
               <Route path="/settings" element={
-                <AdminRoute>
+                <AdminRoute adminOnly>
                   <Suspense fallback={<RouteLoader />}>
                     <Settings />
                   </Suspense>

@@ -2,11 +2,13 @@ import { useAuth } from './useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 
-type AppRole = 'admin' | 'operator' | 'viewer';
+type AppRole = 'admin' | 'gerente' | 'operator' | 'viewer';
 
 interface UseUserRoleReturn {
   role: AppRole | null;
   isAdmin: boolean;
+  isManager: boolean;
+  isAdminOrManager: boolean;
   isOperator: boolean;
   loading: boolean;
 }
@@ -33,9 +35,14 @@ export function useUserRole(): UseUserRoleReturn {
     staleTime: Infinity,
   });
 
+  const isAdmin = role === 'admin';
+  const isManager = role === 'gerente';
+
   return {
     role,
-    isAdmin: role === 'admin',
+    isAdmin,
+    isManager,
+    isAdminOrManager: isAdmin || isManager,
     isOperator: role === 'operator',
     loading: !!user?.id && loading,
   };

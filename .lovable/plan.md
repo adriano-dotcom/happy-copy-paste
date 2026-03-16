@@ -1,67 +1,45 @@
 
 
-# Melhorar Dashboard + Role de Gerente + Métricas Pipedrive
+# Analise do envio WhatsApp via Meta API
 
-## Diagnóstico
+## Status atual
 
-### Acesso atual
-- O Dashboard (`/dashboard`) **já é acessível** a todos os usuários autenticados (sem `AdminRoute`).
-- Porém, as demais páginas gerenciais (Campanhas, Prospecção, Ligações IA, Equipe, Configurações) são restritas a `admin` via `AdminRoute`.
-- O enum `app_role` tem apenas: `admin`, `operator`, `viewer`. **Não existe role "gerente"**.
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
 
-### Métricas existentes no Dashboard
-1. KPIs: Atendimentos, Conversões, Tempo Médio, Novos Leads
-2. Custo de Templates Meta
-3. Evolução de Leads por Pipeline
-4. Leads por Agente IA
-5. Distribuição pela IA (deals por vendedor)
-6. Atendimentos por Vendedor (distribuídos vs atendidos)
-7. Ligações dos Vendedores (call_logs)
-8. Métricas do Sistema (comunicação, operações, infraestrutura, integrações)
+## Causa raiz do auto-blocking não funcionar
 
-### Métricas faltantes identificadas
-- **Leads enviados ao Pipedrive por agente** -- campo `pipedrive_deal_id` nos deals indica sync. Pode cruzar com `current_agent_id` da conversa ou `owner_id` do deal.
-- **Taxa de conversão por pipeline** (deals won vs total) -- não existe.
-- **Mensagens humanas vs IA no período** -- existem no sistema mas não filtrados por período nos KPIs.
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
 
-## Plano
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
-### 1. Adicionar role "gerente" ao banco (migração SQL)
-```sql
-ALTER TYPE public.app_role ADD VALUE 'gerente';
-```
-- Atualizar a função `has_role` para que `gerente` funcione como role intermediária.
+## Solução
 
-### 2. Atualizar `useUserRole` hook
-- Adicionar `isManager: role === 'gerente'` ao retorno.
-- Tipo: `'admin' | 'operator' | 'viewer' | 'gerente'`.
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
 
-### 3. Criar `ManagerRoute` (ou atualizar `AdminRoute`)
-- Alterar `AdminRoute` para aceitar `admin` **ou** `gerente`.
-- Isso libera automaticamente: Dashboard, Campanhas, Prospecção, Ligações IA, etc. para gerentes.
-- Manter Equipe, Funções e Configurações como **admin-only** (criar check separado).
+### 2. Corrigir comparação de tipo no webhook (segurança)
 
-### 4. Atualizar Sidebar
-- Mudar a lógica de filtro: itens `adminOnly` visíveis para `isAdmin || isManager`.
-- Itens sensíveis (team, functions, settings) ficam com flag `superAdminOnly`.
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
 
-### 5. Adicionar seção "Leads enviados ao Pipedrive" no Dashboard
-- Nova query: buscar deals com `pipedrive_deal_id IS NOT NULL`, cruzando com `conversations.current_agent_id` para identificar qual agente atendeu.
-- Agrupar por agente e por período.
-- Exibir como cards com: nome do agente, total enviados ao Pipedrive, enviados no período.
-- Incluir taxa de sync (deals com pipedrive_deal_id / total deals).
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
 
-### 6. Adicionar taxa de conversão por pipeline
-- Contar deals com `won_at IS NOT NULL` vs total por pipeline no período.
-- Exibir como mini-cards na seção de Evolução de Leads.
+Mesmo tratamento para `errorCode === 131042`.
 
-## Arquivos alterados
+### 3. Corrigir comparação no send-whatsapp-template
 
-| Arquivo | Mudança |
-|---------|---------|
-| Migração SQL | `ALTER TYPE app_role ADD VALUE 'gerente'` |
-| `src/hooks/useUserRole.ts` | Adicionar `isManager` |
-| `src/components/AdminRoute.tsx` | Aceitar admin ou gerente (exceto rotas sensíveis) |
-| `src/components/Sidebar.tsx` | Lógica de menu para gerente |
-| `src/components/Dashboard.tsx` | Nova seção Pipedrive + taxa conversão por pipeline |
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+
+### Detalhes técnicos
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 

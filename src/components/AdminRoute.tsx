@@ -5,10 +5,12 @@ import { Loader2 } from "lucide-react";
 
 interface AdminRouteProps {
   children: ReactNode;
+  /** If true, only admin can access. If false (default), admin or gerente can access. */
+  adminOnly?: boolean;
 }
 
-export function AdminRoute({ children }: AdminRouteProps) {
-  const { isAdmin, loading } = useUserRole();
+export function AdminRoute({ children, adminOnly = false }: AdminRouteProps) {
+  const { isAdmin, isAdminOrManager, loading } = useUserRole();
 
   if (loading) {
     return (
@@ -18,7 +20,9 @@ export function AdminRoute({ children }: AdminRouteProps) {
     );
   }
 
-  if (!isAdmin) {
+  const hasAccess = adminOnly ? isAdmin : isAdminOrManager;
+
+  if (!hasAccess) {
     return <Navigate to="/dashboard" replace />;
   }
 
