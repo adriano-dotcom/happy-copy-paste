@@ -1,45 +1,62 @@
 
 
-# Analise do envio WhatsApp via Meta API
+# Corrigir variáveis de template: `{{1}}` = empresa, não nome
 
-## Status atual
+## Diagnóstico
 
-- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
-- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
-- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
-- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
+O template diz: `_Pode confirmar se este WhatsApp é do responsável pela empresa {{1}}?_`
 
-## Causa raiz do auto-blocking não funcionar
+A variável `{{1}}` no **corpo** do template é o **nome da empresa** (`contact.company`), não o nome do contato. O nome do contato está no **header** do template.
 
-O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
+Porém, o código atual em `process-campaign/index.ts` usa `contact.name` como fallback para **todas** as variáveis do body (linha 317 e 411):
+```typescript
+const rawValue = templateVars[`body_${i + 1}`] || contact.name || 'Cliente';
+```
 
-1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
-2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
+### Dados confirmados
+- **130 mensagens** no banco com `{{1}}` no conteúdo
+- Todas têm `contact.company` preenchido (ex: "VMB SOBCZAK TRANSPORTES LTDA", "PRADO - TRANSPORTES LTDA")
+- O `{{1}}` deveria ser substituído pelo nome da empresa
 
-## Solução
+## Plano
 
-### 1. Forçar deploy das edge functions afetadas
-- `whatsapp-webhook`
-- `send-whatsapp-template`
-- `process-campaign`
+### 1. Corrigir fallback de variáveis no `process-campaign/index.ts`
 
-### 2. Corrigir comparação de tipo no webhook (segurança)
+Na seção de **envio à API** (linha 317) e na seção de **gravação da mensagem** (linha 411), mudar o fallback para usar campos diferentes por posição:
 
-**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
+- `body_1` → fallback `contact.company || contact.name || 'Cliente'`
 
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+Isso resolve futuros envios.
 
-Mesmo tratamento para `errorCode === 131042`.
+### 2. Corrigir 130 mensagens antigas via UPDATE
 
-### 3. Corrigir comparação no send-whatsapp-template
+Duas operações de dados (usando insert tool):
 
-**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+**Passo 1**: Substituir `{{1}}` pelo nome da empresa do contato:
+```sql
+UPDATE messages m
+SET content = REPLACE(m.content, '{{1}}', c.company)
+FROM conversations conv
+JOIN contacts c ON c.id = conv.contact_id
+WHERE m.conversation_id = conv.id
+  AND m.content LIKE '%{{1}}%'
+  AND c.company IS NOT NULL
+  AND TRIM(c.company) != '';
+```
 
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+**Passo 2**: Fallback para contatos sem empresa:
+```sql
+UPDATE messages
+SET content = REPLACE(content, '{{1}}', 'sua empresa')
+WHERE content LIKE '%{{1}}%';
+```
 
-### Detalhes técnicos
-- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
-- Deploy manual das 3 edge functions
-- Sem migração de banco
-- Risco: nenhum — apenas robustez na comparação de tipo
+## Arquivos alterados
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/process-campaign/index.ts` | Corrigir fallback: body_1 → `contact.company`, manter normalização para header |
+
+## Sem migração de banco
+Apenas update de dados + correção de código na edge function.
 
