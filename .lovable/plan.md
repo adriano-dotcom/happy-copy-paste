@@ -1,33 +1,45 @@
 
 
-# Plan: Enhanced Real-time Progress Indicator for Campaigns
+# Analise do envio WhatsApp via Meta API
 
-## Current State
+## Status atual
 
-The `CampaignManager.tsx` component **already has** a progress bar, percentage display, and real-time updates (5s polling + realtime subscription). The basic functionality exists but can be improved for better visibility.
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
 
-## Enhancements
+## Causa raiz do auto-blocking não funcionar
 
-### 1. Add animated pulse indicator for running campaigns
-- Show a pulsing green dot next to "Executando" status
-- Add estimated time remaining based on average send rate
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
 
-### 2. Add a summary banner for active campaigns
-- At the top of the CampaignManager, show a compact banner when any campaign is running
-- Display: campaign name, animated progress bar, live counter "23/50 enviados", ETA
-- Use `replied_count` to also show engagement rate in real-time
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
-### 3. Improve the existing progress bar
-- Add color segments: green for sent, red for failed, yellow for skipped
-- Show skipped count alongside sent/failed
-- Add a "pulsing" animation on the progress bar edge while running
+## Solução
 
-## Files to Change
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
 
-| File | Change |
-|------|--------|
-| `src/components/campaigns/CampaignManager.tsx` | Add active campaign banner, segmented progress bar, ETA calculation, pulse animation |
+### 2. Corrigir comparação de tipo no webhook (segurança)
 
-## No database or migration changes needed
-The data is already available via the existing `whatsapp_campaigns` table and realtime subscription.
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+
+Mesmo tratamento para `errorCode === 131042`.
+
+### 3. Corrigir comparação no send-whatsapp-template
+
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+
+### Detalhes técnicos
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 

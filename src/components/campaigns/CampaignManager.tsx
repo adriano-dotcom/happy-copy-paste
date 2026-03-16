@@ -29,6 +29,18 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
   failed: { label: 'Falhou', color: 'bg-red-600', icon: <AlertTriangle className="w-3 h-3" /> }
 };
 
+const getETA = (campaign: Campaign): string | null => {
+  if (campaign.status !== 'running' || !campaign.started_at) return null;
+  const processed = campaign.sent_count + campaign.failed_count + campaign.skipped_count;
+  if (processed === 0) return 'Calculando...';
+  const elapsed = (Date.now() - new Date(campaign.started_at).getTime()) / 1000;
+  const avgPerMsg = elapsed / processed;
+  const remaining = campaign.total_contacts - processed;
+  const etaSeconds = Math.round(remaining * avgPerMsg);
+  if (etaSeconds < 60) return `~${etaSeconds}s restantes`;
+  return `~${Math.round(etaSeconds / 60)}min restantes`;
+};
+
 export const CampaignManager: React.FC<CampaignManagerProps> = ({ 
   onCreateCampaign,
   selectedContactIds = []
@@ -95,8 +107,57 @@ export const CampaignManager: React.FC<CampaignManagerProps> = ({
     );
   }
 
+  const runningCampaigns = campaigns.filter(c => c.status === 'running');
+
   return (
     <div className="space-y-4">
+      {/* Active Campaign Banner */}
+      {runningCampaigns.length > 0 && (
+        <div className="space-y-2">
+          {runningCampaigns.map(rc => {
+            const processed = rc.sent_count + rc.failed_count + rc.skipped_count;
+            const pct = rc.total_contacts > 0 ? Math.round((processed / rc.total_contacts) * 100) : 0;
+            const eta = getETA(rc);
+            return (
+              <div key={rc.id} className="relative overflow-hidden rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                    </span>
+                    <span className="font-medium text-sm">{rc.name}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="font-mono font-semibold text-foreground">{processed}/{rc.total_contacts} enviados</span>
+                    {eta && <span>{eta}</span>}
+                    {rc.replied_count > 0 && (
+                      <span className="text-emerald-500">💬 {rc.replied_count} respostas</span>
+                    )}
+                  </div>
+                </div>
+                <div className="h-2 bg-secondary rounded-full overflow-hidden flex">
+                  {rc.sent_count > 0 && (
+                    <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${(rc.sent_count / rc.total_contacts) * 100}%` }} />
+                  )}
+                  {rc.failed_count > 0 && (
+                    <div className="h-full bg-destructive transition-all duration-500" style={{ width: `${(rc.failed_count / rc.total_contacts) * 100}%` }} />
+                  )}
+                  {rc.skipped_count > 0 && (
+                    <div className="h-full bg-amber-500 transition-all duration-500" style={{ width: `${(rc.skipped_count / rc.total_contacts) * 100}%` }} />
+                  )}
+                </div>
+                <div className="flex gap-3 mt-1 text-[10px] text-muted-foreground">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Enviadas {rc.sent_count}</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-destructive inline-block" /> Falhas {rc.failed_count}</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Ignoradas {rc.skipped_count}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -175,9 +236,18 @@ export const CampaignManager: React.FC<CampaignManagerProps> = ({
                           <div className="flex items-center gap-2">
                             <CardTitle className="text-base">{campaign.name}</CardTitle>
                             <Badge className={`${status.color} text-white text-xs`}>
-                              {status.icon}
+                              {campaign.status === 'running' && (
+                                <span className="relative flex h-2 w-2 mr-1">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+                                </span>
+                              )}
+                              {campaign.status !== 'running' && status.icon}
                               <span className="ml-1">{status.label}</span>
                             </Badge>
+                            {campaign.status === 'running' && (
+                              <span className="text-[10px] text-muted-foreground">{getETA(campaign)}</span>
+                            )}
                           </div>
                           <p className="text-sm text-muted-foreground mt-1">
                             {campaign.whatsapp_templates?.name || 'Template não definido'}
@@ -251,11 +321,16 @@ export const CampaignManager: React.FC<CampaignManagerProps> = ({
                         </span>
                         <span>{progress}%</span>
                       </div>
-                      <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-primary transition-all duration-500"
-                          style={{ width: `${progress}%` }}
-                        />
+                      <div className="h-2 bg-secondary rounded-full overflow-hidden flex">
+                        {campaign.sent_count > 0 && (
+                          <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${(campaign.sent_count / campaign.total_contacts) * 100}%` }} />
+                        )}
+                        {campaign.failed_count > 0 && (
+                          <div className="h-full bg-destructive transition-all duration-500" style={{ width: `${(campaign.failed_count / campaign.total_contacts) * 100}%` }} />
+                        )}
+                        {campaign.skipped_count > 0 && (
+                          <div className="h-full bg-amber-500 transition-all duration-500" style={{ width: `${(campaign.skipped_count / campaign.total_contacts) * 100}%` }} />
+                        )}
                       </div>
                     </div>
 
@@ -269,10 +344,21 @@ export const CampaignManager: React.FC<CampaignManagerProps> = ({
                         <Send className="w-3 h-3" />
                         <span>{campaign.delivered_count} entregues ({getDeliveryRate(campaign)}%)</span>
                       </div>
-                      <div className="flex items-center gap-1 text-red-500">
+                      <div className="flex items-center gap-1 text-destructive">
                         <XCircle className="w-3 h-3" />
                         <span>{campaign.failed_count} falhas</span>
                       </div>
+                      {campaign.skipped_count > 0 && (
+                        <div className="flex items-center gap-1 text-amber-500">
+                          <AlertTriangle className="w-3 h-3" />
+                          <span>{campaign.skipped_count} ignoradas</span>
+                        </div>
+                      )}
+                      {campaign.replied_count > 0 && (
+                        <div className="flex items-center gap-1 text-emerald-400">
+                          <span>💬 {campaign.replied_count} respostas</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Error message if any */}
