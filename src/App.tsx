@@ -178,7 +178,7 @@ const App: React.FC = () => {
                 </AdminRoute>
               } />
               <Route path="/settings" element={
-                <AdminRoute>
+                <AdminRoute adminOnly>
                   <Suspense fallback={<RouteLoader />}>
                     <Settings />
                   </Suspense>
