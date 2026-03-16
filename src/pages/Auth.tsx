@@ -100,6 +100,26 @@ export default function Auth() {
     toast.success("Login realizado com sucesso!");
   };
 
+  const handleForgotPassword = async () => {
+    if (!email) {
+      toast.error("Digite seu email para recuperar a senha");
+      return;
+    }
+
+    setIsLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setIsLoading(false);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    toast.success("Email de recuperação enviado! Verifique sua caixa de entrada.");
+  };
+
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -249,6 +269,14 @@ export default function Auth() {
                     </>
                   )}
                 </Button>
+                
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  className="w-full text-center text-xs sm:text-sm text-cyan-400 hover:text-cyan-300 transition-colors mt-2"
+                >
+                  Esqueci minha senha
+                </button>
               </form>
             </TabsContent>
             

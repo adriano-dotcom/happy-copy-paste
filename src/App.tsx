@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Auth from './pages/Auth';
+const ResetPassword = React.lazy(() => import('./pages/ResetPassword'));
 
 // Core routes - sempre carregados (chat é a rota principal)
 import ChatInterface from './components/ChatInterface';
@@ -101,6 +102,11 @@ const App: React.FC = () => {
           <Routes>
             {/* Auth Route */}
             <Route path="/auth" element={<Auth />} />
+            <Route path="/reset-password" element={
+              <Suspense fallback={<RouteLoader />}>
+                <ResetPassword />
+              </Suspense>
+            } />
             
             {/* Rota Externa: Sala de Reunião (Sem Sidebar) */}
             <Route path="/meeting/:id" element={

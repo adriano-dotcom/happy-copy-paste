@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Mail } from 'lucide-react';
+import { Mail, KeyRound } from 'lucide-react';
 import { UserPlus, Search, MoreVertical, Loader2, X, Check, ChevronDown, Edit2, Shield, Users, Briefcase, Settings } from 'lucide-react';
 import { Button } from './Button';
 import { api } from '../services/api';
 import { TeamMember, type Team as TeamType, type TeamFunction } from '../types';
 import { supabase } from '@/integrations/supabase/client';
 import TeamConfigModal from './TeamConfigModal';
+import ChangePasswordModal from './ChangePasswordModal';
 import { toast } from 'sonner';
 
 const Team: React.FC = () => {
@@ -15,6 +16,7 @@ const Team: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const [formData, setFormData] = useState({ 
     name: '', 
     email: '', 
@@ -195,6 +197,10 @@ const Team: React.FC = () => {
           <p className="text-sm text-slate-400 mt-1">Gerencie usuários e times da organização</p>
         </div>
         <div className="flex gap-3">
+          <Button onClick={() => setShowChangePassword(true)} variant="outline" className="border-slate-700">
+            <KeyRound className="w-4 h-4 mr-2" />
+            Alterar Senha
+          </Button>
           <Button onClick={() => setShowConfigModal(true)} variant="outline" className="border-slate-700">
             <Settings className="w-4 h-4 mr-2" />
             Configurar
@@ -488,6 +494,12 @@ const Team: React.FC = () => {
         isOpen={showConfigModal} 
         onClose={() => setShowConfigModal(false)} 
         onUpdate={loadAllData}
+      />
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal 
+        open={showChangePassword} 
+        onClose={() => setShowChangePassword(false)} 
       />
     </div>
   );

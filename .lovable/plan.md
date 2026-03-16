@@ -1,39 +1,45 @@
 
 
-# Adicionar função de Alterar Senha
+# Analise do envio WhatsApp via Meta API
 
-## Situação atual
-- Não existe nenhuma funcionalidade de reset/alteração de senha no sistema
-- Não há rota `/reset-password` nem chamada a `resetPasswordForEmail` ou `updateUser({ password })`
-- A página de Auth (`src/pages/Auth.tsx`) já possui validação de senha (8+ chars, uppercase, number, special)
+## Status atual
 
-## Plano
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
 
-### 1. Adicionar botão "Alterar Senha" na página /team (ou perfil do usuário logado)
-- Na tela de Team, adicionar um botão no header ou ao lado do nome do usuário logado para "Alterar minha senha"
-- Ao clicar, abre um modal com campos: senha atual (para confirmação), nova senha, confirmar nova senha
-- Reutilizar a validação de senha que já existe em `Auth.tsx`
-- Chamar `supabase.auth.updateUser({ password: novaSenha })` (funciona para o usuário autenticado)
+## Causa raiz do auto-blocking não funcionar
 
-### 2. Adicionar "Esqueci minha senha" na tela de login
-- Adicionar link "Esqueci minha senha" na aba de Login em `Auth.tsx`
-- Ao clicar, exibe campo de email e chama `supabase.auth.resetPasswordForEmail(email, { redirectTo: origin + '/reset-password' })`
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
 
-### 3. Criar página `/reset-password`
-- Nova página `src/pages/ResetPassword.tsx`
-- Detecta token `type=recovery` na URL
-- Exibe formulário para definir nova senha (com validação)
-- Chama `supabase.auth.updateUser({ password })` para aplicar
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
-### 4. Registrar rota no App.tsx
-- Adicionar rota pública `/reset-password` apontando para `ResetPassword.tsx`
+## Solução
 
-## Arquivos
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
 
-| Arquivo | Mudança |
-|---------|---------|
-| `src/pages/Auth.tsx` | Adicionar link "Esqueci minha senha" + fluxo de envio de email |
-| `src/pages/ResetPassword.tsx` | **Novo** - página de redefinição de senha |
-| `src/components/Team.tsx` | Adicionar botão/modal "Alterar minha senha" para usuário logado |
-| `src/App.tsx` | Adicionar rota `/reset-password` |
+### 2. Corrigir comparação de tipo no webhook (segurança)
+
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+
+Mesmo tratamento para `errorCode === 131042`.
+
+### 3. Corrigir comparação no send-whatsapp-template
+
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+
+### Detalhes técnicos
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 
