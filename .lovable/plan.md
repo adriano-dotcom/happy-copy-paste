@@ -1,45 +1,22 @@
 
 
-# Analise do envio WhatsApp via Meta API
+# Métrica de Leads Enviados ao Pipedrive por Agente
 
-## Status atual
+## Situação Atual
 
-- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
-- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
-- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
-- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
+A funcionalidade **já está implementada** no Dashboard. Na implementação anterior, foram adicionados:
 
-## Causa raiz do auto-blocking não funcionar
+1. **Interface `PipedriveByAgent`** (linha 122) com campos `agentId`, `agentName`, `total`, `periodCount`
+2. **Função `fetchPipedriveMetrics`** (linha 642-709) que:
+   - Busca deals com `pipedrive_deal_id` preenchido
+   - Cruza `contact_id` do deal com `current_agent_id` da conversa para identificar qual agente atendeu
+   - Agrupa por agente com contagem total e do período
+3. **Seção visual** (linha 1140+) com cards por agente mostrando total enviados e quantidade no período, com barra de progresso proporcional
+4. **Chamada no useEffect** junto com as demais métricas
 
-O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
+## Conclusão
 
-1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
-2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
+**Nenhuma alteração é necessária.** A métrica de leads enviados ao Pipedrive por agente já está no Dashboard e funcional. Se não está aparecendo na tela, pode ser porque ainda não há deals com `pipedrive_deal_id` preenchido no banco — a seção só aparece quando `pipedriveByAgent.length > 0`.
 
-## Solução
-
-### 1. Forçar deploy das edge functions afetadas
-- `whatsapp-webhook`
-- `send-whatsapp-template`
-- `process-campaign`
-
-### 2. Corrigir comparação de tipo no webhook (segurança)
-
-**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
-
-Mesmo tratamento para `errorCode === 131042`.
-
-### 3. Corrigir comparação no send-whatsapp-template
-
-**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
-
-### Detalhes técnicos
-- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
-- Deploy manual das 3 edge functions
-- Sem migração de banco
-- Risco: nenhum — apenas robustez na comparação de tipo
+Para testar: envie pelo menos um contato ao Pipedrive pela interface de chat e recarregue o Dashboard.
 
