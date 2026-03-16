@@ -1137,7 +1137,112 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* IA Distribution Stats Section */}
+      {/* Leads enviados ao Pipedrive por Agente */}
+      {pipedriveByAgent.length > 0 && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-blue-700/50 to-transparent"></div>
+            <h3 className="text-lg font-semibold text-slate-300 flex items-center gap-2">
+              <ExternalLink className="w-5 h-5 text-blue-400" />
+              Leads Enviados ao Pipedrive
+            </h3>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-blue-700/50 to-transparent"></div>
+          </div>
+
+          <div className="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-slate-800/50 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <ExternalLink className="w-5 h-5 text-blue-400" />
+                <h4 className="text-base font-semibold text-white">Total Sincronizado</h4>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-white">
+                  {pipedriveByAgent.reduce((s, a) => s + a.total, 0)}
+                </p>
+                <p className="text-xs text-slate-500">
+                  +{pipedriveByAgent.reduce((s, a) => s + a.periodCount, 0)} no período
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+              {pipedriveByAgent.map((agent, index) => {
+                const colorSchemes = [
+                  { bg: 'from-blue-500/20 to-blue-500/5', border: 'border-blue-500/30', accent: 'text-blue-400', bar: 'bg-blue-500' },
+                  { bg: 'from-sky-500/20 to-sky-500/5', border: 'border-sky-500/30', accent: 'text-sky-400', bar: 'bg-sky-500' },
+                  { bg: 'from-indigo-500/20 to-indigo-500/5', border: 'border-indigo-500/30', accent: 'text-indigo-400', bar: 'bg-indigo-500' },
+                  { bg: 'from-teal-500/20 to-teal-500/5', border: 'border-teal-500/30', accent: 'text-teal-400', bar: 'bg-teal-500' },
+                ];
+                const colors = colorSchemes[index % colorSchemes.length];
+                const maxTotal = Math.max(...pipedriveByAgent.map(a => a.total));
+                const barWidth = maxTotal > 0 ? Math.round((agent.total / maxTotal) * 100) : 0;
+
+                return (
+                  <div key={agent.agentId} className={`rounded-lg border ${colors.border} bg-gradient-to-br ${colors.bg} p-4`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-white truncate">{agent.agentName}</span>
+                    </div>
+                    <div className="flex items-baseline gap-2 mb-2">
+                      <span className="text-2xl font-bold text-white">{agent.total}</span>
+                      <span className="text-xs text-slate-400">deals</span>
+                      {agent.periodCount > 0 && (
+                        <span className="text-xs text-emerald-400">+{agent.periodCount}</span>
+                      )}
+                    </div>
+                    <div className="w-full bg-slate-700/50 rounded-full h-1.5">
+                      <div className={`h-1.5 rounded-full transition-all ${colors.bar}`} style={{ width: `${barWidth}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Taxa de Conversão por Pipeline */}
+      {conversionByPipeline.length > 0 && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-emerald-700/50 to-transparent"></div>
+            <h3 className="text-lg font-semibold text-slate-300 flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-emerald-400" />
+              Taxa de Conversão por Pipeline
+            </h3>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-emerald-700/50 to-transparent"></div>
+          </div>
+
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
+            {conversionByPipeline.map((pipeline, index) => {
+              const colorSchemes = [
+                { border: 'border-emerald-500/20', bg: 'from-emerald-500/10 to-emerald-500/5', text: 'text-emerald-400', bar: 'bg-emerald-500' },
+                { border: 'border-teal-500/20', bg: 'from-teal-500/10 to-teal-500/5', text: 'text-teal-400', bar: 'bg-teal-500' },
+                { border: 'border-green-500/20', bg: 'from-green-500/10 to-green-500/5', text: 'text-green-400', bar: 'bg-green-500' },
+              ];
+              const colors = colorSchemes[index % colorSchemes.length];
+              
+              return (
+                <div key={pipeline.pipelineId} className={`rounded-xl border ${colors.border} bg-gradient-to-br ${colors.bg} p-4`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Trophy className={`w-4 h-4 ${colors.text}`} />
+                    <span className="text-sm font-medium text-white truncate">{pipeline.pipelineName}</span>
+                  </div>
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <span className={`text-3xl font-bold ${colors.text}`}>{pipeline.conversionRate}%</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mb-3">
+                    {pipeline.wonDeals} ganhos de {pipeline.totalDeals} total
+                  </p>
+                  <div className="w-full bg-slate-700/50 rounded-full h-2">
+                    <div className={`h-2 rounded-full transition-all ${colors.bar}`} style={{ width: `${pipeline.conversionRate}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {iaDistributionStats.length > 0 && (
         <div className="space-y-6">
           <div className="flex items-center gap-3">
