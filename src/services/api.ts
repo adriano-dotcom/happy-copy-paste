@@ -1082,7 +1082,7 @@ export const api = {
       date: a.date,
       time: a.time,
       duration: a.duration,
-      type: a.type as 'demo' | 'meeting' | 'support' | 'followup',
+      type: a.type as 'demo' | 'meeting' | 'support' | 'followup' | 'campaign',
       description: a.description ?? undefined,
       attendees: a.attendees || []
     }));

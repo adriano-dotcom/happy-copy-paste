@@ -103,7 +103,7 @@ export interface Appointment {
   date: string;
   time: string;
   duration: number;
-  type: 'demo' | 'meeting' | 'support' | 'followup';
+  type: 'demo' | 'meeting' | 'support' | 'followup' | 'campaign';
   description?: string;
   attendees?: string[];
 }
