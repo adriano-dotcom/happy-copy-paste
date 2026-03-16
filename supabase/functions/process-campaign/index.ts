@@ -408,7 +408,7 @@ serve(async (req) => {
             if (bodyComponent?.text) {
               const bodyMatches = [...bodyComponent.text.matchAll(/\{\{(\d+)\}\}/g)];
               bodyMatches.forEach((_, i) => {
-                const rawValue = templateVars[`body_${i + 1}`] || contact.name || 'Cliente';
+                const rawValue = templateVars[`body_${i + 1}`] || contact.company || contact.name || 'Cliente';
                 const fullName = (contact.name || '').trim();
                 const varValue = (fullName && rawValue.trim().toLowerCase() === fullName.toLowerCase())
                   ? normalizeFirstName(contact.name)
