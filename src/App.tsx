@@ -102,6 +102,11 @@ const App: React.FC = () => {
           <Routes>
             {/* Auth Route */}
             <Route path="/auth" element={<Auth />} />
+            <Route path="/reset-password" element={
+              <Suspense fallback={<RouteLoader />}>
+                <ResetPassword />
+              </Suspense>
+            } />
             
             {/* Rota Externa: Sala de Reunião (Sem Sidebar) */}
             <Route path="/meeting/:id" element={

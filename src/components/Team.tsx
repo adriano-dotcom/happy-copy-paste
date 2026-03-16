@@ -197,6 +197,10 @@ const Team: React.FC = () => {
           <p className="text-sm text-slate-400 mt-1">Gerencie usuários e times da organização</p>
         </div>
         <div className="flex gap-3">
+          <Button onClick={() => setShowChangePassword(true)} variant="outline" className="border-slate-700">
+            <KeyRound className="w-4 h-4 mr-2" />
+            Alterar Senha
+          </Button>
           <Button onClick={() => setShowConfigModal(true)} variant="outline" className="border-slate-700">
             <Settings className="w-4 h-4 mr-2" />
             Configurar
