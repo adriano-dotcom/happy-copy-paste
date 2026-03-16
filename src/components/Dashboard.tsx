@@ -639,6 +639,112 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const fetchPipedriveMetrics = async () => {
+    try {
+      const days = periodDays[period];
+      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      // Fetch deals synced to Pipedrive (have pipedrive_deal_id)
+      const { data: syncedDeals } = await supabase
+        .from('deals')
+        .select('id, owner_id, created_at, contact_id, pipedrive_deal_id')
+        .not('pipedrive_deal_id', 'is', null);
+
+      // Fetch agents
+      const { data: agents } = await supabase
+        .from('agents')
+        .select('id, name')
+        .eq('is_active', true);
+
+      // Fetch conversations to map contact -> agent
+      const contactIds = [...new Set(syncedDeals?.map(d => d.contact_id).filter(Boolean) || [])];
+      
+      let conversationAgentMap: Record<string, string> = {};
+      if (contactIds.length > 0) {
+        // Fetch in batches of 100
+        for (let i = 0; i < contactIds.length; i += 100) {
+          const batch = contactIds.slice(i, i + 100);
+          const { data: convs } = await supabase
+            .from('conversations')
+            .select('contact_id, current_agent_id')
+            .in('contact_id', batch)
+            .not('current_agent_id', 'is', null);
+          convs?.forEach(c => {
+            if (c.contact_id && c.current_agent_id) {
+              conversationAgentMap[c.contact_id] = c.current_agent_id;
+            }
+          });
+        }
+      }
+
+      // Group by agent
+      const agentMap: Record<string, { total: number; periodCount: number }> = {};
+      syncedDeals?.forEach(deal => {
+        const agentId = deal.contact_id ? conversationAgentMap[deal.contact_id] : null;
+        const key = agentId || 'unknown';
+        if (!agentMap[key]) agentMap[key] = { total: 0, periodCount: 0 };
+        agentMap[key].total++;
+        if (new Date(deal.created_at!) >= new Date(startDate)) {
+          agentMap[key].periodCount++;
+        }
+      });
+
+      const stats: PipedriveByAgent[] = Object.entries(agentMap)
+        .map(([agentId, counts]) => {
+          const agent = agents?.find(a => a.id === agentId);
+          return {
+            agentId,
+            agentName: agent?.name || 'Sem agente',
+            total: counts.total,
+            periodCount: counts.periodCount,
+          };
+        })
+        .sort((a, b) => b.total - a.total);
+
+      setPipedriveByAgent(stats);
+    } catch (error) {
+      console.error('Erro ao carregar métricas Pipedrive:', error);
+    }
+  };
+
+  const fetchConversionMetrics = async () => {
+    try {
+      // Fetch all deals grouped by pipeline
+      const { data: deals } = await supabase
+        .from('deals')
+        .select('id, pipeline_id, won_at, pipelines(name)');
+
+      if (!deals) {
+        setConversionByPipeline([]);
+        return;
+      }
+
+      const pipelineMap: Record<string, { name: string; total: number; won: number }> = {};
+      deals.forEach(deal => {
+        const pid = deal.pipeline_id || 'unknown';
+        if (!pipelineMap[pid]) {
+          pipelineMap[pid] = { name: (deal.pipelines as any)?.name || 'Sem pipeline', total: 0, won: 0 };
+        }
+        pipelineMap[pid].total++;
+        if (deal.won_at) pipelineMap[pid].won++;
+      });
+
+      const stats: ConversionByPipeline[] = Object.entries(pipelineMap)
+        .map(([pipelineId, data]) => ({
+          pipelineId,
+          pipelineName: data.name,
+          totalDeals: data.total,
+          wonDeals: data.won,
+          conversionRate: data.total > 0 ? Math.round((data.won / data.total) * 100) : 0,
+        }))
+        .sort((a, b) => b.conversionRate - a.conversionRate);
+
+      setConversionByPipeline(stats);
+    } catch (error) {
+      console.error('Erro ao carregar métricas de conversão:', error);
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -653,7 +759,9 @@ const Dashboard: React.FC = () => {
           fetchAgentStats(),
           fetchSellerLeadStats(),
           fetchIADistributionStats(),
-          fetchTemplateMetrics()
+          fetchTemplateMetrics(),
+          fetchPipedriveMetrics(),
+          fetchConversionMetrics()
         ]);
         setMetrics(metricsData);
         setChartData(chartDataResponse);
