@@ -175,7 +175,12 @@ const SidebarContent = () => {
   const { isActive: autoAttendantActive, toggle: toggleAutoAttendant } = useAutoAttendantFlag();
 
   // Filter menu items based on user role
-  const menuItems = allMenuItems.filter(item => !item.adminOnly || isAdmin);
+  const menuItems = allMenuItems.filter(item => {
+    if (item.access === 'all') return true;
+    if (item.access === 'manager') return isAdminOrManager;
+    if (item.access === 'admin') return isAdmin;
+    return false;
+  });
 
   const links = menuItems.map(item => ({
     id: item.id,
