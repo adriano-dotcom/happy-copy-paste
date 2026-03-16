@@ -29,6 +29,18 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
   failed: { label: 'Falhou', color: 'bg-red-600', icon: <AlertTriangle className="w-3 h-3" /> }
 };
 
+const getETA = (campaign: Campaign): string | null => {
+  if (campaign.status !== 'running' || !campaign.started_at) return null;
+  const processed = campaign.sent_count + campaign.failed_count + campaign.skipped_count;
+  if (processed === 0) return 'Calculando...';
+  const elapsed = (Date.now() - new Date(campaign.started_at).getTime()) / 1000;
+  const avgPerMsg = elapsed / processed;
+  const remaining = campaign.total_contacts - processed;
+  const etaSeconds = Math.round(remaining * avgPerMsg);
+  if (etaSeconds < 60) return `~${etaSeconds}s restantes`;
+  return `~${Math.round(etaSeconds / 60)}min restantes`;
+};
+
 export const CampaignManager: React.FC<CampaignManagerProps> = ({ 
   onCreateCampaign,
   selectedContactIds = []
