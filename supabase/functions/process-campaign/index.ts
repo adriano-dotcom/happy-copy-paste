@@ -231,6 +231,40 @@ serve(async (req) => {
             throw new Error('Contact not found');
           }
 
+          // Skip duplicate: same template sent to same phone in last 24h
+          const { data: recentSend } = await supabase
+            .from('campaign_contacts')
+            .select('id, contacts!campaign_contacts_contact_id_fkey(phone_number)')
+            .eq('contact_id', campaignContact.contact_id)
+            .eq('status', 'sent')
+            .neq('campaign_id', campaign.id)
+            .gte('sent_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+            .limit(1);
+
+          // Check if same template was sent
+          if (recentSend && recentSend.length > 0) {
+            // Verify it's the same template by checking the campaign's template
+            const { data: recentCampaign } = await supabase
+              .from('campaign_contacts')
+              .select('whatsapp_campaigns!campaign_contacts_campaign_id_fkey(template_id)')
+              .eq('id', recentSend[0].id)
+              .single();
+
+            if (recentCampaign?.whatsapp_campaigns?.template_id === campaign.template_id) {
+              console.log(`[Campaign] Skipping duplicate: contact ${campaignContact.contact_id} received same template in last 24h`);
+              await supabase
+                .from('campaign_contacts')
+                .update({ status: 'skipped', error_message: 'duplicate_template_24h' })
+                .eq('id', campaignContact.id);
+              await supabase.rpc('update_campaign_counters', {
+                p_campaign_id: campaign.id,
+                p_skipped: 1
+              });
+              totalProcessed++;
+              continue;
+            }
+          }
+
           // Skip blocked contacts (no WhatsApp on number)
           if (contact.is_blocked) {
             console.log(`[Campaign] Skipping blocked contact ${campaignContact.contact_id}: ${contact.blocked_reason}`);

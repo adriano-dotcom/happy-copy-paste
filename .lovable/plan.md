@@ -1,43 +1,45 @@
 
 
-# Plano: Campanha agendada visivel na agenda + prevencao de duplicidade
+# Analise do envio WhatsApp via Meta API
 
-## Problema
-1. Quando uma campanha e agendada via ScheduleCampaignModal, nao aparece na view de Agendamentos (Scheduling) — a equipe nao tem visibilidade do disparo.
-2. Nao ha verificacao se um contato ja esta em outra campanha ativa/agendada antes de ser incluido em uma nova.
+## Status atual
 
-## Solucao
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
 
-### 1. Criar appointment automaticamente ao agendar campanha
+## Causa raiz do auto-blocking não funcionar
 
-No `ScheduleCampaignModal.handleSubmit`, apos criar a campanha com sucesso, inserir um registro na tabela `appointments` com:
-- `title`: nome da campanha (ex: "Campanha: Prospeccao 16/03 11:00 - 50 contatos")
-- `date`: data do agendamento
-- `time`: horario do agendamento
-- `type`: "campaign" (novo tipo)
-- `description`: template usado + quantidade de contatos
-- `duration`: tempo estimado baseado no intervalo medio x quantidade
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
 
-Tambem adicionar o tipo "campaign" ao `getEventTypeColor` no Scheduling.tsx com uma cor distinta (ex: amarelo/amber).
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
-### 2. Prevencao de duplicidade no ScheduleCampaignModal
+## Solução
 
-Antes de criar a campanha, consultar `campaign_contacts` para verificar quais dos `contactIds` selecionados ja estao em campanhas com status `pending`, `queued`, `scheduled` ou `running`. Mostrar alerta ao usuario com a contagem de duplicados e opcao de:
-- Prosseguir sem os duplicados (remover da lista)
-- Prosseguir mesmo assim (incluir todos)
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
 
-### 3. Prevencao de duplicidade no process-campaign (backend)
+### 2. Corrigir comparação de tipo no webhook (segurança)
 
-No Edge Function `process-campaign`, antes de enviar para cada contato, verificar se o mesmo `phone_number` ja recebeu o mesmo `template` nas ultimas 24h (via tabela `messages` ou `campaign_contacts`). Se sim, marcar como `skipped`.
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
 
-## Arquivos a alterar
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
 
-| Arquivo | Mudanca |
-|---------|---------|
-| `src/components/ScheduleCampaignModal.tsx` | Criar appointment + verificar duplicados |
-| `src/components/Scheduling.tsx` | Adicionar cor para tipo "campaign" |
-| `supabase/functions/process-campaign/index.ts` | Skip de contatos duplicados no envio |
+Mesmo tratamento para `errorCode === 131042`.
 
-## Migracao SQL
-Nenhuma necessaria — a tabela `appointments` ja aceita `type` como text, e a logica de duplicidade usa tabelas existentes.
+### 3. Corrigir comparação no send-whatsapp-template
+
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+
+### Detalhes técnicos
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 

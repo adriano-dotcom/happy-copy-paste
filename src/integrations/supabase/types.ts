@@ -3154,7 +3154,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "operator" | "viewer"
-      appointment_type: "demo" | "meeting" | "support" | "followup"
+      appointment_type: "demo" | "meeting" | "support" | "followup" | "campaign"
       conversation_status: "nina" | "human" | "paused" | "closed"
       member_role: "admin" | "manager" | "agent"
       member_status: "active" | "invited" | "disabled"
@@ -3297,7 +3297,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "operator", "viewer"],
-      appointment_type: ["demo", "meeting", "support", "followup"],
+      appointment_type: ["demo", "meeting", "support", "followup", "campaign"],
       conversation_status: ["nina", "human", "paused", "closed"],
       member_role: ["admin", "manager", "agent"],
       member_status: ["active", "invited", "disabled"],
