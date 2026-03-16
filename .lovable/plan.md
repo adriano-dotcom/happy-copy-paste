@@ -1,45 +1,26 @@
 
+# Diagnóstico: Campanha já aparece na agenda
 
-# Analise do envio WhatsApp via Meta API
+## Situação atual
 
-## Status atual
+Após investigar o código e o banco de dados, **a funcionalidade já está implementada e funcionando**:
 
-- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
-- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
-- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
-- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
+1. **Dados no banco**: Confirmei que o appointment da campanha foi criado com sucesso:
+   - Título: "📢 Campanha: Prospecção 16/03 11:05 - 50 contatos"
+   - Data: 2026-03-16, Horário: 11:05
+   - Tipo: `campaign`, Status: `scheduled`
+   - Descrição: Template, contatos, intervalo e prospecção
 
-## Causa raiz do auto-blocking não funcionar
+2. **Código correto**: 
+   - `ScheduleCampaignModal.tsx` já insere o appointment automaticamente ao agendar
+   - `Scheduling.tsx` já tem a cor amber/amarelo para tipo `campaign`
+   - `src/types.ts` e `src/services/api.ts` já incluem o tipo `campaign`
+   - Realtime subscription está ativa para atualizar automaticamente
 
-O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
+## O que pode estar acontecendo
 
-1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
-2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
+Você está na página `/contacts`. Basta navegar para a **Agenda** (menu lateral) e verificar o mês/dia correto (16/03). O evento deve aparecer em amarelo/amber com o título da campanha.
 
-## Solução
+## Nenhuma alteração de código necessária
 
-### 1. Forçar deploy das edge functions afetadas
-- `whatsapp-webhook`
-- `send-whatsapp-template`
-- `process-campaign`
-
-### 2. Corrigir comparação de tipo no webhook (segurança)
-
-**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
-
-Mesmo tratamento para `errorCode === 131042`.
-
-### 3. Corrigir comparação no send-whatsapp-template
-
-**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
-
-### Detalhes técnicos
-- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
-- Deploy manual das 3 edge functions
-- Sem migração de banco
-- Risco: nenhum — apenas robustez na comparação de tipo
-
+Tudo já está implementado. Se ao navegar para a agenda o evento não aparecer, me avise com um screenshot da tela da agenda para investigar mais.
