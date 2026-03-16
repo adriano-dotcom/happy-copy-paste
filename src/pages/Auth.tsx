@@ -249,6 +249,14 @@ export default function Auth() {
                     </>
                   )}
                 </Button>
+                
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  className="w-full text-center text-xs sm:text-sm text-cyan-400 hover:text-cyan-300 transition-colors mt-2"
+                >
+                  Esqueci minha senha
+                </button>
               </form>
             </TabsContent>
             
