@@ -600,8 +600,7 @@ serve(async (req) => {
       apiToken,
       leadTitle,
       personId,
-      organizationId,
-      combinedNotes || null
+      organizationId
     );
 
     if (lead) {
