@@ -79,6 +79,7 @@ const ProspectingDashboard: React.FC = () => {
   const [trendData, setTrendData] = useState<TrendData[]>([]);
   const [qualityStatus, setQualityStatus] = useState<QualityStatus | null>(null);
   const [checkingQuality, setCheckingQuality] = useState(false);
+  const [sellerStats, setSellerStats] = useState<SellerStats[]>([]);
 
   const fetchData = async () => {
     setLoading(true);
