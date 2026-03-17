@@ -203,11 +203,15 @@ async function createPipedriveNote(
     
     console.log('[sync-pipedrive] Creating note in Pipedrive...');
     
-    const noteData = {
+    const noteData: Record<string, any> = {
       content: content,
       person_id: parseInt(personId),
       pinned_to_person_flag: 1
     };
+
+    if (leadId) {
+      noteData.lead_id = leadId;
+    }
     
     const noteResponse = await fetch(
       `${baseUrl}/notes?api_token=${apiToken}`,
