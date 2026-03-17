@@ -1,43 +1,45 @@
 
 
-# Criar Lead + Contato no Pipedrive ao Enviar
+# Analise do envio WhatsApp via Meta API
 
-## Situação Atual
-A função `sync-pipedrive` cria apenas um **Person** (contato) e uma **Note** no Pipedrive. Não cria Lead nem Deal.
+## Status atual
 
-## Mudança Proposta
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
 
-### `supabase/functions/sync-pipedrive/index.ts`
+## Causa raiz do auto-blocking não funcionar
 
-Após criar/atualizar o Person, adicionar dois passos:
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
 
-1. **Criar Lead no Pipedrive** via `POST /leads` com:
-   - `title`: nome do contato
-   - `person_id`: ID do person criado
-   - `label_ids`: tag selecionada (se houver)
-   - `expected_close_date`: opcional
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
-2. **Criar Organization** (se `contact.company` existir) via `POST /organizations` e vincular ao Person
+## Solução
 
-### Fluxo final:
-```text
-Botão "Enviar para Pipedrive"
-  → Cria/atualiza Person (já existe)
-  → Cria Organization se tiver empresa (novo)
-  → Cria Lead vinculado ao Person (novo)
-  → Cria Note com resumo (já existe)
-```
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
 
-### Detalhes da API Pipedrive:
-- `POST /leads`: `{ title, person_id, organization_id?, label_ids?, note? }`
-- `POST /organizations`: `{ name, address? }`
+### 2. Corrigir comparação de tipo no webhook (segurança)
 
-O `pipedrive_default_pipeline_id` já existe nas settings e pode ser usado caso queira criar um Deal em vez de Lead. Como o Pipedrive diferencia Lead (pré-qualificado) de Deal (em negociação), vamos criar como **Lead** que é o fluxo natural.
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
 
-### Armazenamento
-- Salvar `pipedrive_lead_id` no deal local (campo `pipedrive_deal_id` já existe, pode reutilizar ou criar campo específico)
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sync-pipedrive/index.ts` | Adicionar criação de Organization + Lead após criar Person |
+Mesmo tratamento para `errorCode === 131042`.
+
+### 3. Corrigir comparação no send-whatsapp-template
+
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+
+### Detalhes técnicos
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 
