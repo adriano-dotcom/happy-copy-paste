@@ -1039,19 +1039,6 @@ const Dashboard: React.FC = () => {
               </p>
             </div>
 
-            {/* Unknown/Removed Sellers */}
-            {sellerLeadStats.find(s => s.memberId === 'unknown') && (
-              <div className="rounded-xl border border-red-500/30 bg-gradient-to-br from-red-500/15 to-slate-800/50 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="w-4 h-4 text-red-400" />
-                  <span className="text-xs text-slate-400">Vendedores Removidos</span>
-                </div>
-                <p className="text-2xl font-bold text-red-400">
-                  {sellerLeadStats.find(s => s.memberId === 'unknown')?.totalLeads || 0}
-                </p>
-                <p className="text-xs text-red-400/60 mt-1">leads órfãos</p>
-              </div>
-            )}
           </div>
         </div>
       )}
