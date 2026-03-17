@@ -1229,7 +1229,7 @@ export const api = {
       conversations?.forEach(c => convMap.set(c.contact_id, c.id));
     }
 
-    return (data || []).map((d: any) => ({
+    return (allDeals).map((d: any) => ({
       id: d.id,
       title: d.title,
       company: d.company || d.contact?.name || d.contact?.call_name || 'Sem empresa',
