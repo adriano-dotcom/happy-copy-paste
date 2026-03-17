@@ -15,6 +15,7 @@ import { CampaignTable } from './prospecting/CampaignTable';
 import { ProspectingKPICard } from './prospecting/ProspectingKPICard';
 import { CampaignManager } from './campaigns/CampaignManager';
 import { ButtonMetricsDashboard } from './prospecting/ButtonMetricsDashboard';
+import { OutboundSellerStats, SellerStats } from './prospecting/OutboundSellerStats';
 interface QualityStatus {
   rating: 'GREEN' | 'YELLOW' | 'RED';
   tier?: string;
@@ -78,6 +79,7 @@ const ProspectingDashboard: React.FC = () => {
   const [trendData, setTrendData] = useState<TrendData[]>([]);
   const [qualityStatus, setQualityStatus] = useState<QualityStatus | null>(null);
   const [checkingQuality, setCheckingQuality] = useState(false);
+  const [sellerStats, setSellerStats] = useState<SellerStats[]>([]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -289,6 +291,88 @@ const ProspectingDashboard: React.FC = () => {
       });
 
       setTrendData(Array.from(trendMap.values()));
+
+      // === Outbound por Vendedor ===
+      // Fetch prospecting conversations with assigned seller
+      const { data: prospConvs } = await supabase
+        .from('conversations')
+        .select('id, assigned_user_id, assigned_user_name, contact_id')
+        .not('assigned_user_id', 'is', null)
+        .gte('created_at', periodStart.toISOString());
+
+      if (prospConvs && prospConvs.length > 0) {
+        const prospConvIds = prospConvs.map(c => c.id);
+        const prospContactIds = [...new Set(prospConvs.map(c => c.contact_id))];
+
+        // Fetch template messages and user responses in these conversations
+        const [templateMsgsResult, userResponsesResult, pipedriveDealsResult] = await Promise.all([
+          supabase
+            .from('messages')
+            .select('id, conversation_id, metadata')
+            .eq('from_type', 'nina')
+            .in('conversation_id', prospConvIds)
+            .not('metadata', 'is', null),
+          supabase
+            .from('messages')
+            .select('id, conversation_id')
+            .eq('from_type', 'user')
+            .in('conversation_id', prospConvIds),
+          supabase
+            .from('deals')
+            .select('id, contact_id, pipedrive_deal_id')
+            .in('contact_id', prospContactIds)
+            .not('pipedrive_deal_id', 'is', null),
+        ]);
+
+        const sellerTemplateMessages = (templateMsgsResult.data || []).filter(m => {
+          const meta = m.metadata as any;
+          return meta?.is_prospecting || meta?.template_name || meta?.is_template;
+        });
+
+        const sellerResponseConvIds = new Set((userResponsesResult.data || []).map(r => r.conversation_id));
+        const pipedriveContactIds = new Set((pipedriveDealsResult.data || []).map(d => d.contact_id));
+
+        // Group by seller
+        const sellerMap = new Map<string, SellerStats>();
+        prospConvs.forEach(conv => {
+          const id = conv.assigned_user_id!;
+          if (!sellerMap.has(id)) {
+            sellerMap.set(id, {
+              sellerId: id,
+              sellerName: conv.assigned_user_name || 'Sem nome',
+              templatesSent: 0,
+              responsesReceived: 0,
+              responseRate: 0,
+              sentToPipedrive: 0,
+            });
+          }
+          const stat = sellerMap.get(id)!;
+
+          // Count templates sent in this conversation
+          const convTemplates = sellerTemplateMessages.filter(m => m.conversation_id === conv.id);
+          stat.templatesSent += convTemplates.length;
+
+          // Check if this conversation got a response
+          if (sellerResponseConvIds.has(conv.id)) {
+            stat.responsesReceived++;
+          }
+
+          // Check if contact was sent to Pipedrive
+          if (pipedriveContactIds.has(conv.contact_id)) {
+            stat.sentToPipedrive++;
+          }
+        });
+
+        // Calculate response rates
+        const sellerStatsArray = Array.from(sellerMap.values()).map(s => ({
+          ...s,
+          responseRate: s.templatesSent > 0 ? (s.responsesReceived / s.templatesSent) * 100 : 0,
+        }));
+
+        setSellerStats(sellerStatsArray);
+      } else {
+        setSellerStats([]);
+      }
     } catch (error) {
       console.error('Error fetching prospecting data:', error);
       toast.error('Erro ao carregar dados de prospecção');
@@ -384,6 +468,10 @@ const ProspectingDashboard: React.FC = () => {
             <TabsTrigger value="triagem" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
               <MousePointerClick className="w-4 h-4 mr-2" />
               Triagem Interativa
+            </TabsTrigger>
+            <TabsTrigger value="sellers" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
+              <Users className="w-4 h-4 mr-2" />
+              Outbound por Vendedor
             </TabsTrigger>
           </TabsList>
 
@@ -556,6 +644,11 @@ const ProspectingDashboard: React.FC = () => {
         {/* Triagem Tab Content */}
         <TabsContent value="triagem" className="mt-0">
           <ButtonMetricsDashboard />
+        </TabsContent>
+
+        {/* Outbound por Vendedor Tab */}
+        <TabsContent value="sellers" className="mt-0">
+          <OutboundSellerStats stats={sellerStats} loading={loading} />
         </TabsContent>
       </Tabs>
     </div>
