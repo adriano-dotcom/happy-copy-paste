@@ -645,6 +645,11 @@ const ProspectingDashboard: React.FC = () => {
         <TabsContent value="triagem" className="mt-0">
           <ButtonMetricsDashboard />
         </TabsContent>
+
+        {/* Outbound por Vendedor Tab */}
+        <TabsContent value="sellers" className="mt-0">
+          <OutboundSellerStats stats={sellerStats} loading={loading} />
+        </TabsContent>
       </Tabs>
     </div>
   );
