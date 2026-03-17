@@ -1,45 +1,45 @@
 
 
-# Analise do envio WhatsApp via Meta API
+# Fluxo Atlas: Prospecção Enviada → Em Qualificação (automático)
 
-## Status atual
+## Estado Atual
 
-- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
-- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
-- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
-- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
+O fluxo já está **parcialmente implementado**:
 
-## Causa raiz do auto-blocking não funcionar
+| Etapa | Status | Onde |
+|-------|--------|------|
+| Template enviado → Deal move para "Template Enviado" | ✅ Funciona | `send-whatsapp-template/index.ts` (linha 304-363) |
+| Template enviado → Contact status "prospecting" | ✅ Funciona | `send-whatsapp-template/index.ts` (linha 328-332) |
+| Lead responde → Deal move para "Em Qualificação" | ✅ Funciona | `nina-orchestrator/index.ts` (linha 5313-5338) |
+| Lead responde → Contact status "lead" (Em Qualificação) | ❌ Faltando | Não existe em nenhum lugar |
 
-O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
+## O que falta
 
-1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
-2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
+Quando o lead responde à prospecção, o `nina-orchestrator` já move o deal para o estágio "Em Qualificação" no pipeline, **mas não atualiza o `lead_status` do contato** de `prospecting` para `lead`.
 
-## Solução
+Isso significa que na tela de Contatos, o lead continua aparecendo como "Em Prospecção" mesmo depois de responder.
 
-### 1. Forçar deploy das edge functions afetadas
-- `whatsapp-webhook`
-- `send-whatsapp-template`
-- `process-campaign`
+## Alteração necessária
 
-### 2. Corrigir comparação de tipo no webhook (segurança)
+### `supabase/functions/nina-orchestrator/index.ts` (~linha 5336)
 
-**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
+Após mover o deal para "Em Qualificação", adicionar update do `lead_status` do contato:
 
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+```typescript
+// Depois do update do deal (linha 5336):
+console.log(`[Nina] 📊 Prospecting deal moved to Em Qualificação`);
 
-Mesmo tratamento para `errorCode === 131042`.
+// UPDATE CONTACT STATUS: prospecting → lead (Em Qualificação)
+await supabase
+  .from('contacts')
+  .update({ lead_status: 'lead' })
+  .eq('id', conversation.contact_id)
+  .eq('lead_status', 'prospecting');
 
-### 3. Corrigir comparação no send-whatsapp-template
+console.log(`[Nina] 📊 Contact lead_status updated to 'lead' (Em Qualificação)`);
+```
 
-**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
-
-### Detalhes técnicos
-- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
-- Deploy manual das 3 edge functions
-- Sem migração de banco
-- Risco: nenhum — apenas robustez na comparação de tipo
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/nina-orchestrator/index.ts` | Adicionar update de `lead_status` para `lead` quando lead responde prospecção |
 
