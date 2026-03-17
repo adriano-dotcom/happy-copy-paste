@@ -5334,6 +5334,15 @@ Qual desses te interessa?`;
           .eq('pipeline_id', prospectingPipeline.id);
         
         console.log(`[Nina] 📊 Prospecting deal moved to Em Qualificação`);
+
+        // UPDATE CONTACT STATUS: prospecting → lead (Em Qualificação)
+        await supabase
+          .from('contacts')
+          .update({ lead_status: 'lead' })
+          .eq('id', conversation.contact_id)
+          .eq('lead_status', 'prospecting');
+
+        console.log(`[Nina] 📊 Contact lead_status updated to 'lead' (Em Qualificação)`);
       }
     }
     
