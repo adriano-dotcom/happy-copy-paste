@@ -404,32 +404,6 @@ const Dashboard: React.FC = () => {
         })
         .filter(s => s.totalLeads > 0 || s.periodLeads > 0);
 
-      // Calculate leads from unknown/removed sellers
-      const unknownConversations = allConversations?.filter(
-        c => c.assigned_user_id && !knownIds.has(c.assigned_user_id)
-      ) || [];
-      
-      const unknownPeriodConversations = periodConversations?.filter(
-        c => c.assigned_user_id && !knownIds.has(c.assigned_user_id)
-      ) || [];
-
-      const unknownTotalLeads = unknownConversations.length;
-      const unknownPeriodLeads = unknownPeriodConversations.length;
-      const unknownEffectivelyAttended = unknownConversations.filter(c => humanConversationIds.has(c.id)).length;
-      const unknownPeriodAttended = unknownPeriodConversations.filter(c => periodHumanConversationIds.has(c.id)).length;
-
-      // Add unknown sellers category if there are any
-      if (unknownTotalLeads > 0 || unknownPeriodLeads > 0) {
-        stats.push({
-          memberId: 'unknown',
-          sellerName: 'Vendedor Removido/Desconhecido',
-          totalLeads: unknownTotalLeads,
-          periodLeads: unknownPeriodLeads,
-          effectivelyAttended: unknownEffectivelyAttended,
-          periodAttended: unknownPeriodAttended
-        });
-      }
-
       // Sort by period leads descending
       stats.sort((a, b) => b.periodLeads - a.periodLeads);
 
@@ -1065,19 +1039,6 @@ const Dashboard: React.FC = () => {
               </p>
             </div>
 
-            {/* Unknown/Removed Sellers */}
-            {sellerLeadStats.find(s => s.memberId === 'unknown') && (
-              <div className="rounded-xl border border-red-500/30 bg-gradient-to-br from-red-500/15 to-slate-800/50 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="w-4 h-4 text-red-400" />
-                  <span className="text-xs text-slate-400">Vendedores Removidos</span>
-                </div>
-                <p className="text-2xl font-bold text-red-400">
-                  {sellerLeadStats.find(s => s.memberId === 'unknown')?.totalLeads || 0}
-                </p>
-                <p className="text-xs text-red-400/60 mt-1">leads órfãos</p>
-              </div>
-            )}
           </div>
         </div>
       )}
