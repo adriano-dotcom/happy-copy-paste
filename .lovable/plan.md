@@ -1,42 +1,45 @@
 
 
-# Análise do envio do número 5543999000301 (MAXIMILIANO MAZARON)
+# Analise do envio WhatsApp via Meta API
 
-## O que aconteceu
+## Status atual
 
-Pelos logs, o fluxo executou 4 etapas:
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
 
-| Etapa | Resultado | Detalhe |
-|-------|-----------|---------|
-| Organization (FOUR TEXTIL LTDA) | ✅ Criada | ID: 59856 |
-| Person (MAXIMILIANO MAZARON) | ✅ Criado (com retry) | ID: 90076. Primeira tentativa falhou por campo customizado inválido (`dc094ce47e758abfd2732eac5bfd5f32fea3e3d6` = CNPJ), retry com campos básicos funcionou |
-| Lead | ❌ **Falhou** | Erro: `"Note field has been deprecated"` |
-| Note (resumo) | ✅ Criada | ID: 58858 |
+## Causa raiz do auto-blocking não funcionar
 
-## Problema: Lead não foi criado
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
 
-A API do Pipedrive **deprecou o campo `note`** no endpoint de Leads. Nossa função `createPipedriveLead` (linha 153-155) envia `leadData.note = noteContent`, o que causa rejeição do payload inteiro.
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
-## Correção necessária
+## Solução
 
-### `supabase/functions/sync-pipedrive/index.ts`
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
 
-Remover o campo `note` do payload de criação do Lead (linhas 152-155). A note já é criada separadamente no Step 4 via `createPipedriveNote`, então não há perda de dados.
+### 2. Corrigir comparação de tipo no webhook (segurança)
 
-```typescript
-// REMOVER estas linhas (152-155):
-if (noteContent && noteContent.trim()) {
-  leadData.note = noteContent;
-}
-```
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
 
-Adicionalmente, após criar o Lead com sucesso, vincular a Note ao Lead (não apenas ao Person) adicionando `lead_id` no payload da Note.
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
 
-### Problema secundário: nome do Person
+Mesmo tratamento para `errorCode === 131042`.
 
-O Person foi criado com `name: "FOUR TEXTIL LTDA"` (nome da empresa) em vez de `name: "MAXIMILIANO MAZARON"` (nome do contato). Isso acontece porque o `fieldMapping` de `company` está mapeado para o campo `name` do Person via `personData.name`. Verificar se o mapeamento `company -> name` está correto nas settings, pois sobrescreve o nome real do contato.
+### 3. Corrigir comparação no send-whatsapp-template
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sync-pipedrive/index.ts` | Remover `note` do payload do Lead; opcionalmente vincular Note ao Lead via `lead_id` |
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+
+### Detalhes técnicos
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 
