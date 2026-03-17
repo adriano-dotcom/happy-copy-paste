@@ -15,6 +15,7 @@ import { CampaignTable } from './prospecting/CampaignTable';
 import { ProspectingKPICard } from './prospecting/ProspectingKPICard';
 import { CampaignManager } from './campaigns/CampaignManager';
 import { ButtonMetricsDashboard } from './prospecting/ButtonMetricsDashboard';
+import { OutboundSellerStats, SellerStats } from './prospecting/OutboundSellerStats';
 interface QualityStatus {
   rating: 'GREEN' | 'YELLOW' | 'RED';
   tier?: string;
