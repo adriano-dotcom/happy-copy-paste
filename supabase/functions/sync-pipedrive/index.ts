@@ -176,7 +176,8 @@ async function createPipedriveNote(
   baseUrl: string, 
   apiToken: string, 
   personId: string, 
-  content: string
+  content: string,
+  leadId: string | null = null
 ): Promise<boolean> {
   try {
     console.log('[sync-pipedrive] Checking for existing recent notes for person:', personId);
