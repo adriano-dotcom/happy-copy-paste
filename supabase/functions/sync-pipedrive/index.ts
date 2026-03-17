@@ -22,6 +22,110 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Create or find an Organization in Pipedrive
+async function getOrCreateOrganization(
+  baseUrl: string,
+  apiToken: string,
+  companyName: string,
+  contact: any
+): Promise<number | null> {
+  try {
+    // Search for existing organization by name
+    console.log('[sync-pipedrive] Searching for organization:', companyName);
+    const searchResponse = await fetch(
+      `${baseUrl}/organizations/search?term=${encodeURIComponent(companyName)}&limit=1&api_token=${apiToken}`
+    );
+
+    if (searchResponse.ok) {
+      const searchResult = await searchResponse.json();
+      if (searchResult.data?.items?.length > 0) {
+        const existingOrgId = searchResult.data.items[0].item.id;
+        console.log('[sync-pipedrive] Found existing organization:', existingOrgId);
+        return existingOrgId;
+      }
+    }
+
+    // Create new organization
+    console.log('[sync-pipedrive] Creating new organization:', companyName);
+    const address = [contact.street, contact.number, contact.complement, contact.neighborhood, contact.city, contact.state]
+      .filter(Boolean).join(', ');
+
+    const orgData: Record<string, any> = { name: companyName };
+    if (address) orgData.address = address;
+
+    const createResponse = await fetch(
+      `${baseUrl}/organizations?api_token=${apiToken}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orgData),
+      }
+    );
+
+    const createResult = await createResponse.json();
+    if (createResult.success) {
+      console.log('[sync-pipedrive] Organization created with ID:', createResult.data.id);
+      return createResult.data.id;
+    } else {
+      console.warn('[sync-pipedrive] Failed to create organization:', createResult);
+      return null;
+    }
+  } catch (error) {
+    console.error('[sync-pipedrive] Error with organization:', error);
+    return null;
+  }
+}
+
+// Create a Lead in Pipedrive linked to a Person (and optionally Organization)
+async function createPipedriveLead(
+  baseUrl: string,
+  apiToken: string,
+  title: string,
+  personId: number,
+  organizationId: number | null,
+  noteContent: string | null
+): Promise<{ id: string } | null> {
+  try {
+    console.log('[sync-pipedrive] Creating lead in Pipedrive for person:', personId);
+
+    const leadData: Record<string, any> = {
+      title,
+      person_id: personId,
+    };
+
+    if (organizationId) {
+      leadData.organization_id = organizationId;
+    }
+
+    // Add note as embedded note in the lead
+    if (noteContent && noteContent.trim()) {
+      leadData.note = noteContent;
+    }
+
+    const response = await fetch(
+      `${baseUrl}/leads?api_token=${apiToken}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(leadData),
+      }
+    );
+
+    const result = await response.json();
+
+    if (result.success) {
+      console.log('[sync-pipedrive] Lead created with ID:', result.data.id);
+      return { id: result.data.id };
+    } else {
+      console.warn('[sync-pipedrive] Failed to create lead:', result);
+      return null;
+    }
+  } catch (error) {
+    console.error('[sync-pipedrive] Error creating lead:', error);
+    return null;
+  }
+}
+
 // Create a Note in Pipedrive linked to a Person
 async function createPipedriveNote(
   baseUrl: string, 
@@ -32,7 +136,6 @@ async function createPipedriveNote(
   try {
     console.log('[sync-pipedrive] Checking for existing recent notes for person:', personId);
     
-    // Check if there's a recent note (within last hour) to avoid duplicates
     const existingNotesResponse = await fetch(
       `${baseUrl}/notes?person_id=${personId}&api_token=${apiToken}&limit=10`
     );
@@ -52,13 +155,12 @@ async function createPipedriveNote(
       }
     }
     
-    // Create new note
     console.log('[sync-pipedrive] Creating note in Pipedrive...');
     
     const noteData = {
       content: content,
       person_id: parseInt(personId),
-      pinned_to_person_flag: 1 // Pin the note to the person
+      pinned_to_person_flag: 1
     };
     
     const noteResponse = await fetch(
@@ -242,7 +344,6 @@ serve(async (req) => {
     if ((!contactNotes || forceRegenerateSummary) && conversationId) {
       console.log('[sync-pipedrive] Generating summary...', { forceRegenerate: forceRegenerateSummary, hasExisting: !!contactNotes });
       
-      // Fetch conversation to get agent name
       const { data: conversation } = await supabase
         .from('conversations')
         .select('current_agent_id, agents:current_agent_id(name)')
@@ -251,7 +352,6 @@ serve(async (req) => {
       
       const agentName = (conversation?.agents as any)?.name || 'Agente';
       
-      // Fetch messages
       const { data: messages } = await supabase
         .from('messages')
         .select('content, from_type, sent_at')
@@ -270,7 +370,6 @@ serve(async (req) => {
           console.log('[sync-pipedrive] Summary generated successfully');
           contactNotes = generatedSummary;
           
-          // Save to contact for caching
           await supabase
             .from('contacts')
             .update({ notes: generatedSummary })
@@ -313,7 +412,6 @@ serve(async (req) => {
     ].filter(Boolean).join('\n\n');
 
     // Map system fields to Pipedrive custom fields
-    // If pipedriveTag is provided, use it as the primary tag; otherwise use contact tags
     const tagsValue = pipedriveTag || contact.tags?.join(', ');
     
     const systemFieldValues: Record<string, any> = {
@@ -337,7 +435,6 @@ serve(async (req) => {
       }
     }
 
-    // Log notes status
     console.log('[sync-pipedrive] Notes content:', {
       hasOperatorNotes: !!notes,
       hasContactNotes: !!contactNotes,
@@ -347,7 +444,19 @@ serve(async (req) => {
 
     console.log('[sync-pipedrive] Person data to send:', JSON.stringify(personData));
 
-    // Check if person already exists
+    // === Step 1: Create/Update Organization if company exists ===
+    let organizationId: number | null = null;
+    if (contact.company) {
+      organizationId = await getOrCreateOrganization(pipedriveBaseUrl, apiToken, contact.company, contact);
+      if (organizationId) {
+        personData.org_id = organizationId;
+      }
+    }
+
+    // === Step 2: Create/Update Person ===
+    let personId: number;
+    let isNewPerson = false;
+
     if (contact.pipedrive_person_id) {
       // Update existing person
       console.log('[sync-pipedrive] Updating existing person:', contact.pipedrive_person_id);
@@ -368,89 +477,98 @@ serve(async (req) => {
         throw new Error(`Failed to update person: ${updateResult.error || 'Unknown error'}`);
       }
 
+      personId = parseInt(contact.pipedrive_person_id);
       console.log('[sync-pipedrive] Person updated successfully');
+    } else {
+      // Create new person
+      console.log('[sync-pipedrive] Creating new person in Pipedrive');
+      isNewPerson = true;
       
-      // Create Note with summary if available
-      let noteCreated = false;
-      if (combinedNotes && combinedNotes.trim()) {
-        noteCreated = await createPipedriveNote(
-          pipedriveBaseUrl, 
-          apiToken, 
-          contact.pipedrive_person_id, 
-          combinedNotes
-        );
-      }
-      
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: 'Contato atualizado no Pipedrive',
-          personId: contact.pipedrive_person_id,
-          noteCreated
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      const createResponse = await fetch(
+        `${pipedriveBaseUrl}/persons?api_token=${apiToken}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(personData),
+        }
       );
+
+      let createResult = await createResponse.json();
+
+      if (!createResult.success) {
+        console.error('[sync-pipedrive] Error creating person:', createResult);
+        
+        if (createResult.error?.includes('field')) {
+          console.log('[sync-pipedrive] Retrying with basic fields only');
+          
+          const basicPersonData: Record<string, any> = {
+            name: personData.name,
+            phone: personData.phone,
+            email: personData.email,
+          };
+          if (organizationId) basicPersonData.org_id = organizationId;
+
+          const retryResponse = await fetch(
+            `${pipedriveBaseUrl}/persons?api_token=${apiToken}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(basicPersonData),
+            }
+          );
+
+          const retryResult = await retryResponse.json();
+          
+          if (!retryResult.success) {
+            throw new Error(`Failed to create person: ${retryResult.error || 'Unknown error'}`);
+          }
+
+          createResult.data = retryResult.data;
+          console.log('[sync-pipedrive] Person created with basic fields (custom fields skipped)');
+        } else {
+          throw new Error(`Failed to create person: ${createResult.error || 'Unknown error'}`);
+        }
+      }
+
+      personId = createResult.data.id;
+      console.log('[sync-pipedrive] Person created with ID:', personId);
+
+      // Save Pipedrive person ID to contact
+      await supabase
+        .from('contacts')
+        .update({ pipedrive_person_id: String(personId) })
+        .eq('id', contactId);
     }
 
-    // Create new person
-    console.log('[sync-pipedrive] Creating new person in Pipedrive');
-    
-    const createResponse = await fetch(
-      `${pipedriveBaseUrl}/persons?api_token=${apiToken}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(personData),
-      }
+    // === Step 3: Create Lead in Pipedrive ===
+    let leadCreated = false;
+    let leadId: string | null = null;
+
+    const leadTitle = contact.name || contact.call_name || 'Novo Lead';
+    const lead = await createPipedriveLead(
+      pipedriveBaseUrl,
+      apiToken,
+      leadTitle,
+      personId,
+      organizationId,
+      combinedNotes || null
     );
 
-    const createResult = await createResponse.json();
+    if (lead) {
+      leadCreated = true;
+      leadId = lead.id;
 
-    if (!createResult.success) {
-      console.error('[sync-pipedrive] Error creating person:', createResult);
-      
-      // Retry without custom fields if they caused the error
-      if (createResult.error?.includes('field')) {
-        console.log('[sync-pipedrive] Retrying with basic fields only');
-        
-        const basicPersonData = {
-          name: personData.name,
-          phone: personData.phone,
-          email: personData.email,
-        };
-
-        const retryResponse = await fetch(
-          `${pipedriveBaseUrl}/persons?api_token=${apiToken}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(basicPersonData),
-          }
-        );
-
-        const retryResult = await retryResponse.json();
-        
-        if (!retryResult.success) {
-          throw new Error(`Failed to create person: ${retryResult.error || 'Unknown error'}`);
-        }
-
-        createResult.data = retryResult.data;
-        console.log('[sync-pipedrive] Person created with basic fields (custom fields skipped)');
-      } else {
-        throw new Error(`Failed to create person: ${createResult.error || 'Unknown error'}`);
+      // Save lead ID to local deal if dealId provided
+      if (dealId) {
+        await supabase
+          .from('deals')
+          .update({ pipedrive_deal_id: leadId })
+          .eq('id', dealId);
+        console.log('[sync-pipedrive] Saved pipedrive_lead_id to deal:', dealId);
       }
     }
 
-    const personId = createResult.data.id;
-    console.log('[sync-pipedrive] Person created with ID:', personId);
-
-    // Save Pipedrive person ID to contact
-    await supabase
-      .from('contacts')
-      .update({ pipedrive_person_id: String(personId) })
-      .eq('id', contactId);
-
-    // Create Note with summary if available
+    // === Step 4: Create Note ===
     let noteCreated = false;
     if (combinedNotes && combinedNotes.trim()) {
       noteCreated = await createPipedriveNote(
@@ -464,8 +582,11 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'Contato enviado para Pipedrive',
+        message: isNewPerson ? 'Contato, Lead e Organização enviados para Pipedrive' : 'Contato atualizado e Lead criado no Pipedrive',
         personId,
+        organizationId,
+        leadId,
+        leadCreated,
         noteCreated
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
