@@ -1,45 +1,31 @@
 
 
-# Analise do envio WhatsApp via Meta API
+# Fix Outbound Seller Stats Panel
 
-## Status atual
+## Problems Found
+1. **"Sem nome" everywhere**: `assigned_user_name` is NULL in all prospecting conversations. The code uses this field directly instead of looking up names from `team_members`.
+2. **No prospecting filter**: Query fetches ALL conversations with `assigned_user_id`, not just `metadata->origin = 'prospeccao'`.
+3. **Response rate >100%**: Counting responses per-conversation but templates per-message, creating mismatched denominators.
 
-- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
-- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
-- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
-- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
+## Real Data
+- Alessandro Francisco (91ec229f): 18 prospecting conversations
+- Leonardo Sanches (ffe0eaca): 3 prospecting conversations  
+- Joao (2b8ff9f9): 1 prospecting conversation
+- Adriana Jacometo (9db32c89): 1 prospecting conversation
 
-## Causa raiz do auto-blocking não funcionar
+## Changes
 
-O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
+### `src/components/ProspectingDashboard.tsx`
+1. **Add prospecting filter**: Add `.eq('metadata->>origin', 'prospeccao')` to the conversations query
+2. **Look up seller names from `team_members`**: After fetching conversations, fetch team members and build a name map by ID
+3. **Fix response rate**: Count responses as number of conversations with user reply (not individual messages), and use conversations count as denominator instead of template message count
+4. **Use conversations as base metric**: "Enviados" = number of prospecting conversations per seller, "Respostas" = conversations with at least one user reply, "Taxa" = respostas/enviados
 
-1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
-2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
-
-## Solução
-
-### 1. Forçar deploy das edge functions afetadas
-- `whatsapp-webhook`
-- `send-whatsapp-template`
-- `process-campaign`
-
-### 2. Corrigir comparação de tipo no webhook (segurança)
-
-**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
-
-Mesmo tratamento para `errorCode === 131042`.
-
-### 3. Corrigir comparação no send-whatsapp-template
-
-**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
-
-### Detalhes técnicos
-- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
-- Deploy manual das 3 edge functions
-- Sem migração de banco
-- Risco: nenhum — apenas robustez na comparação de tipo
+### Metric Definitions (corrected)
+| Metric | Definition |
+|--------|-----------|
+| Enviados | Prospecting conversations assigned to seller |
+| Respostas | Conversations where client replied (has `from_type='user'` message) |
+| Taxa | Respostas / Enviados × 100 |
+| Pipedrive | Contacts from these conversations that have a deal with `pipedrive_deal_id` |
 
