@@ -1,22 +1,62 @@
 
 
-# Métrica de Leads Enviados ao Pipedrive por Agente
+# Eliminar Leads Órfãos e Prevenir Novos
 
-## Situação Atual
+## Situação atual
+- **249 conversas órfãs** atribuídas a 4 IDs de vendedores que não existem mais na tabela `team_members`
+- **0 deals órfãos** (tabela `deals` está limpa)
+- Não existe proteção contra exclusão de vendedores que têm leads atribuídos
 
-A funcionalidade **já está implementada** no Dashboard. Na implementação anterior, foram adicionados:
+## Plano
 
-1. **Interface `PipedriveByAgent`** (linha 122) com campos `agentId`, `agentName`, `total`, `periodCount`
-2. **Função `fetchPipedriveMetrics`** (linha 642-709) que:
-   - Busca deals com `pipedrive_deal_id` preenchido
-   - Cruza `contact_id` do deal com `current_agent_id` da conversa para identificar qual agente atendeu
-   - Agrupa por agente com contagem total e do período
-3. **Seção visual** (linha 1140+) com cards por agente mostrando total enviados e quantidade no período, com barra de progresso proporcional
-4. **Chamada no useEffect** junto com as demais métricas
+### 1. Limpar os 249 leads órfãos existentes (SQL data update)
+Reatribuir todas as conversas com `assigned_user_id` que não existe em `team_members` para `NULL` (voltam ao pool geral, sem proprietário inválido):
 
-## Conclusão
+```sql
+UPDATE conversations 
+SET assigned_user_id = NULL, assigned_user_name = NULL 
+WHERE assigned_user_id NOT IN (SELECT id FROM team_members);
+```
 
-**Nenhuma alteração é necessária.** A métrica de leads enviados ao Pipedrive por agente já está no Dashboard e funcional. Se não está aparecendo na tela, pode ser porque ainda não há deals com `pipedrive_deal_id` preenchido no banco — a seção só aparece quando `pipedriveByAgent.length > 0`.
+### 2. Criar trigger para prevenir futuros órfãos (migração SQL)
+Quando um `team_member` for deletado, automaticamente limpar as referências:
 
-Para testar: envie pelo menos um contato ao Pipedrive pela interface de chat e recarregue o Dashboard.
+```sql
+CREATE OR REPLACE FUNCTION public.reassign_on_member_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+BEGIN
+  -- Limpar assigned_user_id nas conversas do membro removido
+  UPDATE conversations 
+  SET assigned_user_id = NULL, assigned_user_name = NULL 
+  WHERE assigned_user_id = OLD.id;
+  
+  -- Limpar owner_id nos deals do membro removido
+  UPDATE deals 
+  SET owner_id = NULL 
+  WHERE owner_id = OLD.id;
+  
+  RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER trigger_reassign_on_member_delete
+  BEFORE DELETE ON team_members
+  FOR EACH ROW
+  EXECUTE FUNCTION reassign_on_member_delete();
+```
+
+### 3. Remover card "Vendedores Removidos" do Dashboard
+Como não haverá mais leads órfãos, remover o bloco de código do card vermelho (linhas 1068-1080 em `Dashboard.tsx`) e a lógica de cálculo de `unknownConversations` (linhas 407-431).
+
+## Arquivos alterados
+
+| Arquivo | Mudança |
+|---------|---------|
+| Migração SQL | Trigger `reassign_on_member_delete` |
+| SQL (data update) | `UPDATE conversations SET assigned_user_id = NULL` para os 249 órfãos |
+| `src/components/Dashboard.tsx` | Remover card e lógica de leads órfãos |
 
