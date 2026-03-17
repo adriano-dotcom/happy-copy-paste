@@ -1181,35 +1181,53 @@ export const api = {
    * @param pipelineId - Optional pipeline ID to filter by
    */
   fetchPipeline: async (pipelineId?: string): Promise<Deal[]> => {
-    let query = supabase
-      .from('deals')
-      .select(`
-        *,
-        contact:contacts(name, call_name, phone_number, email, client_memory),
-        owner:team_members!deals_owner_id_fkey(name, avatar)
-      `)
-      .order('created_at', { ascending: false });
+    // Paginate to fetch ALL deals (Supabase default limit is 1000)
+    const PAGE_SIZE = 1000;
+    let allDeals: any[] = [];
+    let offset = 0;
 
-    if (pipelineId) {
-      query = query.eq('pipeline_id', pipelineId);
+    while (true) {
+      let query = supabase
+        .from('deals')
+        .select(`
+          *,
+          contact:contacts(name, call_name, phone_number, email, client_memory),
+          owner:team_members!deals_owner_id_fkey(name, avatar)
+        `)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+
+      if (pipelineId) {
+        query = query.eq('pipeline_id', pipelineId);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('[API] Error fetching pipeline:', error);
+        break;
+      }
+
+      if (!data || data.length === 0) break;
+      allDeals = [...allDeals, ...data];
+      if (data.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
     }
 
-    const { data, error } = await query;
+    // Buscar conversation IDs em lotes de 300 (URL length limit)
+    const contactIds = allDeals.filter(d => d.contact_id).map(d => d.contact_id as string);
+    const BATCH_SIZE = 300;
+    const convMap = new Map<string, string>();
 
-    if (error) {
-      console.error('[API] Error fetching pipeline:', error);
-      return [];
+    for (let i = 0; i < contactIds.length; i += BATCH_SIZE) {
+      const batch = contactIds.slice(i, i + BATCH_SIZE);
+      const { data: conversations } = await supabase
+        .from('conversations')
+        .select('id, contact_id')
+        .in('contact_id', batch);
+      
+      conversations?.forEach(c => convMap.set(c.contact_id, c.id));
     }
-
-    // Buscar conversation IDs para cada deal com contact_id
-    const contactIds = data?.filter(d => d.contact_id).map(d => d.contact_id) || [];
-    
-    const { data: conversations } = await supabase
-      .from('conversations')
-      .select('id, contact_id')
-      .in('contact_id', contactIds.filter((id): id is string => id != null));
-
-    const convMap = new Map(conversations?.map(c => [c.contact_id, c.id]) || []);
 
     return (data || []).map((d: any) => ({
       id: d.id,
