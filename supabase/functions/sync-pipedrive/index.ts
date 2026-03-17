@@ -76,6 +76,51 @@ async function getOrCreateOrganization(
   }
 }
 
+// Get or create a Lead Label in Pipedrive
+async function getOrCreateLeadLabel(
+  baseUrl: string,
+  apiToken: string,
+  labelName: string
+): Promise<string | null> {
+  try {
+    console.log('[sync-pipedrive] Searching for lead label:', labelName);
+    const listResponse = await fetch(
+      `${baseUrl}/leadLabels?api_token=${apiToken}`
+    );
+
+    if (listResponse.ok) {
+      const listResult = await listResponse.json();
+      const existing = listResult.data?.find((l: any) => l.name === labelName);
+      if (existing) {
+        console.log('[sync-pipedrive] Found existing lead label:', existing.id);
+        return existing.id;
+      }
+    }
+
+    console.log('[sync-pipedrive] Creating lead label:', labelName);
+    const createResponse = await fetch(
+      `${baseUrl}/leadLabels?api_token=${apiToken}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: labelName, color: 'blue' }),
+      }
+    );
+
+    const createResult = await createResponse.json();
+    if (createResult.success) {
+      console.log('[sync-pipedrive] Lead label created:', createResult.data.id);
+      return createResult.data.id;
+    }
+
+    console.warn('[sync-pipedrive] Failed to create lead label:', createResult);
+    return null;
+  } catch (error) {
+    console.error('[sync-pipedrive] Error with lead label:', error);
+    return null;
+  }
+}
+
 // Create a Lead in Pipedrive linked to a Person (and optionally Organization)
 async function createPipedriveLead(
   baseUrl: string,
@@ -88,10 +133,17 @@ async function createPipedriveLead(
   try {
     console.log('[sync-pipedrive] Creating lead in Pipedrive for person:', personId);
 
+    // Get or create the campaign label
+    const labelId = await getOrCreateLeadLabel(baseUrl, apiToken, 'Leads Campanha Iris');
+
     const leadData: Record<string, any> = {
       title,
       person_id: personId,
     };
+
+    if (labelId) {
+      leadData.label_ids = [labelId];
+    }
 
     if (organizationId) {
       leadData.organization_id = organizationId;

@@ -1,30 +1,45 @@
 
 
-# Adicionar etiqueta "Leads Campanha Iris" ao criar Lead no Pipedrive
+# Analise do envio WhatsApp via Meta API
 
-## Problema
-Ao enviar um contato para o Pipedrive, o Lead é criado sem nenhuma etiqueta (label). O usuário quer que todo Lead criado receba automaticamente a etiqueta "Leads Campanha Iris".
+## Status atual
+
+- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
+- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
+- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
+- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
+
+## Causa raiz do auto-blocking não funcionar
+
+O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
+
+1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
+2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
 
 ## Solução
 
-### `supabase/functions/sync-pipedrive/index.ts`
+### 1. Forçar deploy das edge functions afetadas
+- `whatsapp-webhook`
+- `send-whatsapp-template`
+- `process-campaign`
 
-A API do Pipedrive suporta `label_ids` no endpoint de Leads. Precisamos:
+### 2. Corrigir comparação de tipo no webhook (segurança)
 
-1. **Buscar ou criar a label** "Leads Campanha Iris" via `GET /leadLabels` e, se não existir, `POST /leadLabels`
-2. **Incluir `label_ids`** no payload de criação do Lead
+**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
 
-Adicionar uma função auxiliar `getOrCreateLeadLabel` que:
-- Faz `GET /leadLabels?api_token=...` para listar labels existentes
-- Procura por nome "Leads Campanha Iris"
-- Se não encontrar, cria via `POST /leadLabels` com `{ name: "Leads Campanha Iris", color: "blue" }`
-- Retorna o `id` da label
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
 
-Na função `createPipedriveLead`, antes de criar o lead:
-- Chamar `getOrCreateLeadLabel`
-- Adicionar `label_ids: [labelId]` ao `leadData`
+Mesmo tratamento para `errorCode === 131042`.
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sync-pipedrive/index.ts` | Adicionar função `getOrCreateLeadLabel` + incluir `label_ids` na criação do Lead |
+### 3. Corrigir comparação no send-whatsapp-template
+
+**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+
+Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
+
+### Detalhes técnicos
+- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
+- Deploy manual das 3 edge functions
+- Sem migração de banco
+- Risco: nenhum — apenas robustez na comparação de tipo
 
