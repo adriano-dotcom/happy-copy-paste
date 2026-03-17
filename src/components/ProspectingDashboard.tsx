@@ -373,7 +373,7 @@ const ProspectingDashboard: React.FC = () => {
       } else {
         setSellerStats([]);
       }
-
+    } catch (error) {
       console.error('Error fetching prospecting data:', error);
       toast.error('Erro ao carregar dados de prospecção');
     } finally {
