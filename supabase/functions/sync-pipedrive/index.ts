@@ -133,10 +133,17 @@ async function createPipedriveLead(
   try {
     console.log('[sync-pipedrive] Creating lead in Pipedrive for person:', personId);
 
+    // Get or create the campaign label
+    const labelId = await getOrCreateLeadLabel(baseUrl, apiToken, 'Leads Campanha Iris');
+
     const leadData: Record<string, any> = {
       title,
       person_id: personId,
     };
+
+    if (labelId) {
+      leadData.label_ids = [labelId];
+    }
 
     if (organizationId) {
       leadData.organization_id = organizationId;
