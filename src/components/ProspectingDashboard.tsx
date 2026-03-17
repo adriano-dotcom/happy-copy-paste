@@ -469,6 +469,10 @@ const ProspectingDashboard: React.FC = () => {
               <MousePointerClick className="w-4 h-4 mr-2" />
               Triagem Interativa
             </TabsTrigger>
+            <TabsTrigger value="sellers" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
+              <Users className="w-4 h-4 mr-2" />
+              Outbound por Vendedor
+            </TabsTrigger>
           </TabsList>
 
           <div className="flex items-center gap-3">
