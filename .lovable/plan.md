@@ -1,45 +1,45 @@
 
 
-# Analise do envio WhatsApp via Meta API
+# Painel Outbound — Métricas por Vendedor na Prospecção
 
-## Status atual
-
-- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
-- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
-- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
-- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
-
-## Causa raiz do auto-blocking não funcionar
-
-O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
-
-1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
-2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
+## Problema
+Quando um vendedor como Alessandro Francisco atende uma conversa aberta por prospecção (origin=prospeccao), não há visibilidade das métricas de outbound por vendedor: quantos templates foram enviados, quantos responderam e quantos foram enviados ao Pipedrive.
 
 ## Solução
+Criar uma nova seção no **ProspectingDashboard** (rota `/prospecting`) com um painel "Outbound por Vendedor" que mostra, para cada vendedor atribuído (`assigned_user_id`/`assigned_user_name` da conversa):
 
-### 1. Forçar deploy das edge functions afetadas
-- `whatsapp-webhook`
-- `send-whatsapp-template`
-- `process-campaign`
+1. **Templates Enviados** — mensagens com `metadata.is_prospecting` ou `metadata.template_name` nas conversas atribuídas ao vendedor
+2. **Respostas Recebidas** — conversas de prospecção desse vendedor que tiveram resposta do cliente (`from_type = 'user'`)  
+3. **Enviados ao Pipedrive** — deals dessas conversas com `pipedrive_deal_id` preenchido
 
-### 2. Corrigir comparação de tipo no webhook (segurança)
+## Lógica de Dados
 
-**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
+```text
+conversations (metadata->origin = 'prospeccao')
+  ├── assigned_user_id → identifica o vendedor
+  ├── messages (from_type='nina', metadata.is_prospecting) → templates enviados
+  ├── messages (from_type='user') → respostas  
+  └── deals (via contact_id) com pipedrive_deal_id → enviados ao Pipedrive
+```
 
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+## Implementação
 
-Mesmo tratamento para `errorCode === 131042`.
+### 1. Atualizar `src/components/ProspectingDashboard.tsx`
+- Adicionar interface `OutboundSellerStats` com campos: `sellerName`, `sellerId`, `templatesSent`, `responsesReceived`, `responseRate`, `sentToPipedrive`
+- Adicionar state `outboundBySellerStats`
+- Na função `fetchData`, buscar conversas com `metadata->origin = prospeccao` incluindo `assigned_user_id` e `assigned_user_name`
+- Cruzar com mensagens de template (enviadas) e respostas (recebidas) por vendedor
+- Cruzar com deals que têm `pipedrive_deal_id` por `contact_id` dessas conversas
+- Renderizar nova aba ou seção com tabela mostrando cada vendedor e suas métricas
 
-### 3. Corrigir comparação no send-whatsapp-template
+### 2. Nova seção no layout
+- Adicionar uma nova tab "Outbound por Vendedor" no `Tabs` existente
+- Tabela com colunas: Vendedor | Enviados | Respostas | Taxa | Pipedrive
+- Cards de resumo no topo com totais
 
-**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
+## Arquivos alterados
 
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
-
-### Detalhes técnicos
-- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
-- Deploy manual das 3 edge functions
-- Sem migração de banco
-- Risco: nenhum — apenas robustez na comparação de tipo
+| Arquivo | Mudança |
+|---------|---------|
+| `src/components/ProspectingDashboard.tsx` | Adicionar fetch de métricas outbound por vendedor + nova tab com tabela |
 
