@@ -624,7 +624,8 @@ serve(async (req) => {
         pipedriveBaseUrl, 
         apiToken, 
         String(personId), 
-        combinedNotes
+        combinedNotes,
+        leadId
       );
     }
 
