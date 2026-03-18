@@ -1,45 +1,36 @@
 
 
-# Analise do envio WhatsApp via Meta API
+# Remover tom ameaçador da mensagem de abertura do Atlas
 
-## Status atual
+## Diagnóstico
 
-- **56 mensagens falharam** nas últimas 6 horas (59% do total de 95 envios)
-- **0 contatos bloqueados** no banco — o auto-blocking que implementamos **não está funcionando**
-- Todas as falhas são erro **131026 (Message undeliverable)** — números sem WhatsApp
-- A send_queue também mostra falhas por **"Janela de 24h expirada"** — tentativas de enviar mensagem livre fora da janela de conversa
+A mensagem "Seguro de transportadora — e tem uma mudança regulatória chegando em julho que afeta diretamente quem opera com RNTRC" vem do **prompt do agente Atlas** armazenado no banco de dados (tabela `agents`, slug `atlas`).
 
-## Causa raiz do auto-blocking não funcionar
+Ela aparece em **3 lugares** no `system_prompt` do Atlas:
 
-O webhook recebe o erro 131026 corretamente (confirmado nos logs: `[Webhook] Message failed with errors: [{"code":131026,...}]`), mas o log de `"blocking contact"` nunca aparece. Duas causas possíveis:
+1. **Exemplo de resposta correta (RC1):** mostra essa frase como modelo
+2. **Seção "ARGUMENTO REGULATÓRIO":** instrui o Atlas a usar a mudança da ANTT/julho como gancho de vendas
+3. **Seção "PRIMEIRA RESPOSTA — REGRA DE OURO":** lista 3 modelos de abertura que todos usam tom regulatório/ameaçador
 
-1. **Edge function não re-deployed** — o código foi editado mas a versão em produção é a antiga
-2. **Comparação de tipo** — o `errorCode` pode chegar como string `"131026"` em vez de number `131026`, falhando no `===`
+## Mudança proposta
 
-## Solução
+Atualizar o `system_prompt` do Atlas no banco de dados via migration SQL para:
 
-### 1. Forçar deploy das edge functions afetadas
-- `whatsapp-webhook`
-- `send-whatsapp-template`
-- `process-campaign`
+1. **Trocar os modelos de abertura** por versões consultivas e profissionais, sem tom de ameaça:
+   - "Somos corretora especializada em seguros para transportadoras. Quero entender como está a proteção da sua operação hoje — frota e carga. Você é o responsável por essa área?"
+   - "Trabalhamos com seguros para transportadoras em todo o Brasil. Posso te fazer umas perguntas rápidas sobre a situação atual de seguros da empresa?"
 
-### 2. Corrigir comparação de tipo no webhook (segurança)
+2. **Suavizar o argumento regulatório** — manter a informação da ANTT mas sem tom alarmista. Em vez de "corre risco de ter RNTRC suspenso", usar algo como "muitas empresas estão revisando suas apólices para se adequar às novas exigências".
 
-**Arquivo: `supabase/functions/whatsapp-webhook/index.ts`**
+3. **Atualizar o exemplo da RC1** para refletir o novo tom.
 
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)` para funcionar tanto com number quanto string.
+4. **Manter a regra de usar o argumento no máximo 1 vez** por conversa.
 
-Mesmo tratamento para `errorCode === 131042`.
+## Implementação
 
-### 3. Corrigir comparação no send-whatsapp-template
+| O que | Como |
+|-------|------|
+| Prompt do Atlas | Migration SQL com `UPDATE agents SET system_prompt = '...' WHERE slug = 'atlas'` |
 
-**Arquivo: `supabase/functions/send-whatsapp-template/index.ts`**
-
-Trocar `if (errorCode === 131026)` por `if (Number(errorCode) === 131026)`.
-
-### Detalhes técnicos
-- 2 arquivos: `whatsapp-webhook/index.ts`, `send-whatsapp-template/index.ts`
-- Deploy manual das 3 edge functions
-- Sem migração de banco
-- Risco: nenhum — apenas robustez na comparação de tipo
+A migration vai substituir as 3 seções no prompt mantendo toda a estrutura restante intacta.
 
