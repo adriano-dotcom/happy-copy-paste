@@ -639,8 +639,13 @@ export type Database = {
           notes: string | null
           number: string | null
           phone_number: string
+          pipedrive_lead_id: string | null
+          pipedrive_org_id: string | null
           pipedrive_person_id: string | null
+          pipedrive_sync_error: string | null
+          pipedrive_sync_status: string | null
           profile_picture_url: string | null
+          sent_to_pipedrive_at: string | null
           state: string | null
           street: string | null
           tags: string[] | null
@@ -678,8 +683,13 @@ export type Database = {
           notes?: string | null
           number?: string | null
           phone_number: string
+          pipedrive_lead_id?: string | null
+          pipedrive_org_id?: string | null
           pipedrive_person_id?: string | null
+          pipedrive_sync_error?: string | null
+          pipedrive_sync_status?: string | null
           profile_picture_url?: string | null
+          sent_to_pipedrive_at?: string | null
           state?: string | null
           street?: string | null
           tags?: string[] | null
@@ -717,8 +727,13 @@ export type Database = {
           notes?: string | null
           number?: string | null
           phone_number?: string
+          pipedrive_lead_id?: string | null
+          pipedrive_org_id?: string | null
           pipedrive_person_id?: string | null
+          pipedrive_sync_error?: string | null
+          pipedrive_sync_status?: string | null
           profile_picture_url?: string | null
+          sent_to_pipedrive_at?: string | null
           state?: string | null
           street?: string | null
           tags?: string[] | null
@@ -3008,7 +3023,12 @@ export type Database = {
           mensagem: string | null
           nome: string | null
           origem: string | null
+          pipedrive_lead_id: string | null
+          pipedrive_org_id: string | null
+          pipedrive_person_id: string | null
+          pipedrive_sync_status: string | null
           produto: string | null
+          sent_to_pipedrive_at: string | null
           status: string | null
           telefone: string | null
           uf: string | null
@@ -3021,7 +3041,12 @@ export type Database = {
           mensagem?: string | null
           nome?: string | null
           origem?: string | null
+          pipedrive_lead_id?: string | null
+          pipedrive_org_id?: string | null
+          pipedrive_person_id?: string | null
+          pipedrive_sync_status?: string | null
           produto?: string | null
+          sent_to_pipedrive_at?: string | null
           status?: string | null
           telefone?: string | null
           uf?: string | null
@@ -3034,7 +3059,12 @@ export type Database = {
           mensagem?: string | null
           nome?: string | null
           origem?: string | null
+          pipedrive_lead_id?: string | null
+          pipedrive_org_id?: string | null
+          pipedrive_person_id?: string | null
+          pipedrive_sync_status?: string | null
           produto?: string | null
+          sent_to_pipedrive_at?: string | null
           status?: string | null
           telefone?: string | null
           uf?: string | null
