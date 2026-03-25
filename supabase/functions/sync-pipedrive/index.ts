@@ -583,7 +583,7 @@ serve(async (req) => {
       personId = createResult.data.id;
       console.log('[sync-pipedrive] Person created with ID:', personId);
 
-      // Save Pipedrive person ID to contact
+      // Save Pipedrive person ID to contact (org/lead IDs saved after Step 3)
       await supabase
         .from('contacts')
         .update({ pipedrive_person_id: String(personId) })
@@ -617,6 +617,20 @@ serve(async (req) => {
       }
     }
 
+    // === Step 3.5: Persist all Pipedrive IDs + sync status to contacts ===
+    await supabase
+      .from('contacts')
+      .update({
+        pipedrive_person_id: String(personId),
+        pipedrive_org_id: organizationId ? String(organizationId) : null,
+        pipedrive_lead_id: leadId || null,
+        sent_to_pipedrive_at: new Date().toISOString(),
+        pipedrive_sync_status: 'sent',
+        pipedrive_sync_error: null,
+      })
+      .eq('id', contactId);
+    console.log('[sync-pipedrive] All IDs persisted to contacts table');
+
     // === Step 4: Create Note ===
     let noteCreated = false;
     if (combinedNotes && combinedNotes.trim()) {
@@ -645,6 +659,28 @@ serve(async (req) => {
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('[sync-pipedrive] Error:', error);
+
+    // Persist failure status to contacts
+    try {
+      const { contactId } = await req.clone().json().catch(() => ({ contactId: null }));
+      if (contactId) {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        await supabase
+          .from('contacts')
+          .update({
+            pipedrive_sync_status: 'failed',
+            pipedrive_sync_error: errorMessage,
+            sent_to_pipedrive_at: new Date().toISOString(),
+          })
+          .eq('id', contactId);
+        console.log('[sync-pipedrive] Failure status persisted to contacts');
+      }
+    } catch (e) {
+      console.error('[sync-pipedrive] Could not persist failure status:', e);
+    }
+
     return new Response(
       JSON.stringify({ success: false, error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
