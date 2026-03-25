@@ -155,8 +155,22 @@ export type Database = {
             foreignKeyName: "agents_default_owner_id_fkey"
             columns: ["default_owner_id"]
             isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
+            referencedColumns: ["responsavel_id"]
+          },
+          {
+            foreignKeyName: "agents_default_owner_id_fkey"
+            columns: ["default_owner_id"]
+            isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agents_last_assigned_owner_id_fkey"
+            columns: ["last_assigned_owner_id"]
+            isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
+            referencedColumns: ["responsavel_id"]
           },
           {
             foreignKeyName: "agents_last_assigned_owner_id_fkey"
@@ -394,6 +408,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "callback_assignments_last_assigned_member_id_fkey"
+            columns: ["last_assigned_member_id"]
+            isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
+            referencedColumns: ["responsavel_id"]
+          },
           {
             foreignKeyName: "callback_assignments_last_assigned_member_id_fkey"
             columns: ["last_assigned_member_id"]
@@ -922,6 +943,13 @@ export type Database = {
             foreignKeyName: "deal_activities_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
+            referencedColumns: ["responsavel_id"]
+          },
+          {
+            foreignKeyName: "deal_activities_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
@@ -1019,6 +1047,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "leads_jarvis_v"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
+            referencedColumns: ["responsavel_id"]
           },
           {
             foreignKeyName: "deals_owner_id_fkey"
@@ -1824,6 +1859,13 @@ export type Database = {
           team_member_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "pending_invites_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
+            referencedColumns: ["responsavel_id"]
+          },
           {
             foreignKeyName: "pending_invites_team_member_id_fkey"
             columns: ["team_member_id"]
@@ -2761,6 +2803,13 @@ export type Database = {
             foreignKeyName: "whatsapp_campaigns_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
+            referencedColumns: ["responsavel_id"]
+          },
+          {
+            foreignKeyName: "whatsapp_campaigns_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
@@ -3028,46 +3077,14 @@ export type Database = {
           pipedrive_person_id: string | null
           pipedrive_sync_status: string | null
           produto: string | null
+          responsavel_atribuido_em: string | null
+          responsavel_email: string | null
+          responsavel_id: string | null
+          responsavel_nome: string | null
           sent_to_pipedrive_at: string | null
           status: string | null
           telefone: string | null
           uf: string | null
-        }
-        Insert: {
-          cidade?: string | null
-          created_at?: string | null
-          email?: string | null
-          id?: string | null
-          mensagem?: string | null
-          nome?: string | null
-          origem?: string | null
-          pipedrive_lead_id?: string | null
-          pipedrive_org_id?: string | null
-          pipedrive_person_id?: string | null
-          pipedrive_sync_status?: string | null
-          produto?: string | null
-          sent_to_pipedrive_at?: string | null
-          status?: string | null
-          telefone?: string | null
-          uf?: string | null
-        }
-        Update: {
-          cidade?: string | null
-          created_at?: string | null
-          email?: string | null
-          id?: string | null
-          mensagem?: string | null
-          nome?: string | null
-          origem?: string | null
-          pipedrive_lead_id?: string | null
-          pipedrive_org_id?: string | null
-          pipedrive_person_id?: string | null
-          pipedrive_sync_status?: string | null
-          produto?: string | null
-          sent_to_pipedrive_at?: string | null
-          status?: string | null
-          telefone?: string | null
-          uf?: string | null
         }
         Relationships: []
       }
