@@ -264,6 +264,13 @@ export type Database = {
             referencedRelation: "contacts_with_stats"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "appointments_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
+            referencedColumns: ["id"]
+          },
         ]
       }
       call_logs: {
@@ -340,6 +347,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_logs_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
             referencedColumns: ["id"]
           },
           {
@@ -484,6 +498,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_contacts_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
             referencedColumns: ["id"]
           },
           {
@@ -826,6 +847,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "conversations_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "conversations_current_agent_id_fkey"
             columns: ["current_agent_id"]
             isOneToOne: false
@@ -968,6 +996,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
             referencedColumns: ["id"]
           },
           {
@@ -2059,6 +2094,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "scheduled_emails_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "scheduled_emails_deal_id_fkey"
             columns: ["deal_id"]
             isOneToOne: false
@@ -2419,6 +2461,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_qualifications_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "leads_jarvis_v"
             referencedColumns: ["id"]
           },
           {
@@ -2947,6 +2996,48 @@ export type Database = {
           updated_at: string | null
           user_messages: number | null
           whatsapp_id: string | null
+        }
+        Relationships: []
+      }
+      leads_jarvis_v: {
+        Row: {
+          cidade: string | null
+          created_at: string | null
+          email: string | null
+          id: string | null
+          mensagem: string | null
+          nome: string | null
+          origem: string | null
+          produto: string | null
+          status: string | null
+          telefone: string | null
+          uf: string | null
+        }
+        Insert: {
+          cidade?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          mensagem?: string | null
+          nome?: string | null
+          origem?: string | null
+          produto?: string | null
+          status?: string | null
+          telefone?: string | null
+          uf?: string | null
+        }
+        Update: {
+          cidade?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          mensagem?: string | null
+          nome?: string | null
+          origem?: string | null
+          produto?: string | null
+          status?: string | null
+          telefone?: string | null
+          uf?: string | null
         }
         Relationships: []
       }
