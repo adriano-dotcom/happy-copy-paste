@@ -1,94 +1,66 @@
 
 
-# Integração de Leitura para Jarvis (Clawdbot)
+# Integração Jarvis via Supabase REST + Anon Key
 
-## Diagnóstico das tabelas
+## Abordagem
 
-Os leads estão distribuídos em duas tabelas principais:
-- **`contacts`** — dados do contato (nome, telefone, email, cidade, estado, origem, vertical, lead_status)
-- **`deals`** — pipeline/negócio vinculado ao contato (stage, notas, created_at)
+Substituir a Edge Function `jarvis-leads` pela abordagem nativa do Supabase REST API. A view `leads_jarvis_v` já existe. Basta conceder acesso de leitura ao role `anon` para que o endpoint REST funcione com a anon key.
 
-Não existe tabela `leads` dedicada. A `contacts` é a tabela primária de leads.
+## O que já existe
 
-## Mapeamento de campos
+- View `public.leads_jarvis_v` (criada na migration anterior) mapeando campos de `contacts`
+- Edge Function `jarvis-leads` (será removida)
 
-| Campo solicitado | Coluna real | Tabela |
-|---|---|---|
-| id | `c.id` | contacts |
-| created_at | `c.first_contact_date` | contacts |
-| nome | `c.name` | contacts |
-| telefone | `c.phone_number` | contacts |
-| email | `c.email` | contacts |
-| origem | `c.lead_source` | contacts |
-| produto | `c.vertical` | contacts |
-| cidade | `c.city` | contacts |
-| uf | `c.state` | contacts |
-| mensagem | `c.notes` | contacts |
-| status | `c.lead_status` | contacts |
+## Mudanças necessárias
 
-## Abordagem escolhida: Edge Function (opção 5)
-
-Uma Edge Function é mais segura e controlável que expor via REST/anon key, pois:
-- Permite token dedicado sem expor a anon key
-- Garante somente leitura por design
-- Aceita filtro `since` para cron incremental
-- Não requer criação de usuário auth para o Jarvis
-
-## Plano de implementação
-
-### 1. Migration SQL — Criar VIEW `leads_jarvis_v`
+### 1. Migration SQL — Conceder SELECT ao role `anon`
 
 ```sql
-CREATE OR REPLACE VIEW public.leads_jarvis_v AS
-SELECT
-  c.id,
-  c.first_contact_date AS created_at,
-  c.name AS nome,
-  c.phone_number AS telefone,
-  c.email,
-  c.lead_source AS origem,
-  c.vertical AS produto,
-  c.city AS cidade,
-  c.state AS uf,
-  c.notes AS mensagem,
-  c.lead_status AS status
-FROM public.contacts c
-ORDER BY c.first_contact_date DESC;
+GRANT SELECT ON public.leads_jarvis_v TO anon;
+GRANT SELECT ON public.leads_jarvis_v TO authenticated;
 ```
 
-### 2. Secret — `JARVIS_API_TOKEN`
+Como a view foi criada sem `security_invoker` (padrão = definer), ela executa com permissões do owner e bypassa RLS da tabela `contacts`. Isso significa que o `GRANT SELECT` ao `anon` é suficiente para liberar leitura via REST.
 
-Criar um token aleatório seguro via `secrets--add_secret`. O Jarvis usará esse token no header `Authorization: Bearer <token>`.
+### 2. Remover Edge Function `jarvis-leads`
 
-### 3. Edge Function `jarvis-leads`
+- Deletar `supabase/functions/jarvis-leads/index.ts`
+- Remover bloco `[functions.jarvis-leads]` do `supabase/config.toml`
 
-- **Rota**: `GET /functions/v1/jarvis-leads`
-- **Auth**: Valida `Authorization: Bearer <JARVIS_API_TOKEN>` (comparação contra secret)
-- **Query params**: `since` (ISO date, opcional) para filtro incremental
-- **Retorno**: JSON array dos leads da view
-- **config.toml**: `verify_jwt = false` (auth via token próprio)
+### 3. Atualizar plano (.lovable/plan.md)
 
-Lógica:
+Documentar a abordagem final.
+
+## Endpoint final para o Jarvis
+
 ```
-1. Validar header Authorization contra JARVIS_API_TOKEN
-2. Ler param ?since=
-3. Query: SELECT * FROM leads_jarvis_v WHERE created_at >= since (ou sem filtro)
-4. Retornar JSON
+GET https://xaqepnvvoljtlsyofifu.supabase.co/rest/v1/leads_jarvis_v?select=*&order=created_at.desc
 ```
 
-### 4. Documentação final (no chat)
+Headers:
+```
+apikey: <SUPABASE_ANON_KEY>
+Authorization: Bearer <SUPABASE_ANON_KEY>
+```
 
-Após implementação, documentar:
-- Tabela original: `contacts`
-- View: `leads_jarvis_v`
-- Endpoint: `GET https://xaqepnvvoljtlsyofifu.supabase.co/functions/v1/jarvis-leads`
-- Header: `Authorization: Bearer <JARVIS_API_TOKEN>`
-- Query: `?since=2026-03-01T00:00:00Z`
+Filtro incremental:
+```
+&created_at=gte.2026-03-01T00:00:00Z
+```
 
-| Arquivo/Recurso | Ação |
-|---|---|
-| Migration SQL | Criar VIEW `leads_jarvis_v` |
-| Secret `JARVIS_API_TOKEN` | Solicitar ao usuário |
-| `supabase/functions/jarvis-leads/index.ts` | Criar edge function GET |
-| `supabase/config.toml` | Adicionar `[functions.jarvis-leads]` com `verify_jwt = false` |
+## Resumo
+
+| Recurso | Ação |
+|---------|------|
+| Migration SQL | `GRANT SELECT ON leads_jarvis_v TO anon` |
+| `supabase/functions/jarvis-leads/` | Deletar |
+| `supabase/config.toml` | Remover bloco `jarvis-leads` |
+| `.lovable/plan.md` | Atualizar documentação |
+
+## Dados para configurar o Jarvis
+
+- **Tabela real de leads**: `contacts`
+- **View exposta**: `leads_jarvis_v`
+- **Project URL**: `https://xaqepnvvoljtlsyofifu.supabase.co`
+- **Anon key**: já disponível no `.env` do projeto
 
