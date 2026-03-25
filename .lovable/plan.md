@@ -1,94 +1,109 @@
 
 
-# Rastrear IDs do Pipedrive no CRM
+# Dashboard MTD — Responsável por Lead
 
-## Resposta às perguntas
+## Diagnóstico
 
-**1. Sim**, a edge function `sync-pipedrive` já recebe os IDs de Person, Organization e Lead nas respostas da API do Pipedrive. Todos os `createResult.data.id` são capturados.
+O responsável do lead **já existe** no banco, mas não está na tabela `contacts`. O caminho é:
 
-**2. Parcialmente.** Hoje ela já salva `pipedrive_person_id` em `contacts` e `pipedrive_deal_id` (que é o lead ID) em `deals`. Faltam: `pipedrive_lead_id`, `pipedrive_org_id`, timestamps e status de erro em `contacts`.
+```text
+contacts.id → deals.contact_id → deals.owner_id → team_members.id/name/email
+```
 
-## O que já existe vs. o que falta
+- `deals.owner_id` (uuid) referencia `team_members.id`
+- A atribuição acontece automaticamente via trigger `create_deal_for_new_contact` + função `get_next_deal_owner`
+- O `team_members` tem `name` e `email` (via auth)
 
-| Campo | Já existe? | Onde |
-|---|---|---|
-| `pipedrive_person_id` | Sim | `contacts` (já salvo na linha 589) |
-| `pipedrive_lead_id` | Não | — |
-| `pipedrive_org_id` | Não | — |
-| `sent_to_pipedrive_at` | Não | — |
-| `pipedrive_sync_status` | Não | — |
-| `pipedrive_sync_error` | Não | — |
+**Não é necessário criar colunas novas em `contacts`.** Basta fazer JOIN na view.
 
 ## Plano
 
-### 1. Migration SQL — Adicionar colunas em `contacts`
+### 1. Migration SQL — Atualizar VIEW `leads_jarvis_v`
 
-```sql
-ALTER TABLE public.contacts
-  ADD COLUMN IF NOT EXISTS pipedrive_lead_id text,
-  ADD COLUMN IF NOT EXISTS pipedrive_org_id text,
-  ADD COLUMN IF NOT EXISTS sent_to_pipedrive_at timestamptz,
-  ADD COLUMN IF NOT EXISTS pipedrive_sync_status text,
-  ADD COLUMN IF NOT EXISTS pipedrive_sync_error text;
-```
-
-(`pipedrive_person_id` já existe.)
-
-### 2. Atualizar Edge Function `sync-pipedrive`
-
-No bloco de sucesso (após criar Person, Org e Lead), salvar todos os IDs em `contacts`:
-
-```typescript
-// Após Step 3 (Lead criado com sucesso)
-await supabase.from('contacts').update({
-  pipedrive_person_id: String(personId),
-  pipedrive_org_id: organizationId ? String(organizationId) : null,
-  pipedrive_lead_id: leadId || null,
-  sent_to_pipedrive_at: new Date().toISOString(),
-  pipedrive_sync_status: 'sent',
-  pipedrive_sync_error: null,
-}).eq('id', contactId);
-```
-
-No bloco de erro (catch), salvar o status de falha:
-
-```typescript
-// No catch geral
-await supabase.from('contacts').update({
-  pipedrive_sync_status: 'failed',
-  pipedrive_sync_error: errorMessage,
-  sent_to_pipedrive_at: new Date().toISOString(),
-}).eq('id', contactId);
-```
-
-### 3. Atualizar view `leads_jarvis_v`
-
-Recriar a view adicionando os novos campos:
+Recriar a view com LEFT JOIN em `deals` e `team_members` para expor o responsável:
 
 ```sql
 CREATE OR REPLACE VIEW public.leads_jarvis_v AS
 SELECT
-  c.id, c.first_contact_date AS created_at,
-  c.name AS nome, c.phone_number AS telefone, c.email,
-  c.lead_source AS origem, c.vertical AS produto,
-  c.city AS cidade, c.state AS uf,
-  c.notes AS mensagem, c.lead_status AS status,
-  c.pipedrive_person_id, c.pipedrive_lead_id, c.pipedrive_org_id,
-  c.sent_to_pipedrive_at, c.pipedrive_sync_status
+  c.id,
+  c.first_contact_date AS created_at,
+  c.name AS nome,
+  c.phone_number AS telefone,
+  c.email,
+  c.lead_source AS origem,
+  c.vertical AS produto,
+  c.city AS cidade,
+  c.state AS uf,
+  c.notes AS mensagem,
+  c.lead_status AS status,
+  c.pipedrive_person_id,
+  c.pipedrive_lead_id,
+  c.pipedrive_org_id,
+  c.sent_to_pipedrive_at,
+  c.pipedrive_sync_status,
+  -- Responsável (do deal vinculado)
+  tm.id AS responsavel_id,
+  tm.name AS responsavel_nome,
+  tm.email AS responsavel_email,
+  d.created_at AS responsavel_atribuido_em
 FROM public.contacts c
+LEFT JOIN public.deals d ON d.contact_id = c.id
+LEFT JOIN public.team_members tm ON tm.id = d.owner_id
 ORDER BY c.first_contact_date DESC;
+
+GRANT SELECT ON public.leads_jarvis_v TO anon;
+GRANT SELECT ON public.leads_jarvis_v TO authenticated;
 ```
 
-O `GRANT SELECT TO anon` já está aplicado e se mantém automaticamente.
+Se um contato tiver mais de um deal, aparecerá mais de uma linha (um por deal). Se isso for indesejado, podemos usar `DISTINCT ON (c.id)` pegando o deal mais recente.
 
-### 4. Nenhuma mudança de RLS necessária
+### 2. Nenhuma mudança de RLS
 
-A view é security definer e o GRANT já existe. Os novos campos ficam expostos na mesma view read-only.
+A view continua security definer com GRANT SELECT ao `anon`. Sem mudanças.
 
-## Resumo de arquivos
+### 3. Nenhuma mudança de código
+
+A view é consumida via REST pelo Jarvis. Nenhum arquivo do frontend precisa mudar.
+
+## Exemplo de retorno JSON
+
+```json
+[
+  {
+    "id": "abc-123",
+    "created_at": "2026-03-10T14:30:00Z",
+    "nome": "João Silva",
+    "telefone": "5511999887766",
+    "email": "joao@empresa.com",
+    "origem": "inbound",
+    "produto": "carga",
+    "cidade": "São Paulo",
+    "uf": "SP",
+    "mensagem": "Preciso de cotação...",
+    "status": "qualified",
+    "pipedrive_person_id": "12345",
+    "pipedrive_lead_id": "67890",
+    "pipedrive_org_id": "111",
+    "sent_to_pipedrive_at": "2026-03-10T15:00:00Z",
+    "pipedrive_sync_status": "sent",
+    "responsavel_id": "9db32c89-...",
+    "responsavel_nome": "Adriana Jacometo",
+    "responsavel_email": "adriana@jacometo.com.br",
+    "responsavel_atribuido_em": "2026-03-10T14:31:00Z"
+  }
+]
+```
+
+## Decisão: duplicatas por múltiplos deals
+
+Se um contato pode ter mais de um deal (raro mas possível), recomendo usar `DISTINCT ON` para pegar apenas o deal mais recente. Se preferir ver todos os deals, mantenho sem DISTINCT. Vou usar `DISTINCT ON (c.id)` por padrão para evitar duplicatas no ranking.
+
+## Resumo
 
 | Recurso | Ação |
 |---|---|
-| Migration SQL | `ALTER TABLE contacts` + `CREATE OR REPLACE VIEW` |
-| `supabase/functions/sync-pipedrive/index.ts` | Persistir IDs + status no sucesso e erro |
+| Migration SQL | `CREATE OR REPLACE VIEW leads_jarvis_v` com JOIN em deals + team_members |
+| Colunas novas em contacts | Nenhuma (dados já existem via deals.owner_id) |
+| RLS | Sem mudança |
+| Código frontend | Sem mudança |
 
