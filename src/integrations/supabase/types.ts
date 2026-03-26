@@ -3104,6 +3104,27 @@ export type Database = {
           },
         ]
       }
+      outbound_sends_daily_v: {
+        Row: {
+          campaign_id: string | null
+          campaign_name: string | null
+          opened_count: number | null
+          replied_count: number | null
+          responsavel_email: string | null
+          responsavel_nome: string | null
+          send_date: string | null
+          sent_count: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_contacts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       check_rate_limit: {
