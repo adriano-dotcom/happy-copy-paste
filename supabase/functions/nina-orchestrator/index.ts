@@ -2837,34 +2837,41 @@ function detectExistingInsurance(userMessages: string[], agentMessages: string[]
     /sim.*ja tenho/i, /ja tenho.*seguro/i, /temos.*apolice/i
   ];
   
-  // Patterns for "has cargo insurance"
+  // Patterns for "has cargo insurance" - more restrictive to avoid false positives
   const hasCargoInsurancePatterns = [
-    /rctr-?c.*sim/i, /sim.*rctr/i, /seguro de carga.*sim/i,
-    /sim.*seguro de carga/i, /carga segurada/i, /ja temos.*carga/i,
-    /temos seguro de carga/i, /temos rctr/i, /temos.*cobertura.*carga/i
+    /rctr-?c.*sim/i, /sim.*rctr/i,
+    /ja tenho.*seguro de carga/i, /ja temos.*seguro de carga/i,
+    /tenho.*seguro de carga/i, /temos seguro de carga/i,
+    /carga segurada/i, /ja temos.*carga/i,
+    /temos rctr/i, /temos.*cobertura.*carga/i
+  ];
+
+  // Anti-patterns: user is SEEKING insurance, not confirming they have it
+  const seekingInsurancePatterns = [
+    /queria saber sobre/i, /preciso de/i, /quero cotar/i, /quero fazer/i,
+    /me interessa/i, /preciso contratar/i, /queria contratar/i, /busco/i,
+    /procurando/i, /quero saber/i, /gostaria de/i, /queria um/i,
+    /quero contratar/i, /preciso de.*seguro/i, /quero.*seguro/i,
+    /cotacao/i, /cotação/i, /orcamento/i, /orçamento/i
   ];
   
-  // Patterns for satisfaction/dissatisfaction
-  const satisfiedPatterns = [
-    /satisfeit/i, /content[ea]/i, /bem atendid/i, /gosto/i,
-    /nao reclamo/i, /tranquilo/i, /ok com/i, /feliz com/i,
-    /bom atendimento/i, /sem problemas/i, /tudo certo/i
-  ];
-  
-  const dissatisfiedPatterns = [
-    /insatisfeit/i, /caro demais/i, /ruim/i, /pessimo/i,
-    /atendimento ruim/i, /demora/i, /nao gostei/i, /quero trocar/i,
-    /nao ta bom/i, /nao está bom/i, /problema/i, /complicado/i,
-    /dificil/i, /precario/i, /fraco/i, /deixa a desejar/i
-  ];
-  
-  // Check patterns
+  // Check vehicle insurance patterns (concatenated text is OK here)
   if (hasVehicleInsurancePatterns.some(p => p.test(allUserText))) {
     status.has_vehicle_insurance = true;
   }
   
-  if (hasCargoInsurancePatterns.some(p => p.test(allUserText))) {
-    status.has_cargo_insurance = true;
+  // Check cargo insurance PER MESSAGE to avoid cross-message false positives
+  const isSeeking = seekingInsurancePatterns.some(p => p.test(allUserText));
+  
+  if (!isSeeking) {
+    // Only check per individual message to avoid "seguro de carga" + "Sim" cross-contamination
+    for (const msg of userMessages) {
+      const msgLower = msg.toLowerCase();
+      if (hasCargoInsurancePatterns.some(p => p.test(msgLower))) {
+        status.has_cargo_insurance = true;
+        break;
+      }
+    }
   }
   
   if (satisfiedPatterns.some(p => p.test(allUserText))) {
