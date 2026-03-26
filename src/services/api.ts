@@ -338,14 +338,16 @@ export const api = {
         .range(0, 999),
     ]);
 
-    const contactsError = inboundResult.error || outbound1.error || outbound2.error || outbound3.error || facebookResult.error || googleResult.error;
+    const contactsError = inbound1.error || inbound2.error || inbound3.error || outbound1.error || outbound2.error || outbound3.error || facebookResult.error || googleResult.error;
     if (contactsError) {
       console.error('[API] Error fetching contacts:', contactsError);
       return MOCK_CONTACTS;
     }
 
     const contactsData = [
-      ...(inboundResult.data || []),
+      ...(inbound1.data || []),
+      ...(inbound2.data || []),
+      ...(inbound3.data || []),
       ...(outbound1.data || []),
       ...(outbound2.data || []),
       ...(outbound3.data || []),
