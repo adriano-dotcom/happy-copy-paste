@@ -3065,6 +3065,11 @@ export type Database = {
       }
       leads_jarvis_v: {
         Row: {
+          campanha_contato_status: string | null
+          campanha_id: string | null
+          campanha_nome: string | null
+          campanha_whatsapp_nome: string | null
+          chat_status: string | null
           cidade: string | null
           created_at: string | null
           email: string | null
@@ -3077,6 +3082,7 @@ export type Database = {
           pipedrive_person_id: string | null
           pipedrive_sync_status: string | null
           produto: string | null
+          respondido_em: string | null
           responsavel_atribuido_em: string | null
           responsavel_email: string | null
           responsavel_id: string | null
@@ -3084,9 +3090,19 @@ export type Database = {
           sent_to_pipedrive_at: string | null
           status: string | null
           telefone: string | null
+          template_enviado_em: string | null
+          template_nome: string | null
           uf: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "campaign_contacts_campaign_id_fkey"
+            columns: ["campanha_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Functions: {
