@@ -66,7 +66,7 @@ const WhatsAppMetricsDashboard: React.FC = () => {
       let tSent = 0, tDel = 0, tRead = 0, tFail = 0, tTempl = 0;
 
       rows.forEach((r) => {
-        const key = period === 'today' ? `${String(r.metric_hour).padStart(2, '0')}h` : r.metric_date;
+        const key = period === 'today' ? `${String(r.metric_hour ?? 0).padStart(2, '0')}h` : (r.metric_date ?? 'unknown');
         const existing = bucketMap.get(key) || {
           hour: key, sent: 0, delivered: 0, read: 0, failed: 0, delivery_rate: 0,
           err_131026: 0, err_131042: 0, err_131049: 0, err_other: 0,
@@ -76,7 +76,7 @@ const WhatsAppMetricsDashboard: React.FC = () => {
         existing.read += r.messages_read || 0;
         existing.failed += r.messages_failed || 0;
         existing.err_131026 += r.error_131026_count || 0;
-        existing.err_131042 += r.error_131042_count || 0;
+        existing.err_131042 += (r as any).error_131042_count || 0;
         existing.err_131049 += r.error_131049_count || 0;
         existing.err_other += r.error_other_count || 0;
         bucketMap.set(key, existing);
