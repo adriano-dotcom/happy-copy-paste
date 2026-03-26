@@ -1,54 +1,30 @@
 
 
-# Atualizar view leads_jarvis_v — Campos de funil Outbound
+# Corrigir `template_enviado_em` nulo — Dois caminhos de envio
 
-## Diagnóstico dos dados
+## Diagnóstico
 
-Os dados já existem no banco, distribuídos assim:
+O `template_enviado_em` vem de `campaign_contacts.sent_at`. Mas existem **dois caminhos** de envio de templates:
 
-```text
-contacts.campaign           → nome da campanha (ex: "leads geral")
-contacts.lead_source        → "inbound" / "outbound" (já exposto como "origem")
-conversations.status        → nina / human / paused / closed
-conversations.is_active     → true (aberto) / false (arquivado)
-campaign_contacts           → vínculo contato↔campanha WhatsApp
-  ├─ campaign_id            → whatsapp_campaigns.id
-  ├─ sent_at                → quando template foi enviado
-  ├─ replied_at             → quando lead respondeu
-  └─ status                 → pending/sent/delivered/read/replied/failed
-whatsapp_campaigns          → name, template_id
-whatsapp_templates          → name (nome do template)
-```
+| Caminho | Função | Cria `campaign_contacts`? | Contatos outbound |
+|---|---|---|---|
+| Campanha agendada | `process-campaign` | Sim → `sent_at` preenchido | 354 |
+| Envio direto/manual | `send-whatsapp-template` | Não | ~1.568 |
+
+**Resultado**: 1.568 contatos outbound receberam template mas não têm `campaign_contacts` row → view mostra NULL.
+
+Porém, **ambos os caminhos** criam um `messages` com `metadata->>'is_template' = 'true'` e `sent_at`. Essa é a fonte confiável universal.
 
 ## Plano
 
-### 1. Migration SQL — Recriar VIEW com novos campos
+### 1. Migration — Recriar VIEW com fallback via `messages`
+
+Adicionar um LEFT JOIN LATERAL na tabela `messages` para pegar a primeira mensagem de template enviada, como fallback quando `campaign_contacts.sent_at` é nulo:
 
 ```sql
 CREATE OR REPLACE VIEW public.leads_jarvis_v AS
 SELECT DISTINCT ON (c.id)
-  -- Campos existentes
-  c.id,
-  c.first_contact_date AS created_at,
-  c.name AS nome,
-  c.phone_number AS telefone,
-  c.email,
-  c.lead_source AS origem,
-  c.vertical AS produto,
-  c.city AS cidade,
-  c.state AS uf,
-  c.notes AS mensagem,
-  c.lead_status AS status,
-  c.pipedrive_person_id,
-  c.pipedrive_lead_id,
-  c.pipedrive_org_id,
-  c.sent_to_pipedrive_at,
-  c.pipedrive_sync_status,
-  tm.id AS responsavel_id,
-  tm.name AS responsavel_nome,
-  tm.email AS responsavel_email,
-  d.created_at AS responsavel_atribuido_em,
-  -- Novos campos
+  -- campos existentes mantidos...
   c.campaign AS campanha_nome,
   CASE 
     WHEN conv.id IS NULL THEN 'sem_conversa'
@@ -57,10 +33,13 @@ SELECT DISTINCT ON (c.id)
   END AS chat_status,
   cc.campaign_id AS campanha_id,
   wc.name AS campanha_whatsapp_nome,
-  wt.name AS template_nome,
-  cc.sent_at AS template_enviado_em,
+  -- Template: prioriza campaign_contacts, fallback para messages
+  COALESCE(wt.name, first_tpl.template_name) AS template_nome,
+  COALESCE(cc.sent_at, first_tpl.sent_at) AS template_enviado_em,
   cc.replied_at AS respondido_em,
-  cc.status AS campanha_contato_status
+  COALESCE(cc.status, 
+    CASE WHEN first_tpl.id IS NOT NULL THEN 'sent' END
+  ) AS campanha_contato_status
 FROM public.contacts c
 LEFT JOIN public.deals d ON d.contact_id = c.id
 LEFT JOIN public.team_members tm ON tm.id = d.owner_id
@@ -68,62 +47,88 @@ LEFT JOIN public.conversations conv ON conv.contact_id = c.id
 LEFT JOIN public.campaign_contacts cc ON cc.contact_id = c.id
 LEFT JOIN public.whatsapp_campaigns wc ON wc.id = cc.campaign_id
 LEFT JOIN public.whatsapp_templates wt ON wt.id = wc.template_id
+LEFT JOIN LATERAL (
+  SELECT m.id, m.sent_at, m.metadata->>'template_name' AS template_name
+  FROM messages m
+  WHERE m.conversation_id = conv.id
+    AND (m.metadata->>'is_template')::boolean = true
+  ORDER BY m.sent_at ASC
+  LIMIT 1
+) first_tpl ON true
 ORDER BY c.id, d.created_at DESC;
-
-GRANT SELECT ON public.leads_jarvis_v TO anon;
-GRANT SELECT ON public.leads_jarvis_v TO authenticated;
 ```
 
-**Nota sobre DISTINCT ON**: com múltiplos JOINs (deals + campaigns), um contato com 2 deals e 2 campanhas geraria 4 linhas. O `DISTINCT ON (c.id)` pega apenas a combinação do deal mais recente. Se um contato participou de múltiplas campanhas, apenas a primeira (por deal date) aparecerá. Se isso for problemático, posso usar subqueries laterais. Para o caso Outbound (1977) onde tipicamente há 1 campanha por contato, isso deve funcionar bem.
+Isso resolve os 1.568 contatos sem `campaign_contacts`.
 
-### 2. Nenhuma mudança de RLS
+### 2. Criar view agregada `outbound_sends_daily_v`
 
-View com GRANT SELECT ao `anon` — mantém o padrão.
+```sql
+CREATE OR REPLACE VIEW public.outbound_sends_daily_v AS
+SELECT
+  DATE(COALESCE(cc.sent_at, m.sent_at)) AS send_date,
+  cc.campaign_id,
+  wc.name AS campaign_name,
+  tm.email AS responsavel_email,
+  tm.name AS responsavel_nome,
+  COUNT(DISTINCT c.id) AS sent_count,
+  COUNT(DISTINCT CASE WHEN cc.read_at IS NOT NULL THEN c.id END) AS opened_count,
+  COUNT(DISTINCT CASE WHEN cc.replied_at IS NOT NULL 
+    OR EXISTS(SELECT 1 FROM messages mr 
+              WHERE mr.conversation_id = conv.id 
+              AND mr.from_type = 'user' 
+              AND mr.sent_at > COALESCE(cc.sent_at, m.sent_at))
+    THEN c.id END) AS replied_count
+FROM public.contacts c
+JOIN public.conversations conv ON conv.contact_id = c.id
+LEFT JOIN public.deals d ON d.contact_id = c.id
+LEFT JOIN public.team_members tm ON tm.id = d.owner_id
+LEFT JOIN public.campaign_contacts cc ON cc.contact_id = c.id
+LEFT JOIN public.whatsapp_campaigns wc ON wc.id = cc.campaign_id
+LEFT JOIN LATERAL (
+  SELECT m2.sent_at
+  FROM messages m2
+  WHERE m2.conversation_id = conv.id
+    AND (m2.metadata->>'is_template')::boolean = true
+  ORDER BY m2.sent_at ASC LIMIT 1
+) m ON true
+WHERE c.lead_source = 'outbound'
+  AND COALESCE(cc.sent_at, m.sent_at) IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5;
+
+GRANT SELECT ON public.outbound_sends_daily_v TO anon;
+GRANT SELECT ON public.outbound_sends_daily_v TO authenticated;
+```
 
 ### 3. Nenhuma mudança de código frontend
 
-View consumida pelo Jarvis via REST.
+Ambas as views são consumidas via REST pelo Jarvis.
 
-## Colunas adicionadas na view
+## Impacto esperado
 
-| Coluna | Tipo | Origem | Descrição |
-|--------|------|--------|-----------|
-| `campanha_nome` | text | `contacts.campaign` | Nome da campanha (ex: "leads geral") |
-| `chat_status` | text | `conversations.status` + `is_active` | sem_conversa / arquivado / nina / human / paused / closed |
-| `campanha_id` | uuid | `campaign_contacts.campaign_id` | ID da campanha WhatsApp (ex: o UUID da "1977") |
-| `campanha_whatsapp_nome` | text | `whatsapp_campaigns.name` | Nome da campanha WhatsApp |
-| `template_nome` | text | `whatsapp_templates.name` | Nome do template usado |
-| `template_enviado_em` | timestamptz | `campaign_contacts.sent_at` | Quando o template foi disparado |
-| `respondido_em` | timestamptz | `campaign_contacts.replied_at` | Quando o lead respondeu |
-| `campanha_contato_status` | text | `campaign_contacts.status` | pending/sent/delivered/read/replied/failed |
+| Antes | Depois |
+|---|---|
+| 354 contacts com `template_enviado_em` | ~1.922 contacts com `template_enviado_em` |
+| Sem view de envios diários | `outbound_sends_daily_v` com métricas por dia/campanha/responsável |
 
-## Exemplo de retorno JSON com novos campos
+## Colunas da nova view `outbound_sends_daily_v`
 
-```json
-{
-  "id": "abc-123",
-  "nome": "João Silva",
-  "origem": "outbound",
-  "status": "qualified",
-  "responsavel_nome": "Alessandro",
-  "campanha_nome": "leads geral",
-  "chat_status": "human",
-  "campanha_whatsapp_nome": "Outbound Março",
-  "template_nome": "prospeccao_carga_v2",
-  "template_enviado_em": "2026-03-10T14:30:00Z",
-  "respondido_em": "2026-03-10T15:45:00Z",
-  "campanha_contato_status": "replied",
-  "pipedrive_sync_status": "sent",
-  "sent_to_pipedrive_at": "2026-03-11T10:00:00Z"
-}
-```
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `send_date` | date | Data do envio |
+| `campaign_id` | uuid | ID da campanha (null se envio direto) |
+| `campaign_name` | text | Nome da campanha |
+| `responsavel_email` | text | Email do vendedor |
+| `responsavel_nome` | text | Nome do vendedor |
+| `sent_count` | int | Templates enviados |
+| `opened_count` | int | Lidos (read_at) |
+| `replied_count` | int | Respondidos |
 
 ## Resumo
 
 | Recurso | Ação |
-|---------|------|
-| Migration SQL | `CREATE OR REPLACE VIEW leads_jarvis_v` com JOINs em conversations, campaign_contacts, whatsapp_campaigns, whatsapp_templates |
-| Colunas novas | 8 campos de funil (listados acima) |
-| RLS | Sem mudança |
-| Código frontend | Sem mudança |
+|---|---|
+| Migration | Atualizar `leads_jarvis_v` com LATERAL JOIN em messages como fallback |
+| Migration | Criar `outbound_sends_daily_v` |
+| RLS | GRANT SELECT anon/authenticated nas views |
+| Código | Sem mudança |
 
