@@ -1,30 +1,49 @@
 
 
-# Remover limite de 1000 nos contatos Inbound
+# Corrigir falso positivo na detecção de "já tem seguro de carga"
 
 ## Problema
 
-Na função `fetchContacts` em `src/services/api.ts` (linha 295), a query de contatos Inbound usa `.limit(1000)`, travando a contagem e exibição em no máximo 1000 registros. Outbound já usa paginação com `.range()` em 3 lotes, mas Inbound não.
+Na conversa do Jailson, o contato disse:
+- "Tenho transportadora queria saber sobre o seguro de cargas"
+- "Contrato direto"
+- "Sim" (respondendo sobre CT-e)
+
+A função `detectExistingInsurance` junta TODAS as mensagens do usuário em um texto único e testa regex. O padrão `/seguro de carga.*sim/i` faz match em "seguro de cargas...Contrato direto...Sim" — causando falso positivo. O sistema assume que o lead JÁ TEM seguro de carga, quando na verdade ele está BUSCANDO seguro.
+
+Isso dispara o fluxo de renovação ("quando vence a apólice atual?") ao invés do fluxo correto de qualificação para novo cliente.
 
 ## Solução
 
-Aplicar a mesma estratégia de paginação recursiva usada no Outbound para o Inbound:
+### Arquivo: `supabase/functions/nina-orchestrator/index.ts`
 
-### Arquivo: `src/services/api.ts` (linhas 289-326)
+**1. Tornar os padrões de detecção mais restritivos** (linha ~2841)
 
-Substituir a query única de Inbound com `.limit(1000)` por 3 lotes paginados usando `.range()`:
+Remover padrões que geram falso positivo quando "seguro de carga" aparece no contexto de PERGUNTAR sobre seguro (não de CONFIRMAR que tem):
 
-```text
-inbound1: range(0, 999)
-inbound2: range(1000, 1999)  
-inbound3: range(2000, 2999)
-```
+- Remover `/seguro de carga.*sim/i` e `/sim.*seguro de carga/i` — muito amplos
+- Substituir por padrões que exijam confirmação explícita de posse:
+  - `/ja tenho.*seguro de carga/i`
+  - `/tenho.*seguro de carga.*sim/i`
+  - `/sim.*tenho.*seguro de carga/i`
+  - `/ja temos.*seguro de carga/i`
+  - `/temos.*seguro de carga/i`
 
-Mesma lógica já aplicada para `outbound`. Depois combinar os 3 lotes no array `contactsData`.
+**2. Adicionar padrões de exclusão** (anti-patterns)
 
-Também aumentar o limite de Facebook e Google de 100 para 1000, caso cresçam.
+Antes de marcar `has_cargo_insurance = true`, verificar se o texto contém indicadores de que está BUSCANDO seguro (não que já tem):
 
-### Nenhuma mudança no frontend
+- "queria saber sobre", "preciso de", "quero cotar", "quero fazer", "me interessa", "preciso contratar", "queria contratar", "busco", "procurando"
 
-O componente `Contacts.tsx` já conta corretamente com `inboundContacts.length` — ao receber mais dados, o número atualiza automaticamente.
+Se esses padrões aparecem junto com "seguro de carga", NÃO marcar como `has_cargo_insurance`.
+
+**3. Analisar por mensagem individual** ao invés de texto concatenado
+
+Para os padrões de seguro de carga, verificar cada mensagem do usuário individualmente em vez de juntar tudo. O "Sim" que respondeu sobre CT-e não deve combinar com "seguro de carga" de outra mensagem.
+
+## Impacto
+
+- Leads que estão BUSCANDO seguro de carga seguirão o fluxo correto de qualificação
+- Leads que CONFIRMAM ter seguro de carga continuarão indo para o fluxo de renovação
+- Nenhuma mudança no frontend
 
