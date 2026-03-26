@@ -1,45 +1,25 @@
 
 
-# Corrigir owner dos deals Outbound/Atlas → Alessandro
+# Resolver alerta de pagamento WhatsApp (131042)
 
-## Diagnóstico
-
-| Agente | Distribuição | Owner correto |
-|--------|-------------|---------------|
-| Atlas (prospecção) | fixed | Alessandro |
-| Sofia (default) | round_robin | Adriana / Leonardo |
-
-O backfill anterior tratou **todos** os deals sem owner como órfãos da Sofia e distribuiu 50/50 entre Adriana e Leonardo. Porém, **1.213 deals** são de contatos outbound atendidos pelo Atlas — esses deveriam ter Alessandro como responsável.
+Encontrei **1 alerta ativo** de pagamento (erro 131042), criado hoje às 14:41.
 
 ## Plano
 
-### 1. Backfill — Corrigir owner dos deals outbound/Atlas
-
-Usar o insert tool para executar:
+### 1. Migration — Marcar alerta como resolvido
 
 ```sql
-UPDATE deals d
-SET owner_id = '91ec229f-d63d-4dab-96e5-cc809f17c4e3'  -- Alessandro
-FROM contacts c
-JOIN conversations conv ON conv.contact_id = c.id
-WHERE d.contact_id = c.id
-  AND c.lead_source = 'outbound'
-  AND conv.current_agent_id = '9a9aa2b3-6fce-4a02-b402-26850d6f0f20'  -- Atlas
-  AND d.owner_id != '91ec229f-d63d-4dab-96e5-cc809f17c4e3';
+UPDATE whatsapp_alerts
+SET is_resolved = true,
+    resolved_at = NOW(),
+    resolved_by = 'admin_confirmed_payment'
+WHERE id = 'f0b226af-8a0d-40da-8f4d-e8ac4310aa80'
+  AND error_code = 131042;
 ```
 
-Isso corrige 1.213 deals para ter Alessandro como responsável.
+Isso remove o banner vermelho "Problema de Pagamento WhatsApp" da interface imediatamente (o componente `WhatsAppPaymentAlertBanner` escuta realtime e re-renderiza).
 
-### 2. Nenhuma mudança de view/migration/código
+### 2. Nenhuma mudança de código
 
-A `leads_jarvis_v` e `outbound_sends_daily_v` já fazem JOIN em `deals.owner_id → team_members`. Após o backfill, automaticamente mostrarão Alessandro como responsável para todos os outbound.
-
-## Resultado esperado
-
-| Antes | Depois |
-|-------|--------|
-| Adriana: 709 envios outbound | Adriana: ~0 envios outbound |
-| Leonardo: 716 envios outbound | Leonardo: ~0 envios outbound |
-| Alessandro: 392 envios outbound | Alessandro: ~1.900 envios outbound |
-| Sem responsável: 80 | Sem responsável: 80 (sem conversa/deal) |
+O banner já desaparece automaticamente quando `is_resolved = true`.
 
