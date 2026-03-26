@@ -286,13 +286,26 @@ export const api = {
   fetchContacts: async (): Promise<Contact[]> => {
     // Fetch contacts
     // Buscar contatos por grupo em paralelo para evitar limite de 1000 rows do Supabase
-    const [inboundResult, outbound1, outbound2, outbound3, facebookResult, googleResult] = await Promise.all([
+    const inboundFilter = 'lead_source.eq.inbound,lead_source.eq.reused_number,lead_source.eq.test,lead_source.is.null';
+    const [inbound1, inbound2, inbound3, outbound1, outbound2, outbound3, facebookResult, googleResult] = await Promise.all([
       supabase
         .from('contacts')
         .select('*')
-        .or('lead_source.eq.inbound,lead_source.eq.reused_number,lead_source.eq.test,lead_source.is.null')
+        .or(inboundFilter)
         .order('last_activity', { ascending: false })
-        .limit(1000),
+        .range(0, 999),
+      supabase
+        .from('contacts')
+        .select('*')
+        .or(inboundFilter)
+        .order('last_activity', { ascending: false })
+        .range(1000, 1999),
+      supabase
+        .from('contacts')
+        .select('*')
+        .or(inboundFilter)
+        .order('last_activity', { ascending: false })
+        .range(2000, 2999),
       supabase
         .from('contacts')
         .select('*')
@@ -316,23 +329,25 @@ export const api = {
         .select('*')
         .eq('lead_source', 'facebook')
         .order('last_activity', { ascending: false })
-        .limit(100),
+        .range(0, 999),
       supabase
         .from('contacts')
         .select('*')
         .eq('lead_source', 'google')
         .order('last_activity', { ascending: false })
-        .limit(100),
+        .range(0, 999),
     ]);
 
-    const contactsError = inboundResult.error || outbound1.error || outbound2.error || outbound3.error || facebookResult.error || googleResult.error;
+    const contactsError = inbound1.error || inbound2.error || inbound3.error || outbound1.error || outbound2.error || outbound3.error || facebookResult.error || googleResult.error;
     if (contactsError) {
       console.error('[API] Error fetching contacts:', contactsError);
       return MOCK_CONTACTS;
     }
 
     const contactsData = [
-      ...(inboundResult.data || []),
+      ...(inbound1.data || []),
+      ...(inbound2.data || []),
+      ...(inbound3.data || []),
       ...(outbound1.data || []),
       ...(outbound2.data || []),
       ...(outbound3.data || []),
