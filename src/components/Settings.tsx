@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Shield, Bot, Plug, Loader2, Save, RotateCcw, Users, Mail, Link, Settings2, MessageSquare, Zap, Brain, XCircle } from 'lucide-react';
+import { Shield, Bot, Plug, Loader2, Save, RotateCcw, Users, Mail, Link, Settings2, MessageSquare, Zap, Brain, XCircle, BarChart3 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import AgentSettings, { AgentSettingsRef } from './settings/AgentSettings';
 import ApiSettings, { ApiSettingsRef } from './settings/ApiSettings';
@@ -11,6 +11,7 @@ import PipedriveSettings, { PipedriveSettingsRef } from './settings/PipedriveSet
 import GeneralSettings from './settings/GeneralSettings';
 import SalesCoachingSettings from './settings/SalesCoachingSettings';
 import ClosureReasonsDashboard from './settings/ClosureReasonsDashboard';
+import WhatsAppMetricsDashboard from './settings/WhatsAppMetricsDashboard';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { Button } from './Button';
 
@@ -56,7 +57,7 @@ const Settings: React.FC = () => {
     ? pipedriveRef.current?.isSaving
     : false;
 
-  const showSaveButtons = activeTab !== 'templates' && activeTab !== 'whatsapp-templates' && activeTab !== 'automations' && activeTab !== 'general' && activeTab !== 'coaching' && activeTab !== 'closures';
+  const showSaveButtons = activeTab !== 'templates' && activeTab !== 'whatsapp-templates' && activeTab !== 'automations' && activeTab !== 'general' && activeTab !== 'coaching' && activeTab !== 'closures' && activeTab !== 'wa-metrics';
   
   return (
     <div className="p-8 max-w-5xl mx-auto h-full overflow-y-auto bg-slate-950 text-slate-50 custom-scrollbar">
@@ -114,6 +115,10 @@ const Settings: React.FC = () => {
             <TabsTrigger value="closures" className="gap-2">
               <XCircle className="w-4 h-4" />
               Fechamentos
+            </TabsTrigger>
+            <TabsTrigger value="wa-metrics" className="gap-2">
+              <BarChart3 className="w-4 h-4" />
+              Métricas WA
             </TabsTrigger>
           </TabsList>
 
@@ -186,6 +191,10 @@ const Settings: React.FC = () => {
 
         <TabsContent value="closures">
           <ClosureReasonsDashboard />
+        </TabsContent>
+
+        <TabsContent value="wa-metrics">
+          <WhatsAppMetricsDashboard />
         </TabsContent>
       </Tabs>
     </div>
