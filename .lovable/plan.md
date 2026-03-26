@@ -1,86 +1,49 @@
 
 
-# Análise Completa do Sistema de Áudio — Diagnóstico
+# Reenviar 12 templates que falharam com erro 131042
 
-## Resumo Executivo
+## Situação
 
-Após análise profunda de todo o fluxo de áudio (envio pelo operador, envio pela Nina/IA, recebimento do cliente), **o sistema está funcionando corretamente**. Não encontrei erros ativos.
+12 mensagens de template falharam hoje por problema de pagamento (erro 131042). O pagamento já foi regularizado e a conta está com status GREEN.
 
-## Fluxos Analisados
+| # | Contato | Template | Variáveis |
+|---|---------|----------|-----------|
+| 1 | MARCIO ALMEIDA DE LIMA | bom_dia_adriano | MA ALMEIDA TRANSPORTES LTDA |
+| 2 | CLEIDE PCHEKA DA LUZ | bom_dia_adriano | KPI LOG LOGISTICA LTDA |
+| 3 | PAULA MARIA | bom_dia_adriano | PAULA MARIA JOLY - TRANSPORTES... |
+| 4 | RONE DA SILVEIRA | bom_dia_adriano | RDS - TRANSPORTES LTDA |
+| 5 | ESLY BATISTA VIANA JUNIOR | bom_dia_adriano | E B VIANA JUNIOR TRANSPORTES LTDA |
+| 6 | ROBSON SANTIAGO | bom_dia_adriano | 17.191.392 ROBSON SANTIAGO FRATTINO |
+| 7 | JOAO MARCOS SHELIGA | 03_boa_tarde_adriano_ | TRANSHELIGA TRANSPORTE DE CARGAS LTDA |
+| 8 | A SOUZA | 03_boa_tarde_adriano_ | A SOUZA TRANSPORTES |
+| 9 | ALAN SANTOS | 03_boa_tarde_adriano_ | ALAN SANTOS - TRANSPORTES |
+| 10 | NILSON CLAIR WEBER | 03_boa_tarde_adriano_ | NILSON CLAIR WEBER TRANSPORTES LTDA ME |
+| 11 | NIVALDO FRANCO DA ROCHA | 03_boa_tarde_adriano_ | 3F TRANSPORTES LTDA |
+| 12 | NATALY CRISTINA DOS SANTOS | 03_boa_tarde_adriano_ | NAVI TRANSPORTES LTDA |
 
-### 1. Envio de Áudio pelo Operador (Painel → WhatsApp)
+## Plano
 
-```text
-Browser (MediaRecorder)
-  → Grava audio/ogg ou audio/webm (conforme browser)
-  → Upload para bucket whatsapp-media (Blob direto)
-  → Insere na send_queue (type=audio, media_url, mime_type)
-  → Trigger whatsapp-sender
-  → whatsapp-sender baixa o arquivo, faz remux WebM→OGG se necessário
-  → Upload para WhatsApp Media API
-  → Envia mensagem com media ID
-```
+### 1. Criar Edge Function temporária `resend-failed-templates`
 
-**Status**: Funcionando. Últimos envios humanos (25/mar) completados com sucesso. Formato WebM+Opus remuxado para OGG corretamente. Validação de magic bytes `OggS` ativa. Fallback para texto se remux falhar.
+Uma função que:
+- Recebe a lista dos 12 message IDs
+- Para cada um, lê o `metadata` da mensagem original (template_name, variables, header_variables, template_language)
+- Chama a Edge Function `send-whatsapp-template` existente com os mesmos parâmetros
+- Marca a mensagem original como `status = 'sent'` se o reenvio for bem-sucedido
+- Retorna um relatório com sucesso/falha de cada reenvio
 
-### 2. Envio de Áudio pela Nina/IA (ElevenLabs → WhatsApp)
+### 2. Executar o reenvio
 
-```text
-Nina gera TTS (MP3) via ElevenLabs
-  → Upload para bucket nina-audio
-  → Insere na send_queue (type=audio, media_url)
-  → whatsapp-sender detecta MP3, faz upload direto ao WhatsApp
-```
+Chamar a função com os 12 IDs para disparar os templates novamente via Meta API.
 
-**Status**: Funcionando. 6 áudios da Nina enviados hoje (26/mar) — todos `completed`. Formato MP3 aceito nativamente pelo WhatsApp.
+### 3. Verificar resultados
 
-### 3. Recebimento de Áudio do Cliente (WhatsApp → Plataforma)
+Consultar o banco para confirmar que as 12 mensagens foram reenviadas com sucesso.
 
-```text
-WhatsApp envia webhook com audio message
-  → whatsapp-webhook baixa mídia via Graph API
-  → Upload para bucket whatsapp-media (path: audio/{phone}/{timestamp}.ogg)
-  → Transcreve via ElevenLabs Scribe v1
-  → Salva mensagem com media_url + content = transcrição
-  → Enfileira para processamento da Nina
-```
+## Detalhes técnicos
 
-**Status**: Funcionando. Áudios recebidos hoje transcritos normalmente.
-
-### 4. Reprodução no Painel (AudioPlayer)
-
-```text
-AudioPlayer.tsx
-  → Carrega URL do media_url da mensagem
-  → Fallback: tenta converter URL signed nina-audio → public
-  → Exibe waveform visual + controles play/pause/speed
-  → Mostra transcrição abaixo se disponível
-```
-
-**Status**: Funcionando. Tratamento de erros adequado.
-
-## Dados do Banco — Sem Falhas
-
-| Métrica | Valor |
-|---------|-------|
-| Áudios na send_queue com `status=failed` | **0** |
-| Áudios humanos enviados (últimos 10 dias) | 10 — todos `delivered` ou `read` |
-| Áudios Nina enviados hoje | 6 — todos `completed` |
-| Erros no whatsapp-sender (logs) | Nenhum relacionado a áudio |
-| Erros no whatsapp-webhook (logs) | Apenas erro 131042 (pagamento, já resolvido) |
-
-## Problema Menor Identificado
-
-**Áudios do operador não têm `content`**: As mensagens de áudio enviadas pelo operador (`from_type=human`) têm `content = NULL`. Isso acontece porque o frontend não envia conteúdo textual junto com o áudio — diferente dos áudios recebidos do cliente, que são transcritos automaticamente. Isso **não é um bug**, é esperado, mas significa que áudios enviados pelo operador não são pesquisáveis por texto.
-
-## Possível Melhoria (Opcional)
-
-Se quiser que áudios enviados pelo operador também tenham transcrição:
-- O `whatsapp-sender` poderia transcrever o áudio via ElevenLabs Scribe antes de enviar
-- Salvaria a transcrição no `content` da mensagem
-- Custo: ~1-2s a mais por áudio + uso da API ElevenLabs
-
-## Conclusão
-
-**O sistema de áudio está operacional em todos os caminhos**. Se há um erro específico que você está vendo, por favor me envie uma captura de tela ou me diga qual contato/conversa está com problema para eu investigar pontualmente.
+- Usa a mesma `send-whatsapp-template` Edge Function que já funciona
+- Cada reenvio usa os dados originais do `metadata` (template_name, variables, header_variables)
+- Intervalo de 2s entre envios para respeitar rate limits
+- Nenhuma mudança no código do frontend
 
