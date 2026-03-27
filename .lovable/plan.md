@@ -1,36 +1,49 @@
 
 
-# Limpar 10 registros órfãos do send_queue
+# Mitigação Automática para Erro 131049 (Healthy Ecosystem)
 
-## Registros identificados
+## Problema
 
-10 registros em `processing` que nunca foram finalizados:
+O erro 131049 da Meta bloqueia mensagens de marketing para contatos que receberam muitas mensagens recentes. Atualmente:
+- O sistema não diferencia 131049 de outros erros
+- Campanhas pausam desnecessariamente após streak de falhas
+- Não há retry automático com delay
+- A métrica `error_131049_count` nunca é populada
 
-- 5 de janeiro (dias 20, 22, 23, 27)
-- 4 de fevereiro (dias 2, 9)
+## Solução em 3 frentes
 
-## Ação
+### 1. `send-whatsapp-template` — Detectar e registrar 131049
 
-Atualizar os 10 registros de `processing` para `failed` com motivo `orphaned_stale_processing`, usando filtro por IDs específicos.
+Quando o erro 131049 ocorre:
+- Registrar na tabela `whatsapp_metrics` o campo `error_131049_count`
+- Adicionar campo `cooldown_until` no contato (ou na tabela `campaign_contacts`) para não tentar reenviar antes de 24h
+- Retornar flag `is_rate_limited: true` na resposta para que o chamador saiba tratar
 
-```sql
-UPDATE send_queue 
-SET status = 'failed', 
-    error_message = 'orphaned_stale_processing',
-    updated_at = now()
-WHERE id IN (
-  'b5fa0b53-8fc2-49e4-891c-b6a0fd8391e2',
-  '225827b2-111a-4dc1-8be7-12ae3e15cdd1',
-  '9d018e50-f04b-446c-a7be-ffbdaef49788',
-  'de9beb29-6d72-405b-afb5-8b515c421143',
-  '354fbe2a-a637-4210-835e-42f67b52614f',
-  '23f36bec-341f-499a-8af3-7d6b194f0bca',
-  '67540259-fcfb-4505-b253-a55f379253e3',
-  '0d48dbe1-98e6-4e20-b92e-725fa7345034',
-  '8006a253-b46c-4388-93d5-49803e97c27d',
-  'faaa0702-4c47-41c9-9957-aa1272772ad8'
-);
-```
+### 2. `process-campaign` — Tratamento inteligente de 131049
 
-Nenhuma alteração de código ou schema necessária — apenas limpeza de dados.
+Quando o erro de um contato é 131049:
+- **NÃO incrementar** `current_failure_streak` (não é falha do sistema)
+- Marcar o `campaign_contact` como `skipped` com motivo `meta_marketing_limit_131049`
+- Agendar retry automático: re-inserir o contato como `pending` com `scheduled_at = now() + 24h`
+- Incrementar `skipped_count` ao invés de `failed_count` na campanha
+- Registrar na `whatsapp_metrics`
+
+### 3. `process-campaign` — Cadência adaptativa
+
+Quando detectar 3+ erros 131049 consecutivos no mesmo lote:
+- Aumentar automaticamente o `interval_seconds` da campanha em 50% (até máximo de 300s)
+- Logar aviso de cadência reduzida
+- Isso diminui a velocidade de disparo, reduzindo a probabilidade de novos bloqueios
+
+## Arquivos alterados
+
+1. **`supabase/functions/send-whatsapp-template/index.ts`** — Adicionar tracking de 131049 em `whatsapp_metrics` e flag na resposta
+2. **`supabase/functions/process-campaign/index.ts`** — Lógica de skip + retry 24h + cadência adaptativa para 131049
+
+## Impacto
+
+- Campanhas não pausam mais por erros 131049
+- Contatos bloqueados são automaticamente reagendados para 24h depois
+- Cadência se auto-ajusta quando muitos bloqueios são detectados
+- Dashboard de métricas passa a mostrar dados reais de 131049
 
