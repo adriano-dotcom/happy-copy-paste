@@ -513,8 +513,9 @@ serve(async (req) => {
 
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          const is131049 = errorMessage.includes('131049') || errorMessage.includes('healthy ecosystem');
-          console.error(`[Campaign] Error sending to contact ${campaignContact.contact_id} (131049: ${is131049}):`, error);
+          const waErrorCode = (error as any)?.waErrorCode;
+          const is131049 = Number(waErrorCode) === 131049 || errorMessage.includes('131049');
+          console.error(`[Campaign] Error sending to contact ${campaignContact.contact_id} (131049: ${is131049}):`, errorMessage);
 
           if (is131049) {
             // === 131049 MITIGATION: Skip + Retry 24h ===
