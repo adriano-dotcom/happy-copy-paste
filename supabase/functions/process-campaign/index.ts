@@ -353,7 +353,11 @@ serve(async (req) => {
           const waData = await waResponse.json();
 
           if (!waResponse.ok) {
-            throw new Error(waData.error?.message || 'WhatsApp API error');
+            const errCode = waData.error?.code;
+            const errMsg = waData.error?.message || 'WhatsApp API error';
+            const err = new Error(`[${errCode}] ${errMsg}`);
+            (err as any).waErrorCode = errCode;
+            throw err;
           }
 
           const whatsappMessageId = waData.messages?.[0]?.id;
