@@ -36,6 +36,8 @@ interface ContactData {
   utm_campaign?: string;
   utm_content?: string;
   utm_term?: string;
+  is_blocked?: boolean;
+  blocked_reason?: string;
 }
 
 interface ContactDetailsDrawerProps {
@@ -82,6 +84,24 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
   const [editedName, setEditedName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isCallingIris, setIsCallingIris] = useState(false);
+  const [showBlockDialog, setShowBlockDialog] = useState(false);
+  const [blockReason, setBlockReason] = useState('');
+  const [isBlocking, setIsBlocking] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockedReason, setBlockedReason] = useState<string | null>(null);
+
+  // Load blocked status from DB
+  useEffect(() => {
+    if (!contact?.id || !open) return;
+    const loadBlockStatus = async () => {
+      const { data } = await supabase.from('contacts').select('is_blocked, blocked_reason').eq('id', contact.id).single();
+      if (data) {
+        setIsBlocked(!!data.is_blocked);
+        setBlockedReason(data.blocked_reason);
+      }
+    };
+    loadBlockStatus();
+  }, [contact?.id, open]);
 
   // Reset editing state when contact changes or drawer closes
   useEffect(() => {
@@ -89,6 +109,8 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
       setIsEditingName(false);
       setEditedName('');
       setIsCallingIris(false);
+      setShowBlockDialog(false);
+      setBlockReason('');
     }
   }, [open, contact?.id]);
 
