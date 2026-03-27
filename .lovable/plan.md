@@ -1,33 +1,36 @@
 
 
-# Adicionar botão "Bloquear Contato" na interface
+# Adicionar botão "Bloquear Contato" na área de chat
 
-## Situação atual
+## Problema
 
-O sistema já tem campos `is_blocked`, `blocked_reason` e `blocked_at` na tabela `contacts`, mas só são usados automaticamente (erro 131026). Não existe botão na UI para bloqueio manual.
+O botão "Bloquear Contato" foi implementado apenas no drawer da página **Contatos** (`/contacts`). Na tela de **Chat** (`/chat`), onde o usuário está, ele não aparece porque o componente `ContactDetailsDrawer` não é usado lá. A área de ações rápidas do chat usa o componente `QuickActionsBar`.
 
-## Alterações
+## Alteração
 
-### 1. `src/components/ContactDetailsDrawer.tsx` — Botão de bloqueio
+### `src/components/chat/QuickActionsBar.tsx`
 
-- Adicionar botão "Bloquear Contato" (ícone `Ban`) na área de ações do drawer
-- Ao clicar, exibir diálogo de confirmação perguntando o motivo (dropdown: "Número indesejado", "Spam", "Solicitou remoção", "Outro")
-- Ao confirmar: atualizar `contacts` com `is_blocked: true`, `blocked_reason: motivo`, `blocked_at: now()`
-- Se contato já estiver bloqueado, mostrar botão "Desbloquear" no lugar
-- Exibir badge visual "Bloqueado" no header quando `is_blocked = true`
+- Adicionar botão "Bloquear" ao lado dos botões Qualificar / Callback / Pipedrive
+- Carregar status `is_blocked` do contato via query ao montar
+- Ao clicar, exibir diálogo de confirmação com seleção de motivo (mesmo padrão do drawer)
+- Se já bloqueado, mostrar botão "Desbloquear" no lugar
+- Usar ícone `Ban` (vermelho) para bloquear e `ShieldOff` (verde) para desbloquear
 
-### 2. `src/components/ContactDetailsDrawer.tsx` — Carregar status de bloqueio
+O layout ficará:
 
-- Buscar `is_blocked` e `blocked_reason` do contato via query ao abrir o drawer (já temos acesso ao `contact.id`)
-- Adicionar esses campos ao interface `ContactData`
+```text
+┌──────────┐ ┌──────────┐ ┌───┐ ┌───┐
+│ Qualificar│ │ Callback │ │ ⇗ │ │ 🚫│  ← novo
+└──────────┘ └──────────┘ └───┘ └───┘
+┌────────────────────────────────────┐
+│        Ligar com Iris              │
+└────────────────────────────────────┘
+```
 
-### 3. Proteção no envio
+### Detalhes técnicos
 
-O `send-whatsapp-template` já verifica `is_blocked` antes de enviar — nenhuma alteração necessária no backend.
-
-## Impacto
-
-- Usuários podem bloquear/desbloquear contatos manualmente pelo drawer
-- Contatos bloqueados não recebem mais mensagens (já implementado no backend)
-- Ação reversível com botão de desbloqueio
+- Buscar `is_blocked` e `blocked_reason` do contato com `supabase.from('contacts').select(...)` usando `activeChat.contactId`
+- Reutilizar a mesma lógica de update já implementada no drawer
+- Adicionar `Dialog` para confirmação com `Select` de motivos
+- Invalidar queries `['conversations']` após bloqueio/desbloqueio
 
