@@ -1,49 +1,33 @@
 
 
-# Mitigação Automática para Erro 131049 (Healthy Ecosystem)
+# Adicionar botão "Bloquear Contato" na interface
 
-## Problema
+## Situação atual
 
-O erro 131049 da Meta bloqueia mensagens de marketing para contatos que receberam muitas mensagens recentes. Atualmente:
-- O sistema não diferencia 131049 de outros erros
-- Campanhas pausam desnecessariamente após streak de falhas
-- Não há retry automático com delay
-- A métrica `error_131049_count` nunca é populada
+O sistema já tem campos `is_blocked`, `blocked_reason` e `blocked_at` na tabela `contacts`, mas só são usados automaticamente (erro 131026). Não existe botão na UI para bloqueio manual.
 
-## Solução em 3 frentes
+## Alterações
 
-### 1. `send-whatsapp-template` — Detectar e registrar 131049
+### 1. `src/components/ContactDetailsDrawer.tsx` — Botão de bloqueio
 
-Quando o erro 131049 ocorre:
-- Registrar na tabela `whatsapp_metrics` o campo `error_131049_count`
-- Adicionar campo `cooldown_until` no contato (ou na tabela `campaign_contacts`) para não tentar reenviar antes de 24h
-- Retornar flag `is_rate_limited: true` na resposta para que o chamador saiba tratar
+- Adicionar botão "Bloquear Contato" (ícone `Ban`) na área de ações do drawer
+- Ao clicar, exibir diálogo de confirmação perguntando o motivo (dropdown: "Número indesejado", "Spam", "Solicitou remoção", "Outro")
+- Ao confirmar: atualizar `contacts` com `is_blocked: true`, `blocked_reason: motivo`, `blocked_at: now()`
+- Se contato já estiver bloqueado, mostrar botão "Desbloquear" no lugar
+- Exibir badge visual "Bloqueado" no header quando `is_blocked = true`
 
-### 2. `process-campaign` — Tratamento inteligente de 131049
+### 2. `src/components/ContactDetailsDrawer.tsx` — Carregar status de bloqueio
 
-Quando o erro de um contato é 131049:
-- **NÃO incrementar** `current_failure_streak` (não é falha do sistema)
-- Marcar o `campaign_contact` como `skipped` com motivo `meta_marketing_limit_131049`
-- Agendar retry automático: re-inserir o contato como `pending` com `scheduled_at = now() + 24h`
-- Incrementar `skipped_count` ao invés de `failed_count` na campanha
-- Registrar na `whatsapp_metrics`
+- Buscar `is_blocked` e `blocked_reason` do contato via query ao abrir o drawer (já temos acesso ao `contact.id`)
+- Adicionar esses campos ao interface `ContactData`
 
-### 3. `process-campaign` — Cadência adaptativa
+### 3. Proteção no envio
 
-Quando detectar 3+ erros 131049 consecutivos no mesmo lote:
-- Aumentar automaticamente o `interval_seconds` da campanha em 50% (até máximo de 300s)
-- Logar aviso de cadência reduzida
-- Isso diminui a velocidade de disparo, reduzindo a probabilidade de novos bloqueios
-
-## Arquivos alterados
-
-1. **`supabase/functions/send-whatsapp-template/index.ts`** — Adicionar tracking de 131049 em `whatsapp_metrics` e flag na resposta
-2. **`supabase/functions/process-campaign/index.ts`** — Lógica de skip + retry 24h + cadência adaptativa para 131049
+O `send-whatsapp-template` já verifica `is_blocked` antes de enviar — nenhuma alteração necessária no backend.
 
 ## Impacto
 
-- Campanhas não pausam mais por erros 131049
-- Contatos bloqueados são automaticamente reagendados para 24h depois
-- Cadência se auto-ajusta quando muitos bloqueios são detectados
-- Dashboard de métricas passa a mostrar dados reais de 131049
+- Usuários podem bloquear/desbloquear contatos manualmente pelo drawer
+- Contatos bloqueados não recebem mais mensagens (já implementado no backend)
+- Ação reversível com botão de desbloqueio
 
