@@ -482,6 +482,61 @@ const ChatInterface: React.FC = () => {
     await loadMoreMessages(activeChat.id);
   }, [activeChat, loadingMoreMessages, loadMoreMessages]);
 
+  // Fetch block status when chat changes
+  useEffect(() => {
+    if (!activeChat?.contactId) return;
+    supabase
+      .from('contacts')
+      .select('is_blocked')
+      .eq('id', activeChat.contactId)
+      .single()
+      .then(({ data }) => {
+        if (data) setIsContactBlocked(!!data.is_blocked);
+        else setIsContactBlocked(false);
+      });
+  }, [activeChat?.contactId]);
+
+  const handleHeaderBlock = async () => {
+    if (!activeChat?.contactId || !headerBlockReason) return;
+    setIsHeaderBlocking(true);
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ is_blocked: true, blocked_reason: headerBlockReason, blocked_at: new Date().toISOString() })
+        .eq('id', activeChat.contactId);
+      if (error) throw error;
+      setIsContactBlocked(true);
+      setShowHeaderBlockDialog(false);
+      setHeaderBlockReason('');
+      refetch();
+      toast.success('Contato bloqueado');
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao bloquear contato');
+    } finally {
+      setIsHeaderBlocking(false);
+    }
+  };
+
+  const handleHeaderUnblock = async () => {
+    if (!activeChat?.contactId) return;
+    setIsHeaderBlocking(true);
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ is_blocked: false, blocked_reason: null, blocked_at: null })
+        .eq('id', activeChat.contactId);
+      if (error) throw error;
+      setIsContactBlocked(false);
+      refetch();
+      toast.success('Contato desbloqueado');
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao desbloquear contato');
+    } finally {
+      setIsHeaderBlocking(false);
+    }
+  };
 
   // Load tag definitions, team members, and pipelines
   useEffect(() => {
