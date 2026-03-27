@@ -320,6 +320,12 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
               </SheetTitle>
             )}
             
+            {isBlocked && (
+              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border mt-2 bg-gradient-to-r from-red-500/20 to-rose-500/20 text-red-300 border-red-400/30 shadow-lg shadow-red-500/20 backdrop-blur-sm">
+                <Ban className="w-3 h-3" />
+                Bloqueado{blockedReason ? ` — ${blockedReason}` : ''}
+              </span>
+            )}
             <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold border mt-2 bg-gradient-to-r ${statusBadge.gradient} ${statusBadge.text} ${statusBadge.border} shadow-lg ${statusBadge.glow} backdrop-blur-sm`}>
               {statusBadge.label}
             </span>
@@ -351,6 +357,25 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
             {isCallingIris ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mic className="w-4 h-4 mr-2" />}
             {isCallingIris ? 'Disparando...' : 'Ligar com Iris'}
           </Button>
+          {isBlocked ? (
+            <Button
+              onClick={handleUnblockContact}
+              disabled={isBlocking}
+              className="w-full bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white shadow-lg shadow-emerald-500/30 border-0 transition-all duration-300 hover:scale-[1.02] disabled:opacity-50"
+            >
+              {isBlocking ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldOff className="w-4 h-4 mr-2" />}
+              {isBlocking ? 'Desbloqueando...' : 'Desbloquear Contato'}
+            </Button>
+          ) : (
+            <Button
+              onClick={() => setShowBlockDialog(true)}
+              variant="outline"
+              className="w-full bg-red-500/10 border-red-500/30 hover:bg-red-500/20 hover:border-red-400/50 text-red-400 transition-all duration-300"
+            >
+              <Ban className="w-4 h-4 mr-2" />
+              Bloquear Contato
+            </Button>
+          )}
         </SheetHeader>
 
         {/* Gradient divider */}
@@ -530,6 +555,45 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
           </section>
         </div>
       </SheetContent>
+
+      {/* Block confirmation dialog */}
+      <Dialog open={showBlockDialog} onOpenChange={setShowBlockDialog}>
+        <DialogContent className="bg-slate-900 border-white/10 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Bloquear Contato</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              O contato não receberá mais mensagens. Selecione o motivo do bloqueio.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Select value={blockReason} onValueChange={setBlockReason}>
+              <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                <SelectValue placeholder="Selecione o motivo" />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-900 border-white/10">
+                <SelectItem value="Número indesejado">Número indesejado</SelectItem>
+                <SelectItem value="Spam">Spam</SelectItem>
+                <SelectItem value="Solicitou remoção">Solicitou remoção</SelectItem>
+                <SelectItem value="Duplicado">Duplicado</SelectItem>
+                <SelectItem value="Outro">Outro</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBlockDialog(false)} className="border-white/10 text-slate-300">
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleBlockContact}
+              disabled={!blockReason || isBlocking}
+              className="bg-red-600 hover:bg-red-500 text-white"
+            >
+              {isBlocking ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Ban className="w-4 h-4 mr-2" />}
+              Confirmar Bloqueio
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 };
