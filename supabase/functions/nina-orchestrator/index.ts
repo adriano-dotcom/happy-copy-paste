@@ -2873,6 +2873,23 @@ function detectExistingInsurance(userMessages: string[], agentMessages: string[]
       }
     }
   }
+
+  // Patterns for satisfaction with current insurance
+  const satisfiedPatterns = [
+    /satisfeito/i, /contente/i, /gosto/i, /bom atendimento/i,
+    /nao tenho reclamacao/i, /sem reclamacao/i, /tudo certo/i,
+    /tudo ok/i, /estou bem/i, /ta bom/i, /ta otimo/i,
+    /nao penso em trocar/i, /nao quero trocar/i, /nao pretendo/i
+  ];
+
+  // Patterns for dissatisfaction
+  const dissatisfiedPatterns = [
+    /insatisfeito/i, /descontente/i, /ruim/i, /pessimo/i,
+    /nao gosto/i, /quero trocar/i, /quero mudar/i, /caro demais/i,
+    /muito caro/i, /preco alto/i, /preço alto/i, /absurdo/i,
+    /nao renovo/i, /nao vou renovar/i, /cancelar/i, /problema/i,
+    /demora/i, /sem suporte/i, /nao atende/i, /horrivel/i
+  ];
   
   if (satisfiedPatterns.some(p => p.test(allUserText))) {
     status.is_satisfied = true;
