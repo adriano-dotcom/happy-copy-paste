@@ -114,6 +114,50 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
     }
   }, [open, contact?.id]);
 
+  const handleBlockContact = async () => {
+    if (!contact?.id || !blockReason) return;
+    setIsBlocking(true);
+    try {
+      const { error } = await supabase.from('contacts').update({
+        is_blocked: true,
+        blocked_reason: blockReason,
+        blocked_at: new Date().toISOString()
+      }).eq('id', contact.id);
+      if (error) throw error;
+      setIsBlocked(true);
+      setBlockedReason(blockReason);
+      setShowBlockDialog(false);
+      setBlockReason('');
+      toast.success('Contato bloqueado com sucesso');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao bloquear contato');
+    } finally {
+      setIsBlocking(false);
+    }
+  };
+
+  const handleUnblockContact = async () => {
+    if (!contact?.id) return;
+    setIsBlocking(true);
+    try {
+      const { error } = await supabase.from('contacts').update({
+        is_blocked: false,
+        blocked_reason: null,
+        blocked_at: null
+      }).eq('id', contact.id);
+      if (error) throw error;
+      setIsBlocked(false);
+      setBlockedReason(null);
+      toast.success('Contato desbloqueado com sucesso');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao desbloquear contato');
+    } finally {
+      setIsBlocking(false);
+    }
+  };
+
   const handleCallIris = async () => {
     if (!contact?.id) return;
     setIsCallingIris(true);
