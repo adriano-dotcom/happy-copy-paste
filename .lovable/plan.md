@@ -1,36 +1,33 @@
 
 
-# Adicionar botão "Bloquear Contato" na área de chat
+# Adicionar botão visual de Bloquear/Desbloquear no header do chat
 
 ## Problema
 
-O botão "Bloquear Contato" foi implementado apenas no drawer da página **Contatos** (`/contacts`). Na tela de **Chat** (`/chat`), onde o usuário está, ele não aparece porque o componente `ContactDetailsDrawer` não é usado lá. A área de ações rápidas do chat usa o componente `QuickActionsBar`.
+O botão de bloqueio só existe na barra de ações rápidas lateral. O usuário quer um botão visível no **header** do chat (a barra superior com nome, tags e ícones de ação).
 
 ## Alteração
 
-### `src/components/chat/QuickActionsBar.tsx`
+### `src/components/ChatInterface.tsx`
 
-- Adicionar botão "Bloquear" ao lado dos botões Qualificar / Callback / Pipedrive
-- Carregar status `is_blocked` do contato via query ao montar
-- Ao clicar, exibir diálogo de confirmação com seleção de motivo (mesmo padrão do drawer)
-- Se já bloqueado, mostrar botão "Desbloquear" no lugar
-- Usar ícone `Ban` (vermelho) para bloquear e `ShieldOff` (verde) para desbloquear
+Adicionar um botão de bloqueio/desbloqueio no header, posicionado **antes do divisor** (`<div className="h-6 w-px ...">`) na linha ~2393, ao lado dos botões de telefone.
 
-O layout ficará:
+Detalhes:
+- Adicionar estados: `isBlocked`, `showBlockDialog`, `blockReason`, `isBlocking`
+- `useEffect` para buscar `is_blocked` do contato ao trocar de chat
+- Botão com ícone `Ban` (vermelho pulsante quando desbloqueado) ou `ShieldOff` (verde quando bloqueado)
+- Ao clicar em bloquear: abre dialog com seleção de motivo
+- Ao clicar em desbloquear: desbloqueia direto
+- Dialog de confirmação com Select de motivos (mesmo padrão do QuickActionsBar)
+- Invalidar queries após ação
 
+Layout no header:
 ```text
-┌──────────┐ ┌──────────┐ ┌───┐ ┌───┐
-│ Qualificar│ │ Callback │ │ ⇗ │ │ 🚫│  ← novo
-└──────────┘ └──────────┘ └───┘ └───┘
-┌────────────────────────────────────┐
-│        Ligar com Iris              │
-└────────────────────────────────────┘
+[📞] [📞] [📱] [🚫] | [ℹ️] [⋮]
+                      ↑ novo botão
 ```
 
-### Detalhes técnicos
-
-- Buscar `is_blocked` e `blocked_reason` do contato com `supabase.from('contacts').select(...)` usando `activeChat.contactId`
-- Reutilizar a mesma lógica de update já implementada no drawer
-- Adicionar `Dialog` para confirmação com `Select` de motivos
-- Invalidar queries `['conversations']` após bloqueio/desbloqueio
+O botão terá estilo destacado:
+- Desbloqueado: `text-red-400 hover:bg-red-500/20` com tooltip "Bloquear contato"
+- Bloqueado: `text-emerald-400 bg-emerald-500/20` com tooltip "Desbloquear contato"
 
