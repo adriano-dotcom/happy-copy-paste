@@ -215,8 +215,10 @@ serve(async (req) => {
       console.error('WhatsApp API error:', JSON.stringify(waData));
       console.error('Payload that failed:', JSON.stringify(payload));
       
-      // Auto-block contact on error 131026 (number has no WhatsApp)
       const errorCode = waData.error?.code;
+      const is131049 = Number(errorCode) === 131049;
+
+      // Auto-block contact on error 131026 (number has no WhatsApp)
       if (Number(errorCode) === 131026) {
         console.log(`[SendTemplate] Error 131026 — marking contact ${contact_id} as blocked`);
         await supabase
@@ -228,6 +230,25 @@ serve(async (req) => {
           })
           .eq('id', contact_id);
       }
+
+      // Track 131049 in whatsapp_metrics
+      if (is131049) {
+        console.log(`[SendTemplate] Error 131049 (healthy ecosystem) for contact ${contact_id}`);
+        try {
+          await supabase
+            .from('whatsapp_metrics')
+            .upsert({
+              phone_number_id: settings.whatsapp_phone_number_id,
+              metric_date: new Date().toISOString().split('T')[0],
+              metric_hour: new Date().getHours(),
+              error_131049_count: 1
+            }, {
+              onConflict: 'phone_number_id,metric_date,metric_hour'
+            });
+        } catch (metricsErr) {
+          console.log('[SendTemplate] Failed to update 131049 metrics:', metricsErr);
+        }
+      }
       
       // Return error as 200 so frontend can handle gracefully
       const errorMessage = waData.error?.message || 'Failed to send template';
@@ -238,7 +259,8 @@ serve(async (req) => {
           error: errorMessage,
           error_detail: errorDetail,
           error_code: errorCode,
-          phone: phoneNumber
+          phone: phoneNumber,
+          is_rate_limited: is131049
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );

@@ -509,43 +509,97 @@ serve(async (req) => {
 
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          console.error(`[Campaign] Error sending to contact ${campaignContact.contact_id}:`, error);
+          const is131049 = errorMessage.includes('131049') || errorMessage.includes('healthy ecosystem');
+          console.error(`[Campaign] Error sending to contact ${campaignContact.contact_id} (131049: ${is131049}):`, error);
 
-          // Update campaign contact as failed
-          await supabase
-            .from('campaign_contacts')
-            .update({
-              status: 'failed',
-              error_message: errorMessage,
-              retry_count: (campaignContact.retry_count || 0) + 1
-            })
-            .eq('id', campaignContact.id);
+          if (is131049) {
+            // === 131049 MITIGATION: Skip + Retry 24h ===
+            console.log(`[Campaign] 131049 detected — skipping contact ${campaignContact.contact_id}, retry in 24h`);
 
-          // Update campaign counters
-          await supabase.rpc('update_campaign_counters', {
-            p_campaign_id: campaign.id,
-            p_failed: 1
-          });
+            // Mark as skipped (not failed) with retry scheduled
+            await supabase
+              .from('campaign_contacts')
+              .update({
+                status: 'pending',
+                error_message: 'meta_marketing_limit_131049',
+                scheduled_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                retry_count: (campaignContact.retry_count || 0) + 1
+              })
+              .eq('id', campaignContact.id);
+
+            // Increment skipped (NOT failed) — does NOT affect failure streak
+            await supabase.rpc('update_campaign_counters', {
+              p_campaign_id: campaign.id,
+              p_skipped: 1
+            });
+
+            // Track 131049 in metrics
+            try {
+              await supabase
+                .from('whatsapp_metrics')
+                .upsert({
+                  phone_number_id: settings.whatsapp_phone_number_id,
+                  metric_date: new Date().toISOString().split('T')[0],
+                  metric_hour: new Date().getHours(),
+                  error_131049_count: 1
+                }, {
+                  onConflict: 'phone_number_id,metric_date,metric_hour'
+                });
+            } catch (_) { /* ignore */ }
+
+            // === ADAPTIVE CADENCE: slow down after 3+ consecutive 131049 ===
+            if (!campaign._consecutive131049) campaign._consecutive131049 = 0;
+            campaign._consecutive131049++;
+
+            if (campaign._consecutive131049 >= 3) {
+              const newInterval = Math.min(300, Math.ceil((campaign.interval_seconds || 60) * 1.5));
+              if (newInterval !== campaign.interval_seconds) {
+                console.log(`[Campaign] Adaptive cadence: increasing interval from ${campaign.interval_seconds}s to ${newInterval}s`);
+                await supabase
+                  .from('whatsapp_campaigns')
+                  .update({ interval_seconds: newInterval })
+                  .eq('id', campaign.id);
+                campaign.interval_seconds = newInterval;
+              }
+            }
+          } else {
+            // Regular error handling (non-131049)
+            await supabase
+              .from('campaign_contacts')
+              .update({
+                status: 'failed',
+                error_message: errorMessage,
+                retry_count: (campaignContact.retry_count || 0) + 1
+              })
+              .eq('id', campaignContact.id);
+
+            await supabase.rpc('update_campaign_counters', {
+              p_campaign_id: campaign.id,
+              p_failed: 1
+            });
+
+            // Reset adaptive counter on non-131049 error
+            campaign._consecutive131049 = 0;
+
+            // Track error in metrics
+            try {
+              await supabase
+                .from('whatsapp_metrics')
+                .upsert({
+                  phone_number_id: settings.whatsapp_phone_number_id,
+                  metric_date: new Date().toISOString().split('T')[0],
+                  metric_hour: new Date().getHours(),
+                  messages_failed: 1
+                }, {
+                  onConflict: 'phone_number_id,metric_date,metric_hour'
+                });
+            } catch (metricsError) {
+              console.log('[Campaign] Failed to update metrics:', metricsError);
+            }
+          }
 
           totalFailed++;
           totalProcessed++;
-
-          // Track error in metrics - use direct insert instead of rpc
-          try {
-            await supabase
-              .from('whatsapp_metrics')
-              .upsert({
-                phone_number_id: settings.whatsapp_phone_number_id,
-                metric_date: new Date().toISOString().split('T')[0],
-                metric_hour: new Date().getHours(),
-                messages_failed: 1
-              }, {
-                onConflict: 'phone_number_id,metric_date,metric_hour'
-              });
-          } catch (metricsError) {
-            // Ignore metrics update errors
-            console.log('[Campaign] Failed to update metrics:', metricsError);
-          }
         }
       }
 
