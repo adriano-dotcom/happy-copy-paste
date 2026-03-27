@@ -2454,23 +2454,25 @@ const ChatInterface: React.FC = () => {
                   </div>
                 )}
                 {/* Block/Unblock button */}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ShadcnButton
-                      variant="ghost"
-                      size="icon"
-                      onClick={isContactBlocked ? handleHeaderUnblock : () => setShowHeaderBlockDialog(true)}
-                      disabled={isHeaderBlocking}
-                      className={isContactBlocked
-                        ? 'text-emerald-400 bg-emerald-500/20 hover:bg-emerald-500/30'
-                        : 'text-red-400 hover:bg-red-500/20'
-                      }
-                    >
-                      {isHeaderBlocking ? <Loader2 className="w-5 h-5 animate-spin" /> : isContactBlocked ? <ShieldOff className="w-5 h-5" /> : <Ban className="w-5 h-5" />}
-                    </ShadcnButton>
-                  </TooltipTrigger>
-                  <TooltipContent>{isContactBlocked ? 'Desbloquear contato' : 'Bloquear contato'}</TooltipContent>
-                </Tooltip>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <ShadcnButton
+                        variant="ghost"
+                        size="icon"
+                        onClick={isContactBlocked ? handleHeaderUnblock : () => setShowHeaderBlockDialog(true)}
+                        disabled={isHeaderBlocking}
+                        className={isContactBlocked
+                          ? 'text-emerald-400 bg-emerald-500/20 hover:bg-emerald-500/30'
+                          : 'text-red-400 hover:bg-red-500/20'
+                        }
+                      >
+                        {isHeaderBlocking ? <Loader2 className="w-5 h-5 animate-spin" /> : isContactBlocked ? <ShieldOff className="w-5 h-5" /> : <Ban className="w-5 h-5" />}
+                      </ShadcnButton>
+                    </TooltipTrigger>
+                    <TooltipContent>{isContactBlocked ? 'Desbloquear contato' : 'Bloquear contato'}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <div className="h-6 w-px bg-slate-800 mx-1"></div>
                 <Button 
                   variant="ghost" 
