@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CheckCircle, Calendar, Send, Loader2, Mic } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CheckCircle, Calendar, Send, Loader2, Mic, Ban, ShieldOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
@@ -7,6 +7,10 @@ import { UIConversation } from '@/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { ScheduleCallbackModal } from './ScheduleCallbackModal';
 import { SendToPipedriveModal } from './SendToPipedriveModal';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
+} from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface QuickActionsBarProps {
   activeChat: UIConversation;
@@ -28,6 +32,64 @@ export function QuickActionsBar({
   const [isCallingIris, setIsCallingIris] = useState(false);
   const [showCallbackModal, setShowCallbackModal] = useState(false);
   const [showPipedriveModal, setShowPipedriveModal] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [showBlockDialog, setShowBlockDialog] = useState(false);
+  const [blockReason, setBlockReason] = useState('');
+  const [isBlocking, setIsBlocking] = useState(false);
+
+  useEffect(() => {
+    if (!activeChat.contactId) return;
+    supabase
+      .from('contacts')
+      .select('is_blocked, blocked_reason')
+      .eq('id', activeChat.contactId)
+      .single()
+      .then(({ data }) => {
+        if (data) setIsBlocked(!!data.is_blocked);
+      });
+  }, [activeChat.contactId]);
+
+  const handleBlock = async () => {
+    if (!activeChat.contactId || !blockReason) return;
+    setIsBlocking(true);
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ is_blocked: true, blocked_reason: blockReason, blocked_at: new Date().toISOString() })
+        .eq('id', activeChat.contactId);
+      if (error) throw error;
+      setIsBlocked(true);
+      setShowBlockDialog(false);
+      setBlockReason('');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      toast.success('Contato bloqueado');
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao bloquear contato');
+    } finally {
+      setIsBlocking(false);
+    }
+  };
+
+  const handleUnblock = async () => {
+    if (!activeChat.contactId) return;
+    setIsBlocking(true);
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ is_blocked: false, blocked_reason: null, blocked_at: null })
+        .eq('id', activeChat.contactId);
+      if (error) throw error;
+      setIsBlocked(false);
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      toast.success('Contato desbloqueado');
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao desbloquear contato');
+    } finally {
+      setIsBlocking(false);
+    }
+  };
 
   // Find "Qualificado pela IA" stage
   const qualifiedStage = dealStages.find(
@@ -169,6 +231,22 @@ export function QuickActionsBar({
           >
             <Send className="w-4 h-4 mr-1.5" />
           </Button>
+
+          {/* Bloquear / Desbloquear */}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={isBlocked ? handleUnblock : () => setShowBlockDialog(true)}
+            disabled={isBlocking}
+            className={`text-xs transition-all duration-200 ${
+              isBlocked
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30'
+                : 'bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 hover:border-red-500/50'
+            }`}
+            title={isBlocked ? 'Desbloquear contato' : 'Bloquear contato'}
+          >
+            {isBlocking ? <Loader2 className="w-4 h-4 animate-spin" /> : isBlocked ? <ShieldOff className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+          </Button>
         </div>
 
         {/* Ligar com Iris */}
@@ -211,6 +289,41 @@ export function QuickActionsBar({
         onSent={onRefetch}
         initialNotes={activeChat.notes}
       />
+
+      <Dialog open={showBlockDialog} onOpenChange={setShowBlockDialog}>
+        <DialogContent className="bg-slate-900 border-slate-700">
+          <DialogHeader>
+            <DialogTitle className="text-white">Bloquear Contato</DialogTitle>
+            <DialogDescription>
+              Contatos bloqueados não receberão mais mensagens automáticas.
+            </DialogDescription>
+          </DialogHeader>
+          <Select value={blockReason} onValueChange={setBlockReason}>
+            <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
+              <SelectValue placeholder="Selecione o motivo" />
+            </SelectTrigger>
+            <SelectContent className="bg-slate-800 border-slate-600">
+              <SelectItem value="Número indesejado">Número indesejado</SelectItem>
+              <SelectItem value="Spam">Spam</SelectItem>
+              <SelectItem value="Solicitou remoção">Solicitou remoção</SelectItem>
+              <SelectItem value="Outro">Outro</SelectItem>
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowBlockDialog(false)} className="text-slate-400">
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleBlock}
+              disabled={!blockReason || isBlocking}
+            >
+              {isBlocking ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Ban className="w-4 h-4 mr-1" />}
+              Bloquear
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
