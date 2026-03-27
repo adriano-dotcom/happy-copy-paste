@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { User, Building2, MapPin, Phone, Mail, FileText, Calendar, Edit, MessageSquare, Target, Pencil, Check, X, Loader2, MessageCircle, Mic } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
+import { User, Building2, MapPin, Phone, Mail, FileText, Calendar, Edit, MessageSquare, Target, Pencil, Check, X, Loader2, MessageCircle, Mic, Ban, ShieldOff } from 'lucide-react';
 import { displayPhoneInternational } from '@/utils/phoneFormatter';
 import { CallHistoryPanel } from './CallHistoryPanel';
 import { useContactCallHistory } from '@/hooks/useContactCallHistory';
@@ -34,6 +36,8 @@ interface ContactData {
   utm_campaign?: string;
   utm_content?: string;
   utm_term?: string;
+  is_blocked?: boolean;
+  blocked_reason?: string;
 }
 
 interface ContactDetailsDrawerProps {
@@ -80,6 +84,24 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
   const [editedName, setEditedName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isCallingIris, setIsCallingIris] = useState(false);
+  const [showBlockDialog, setShowBlockDialog] = useState(false);
+  const [blockReason, setBlockReason] = useState('');
+  const [isBlocking, setIsBlocking] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockedReason, setBlockedReason] = useState<string | null>(null);
+
+  // Load blocked status from DB
+  useEffect(() => {
+    if (!contact?.id || !open) return;
+    const loadBlockStatus = async () => {
+      const { data } = await supabase.from('contacts').select('is_blocked, blocked_reason').eq('id', contact.id).single();
+      if (data) {
+        setIsBlocked(!!data.is_blocked);
+        setBlockedReason(data.blocked_reason);
+      }
+    };
+    loadBlockStatus();
+  }, [contact?.id, open]);
 
   // Reset editing state when contact changes or drawer closes
   useEffect(() => {
@@ -87,8 +109,54 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
       setIsEditingName(false);
       setEditedName('');
       setIsCallingIris(false);
+      setShowBlockDialog(false);
+      setBlockReason('');
     }
   }, [open, contact?.id]);
+
+  const handleBlockContact = async () => {
+    if (!contact?.id || !blockReason) return;
+    setIsBlocking(true);
+    try {
+      const { error } = await supabase.from('contacts').update({
+        is_blocked: true,
+        blocked_reason: blockReason,
+        blocked_at: new Date().toISOString()
+      }).eq('id', contact.id);
+      if (error) throw error;
+      setIsBlocked(true);
+      setBlockedReason(blockReason);
+      setShowBlockDialog(false);
+      setBlockReason('');
+      toast.success('Contato bloqueado com sucesso');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao bloquear contato');
+    } finally {
+      setIsBlocking(false);
+    }
+  };
+
+  const handleUnblockContact = async () => {
+    if (!contact?.id) return;
+    setIsBlocking(true);
+    try {
+      const { error } = await supabase.from('contacts').update({
+        is_blocked: false,
+        blocked_reason: null,
+        blocked_at: null
+      }).eq('id', contact.id);
+      if (error) throw error;
+      setIsBlocked(false);
+      setBlockedReason(null);
+      toast.success('Contato desbloqueado com sucesso');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao desbloquear contato');
+    } finally {
+      setIsBlocking(false);
+    }
+  };
 
   const handleCallIris = async () => {
     if (!contact?.id) return;
@@ -252,6 +320,12 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
               </SheetTitle>
             )}
             
+            {isBlocked && (
+              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border mt-2 bg-gradient-to-r from-red-500/20 to-rose-500/20 text-red-300 border-red-400/30 shadow-lg shadow-red-500/20 backdrop-blur-sm">
+                <Ban className="w-3 h-3" />
+                Bloqueado{blockedReason ? ` — ${blockedReason}` : ''}
+              </span>
+            )}
             <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold border mt-2 bg-gradient-to-r ${statusBadge.gradient} ${statusBadge.text} ${statusBadge.border} shadow-lg ${statusBadge.glow} backdrop-blur-sm`}>
               {statusBadge.label}
             </span>
@@ -283,6 +357,25 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
             {isCallingIris ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mic className="w-4 h-4 mr-2" />}
             {isCallingIris ? 'Disparando...' : 'Ligar com Iris'}
           </Button>
+          {isBlocked ? (
+            <Button
+              onClick={handleUnblockContact}
+              disabled={isBlocking}
+              className="w-full bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white shadow-lg shadow-emerald-500/30 border-0 transition-all duration-300 hover:scale-[1.02] disabled:opacity-50"
+            >
+              {isBlocking ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldOff className="w-4 h-4 mr-2" />}
+              {isBlocking ? 'Desbloqueando...' : 'Desbloquear Contato'}
+            </Button>
+          ) : (
+            <Button
+              onClick={() => setShowBlockDialog(true)}
+              variant="outline"
+              className="w-full bg-red-500/10 border-red-500/30 hover:bg-red-500/20 hover:border-red-400/50 text-red-400 transition-all duration-300"
+            >
+              <Ban className="w-4 h-4 mr-2" />
+              Bloquear Contato
+            </Button>
+          )}
         </SheetHeader>
 
         {/* Gradient divider */}
@@ -462,6 +555,45 @@ const ContactDetailsDrawer: React.FC<ContactDetailsDrawerProps> = ({ open, onOpe
           </section>
         </div>
       </SheetContent>
+
+      {/* Block confirmation dialog */}
+      <Dialog open={showBlockDialog} onOpenChange={setShowBlockDialog}>
+        <DialogContent className="bg-slate-900 border-white/10 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Bloquear Contato</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              O contato não receberá mais mensagens. Selecione o motivo do bloqueio.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Select value={blockReason} onValueChange={setBlockReason}>
+              <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                <SelectValue placeholder="Selecione o motivo" />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-900 border-white/10">
+                <SelectItem value="Número indesejado">Número indesejado</SelectItem>
+                <SelectItem value="Spam">Spam</SelectItem>
+                <SelectItem value="Solicitou remoção">Solicitou remoção</SelectItem>
+                <SelectItem value="Duplicado">Duplicado</SelectItem>
+                <SelectItem value="Outro">Outro</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBlockDialog(false)} className="border-white/10 text-slate-300">
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleBlockContact}
+              disabled={!blockReason || isBlocking}
+              className="bg-red-600 hover:bg-red-500 text-white"
+            >
+              {isBlocking ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Ban className="w-4 h-4 mr-2" />}
+              Confirmar Bloqueio
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 };
