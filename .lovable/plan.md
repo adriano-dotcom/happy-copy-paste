@@ -1,49 +1,36 @@
 
 
-# Corrigir falso positivo na detecção de "já tem seguro de carga"
+# Limpar 10 registros órfãos do send_queue
 
-## Problema
+## Registros identificados
 
-Na conversa do Jailson, o contato disse:
-- "Tenho transportadora queria saber sobre o seguro de cargas"
-- "Contrato direto"
-- "Sim" (respondendo sobre CT-e)
+10 registros em `processing` que nunca foram finalizados:
 
-A função `detectExistingInsurance` junta TODAS as mensagens do usuário em um texto único e testa regex. O padrão `/seguro de carga.*sim/i` faz match em "seguro de cargas...Contrato direto...Sim" — causando falso positivo. O sistema assume que o lead JÁ TEM seguro de carga, quando na verdade ele está BUSCANDO seguro.
+- 5 de janeiro (dias 20, 22, 23, 27)
+- 4 de fevereiro (dias 2, 9)
 
-Isso dispara o fluxo de renovação ("quando vence a apólice atual?") ao invés do fluxo correto de qualificação para novo cliente.
+## Ação
 
-## Solução
+Atualizar os 10 registros de `processing` para `failed` com motivo `orphaned_stale_processing`, usando filtro por IDs específicos.
 
-### Arquivo: `supabase/functions/nina-orchestrator/index.ts`
+```sql
+UPDATE send_queue 
+SET status = 'failed', 
+    error_message = 'orphaned_stale_processing',
+    updated_at = now()
+WHERE id IN (
+  'b5fa0b53-8fc2-49e4-891c-b6a0fd8391e2',
+  '225827b2-111a-4dc1-8be7-12ae3e15cdd1',
+  '9d018e50-f04b-446c-a7be-ffbdaef49788',
+  'de9beb29-6d72-405b-afb5-8b515c421143',
+  '354fbe2a-a637-4210-835e-42f67b52614f',
+  '23f36bec-341f-499a-8af3-7d6b194f0bca',
+  '67540259-fcfb-4505-b253-a55f379253e3',
+  '0d48dbe1-98e6-4e20-b92e-725fa7345034',
+  '8006a253-b46c-4388-93d5-49803e97c27d',
+  'faaa0702-4c47-41c9-9957-aa1272772ad8'
+);
+```
 
-**1. Tornar os padrões de detecção mais restritivos** (linha ~2841)
-
-Remover padrões que geram falso positivo quando "seguro de carga" aparece no contexto de PERGUNTAR sobre seguro (não de CONFIRMAR que tem):
-
-- Remover `/seguro de carga.*sim/i` e `/sim.*seguro de carga/i` — muito amplos
-- Substituir por padrões que exijam confirmação explícita de posse:
-  - `/ja tenho.*seguro de carga/i`
-  - `/tenho.*seguro de carga.*sim/i`
-  - `/sim.*tenho.*seguro de carga/i`
-  - `/ja temos.*seguro de carga/i`
-  - `/temos.*seguro de carga/i`
-
-**2. Adicionar padrões de exclusão** (anti-patterns)
-
-Antes de marcar `has_cargo_insurance = true`, verificar se o texto contém indicadores de que está BUSCANDO seguro (não que já tem):
-
-- "queria saber sobre", "preciso de", "quero cotar", "quero fazer", "me interessa", "preciso contratar", "queria contratar", "busco", "procurando"
-
-Se esses padrões aparecem junto com "seguro de carga", NÃO marcar como `has_cargo_insurance`.
-
-**3. Analisar por mensagem individual** ao invés de texto concatenado
-
-Para os padrões de seguro de carga, verificar cada mensagem do usuário individualmente em vez de juntar tudo. O "Sim" que respondeu sobre CT-e não deve combinar com "seguro de carga" de outra mensagem.
-
-## Impacto
-
-- Leads que estão BUSCANDO seguro de carga seguirão o fluxo correto de qualificação
-- Leads que CONFIRMAM ter seguro de carga continuarão indo para o fluxo de renovação
-- Nenhuma mudança no frontend
+Nenhuma alteração de código ou schema necessária — apenas limpeza de dados.
 
