@@ -7,7 +7,7 @@ import {
   Tag, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
   Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle,
   ArrowLeft, Keyboard, XCircle, PlayCircle, Pin, Sparkles, UserCheck, PauseCircle, Bot, AlertCircle, Download, Eye, Truck,
-  ChevronDown as ChevronDownIcon, MessageCircle
+  ChevronDown as ChevronDownIcon, MessageCircle, Ban, ShieldOff
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -140,6 +140,12 @@ const ChatInterface: React.FC = () => {
   const [availableAgents, setAvailableAgents] = useState<{id: string; name: string; slug: string}[]>([]);
   const [isChangingAgent, setIsChangingAgent] = useState(false);
   
+  // Block contact state (header)
+  const [isContactBlocked, setIsContactBlocked] = useState(false);
+  const [showHeaderBlockDialog, setShowHeaderBlockDialog] = useState(false);
+  const [headerBlockReason, setHeaderBlockReason] = useState('');
+  const [isHeaderBlocking, setIsHeaderBlocking] = useState(false);
+
   // Close conversation state
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closeReason, setCloseReason] = useState('');
