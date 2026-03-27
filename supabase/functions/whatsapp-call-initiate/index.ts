@@ -59,6 +59,17 @@ Deno.serve(async (req) => {
 
     console.log(`Initiating outbound call to ${formattedNumber} via phone_number_id ${phoneNumberId}`);
 
+    // Sanitize SDP: uppercase fingerprint hex, remove empty lines, ensure \r\n
+    const sanitizedSdp = sdp_offer
+      .replace(/a=fingerprint:(\S+)\s+([0-9A-Fa-f:]+)/g, (_m: string, algo: string, hash: string) =>
+        `a=fingerprint:${algo} ${hash.toUpperCase()}`
+      )
+      .split(/\r?\n/)
+      .filter((line: string) => line.trim() !== '')
+      .join('\r\n') + '\r\n';
+
+    console.log(`SDP first 3 lines: ${sanitizedSdp.split('\r\n').slice(0, 3).join(' | ')}`);
+
     // Call Meta Graph API to initiate the call
     const metaResponse = await fetch(
       `https://graph.facebook.com/v22.0/${phoneNumberId}/calls`,
@@ -71,11 +82,10 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           messaging_product: 'whatsapp',
           to: formattedNumber,
-          type: 'audio',
           action: 'connect',
           session: {
-            sdp: sdp_offer,
             sdp_type: 'offer',
+            sdp: sanitizedSdp,
           },
         }),
       }

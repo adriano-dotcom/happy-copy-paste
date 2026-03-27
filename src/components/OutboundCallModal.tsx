@@ -43,8 +43,12 @@ async function logPeerStats(pc: RTCPeerConnection) {
 function fixSdpForMeta(sdp: string): string {
   return sdp.split('\r\n').map(line => {
     if (line.startsWith('a=setup:')) return 'a=setup:actpass';
+    // Uppercase fingerprint hex (Meta requirement)
+    if (line.startsWith('a=fingerprint:')) {
+      return line.replace(/([0-9A-Fa-f:]+)$/, match => match.toUpperCase());
+    }
     return line;
-  }).join('\r\n');
+  }).filter(line => line.trim() !== '').join('\r\n') + '\r\n';
 }
 
 // ── Robust error extraction from supabase.functions.invoke ──
