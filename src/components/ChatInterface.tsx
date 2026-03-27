@@ -7,7 +7,7 @@ import {
   Tag, User, Pause, Brain, Plus, Building2, FileText, Save, Pencil, FileType,
   Briefcase, ExternalLink, Inbox, Archive, ArchiveRestore, PhoneCall, Clock, AlertTriangle,
   ArrowLeft, Keyboard, XCircle, PlayCircle, Pin, Sparkles, UserCheck, PauseCircle, Bot, AlertCircle, Download, Eye, Truck,
-  ChevronDown as ChevronDownIcon, MessageCircle
+  ChevronDown as ChevronDownIcon, MessageCircle, Ban, ShieldOff
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -57,6 +57,8 @@ import { SendToPipedriveModal } from './chat/SendToPipedriveModal';
 import { OutboundCallModal } from './OutboundCallModal';
 import { HorizontalScrollPills } from './ui/horizontal-scroll-pills';
 import { WhatsAppPaymentAlertBanner } from './WhatsAppPaymentAlertBanner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 interface AgentQuestion {
   order: number;
@@ -140,6 +142,12 @@ const ChatInterface: React.FC = () => {
   const [availableAgents, setAvailableAgents] = useState<{id: string; name: string; slug: string}[]>([]);
   const [isChangingAgent, setIsChangingAgent] = useState(false);
   
+  // Block contact state (header)
+  const [isContactBlocked, setIsContactBlocked] = useState(false);
+  const [showHeaderBlockDialog, setShowHeaderBlockDialog] = useState(false);
+  const [headerBlockReason, setHeaderBlockReason] = useState('');
+  const [isHeaderBlocking, setIsHeaderBlocking] = useState(false);
+
   // Close conversation state
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closeReason, setCloseReason] = useState('');
@@ -476,6 +484,61 @@ const ChatInterface: React.FC = () => {
     await loadMoreMessages(activeChat.id);
   }, [activeChat, loadingMoreMessages, loadMoreMessages]);
 
+  // Fetch block status when chat changes
+  useEffect(() => {
+    if (!activeChat?.contactId) return;
+    supabase
+      .from('contacts')
+      .select('is_blocked')
+      .eq('id', activeChat.contactId)
+      .single()
+      .then(({ data }) => {
+        if (data) setIsContactBlocked(!!data.is_blocked);
+        else setIsContactBlocked(false);
+      });
+  }, [activeChat?.contactId]);
+
+  const handleHeaderBlock = async () => {
+    if (!activeChat?.contactId || !headerBlockReason) return;
+    setIsHeaderBlocking(true);
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ is_blocked: true, blocked_reason: headerBlockReason, blocked_at: new Date().toISOString() })
+        .eq('id', activeChat.contactId);
+      if (error) throw error;
+      setIsContactBlocked(true);
+      setShowHeaderBlockDialog(false);
+      setHeaderBlockReason('');
+      refetch();
+      toast.success('Contato bloqueado');
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao bloquear contato');
+    } finally {
+      setIsHeaderBlocking(false);
+    }
+  };
+
+  const handleHeaderUnblock = async () => {
+    if (!activeChat?.contactId) return;
+    setIsHeaderBlocking(true);
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ is_blocked: false, blocked_reason: null, blocked_at: null })
+        .eq('id', activeChat.contactId);
+      if (error) throw error;
+      setIsContactBlocked(false);
+      refetch();
+      toast.success('Contato desbloqueado');
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao desbloquear contato');
+    } finally {
+      setIsHeaderBlocking(false);
+    }
+  };
 
   // Load tag definitions, team members, and pipelines
   useEffect(() => {
@@ -2390,6 +2453,24 @@ const ChatInterface: React.FC = () => {
                     <ActiveCallIndicator call={activeCall} onDismiss={dismissActiveCall} />
                   </div>
                 )}
+                {/* Block/Unblock button */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <ShadcnButton
+                      variant="ghost"
+                      size="icon"
+                      onClick={isContactBlocked ? handleHeaderUnblock : () => setShowHeaderBlockDialog(true)}
+                      disabled={isHeaderBlocking}
+                      className={isContactBlocked
+                        ? 'text-emerald-400 bg-emerald-500/20 hover:bg-emerald-500/30'
+                        : 'text-red-400 hover:bg-red-500/20'
+                      }
+                    >
+                      {isHeaderBlocking ? <Loader2 className="w-5 h-5 animate-spin" /> : isContactBlocked ? <ShieldOff className="w-5 h-5" /> : <Ban className="w-5 h-5" />}
+                    </ShadcnButton>
+                  </TooltipTrigger>
+                  <TooltipContent>{isContactBlocked ? 'Desbloquear contato' : 'Bloquear contato'}</TooltipContent>
+                </Tooltip>
                 <div className="h-6 w-px bg-slate-800 mx-1"></div>
                 <Button 
                   variant="ghost" 
@@ -3505,6 +3586,41 @@ href={(() => {
           initialNotes={activeChat.notes}
         />
       )}
+      {/* Header Block Dialog */}
+      <Dialog open={showHeaderBlockDialog} onOpenChange={setShowHeaderBlockDialog}>
+        <DialogContent className="bg-slate-900 border-slate-700">
+          <DialogHeader>
+            <DialogTitle className="text-white">Bloquear Contato</DialogTitle>
+            <DialogDescription>
+              Contatos bloqueados não receberão mais mensagens automáticas.
+            </DialogDescription>
+          </DialogHeader>
+          <Select value={headerBlockReason} onValueChange={setHeaderBlockReason}>
+            <SelectTrigger className="bg-slate-800 border-slate-600 text-white">
+              <SelectValue placeholder="Selecione o motivo" />
+            </SelectTrigger>
+            <SelectContent className="bg-slate-800 border-slate-600">
+              <SelectItem value="Número indesejado">Número indesejado</SelectItem>
+              <SelectItem value="Spam">Spam</SelectItem>
+              <SelectItem value="Solicitou remoção">Solicitou remoção</SelectItem>
+              <SelectItem value="Outro">Outro</SelectItem>
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <ShadcnButton variant="ghost" onClick={() => setShowHeaderBlockDialog(false)} className="text-slate-400">
+              Cancelar
+            </ShadcnButton>
+            <ShadcnButton
+              variant="destructive"
+              onClick={handleHeaderBlock}
+              disabled={!headerBlockReason || isHeaderBlocking}
+            >
+              {isHeaderBlocking ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Ban className="w-4 h-4 mr-1" />}
+              Bloquear
+            </ShadcnButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
