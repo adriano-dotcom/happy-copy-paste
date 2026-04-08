@@ -603,12 +603,18 @@ async function sendMessage(supabase: any, settings: any, queueItem: any) {
   // Get contact phone number
   const { data: contact } = await supabase
     .from('contacts')
-    .select('phone_number, whatsapp_id')
+    .select('phone_number, whatsapp_id, is_blocked, blocked_reason')
     .eq('id', queueItem.contact_id)
     .maybeSingle();
 
   if (!contact) {
     throw new Error('Contact not found');
+  }
+
+  // Check if contact is blocked
+  if (contact.is_blocked) {
+    console.log(`[Sender] ⛔ Contact ${queueItem.contact_id} is blocked (reason: ${contact.blocked_reason}), skipping`);
+    return;
   }
 
   // ========================================

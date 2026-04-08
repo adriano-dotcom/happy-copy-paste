@@ -3300,6 +3300,12 @@ async function processQueueItem(
     throw new Error('Conversation not found');
   }
 
+  // Check if contact is blocked
+  if (conversation.contact?.is_blocked) {
+    console.log(`[Nina] ⛔ Contact ${conversation.contact_id} is blocked (reason: ${conversation.contact?.blocked_reason}), skipping`);
+    return;
+  }
+
   // Check if conversation is still in Nina mode
   if (conversation.status !== 'nina') {
     console.log('[Nina] Conversation no longer in Nina mode, skipping');

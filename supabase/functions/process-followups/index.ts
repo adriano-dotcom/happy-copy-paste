@@ -1143,10 +1143,12 @@ serve(async (req) => {
             call_name,
             company,
             phone_number,
-            client_memory
+            client_memory,
+            is_blocked
           )
         `)
         .eq('is_active', true)
+        .eq('contacts.is_blocked', false)
         .in('status', automation.conversation_statuses)
         .lt('last_message_at', cutoffTime.toISOString());
 
