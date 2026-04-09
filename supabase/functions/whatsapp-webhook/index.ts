@@ -1156,13 +1156,18 @@ async function processIncomingMessageWithBackground(
         .limit(1);
 
       if (inactiveConversations?.[0]) {
-        const { data: reactivatedConv, error: reactivateError } = await supabase
-          .from('conversations')
-          .update({
+        const reactivateUpdate: any = {
             is_active: true,
             status: 'nina',
             whatsapp_window_start: new Date().toISOString()
-          })
+          };
+        if (referral) {
+          const existingMeta = inactiveConversations[0].metadata || {};
+          reactivateUpdate.metadata = { ...existingMeta, referral };
+        }
+        const { data: reactivatedConv, error: reactivateError } = await supabase
+          .from('conversations')
+          .update(reactivateUpdate)
           .eq('id', inactiveConversations[0].id)
           .select()
           .single();
