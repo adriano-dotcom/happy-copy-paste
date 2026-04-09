@@ -1180,7 +1180,8 @@ async function processIncomingMessageWithBackground(
         .insert({
           contact_id: contact.id,
           status: 'nina',
-          is_active: true
+          is_active: true,
+          ...(referral ? { metadata: { referral } } : {})
         })
         .select()
         .single();
