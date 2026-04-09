@@ -1067,6 +1067,21 @@ async function processIncomingMessageWithBackground(
     const whatsappId = contactInfo?.wa_id || rawPhoneNumber;
     const contactName = contactInfo?.profile?.name || null;
 
+    // ===== CTWA REFERRAL EXTRACTION =====
+    const referral = message.referral || null;
+    let ctwaFields: Record<string, any> = {};
+    if (referral) {
+      console.log('[Webhook BG] 📣 CTWA referral detected:', JSON.stringify(referral));
+      ctwaFields = {
+        lead_source: 'ctwa',
+        utm_source: referral.source_type || null,    // "ad" | "post"
+        utm_campaign: referral.source_id || null,     // Ad ID
+        utm_content: referral.headline || null,        // Ad headline
+        utm_term: referral.ctwa_clid || null,          // Click ID
+      };
+    }
+    // ===== END CTWA REFERRAL =====
+
     // 1. Get or create contact using flexible phone search
     let contact = await findContactByPhone(supabase, rawPhoneNumber);
 
@@ -1080,9 +1095,10 @@ async function processIncomingMessageWithBackground(
           whatsapp_id: whatsappId,
           name: contactName,
           call_name: contactName?.split(' ')[0] || null,
-          lead_source: 'inbound',
+          lead_source: referral ? 'ctwa' : 'inbound',
           city: region?.city || null,
-          state: region?.state || null
+          state: region?.state || null,
+          ...ctwaFields
         })
         .select()
         .single();
@@ -1092,7 +1108,7 @@ async function processIncomingMessageWithBackground(
         throw contactError;
       }
       contact = newContact;
-      console.log('[Webhook BG] Created new contact:', contact.id, region ? `(${region.city} - ${region.state})` : '');
+      console.log('[Webhook BG] Created new contact:', contact.id, region ? `(${region.city} - ${region.state})` : '', referral ? '(CTWA)' : '');
     } else {
       const updates: any = { last_activity: new Date().toISOString() };
       
@@ -1103,6 +1119,12 @@ async function processIncomingMessageWithBackground(
       
       if (!contact.whatsapp_id) {
         updates.whatsapp_id = whatsappId;
+      }
+
+      // Update CTWA fields if referral present and contact doesn't have them yet
+      if (referral && (!contact.lead_source || contact.lead_source === 'inbound')) {
+        Object.assign(updates, ctwaFields);
+        console.log('[Webhook BG] 📣 Updating existing contact with CTWA data');
       }
       
       await supabase
