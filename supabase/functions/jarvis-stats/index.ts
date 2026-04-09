@@ -31,15 +31,17 @@ serve(async (req) => {
   try {
     const { data: contacts } = await supabase.from("contacts").select("utm_source, lead_source, vertical, tags, created_at").gte("created_at", desde);
 
-    const leads = { total: contacts?.length ?? 0, inbound: 0, outbound: 0, meta: 0, google: 0, organico: 0, carga: 0, saude: 0, outros: 0 };
+    const leads = { total: contacts?.length ?? 0, inbound: 0, outbound: 0, ctwa: 0, meta: 0, google: 0, organico: 0, carga: 0, saude: 0, outros: 0 };
     for (const c of contacts ?? []) {
       const src = (c.utm_source ?? c.lead_source ?? "").toLowerCase();
       const vert = (c.vertical ?? "").toLowerCase();
       const tags = (c.tags ?? []).join(" ").toLowerCase();
-      if (src.includes("meta") || src.includes("facebook") || src.includes("instagram")) leads.meta++;
+      if (c.lead_source === "ctwa") leads.ctwa++;
+      else if (src.includes("meta") || src.includes("facebook") || src.includes("instagram")) leads.meta++;
       else if (src.includes("google")) leads.google++;
       else leads.organico++;
       if (c.lead_source === "prospecting" || c.lead_source === "outbound") leads.outbound++;
+      else if (c.lead_source === "ctwa") { /* already counted above, count as inbound */ leads.inbound++; }
       else leads.inbound++;
       if (vert.includes("transporte") || vert.includes("carga") || tags.includes("transporte")) leads.carga++;
       else if (vert.includes("saude") || vert.includes("saúde") || tags.includes("saude")) leads.saude++;
